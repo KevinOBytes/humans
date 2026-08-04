@@ -67,7 +67,7 @@ describe("repository governance contract", () => {
     );
   });
 
-  it("documents required-capable checks without claiming hosted controls exist", () => {
+  it("documents and records the verified hosted governance boundary", () => {
     const governance = read("docs/REPOSITORY_GOVERNANCE.md");
     const dependencies = read("docs/DEPENDENCY_POLICY.md");
     const requirements = read("docs/REQUIREMENTS.md");
@@ -85,18 +85,24 @@ describe("repository governance contract", () => {
     ]) {
       expect(governance).toContain(`\`${check}\``);
     }
-    expect(governance).toContain("not yet verified");
+    expect(governance).toContain("ruleset `20371861`");
+    expect(governance).toContain("admin role has an explicit bypass");
+    expect(governance).toContain("Squash is the only enabled merge strategy");
     expect(governance).toContain("git ls-remote");
     expect(governance).toContain("manifest-list digest");
     expect(dependencies).toContain("fail closed");
     expect(dependencies).toContain("expiry");
-    expect(requirements).toMatch(/^\| `HUM-NFR-014` .+\| Incomplete \|$/m);
-    expect(requirements).toMatch(/^\| `HUM-NFR-017` .+\| Incomplete \|$/m);
-    expect(todo.match(/`HUM-NFR-014`/g)).toHaveLength(1);
-    expect(todo.match(/`HUM-NFR-017`/g)).toHaveLength(1);
+    expect(requirements).toMatch(/^\| `HUM-NFR-014` .+\| Complete   \|$/m);
+    expect(requirements).toMatch(/^\| `HUM-NFR-017` .+\| Complete   \|$/m);
+    expect(requirements).toMatch(/^\| `HUM-NFR-010` .+\| Complete   \|$/m);
+    expect(requirements).toMatch(/^\| `HUM-NFR-019` .+\| Complete   \|$/m);
+    expect(todo).not.toContain("`HUM-NFR-010`");
+    expect(todo).not.toContain("`HUM-NFR-014`");
+    expect(todo).not.toContain("`HUM-NFR-017`");
+    expect(todo).not.toContain("`HUM-NFR-019`");
   });
 
-  it("does not guess ownership or leak hosted-setting claims", () => {
+  it("does not guess ownership and keeps live claims precisely scoped", () => {
     expect(existsSync(".github/CODEOWNERS")).toBe(false);
     expect(existsSync("CODEOWNERS")).toBe(false);
     const publicDocs = [
@@ -108,9 +114,8 @@ describe("repository governance contract", () => {
       .map(read)
       .join("\n");
 
-    expect(publicDocs).not.toMatch(
-      /(?:branch protection|required checks|private vulnerability reporting|hosted secret scanning) (?:is|are|has been|have been) enabled/iu,
-    );
+    expect(publicDocs).toContain("Re-verify these external controls");
+    expect(publicDocs).not.toMatch(/CODEOWNERS (?:is|has been) enabled/iu);
   });
 
   it("allows only the independently reviewed exact historical Gitleaks fingerprints", () => {

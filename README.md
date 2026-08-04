@@ -84,8 +84,10 @@ The repository also provides fail-closed dependency-license review, a
 high/critical production audit, local Gitleaks/Syft/Trivy wrappers, and an
 eight-job GitHub Actions workflow covering quality, generated drift, PostgreSQL,
 production build, Compose lifecycle, dependencies, secrets, and exact-image
-SBOM/vulnerability scanning. The workflow has not yet run in the public
-repository, and hosted required checks and security settings remain unverified.
+SBOM/vulnerability scanning. All eight checks pass on the public repository and
+are required on `main` by the active repository ruleset. Merges are squash-only,
+resolved conversations are required, force pushes and deletion are blocked, and
+merged branches are deleted automatically.
 See [Repository governance](docs/REPOSITORY_GOVERNANCE.md) and
 [Dependency policy](docs/DEPENDENCY_POLICY.md).
 
