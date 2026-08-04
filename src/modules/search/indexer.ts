@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { newId } from "@/db/id";
@@ -777,7 +777,23 @@ export function createSearchIndexMaintenance(input: {
             eq(searchDocuments.resourceId, mutation.sourceId),
           );
           if (mutation.action === "remove") {
-            await database.delete(searchDocuments).where(predicate);
+            await database
+              .delete(searchDocuments)
+              .where(
+                mutation.sourceKind === "evidence_item"
+                  ? or(
+                      predicate,
+                      and(
+                        eq(searchDocuments.workspaceId, mutation.workspaceId),
+                        eq(searchDocuments.resultId, mutation.sourceId),
+                        inArray(searchDocuments.resourceKind, [
+                          "evidence_excerpt",
+                          "note",
+                        ]),
+                      ),
+                    )
+                  : predicate,
+              );
             input.metrics.indexMaintenance({
               outcome: "REMOVED",
               sourceKind: mutation.sourceKind,

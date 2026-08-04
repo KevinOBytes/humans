@@ -11,8 +11,6 @@ Every incomplete MVP requirement is listed exactly once. Check an item only in t
 - [ ] `HUM-FR-007` Implement the canonical GraphQL application API and generated operations.
 - [ ] `HUM-FR-008` Implement stable person records and presentation selections.
 - [ ] `HUM-FR-010` Complete identity support and reversible merge workflows beyond the Task 12A protected-identifier normalization and exact-lookup foundation.
-- [ ] `HUM-FR-015` Implement temporal social relationship types and edges.
-- [ ] `HUM-FR-016` Implement sources, evidence, excerpts, notes, and tags.
 - [ ] `HUM-FR-017` Implement private file and upload-session lifecycle.
 - [ ] `HUM-FR-018` Implement idempotent CSV/JSON imports and extraction runs.
 - [ ] `HUM-FR-019` Complete optional embedding support and final release/Compose proof beyond the implemented Task 12 transactional PostgreSQL full-text, structured, and protected-exact search slice.

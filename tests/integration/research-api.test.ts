@@ -357,6 +357,236 @@ liveDescribe("research API", () => {
     );
   });
 
+  it("updates temporal relationships atomically and filters historical edges", async () => {
+    const owner = await fixture.createActor();
+    const source = await fixture.createPerson(owner, {
+      displayName: "Temporal source",
+    });
+    const target = await fixture.createPerson(owner, {
+      displayName: "Temporal target",
+    });
+    const sourceId = required(source.body?.data?.createPerson?.person?.id);
+    const targetId = required(target.body?.data?.createPerson?.person?.id);
+    const type = await fixture.execute<{
+      createRelationshipType: { relationshipType: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: /* GraphQL */ `
+        mutation ($input: CreateRelationshipTypeInput!) {
+          createRelationshipType(input: $input) {
+            relationshipType {
+              id
+            }
+          }
+        }
+      `,
+      variables: {
+        input: {
+          key: "temporal-history",
+          forwardLabel: "worked with",
+          inverseLabel: "worked with",
+        },
+      },
+    });
+    const relationshipTypeId = required(
+      type.body?.data?.createRelationshipType.relationshipType?.id,
+    );
+    const create = async (input: Record<string, unknown>) =>
+      fixture.execute<{
+        createRelationship: {
+          relationship: { id: string; version: number } | null;
+          code: string | null;
+          issues: Array<{ code: string; path: string[] }>;
+        };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation ($input: CreateRelationshipInput!) {
+            createRelationship(input: $input) {
+              relationship {
+                id
+                version
+              }
+              code
+              issues {
+                code
+                path
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            sourcePersonId: sourceId,
+            targetPersonId: targetId,
+            relationshipTypeId,
+            ...input,
+          },
+        },
+      });
+    const historical = await create({
+      temporalSemantics: "BETWEEN",
+      temporalPrecision: "RANGE",
+      validFrom: "2020-01-01T00:00:00.000Z",
+      validUntil: "2020-12-31T23:59:59.000Z",
+    });
+    const current = await create({
+      temporalSemantics: "BETWEEN",
+      temporalPrecision: "RANGE",
+      validFrom: "2025-01-01T00:00:00.000Z",
+      validUntil: "2025-12-31T23:59:59.000Z",
+    });
+    expect(historical.body?.errors).toBeUndefined();
+    expect(current.body?.errors).toBeUndefined();
+    const relationshipId = required(
+      historical.body?.data?.createRelationship.relationship?.id,
+    );
+    const currentId = required(
+      current.body?.data?.createRelationship.relationship?.id,
+    );
+    const update = (input: Record<string, unknown>) =>
+      fixture.execute<{
+        updateRelationship: {
+          relationship: {
+            id: string;
+            version: number;
+            temporalSemantics: string;
+            temporalPrecision: string;
+            validFrom: string | null;
+            validUntil: string | null;
+          } | null;
+          code: string | null;
+          issues: Array<{ code: string; path: string[] }>;
+        };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation ($input: UpdateRelationshipInput!) {
+            updateRelationship(input: $input) {
+              relationship {
+                id
+                version
+                temporalSemantics
+                temporalPrecision
+                validFrom
+                validUntil
+              }
+              code
+              issues {
+                code
+                path
+              }
+            }
+          }
+        `,
+        variables: { input: { id: relationshipId, ...input } },
+      });
+    const partial = await update({
+      expectedVersion: 1,
+      validUntil: "2021-12-31T23:59:59.000Z",
+    });
+    expect(partial.body?.errors).toBeUndefined();
+    expect(partial.body?.data?.updateRelationship).toMatchObject({
+      code: null,
+      issues: [],
+      relationship: {
+        id: relationshipId,
+        version: 2,
+        temporalSemantics: "BETWEEN",
+        temporalPrecision: "RANGE",
+        validFrom: "2020-01-01T00:00:00.000Z",
+        validUntil: "2021-12-31T23:59:59.000Z",
+      },
+    });
+    const invalid = await update({
+      expectedVersion: 2,
+      validUntil: "2019-12-31T23:59:59.000Z",
+    });
+    expect(invalid.body?.errors).toBeUndefined();
+    expect(invalid.body?.data?.updateRelationship).toMatchObject({
+      code: "VALIDATION_FAILED",
+      relationship: null,
+      issues: [{ code: "INVALID_TEMPORAL", path: ["temporal"] }],
+    });
+    const [unchanged] = await fixture.database
+      .select({
+        version: relationships.version,
+        temporalSemantics: relationships.temporalSemantics,
+        temporalPrecision: relationships.temporalPrecision,
+        validFrom: relationships.validFrom,
+        validUntil: relationships.validUntil,
+      })
+      .from(relationships)
+      .where(eq(relationships.id, relationshipId));
+    expect(unchanged).toMatchObject({
+      version: 2,
+      temporalSemantics: "between",
+      temporalPrecision: "range",
+      validFrom: new Date("2020-01-01T00:00:00.000Z"),
+      validUntil: new Date("2021-12-31T23:59:59.000Z"),
+    });
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.resourceId, relationshipId),
+            eq(auditEvents.action, "relationship.update"),
+          ),
+        ),
+    ).toHaveLength(1);
+    const activeAt = async (at: string) =>
+      fixture.execute<{
+        relationships: { nodes: Array<{ id: string }> };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          query ($at: DateTime!) {
+            relationships(
+              first: 10
+              filter: { personId: "${sourceId}", activeAt: $at }
+            ) {
+              nodes {
+                id
+              }
+            }
+          }
+        `,
+        variables: { at },
+      });
+    const duringHistorical = await activeAt("2020-06-01T00:00:00.000Z");
+    const duringCurrent = await activeAt("2025-06-01T00:00:00.000Z");
+    expect(duringHistorical.body?.errors).toBeUndefined();
+    expect(duringCurrent.body?.errors).toBeUndefined();
+    expect(
+      duringHistorical.body?.data?.relationships.nodes.map((row) => row.id),
+    ).toEqual([relationshipId]);
+    expect(
+      duringCurrent.body?.data?.relationships.nodes.map((row) => row.id),
+    ).toEqual([currentId]);
+    const cleared = await update({
+      expectedVersion: 2,
+      temporalSemantics: null,
+      temporalPrecision: null,
+      validFrom: null,
+      validUntil: null,
+    });
+    expect(cleared.body?.errors).toBeUndefined();
+    expect(cleared.body?.data?.updateRelationship).toMatchObject({
+      code: null,
+      issues: [],
+      relationship: {
+        id: relationshipId,
+        version: 3,
+        temporalSemantics: "UNKNOWN",
+        temporalPrecision: "UNKNOWN",
+        validFrom: null,
+        validUntil: null,
+      },
+    });
+  });
+
   it("commits one redacted audit event with the person and rolls both back on audit failure", async () => {
     const owner = await fixture.createActor();
     const success = await fixture.createPerson(owner, {

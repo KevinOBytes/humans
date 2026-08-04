@@ -472,6 +472,12 @@ const UpdateSourceInput = builder.inputType("UpdateSourceInput", {
     metadata: t.field({ type: "JSON" }),
   }),
 });
+const ArchiveSourceInput = builder.inputType("ArchiveSourceInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+  }),
+});
 const CreateEvidenceItemInput = builder.inputType("CreateEvidenceItemInput", {
   fields: (t) => ({
     sourceId: t.field({ type: "UUID", required: true }),
@@ -493,6 +499,12 @@ const UpdateEvidenceItemInput = builder.inputType("UpdateEvidenceItemInput", {
     capturedAt: t.field({ type: "DateTime" }),
     reviewState: t.string(),
     sensitivity: t.field({ type: Sensitivity }),
+  }),
+});
+const ArchiveEvidenceItemInput = builder.inputType("ArchiveEvidenceItemInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
   }),
 });
 const AttachFileToEvidenceInput = builder.inputType(
@@ -1032,6 +1044,22 @@ export function registerEvidenceGraphQL(): void {
         return withResource(result, "source");
       },
     }),
+    archiveSource: t.field({
+      type: SourcePayload,
+      args: { input: t.arg({ type: ArchiveSourceInput, required: true }) },
+      resolve: async (_r, args, context) => {
+        requirePermission(context, "source", "delete");
+        const result = await context.services.evidence.archiveSource(
+          args.input,
+        );
+        if (result.resource)
+          invalidateVisibilityDependentLoaders(context.loaders, {
+            kind: "source",
+            id: result.resource.id,
+          });
+        return withResource(result, "source");
+      },
+    }),
     createEvidenceItem: t.field({
       type: EvidenceItemPayload,
       args: { input: t.arg({ type: CreateEvidenceItemInput, required: true }) },
@@ -1064,6 +1092,24 @@ export function registerEvidenceGraphQL(): void {
             id: result.resource.id,
           });
         }
+        return withResource(result, "evidenceItem");
+      },
+    }),
+    archiveEvidenceItem: t.field({
+      type: EvidenceItemPayload,
+      args: {
+        input: t.arg({ type: ArchiveEvidenceItemInput, required: true }),
+      },
+      resolve: async (_r, args, context) => {
+        requirePermission(context, "evidence", "delete");
+        const result = await context.services.evidence.archiveEvidence(
+          args.input,
+        );
+        if (result.resource)
+          invalidateVisibilityDependentLoaders(context.loaders, {
+            kind: "evidence",
+            id: result.resource.id,
+          });
         return withResource(result, "evidenceItem");
       },
     }),
