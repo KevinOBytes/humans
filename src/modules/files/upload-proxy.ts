@@ -83,7 +83,7 @@ export function createUploadSessionProxyExecutor(input: {
         .set({
           uploadAttemptId: attemptId,
           uploadAttemptExpiresAt: sql`LEAST(${uploadSessions.expiresAt}, clock_timestamp() + interval '60 seconds')`,
-          storageMutationSettlesAt: sql`LEAST(${uploadSessions.expiresAt}, clock_timestamp() + interval '60 seconds') + ${MUTATION_SETTLEMENT_INTERVAL}`,
+          storageMutationSettlesAt: sql`clock_timestamp() + interval '120 seconds'`,
           updatedAt: sql`clock_timestamp()`,
         })
         .where(

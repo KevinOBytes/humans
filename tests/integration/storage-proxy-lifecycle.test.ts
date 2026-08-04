@@ -430,6 +430,62 @@ liveDescribe("authoritative opaque upload fencing", () => {
     expect(client.objects.size).toBe(1);
   });
 
+  it("preserves the full process-loss quiescence bound near session expiry", async () => {
+    const pending = await createPending();
+    const expiresAt = new Date(Date.now() + 5_000);
+    const [session] = await fixture.database
+      .update(uploadSessions)
+      .set({ expiresAt })
+      .where(eq(uploadSessions.id, pending.session.id))
+      .returning({
+        expectedChecksum: uploadSessions.expectedChecksum,
+        expectedMediaType: uploadSessions.expectedMediaType,
+        maxBytes: uploadSessions.maxBytes,
+        objectKey: uploadSessions.objectKey,
+      });
+    if (
+      !session?.expectedChecksum ||
+      !session.expectedMediaType ||
+      !session.objectKey
+    ) {
+      throw new Error("Upload session constraints were not persisted");
+    }
+    const uploadEntered = deferred();
+    const releaseUpload = deferred();
+    const claimedAt = Date.now();
+    const uploading = createUploadSessionProxyExecutor({
+      database: fixture.database,
+      deploymentMode: "docker",
+    })(
+      {
+        actorId: pending.actor.userId,
+        bytes: session.maxBytes,
+        checksumSha256: session.expectedChecksum,
+        contentType: session.expectedMediaType,
+        expiresAt,
+        key: session.objectKey,
+        uploadSessionId: pending.session.id,
+        workspaceId: pending.actor.workspaceId,
+      },
+      async () => {
+        uploadEntered.resolve();
+        await releaseUpload.promise;
+      },
+    );
+    await uploadEntered.promise;
+
+    const [claimed] = await fixture.database
+      .select({ settlesAt: uploadSessions.storageMutationSettlesAt })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(claimed?.settlesAt?.getTime()).toBeGreaterThanOrEqual(
+      claimedAt + 119_000,
+    );
+
+    releaseUpload.resolve();
+    await expect(uploading).resolves.toBe(true);
+  });
+
   it("quarantines a commit-then-error PUT until a later cleanup pass deletes it", async () => {
     const pending = await createPending();
     const putEntered = deferred();
