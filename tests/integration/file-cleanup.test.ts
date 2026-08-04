@@ -115,7 +115,7 @@ liveDescribe("durable file cleanup", () => {
 
   async function seedExpiredSession(
     input: {
-      state?: "expired" | "rejected";
+      state?: "cleanup_pending" | "expired" | "rejected";
     } = {},
   ) {
     const actor = await fixture.createActor("owner");
@@ -196,6 +196,23 @@ liveDescribe("durable file cleanup", () => {
       outcome: "success",
       redactedDiff: { deleted: true },
     });
+  });
+
+  it("deletes a user-cancelled cleanup-pending upload", async () => {
+    const seeded = await seedExpiredSession({ state: "cleanup_pending" });
+    const target = `${seeded.actor.workspaceId}:${seeded.objectKey}`;
+    store.objects.add(target);
+
+    await expect(run(newId())).resolves.toMatchObject({
+      claimed: 1,
+      completed: 1,
+    });
+    expect(store.objects.has(target)).toBe(false);
+    const [session] = await fixture.database
+      .select({ cleanupCompletedAt: uploadSessions.cleanupCompletedAt })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, seeded.id));
+    expect(session?.cleanupCompletedAt).toBeInstanceOf(Date);
   });
 
   it("retries transient deletion and revives a terminal cleanup job", async () => {

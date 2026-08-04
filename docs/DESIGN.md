@@ -30,6 +30,22 @@ Sigma.js and Graphology render large social networks through WebGL. React Flow s
 - Reveal restricted data only after authorization; avoid sensitive values in URLs, analytics, logs, and notifications.
 - Keep graph selections synchronized with an inspector and provide a tabular equivalent.
 
+### Evidence file behavior
+
+`/evidence` places the current user's pending uploads above the visible file
+table. Each pending item shows its name, size, expiration, an exact-file resume
+control, and cancellation. The browser hashes a reselected file and compares
+its name, byte length, and SHA-256 digest before asking the server for a new
+grant; a mismatch never uploads bytes or calls completion. Status changes use
+assistive-technology alerts, provider/object details are replaced by bounded
+public messages, and the initiating control retains or regains visible focus.
+
+Only clean, available files offer download. Archival uses the file version
+rendered with the row, requires explicit confirmation, announces the outcome,
+restores focus, and refreshes the route after success. Pending recovery and
+file archival use checked-in generated GraphQL operations rather than ad hoc
+browser requests.
+
 Authentication surfaces use identical public failure language for unavailable
 registration details and password recovery. Authenticated shells and the
 workspace-selection gate always expose a keyboard-accessible sign-out action.

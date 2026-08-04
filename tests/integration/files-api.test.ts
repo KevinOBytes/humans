@@ -4,12 +4,13 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { sessions } from "@/db/schema/auth";
 import { newId } from "@/db/id";
-import { files, uploadSessions } from "@/db/schema/files";
-import { jobs } from "@/db/schema/operations";
+import { fileVariants, files, uploadSessions } from "@/db/schema/files";
+import { auditEvents, jobs } from "@/db/schema/operations";
+import { workspacePrincipals } from "@/db/schema/principals";
 import { workspaceUsage } from "@/db/schema/workspaces";
 import type { ObjectStore } from "@/lib/storage/types";
 import { archivedFileCleanupIdempotencyKey } from "@/modules/files/cleanup";
@@ -114,19 +115,30 @@ async function fileServiceFor(
   );
 }
 
-function apiKeyFileServiceFor(input: {
+async function apiKeyFileServiceFor(input: {
   fixture: ResearchFixture;
   keyId: string;
   permissions: readonly string[];
   store: MemoryObjectStore;
   workspaceId: string;
 }) {
+  const [principal] = await input.fixture.database
+    .select({ id: workspacePrincipals.id })
+    .from(workspacePrincipals)
+    .where(
+      and(
+        eq(workspacePrincipals.workspaceId, input.workspaceId),
+        eq(workspacePrincipals.apiKeyId, input.keyId),
+      ),
+    )
+    .limit(1);
+  if (!principal) throw new Error("API-key principal is missing");
   return createFilesService(
     {
       actor: {
         type: "apiKey",
         id: input.keyId,
-        principalId: input.keyId,
+        principalId: principal.id,
         role: null,
       },
       database: input.fixture.database,
@@ -350,14 +362,14 @@ liveDescribe("file service", () => {
     };
     const visibleFileId = await createFile("internal");
     const protectedFileId = await createFile("restricted");
-    const allowed = apiKeyFileServiceFor({
+    const allowed = await apiKeyFileServiceFor({
       fixture,
       keyId: allowedKey.id,
       permissions: ["file:delete"],
       store,
       workspaceId: actor.workspaceId,
     });
-    const denied = apiKeyFileServiceFor({
+    const denied = await apiKeyFileServiceFor({
       fixture,
       keyId: deniedKey.id,
       permissions: ["file:read"],
@@ -589,6 +601,613 @@ liveDescribe("file service", () => {
       });
       expect(denied.body?.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
       expect(graphqlStore.uploadCalls).toBe(callsBefore);
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
+  it("exposes owner-scoped upload recovery and archive operations through the real GraphQL context", async () => {
+    const graphqlStore = new MemoryObjectStore();
+    const graphqlFixture = new ResearchFixture({
+      fileRuntime: {
+        encryptionKey: "31".repeat(32),
+        objectStore: graphqlStore,
+        storageBucket: "private",
+        storageProvider: "minio",
+      },
+    });
+    try {
+      await graphqlFixture.reset();
+      const owner = await graphqlFixture.createActor("owner");
+      const peer = await graphqlFixture.createWorkspaceMember(
+        owner,
+        "contributor",
+      );
+      const otherOwner = await graphqlFixture.createActor("owner");
+      const body = new TextEncoder().encode("recover me");
+      const created = await graphqlFixture.execute<{
+        createUploadSession?: { session: { id: string } };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation CreateUpload($input: CreateUploadSessionInput!) {
+            createUploadSession(input: $input) {
+              session {
+                id
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            byteSize: body.byteLength,
+            checksumSha256: createHash("sha256").update(body).digest("hex"),
+            claimedMediaType: "text/plain",
+            originalName: "recover.txt",
+            purpose: "EVIDENCE",
+          },
+        },
+      });
+      const sessionId = created.body?.data?.createUploadSession?.session.id;
+
+      const pending = await graphqlFixture.execute<{
+        uploadSessions?: { nodes: Array<{ id: string; originalName: string }> };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          query PendingWorkspaceUploads {
+            uploadSessions(first: 20, states: [PENDING]) {
+              nodes {
+                id
+                originalName
+                byteSize
+                state
+                expiresAt
+                checksumSha256
+              }
+            }
+          }
+        `,
+      });
+      expect(pending.body?.errors).toBeUndefined();
+      expect(pending.body?.data?.uploadSessions?.nodes).toEqual([
+        expect.objectContaining({ id: sessionId, originalName: "recover.txt" }),
+      ]);
+
+      const regranted = await graphqlFixture.execute<{
+        regrantUploadSession?: {
+          session: { id: string; state: string };
+          grant: { method: string; contentLength: number };
+        };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation RegrantWorkspaceUpload($id: UUID!) {
+            regrantUploadSession(uploadSessionId: $id) {
+              session {
+                id
+                state
+              }
+              grant {
+                method
+                url
+                headers
+                contentLength
+              }
+            }
+          }
+        `,
+        variables: { id: sessionId },
+      });
+      expect(regranted.body?.errors).toBeUndefined();
+      expect(regranted.body?.data?.regrantUploadSession).toMatchObject({
+        session: { id: sessionId, state: "PENDING" },
+        grant: { method: "PUT", contentLength: body.byteLength },
+      });
+
+      for (const jar of [peer.jar, otherOwner.jar]) {
+        const hidden = await graphqlFixture.execute({
+          jar,
+          query: /* GraphQL */ `
+            mutation RegrantWorkspaceUpload($id: UUID!) {
+              regrantUploadSession(uploadSessionId: $id) {
+                session {
+                  id
+                  state
+                }
+                grant {
+                  method
+                  url
+                  headers
+                  contentLength
+                }
+              }
+            }
+          `,
+          variables: { id: sessionId },
+        });
+        expect(hidden.body?.errors?.[0]?.extensions?.code).toBe("NOT_FOUND");
+        expect(JSON.stringify(hidden.body)).not.toContain(
+          created.body?.data?.createUploadSession?.session.id ?? "missing",
+        );
+      }
+
+      const cancelled = await graphqlFixture.execute<{
+        cancelUploadSession?: { session: { id: string; state: string } };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation CancelWorkspaceUpload($id: UUID!) {
+            cancelUploadSession(uploadSessionId: $id) {
+              session {
+                id
+                state
+              }
+            }
+          }
+        `,
+        variables: { id: sessionId },
+      });
+      expect(cancelled.body?.errors).toBeUndefined();
+      expect(cancelled.body?.data?.cancelUploadSession?.session).toEqual({
+        id: sessionId,
+        state: "CLEANUP_PENDING",
+      });
+      const [cleanup] = await graphqlFixture.database
+        .select({ scheduledAt: jobs.scheduledAt })
+        .from(jobs)
+        .where(eq(jobs.kind, "file_cleanup"));
+      expect(cleanup?.scheduledAt.getTime()).toBeLessThanOrEqual(
+        Date.now() + 1_000,
+      );
+      const [audit] = await graphqlFixture.database
+        .select({ redactedDiff: auditEvents.redactedDiff })
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "file.upload_cancelled"));
+      expect(audit?.redactedDiff).toMatchObject({
+        metadata: { state: "cleanup_pending" },
+      });
+      expect(JSON.stringify(audit)).not.toMatch(/uploads\/|private|minio/iu);
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
+  it("rejects regrant for expired, rejected, and completed sessions without disclosing storage coordinates", async () => {
+    const graphqlStore = new MemoryObjectStore();
+    const graphqlFixture = new ResearchFixture({
+      fileRuntime: {
+        encryptionKey: "31".repeat(32),
+        objectStore: graphqlStore,
+        storageBucket: "private",
+        storageProvider: "minio",
+      },
+    });
+    try {
+      await graphqlFixture.reset();
+      const owner = await graphqlFixture.createActor("owner");
+      const fileId = newId();
+      await graphqlFixture.database.insert(files).values({
+        id: fileId,
+        workspaceId: owner.workspaceId,
+        storageProvider: "minio",
+        storageBucket: "private",
+        storageKey: `uploads/${fileId}/${newId()}`,
+        originalName: "completed.txt",
+        byteSize: 1,
+        checksum: `sha256:${"31".repeat(32)}`,
+        uploadedBy: owner.userId,
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      });
+      const now = new Date();
+      const seeded = [
+        { state: "expired", expiresAt: new Date(now.getTime() - 1_000) },
+        { state: "rejected", expiresAt: new Date(now.getTime() + 60_000) },
+        {
+          state: "completed",
+          expiresAt: new Date(now.getTime() + 60_000),
+          completedAt: now,
+          fileId,
+        },
+      ] as const;
+      const ids = seeded.map(() => newId());
+      await graphqlFixture.database.insert(uploadSessions).values(
+        seeded.map((session, index) => ({
+          id: ids[index]!,
+          workspaceId: owner.workspaceId,
+          actorId: owner.userId,
+          intendedPurpose: "EVIDENCE",
+          originalName: `${session.state}.txt`,
+          maxBytes: 1,
+          expectedChecksum: `sha256:${"31".repeat(32)}`,
+          expectedMediaType: "text/plain",
+          objectKey: `uploads/${ids[index]}/${newId()}`,
+          state: session.state,
+          expiresAt: session.expiresAt,
+          completedAt: "completedAt" in session ? session.completedAt : null,
+          fileId: "fileId" in session ? session.fileId : null,
+          failureCode:
+            session.state === "completed" ? null : session.state.toUpperCase(),
+          createdBy: owner.userId,
+          updatedBy: owner.userId,
+        })),
+      );
+
+      for (const id of ids) {
+        const result = await graphqlFixture.execute({
+          jar: owner.jar,
+          query: /* GraphQL */ `
+            mutation RegrantWorkspaceUpload($id: UUID!) {
+              regrantUploadSession(uploadSessionId: $id) {
+                session {
+                  id
+                  state
+                }
+                grant {
+                  method
+                  url
+                  headers
+                  contentLength
+                }
+              }
+            }
+          `,
+          variables: { id },
+        });
+        expect(result.body?.errors?.[0]?.extensions?.code).toBe("CONFLICT");
+        expect(JSON.stringify(result.body)).not.toMatch(
+          /uploads\/|private|minio/iu,
+        );
+      }
+
+      const apiKey = await graphqlFixture.provisionKey(owner, {
+        file: ["create"],
+      });
+      for (const operation of ["regrantUploadSession", "cancelUploadSession"]) {
+        const denied = await graphqlFixture.execute({
+          apiKey: apiKey.key,
+          query: `mutation SessionOperation($id: UUID!) { ${operation}(uploadSessionId: $id) { session { id } } }`,
+          variables: { id: ids[0] },
+        });
+        expect(denied.body?.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
+      }
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
+  it("serializes cancellation against completion", async () => {
+    const graphqlStore = new MemoryObjectStore();
+    const graphqlFixture = new ResearchFixture({
+      fileRuntime: {
+        encryptionKey: "31".repeat(32),
+        objectStore: graphqlStore,
+        storageBucket: "private",
+        storageProvider: "minio",
+      },
+    });
+    try {
+      await graphqlFixture.reset();
+      const owner = await graphqlFixture.createActor("owner");
+      const body = new TextEncoder().encode("serialize me");
+      const created = await graphqlFixture.execute<{
+        createUploadSession?: { session: { id: string } };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation CreateUpload($input: CreateUploadSessionInput!) {
+            createUploadSession(input: $input) {
+              session {
+                id
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            originalName: "serialize.txt",
+            claimedMediaType: "text/plain",
+            byteSize: body.byteLength,
+            checksumSha256: createHash("sha256").update(body).digest("hex"),
+            purpose: "EVIDENCE",
+          },
+        },
+      });
+      const sessionId = created.body?.data?.createUploadSession?.session.id;
+      const upload = graphqlStore.uploadInputs.at(-1)!;
+      graphqlStore.objects.set(`${upload.workspaceId}:${upload.key}`, body);
+      const [complete, cancel] = await Promise.all([
+        graphqlFixture.execute({
+          jar: owner.jar,
+          query: /* GraphQL */ `
+            mutation Complete($id: UUID!) {
+              completeUpload(uploadSessionId: $id) {
+                session {
+                  id
+                  state
+                }
+                file {
+                  id
+                }
+              }
+            }
+          `,
+          variables: { id: sessionId },
+        }),
+        graphqlFixture.execute({
+          jar: owner.jar,
+          query: /* GraphQL */ `
+            mutation Cancel($id: UUID!) {
+              cancelUploadSession(uploadSessionId: $id) {
+                session {
+                  id
+                  state
+                }
+              }
+            }
+          `,
+          variables: { id: sessionId },
+        }),
+      ]);
+      const successCount = [complete, cancel].filter(
+        (result) => !result.body?.errors,
+      ).length;
+      expect(successCount).toBe(1);
+      expect(
+        [complete, cancel]
+          .flatMap((result) => result.body?.errors ?? [])
+          .map((error) => error.extensions?.code),
+      ).toEqual(["CONFLICT"]);
+      const [session] = await graphqlFixture.database
+        .select({ state: uploadSessions.state })
+        .from(uploadSessions)
+        .where(eq(uploadSessions.id, sessionId!));
+      expect(["completed", "cleanup_pending"]).toContain(session?.state);
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
+  it("revalidates live membership before cancellation", async () => {
+    const graphqlStore = new MemoryObjectStore();
+    const graphqlFixture = new ResearchFixture({
+      fileRuntime: {
+        encryptionKey: "31".repeat(32),
+        objectStore: graphqlStore,
+        storageBucket: "private",
+        storageProvider: "minio",
+      },
+    });
+    try {
+      await graphqlFixture.reset();
+      const owner = await graphqlFixture.createActor("owner");
+      const body = new TextEncoder().encode("authority");
+      const created = await graphqlFixture.execute<{
+        createUploadSession?: { session: { id: string } };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation CreateUpload($input: CreateUploadSessionInput!) {
+            createUploadSession(input: $input) {
+              session {
+                id
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            originalName: "authority.txt",
+            claimedMediaType: "text/plain",
+            byteSize: body.byteLength,
+            checksumSha256: createHash("sha256").update(body).digest("hex"),
+            purpose: "EVIDENCE",
+          },
+        },
+      });
+      const sessionId = created.body?.data?.createUploadSession?.session.id;
+      let request: ReturnType<typeof graphqlFixture.execute> | undefined;
+      await graphqlFixture.connection.begin(async (transaction) => {
+        await transaction`select id from members where id = ${owner.memberId} for update`;
+        request = graphqlFixture.execute({
+          jar: owner.jar,
+          query: /* GraphQL */ `
+            mutation Cancel($id: UUID!) {
+              cancelUploadSession(uploadSessionId: $id) {
+                session {
+                  id
+                  state
+                }
+              }
+            }
+          `,
+          variables: { id: sessionId },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 75));
+        await transaction`update members set role = 'viewer' where id = ${owner.memberId}`;
+      });
+      if (!request) throw new Error("Cancellation request did not start");
+      const denied = await request;
+      expect(denied.body?.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
+      const [session] = await graphqlFixture.database
+        .select({ state: uploadSessions.state })
+        .from(uploadSessions)
+        .where(eq(uploadSessions.id, sessionId!));
+      expect(session?.state).toBe("pending");
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
+  it("exposes safe variants, archives through user and API-key GraphQL, and denies archived downloads", async () => {
+    const graphqlStore = new MemoryObjectStore();
+    const graphqlFixture = new ResearchFixture({
+      fileRuntime: {
+        encryptionKey: "31".repeat(32),
+        objectStore: graphqlStore,
+        storageBucket: "private",
+        storageProvider: "minio",
+      },
+    });
+    try {
+      await graphqlFixture.reset();
+      const owner = await graphqlFixture.createActor("owner");
+      const seedFile = async (
+        name: string,
+        sensitivity: "internal" | "restricted" = "internal",
+      ) => {
+        const id = newId();
+        await graphqlFixture.database.insert(files).values({
+          id,
+          workspaceId: owner.workspaceId,
+          storageProvider: "minio",
+          storageBucket: "private",
+          storageKey: `uploads/${id}/${newId()}`,
+          originalName: name,
+          mediaType: "text/plain",
+          detectedType: "text/plain",
+          byteSize: 8,
+          checksum: `sha256:${"42".repeat(32)}`,
+          quarantineState: "available",
+          scanState: "clean",
+          sensitivity,
+          uploadedBy: owner.userId,
+          createdBy: owner.userId,
+          updatedBy: owner.userId,
+        });
+        return id;
+      };
+      const userFileId = await seedFile("variant.txt");
+      const variantId = newId();
+      await graphqlFixture.database.insert(fileVariants).values({
+        id: variantId,
+        workspaceId: owner.workspaceId,
+        parentFileId: userFileId,
+        kind: "thumbnail",
+        storageProvider: "minio",
+        storageBucket: "private",
+        storageKey: `variants/${userFileId}/${newId()}`,
+        mediaType: "image/webp",
+        byteSize: 5,
+        checksum: `sha256:${"43".repeat(32)}`,
+        generatorVersion: "thumb-v1",
+        createdBy: owner.userId,
+      });
+      const visible = await graphqlFixture.execute({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          query FileVariants($id: UUID!) {
+            file(id: $id) {
+              id
+              variants {
+                id
+                kind
+                mediaType
+                byteSize
+                checksum
+                generatorVersion
+                createdAt
+              }
+            }
+          }
+        `,
+        variables: { id: userFileId },
+      });
+      expect(visible.body?.errors).toBeUndefined();
+      expect(visible.body?.data).toMatchObject({
+        file: {
+          variants: [
+            {
+              id: variantId,
+              kind: "thumbnail",
+              mediaType: "image/webp",
+              byteSize: 5,
+              generatorVersion: "thumb-v1",
+            },
+          ],
+        },
+      });
+      expect(JSON.stringify(visible.body)).not.toMatch(
+        /storageKey|storageBucket|storageProvider|variants\/|private|minio/iu,
+      );
+
+      const archived = await graphqlFixture.execute({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation ArchiveWorkspaceFile($id: UUID!, $expectedVersion: Int!) {
+            archiveFile(fileId: $id, expectedVersion: $expectedVersion) {
+              file {
+                id
+                version
+                archivedAt
+              }
+            }
+          }
+        `,
+        variables: { id: userFileId, expectedVersion: 1 },
+      });
+      expect(archived.body?.errors).toBeUndefined();
+      expect(archived.body?.data).toMatchObject({
+        archiveFile: {
+          file: { id: userFileId, version: 2, archivedAt: expect.any(String) },
+        },
+      });
+      const deniedDownload = await graphqlFixture.execute({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation Download($id: UUID!) {
+            createFileDownload(fileId: $id) {
+              grant {
+                url
+              }
+            }
+          }
+        `,
+        variables: { id: userFileId },
+      });
+      expect(deniedDownload.body?.errors?.[0]?.extensions?.code).toBe(
+        "NOT_FOUND",
+      );
+
+      const allowedFileId = await seedFile("api-allowed.txt");
+      const deniedFileId = await seedFile("api-denied.txt");
+      const restrictedFileId = await seedFile("api-hidden.txt", "restricted");
+      const allowedKey = await graphqlFixture.provisionKey(owner, {
+        file: ["delete"],
+      });
+      const deniedKey = await graphqlFixture.provisionKey(owner, {
+        file: ["read"],
+      });
+      const archiveMutation = /* GraphQL */ `
+        mutation ArchiveWorkspaceFile($id: UUID!, $expectedVersion: Int!) {
+          archiveFile(fileId: $id, expectedVersion: $expectedVersion) {
+            file {
+              id
+              version
+              archivedAt
+            }
+          }
+        }
+      `;
+      const apiArchived = await graphqlFixture.execute({
+        apiKey: allowedKey.key,
+        query: archiveMutation,
+        variables: { id: allowedFileId, expectedVersion: 1 },
+      });
+      expect(apiArchived.body?.errors).toBeUndefined();
+      const apiDenied = await graphqlFixture.execute({
+        apiKey: deniedKey.key,
+        query: archiveMutation,
+        variables: { id: deniedFileId, expectedVersion: 1 },
+      });
+      expect(apiDenied.body?.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
+      const apiHidden = await graphqlFixture.execute({
+        apiKey: allowedKey.key,
+        query: archiveMutation,
+        variables: { id: restrictedFileId, expectedVersion: 1 },
+      });
+      expect(apiHidden.body?.errors?.[0]?.extensions?.code).toBe("NOT_FOUND");
     } finally {
       await graphqlFixture.close();
     }

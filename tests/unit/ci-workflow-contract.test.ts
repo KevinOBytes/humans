@@ -156,6 +156,17 @@ describe("CI workflow contract", () => {
     }
   });
 
+  it("keeps GraphQL-to-MinIO archival in the required Compose lifecycle", () => {
+    const workflow = readWorkflow();
+    const compose = jobBlock(workflow, "compose-lifecycle");
+    const lifecycle = readFileSync("scripts/compose-lifecycle.mjs", "utf8");
+
+    expect(compose).toContain("corepack pnpm test:compose:lifecycle");
+    expect(lifecycle).toContain("RUN_FILE_LIFECYCLE_MINIO");
+    expect(lifecycle).toContain("tests/integration/minio-upload.test.ts");
+    expect(lifecycle).toContain("runFileLifecycleAcceptance()");
+  });
+
   it("keeps dependency review PR-only and supply-chain artifacts bounded", () => {
     const workflow = readWorkflow();
     const dependency = jobBlock(workflow, "dependency-policy");

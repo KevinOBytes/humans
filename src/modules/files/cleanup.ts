@@ -105,6 +105,7 @@ export async function ensureFileCleanupJob(input: {
   expiresAt: Date;
   uploadSessionId: string;
   workspaceId: string;
+  scheduledAt?: Date;
 }) {
   const service = createJobsService({
     database: input.database,
@@ -115,7 +116,8 @@ export async function ensureFileCleanupJob(input: {
     uploadSessionId: input.uploadSessionId,
   };
   const idempotencyKey = fileCleanupIdempotencyKey(input);
-  const scheduledAt = new Date(input.expiresAt.getTime() + CLEANUP_DELAY_MS);
+  const scheduledAt =
+    input.scheduledAt ?? new Date(input.expiresAt.getTime() + CLEANUP_DELAY_MS);
   let job;
   try {
     job = await service.enqueue({
@@ -159,6 +161,14 @@ export async function ensureFileCleanupJob(input: {
       workspaceId: input.workspaceId,
     });
     if (current) return current;
+  }
+  if (input.scheduledAt && job.state === "queued") {
+    const scheduled = await service.repository.scheduleQueuedEarlier({
+      id: job.id,
+      workspaceId: input.workspaceId,
+      scheduledAt,
+    });
+    if (scheduled) return scheduled;
   }
   return job;
 }

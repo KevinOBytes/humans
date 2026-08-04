@@ -428,7 +428,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
       FROM drizzle.__drizzle_migrations
     `;
 
-    expect(result.count).toBe("19");
+    expect(result.count).toBe("20");
   });
 
   it("installs the Task 12 result lifecycle and restrictive ownership constraints", async () => {

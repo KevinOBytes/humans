@@ -9,7 +9,7 @@ import {
 } from "@/modules/people/graphql";
 import type { PageInfo as PageInfoShape } from "@/modules/people/service";
 
-import type { FileRow, UploadSessionRow } from "./repository";
+import type { FileRow, FileVariantRow, UploadSessionRow } from "./repository";
 
 const UploadPurpose = builder.enumType("UploadPurpose", {
   values: ["EVIDENCE", "CSV_IMPORT", "JSON_IMPORT"] as const,
@@ -21,6 +21,7 @@ const UploadSessionState = builder.enumType("UploadSessionState", {
     COMPLETED: { value: "completed" },
     REJECTED: { value: "rejected" },
     EXPIRED: { value: "expired" },
+    CLEANUP_PENDING: { value: "cleanup_pending" },
   } as const,
 });
 const FileAvailability = builder.enumType("FileAvailability", {
@@ -41,6 +42,26 @@ const FileScanState = builder.enumType("FileScanState", {
 });
 const GrantMethod = builder.enumType("FileGrantMethod", {
   values: ["GET", "PUT"] as const,
+});
+
+const FileVariant = builder.objectRef<FileVariantRow>("FileVariant").implement({
+  fields: (t) => ({
+    id: t.expose("id", { type: "UUID" }),
+    kind: t.exposeString("kind"),
+    mediaType: t.exposeString("mediaType", { nullable: true }),
+    byteSize: t.float({
+      nullable: true,
+      resolve: (row) => row.byteSize,
+    }),
+    checksum: t.exposeString("checksum"),
+    generatorVersion: t.exposeString("generatorVersion", {
+      nullable: true,
+    }),
+    createdAt: t.field({
+      type: "DateTime",
+      resolve: (row) => row.createdAt.toISOString(),
+    }),
+  }),
 });
 
 export const File = builder.objectRef<FileRow>("File").implement({
@@ -66,6 +87,11 @@ export const File = builder.objectRef<FileRow>("File").implement({
       resolve: (row) => row.sensitivity,
     }),
     version: t.exposeInt("version"),
+    archivedAt: t.field({
+      type: "DateTime",
+      nullable: true,
+      resolve: (row) => row.deletedAt?.toISOString() ?? null,
+    }),
     createdAt: t.field({
       type: "DateTime",
       resolve: (row) => row.createdAt.toISOString(),
@@ -79,6 +105,11 @@ export const File = builder.objectRef<FileRow>("File").implement({
       resolve: (row, _args, context) =>
         context.loaders.actorAttribution.load(`u:${row.uploadedBy}`),
     }),
+    variants: t.field({
+      type: [FileVariant],
+      resolve: (row, _args, context) =>
+        context.services.files.listVariants(row.id),
+    }),
   }),
 });
 
@@ -87,11 +118,19 @@ const UploadSession = builder
   .implement({
     fields: (t) => ({
       id: t.expose("id", { type: "UUID" }),
+      originalName: t.exposeString("originalName"),
+      byteSize: t.float({ resolve: (row) => row.maxBytes }),
+      checksumSha256: t.exposeString("expectedChecksum", { nullable: true }),
       state: t.field({
         type: UploadSessionState,
         resolve: (row) =>
           row.state as
-            "pending" | "verifying" | "completed" | "rejected" | "expired",
+            | "pending"
+            | "verifying"
+            | "completed"
+            | "rejected"
+            | "expired"
+            | "cleanup_pending",
       }),
       expiresAt: t.field({
         type: "DateTime",
@@ -156,6 +195,20 @@ const FileConnection = builder
     }),
   });
 
+const UploadSessionConnection = builder
+  .objectRef<{ nodes: UploadSessionRow[]; pageInfo: PageInfoShape }>(
+    "UploadSessionConnection",
+  )
+  .implement({
+    fields: (t) => ({
+      nodes: t.expose("nodes", {
+        type: [UploadSession],
+        complexity: { field: 0, multiplier: 1 },
+      }),
+      pageInfo: t.expose("pageInfo", { type: PageInfo }),
+    }),
+  });
+
 type FileIssues = readonly { code: string; message: string; path: string[] }[];
 const UploadPayload = builder
   .objectRef<{
@@ -183,6 +236,17 @@ const FileDownloadPayload = builder
     fields: (t) => ({
       file: t.expose("file", { type: File }),
       grant: t.expose("grant", { type: FileGrant }),
+      issues: t.field({
+        type: [ValidationIssue],
+        resolve: (payload) => [...payload.issues],
+      }),
+    }),
+  });
+const ArchiveFilePayload = builder
+  .objectRef<{ file: FileRow; issues: FileIssues }>("ArchiveFilePayload")
+  .implement({
+    fields: (t) => ({
+      file: t.expose("file", { type: File }),
       issues: t.field({
         type: [ValidationIssue],
         resolve: (payload) => [...payload.issues],
@@ -218,6 +282,23 @@ export function registerFilesGraphQL(): void {
         return context.loaders.file.load(args.id);
       },
     }),
+    uploadSessions: t.field({
+      type: UploadSessionConnection,
+      args: {
+        first: t.arg.int(),
+        after: t.arg.string(),
+        states: t.arg({ type: [UploadSessionState] }),
+      },
+      complexity: (args) => ({ field: 2, multiplier: args.first ?? 20 }),
+      resolve: (_root, args, context) => {
+        requirePermission(context, "file", "create");
+        return context.services.files.listUploadSessions({
+          first: args.first,
+          after: args.after,
+          states: args.states,
+        });
+      },
+    }),
   }));
 
   builder.mutationFields((t) => ({
@@ -241,6 +322,40 @@ export function registerFilesGraphQL(): void {
         requirePermission(context, "file", "create");
         const result = await context.services.files.completeUpload(
           args.uploadSessionId,
+        );
+        context.loaders.file.prime(result.file.id, result.file);
+        return result;
+      },
+    }),
+    regrantUploadSession: t.field({
+      type: UploadPayload,
+      args: { uploadSessionId: t.arg({ type: "UUID", required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "file", "create");
+        return context.services.files.regrantUploadSession(
+          args.uploadSessionId,
+        );
+      },
+    }),
+    cancelUploadSession: t.field({
+      type: UploadPayload,
+      args: { uploadSessionId: t.arg({ type: "UUID", required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "file", "create");
+        return context.services.files.cancelUploadSession(args.uploadSessionId);
+      },
+    }),
+    archiveFile: t.field({
+      type: ArchiveFilePayload,
+      args: {
+        fileId: t.arg({ type: "UUID", required: true }),
+        expectedVersion: t.arg.int({ required: true }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "file", "delete");
+        const result = await context.services.files.archiveFile(
+          args.fileId,
+          args.expectedVersion,
         );
         context.loaders.file.prime(result.file.id, result.file);
         return result;

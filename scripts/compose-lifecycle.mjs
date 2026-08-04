@@ -42,9 +42,13 @@ async function availablePort() {
   return port;
 }
 
+const appPort = await availablePort();
+const postgresTestPort = await availablePort();
+const minioTestPort = await availablePort();
+
 const environment = {
   ...process.env,
-  APP_PORT: String(await availablePort()),
+  APP_PORT: String(appPort),
   HUMANS_IMAGE: image,
   POSTGRES_DB: "humans",
   POSTGRES_USER: "humans",
@@ -65,7 +69,26 @@ const environment = {
   ADMIN_PASSWORD: `A!${secret(16)}`,
   RESEND_API_KEY: `re_test_${secret(16)}`,
   WORKER_DRAIN_IDEMPOTENCY_KEY: `task15b-active-drain-${suffix}`,
+  POSTGRES_TEST_PORT: String(postgresTestPort),
+  MINIO_TEST_PORT: String(minioTestPort),
 };
+Object.assign(environment, {
+  ALLOW_TEST_DATABASE_RESET: "true",
+  RUN_FILE_LIFECYCLE_MINIO: "true",
+  TEST_DATABASE_URL: `postgresql://${environment.POSTGRES_USER}:${environment.POSTGRES_PASSWORD}@127.0.0.1:${postgresTestPort}/humans_lifecycle_test`,
+  TEST_STORAGE_ENDPOINT: `http://127.0.0.1:${minioTestPort}`,
+  TEST_STORAGE_REGION: "us-east-1",
+  TEST_STORAGE_BUCKET: environment.STORAGE_BUCKET,
+  TEST_STORAGE_ACCESS_KEY_ID: environment.MINIO_ROOT_USER,
+  TEST_STORAGE_SECRET_ACCESS_KEY: environment.MINIO_ROOT_PASSWORD,
+});
+
+const composeOverridePath = join(temporaryDirectory, "test-ports.yml");
+await writeFile(
+  composeOverridePath,
+  `services:\n  postgres:\n    networks:\n      - backend\n      - edge\n    ports:\n      - "127.0.0.1:${postgresTestPort}:5432"\n  minio:\n    networks:\n      - backend\n      - edge\n    ports:\n      - "127.0.0.1:${minioTestPort}:9000"\n`,
+  { mode: 0o600 },
+);
 
 const composePrefix = [
   "compose",
@@ -73,6 +96,8 @@ const composePrefix = [
   project,
   "--file",
   "docker-compose.yml",
+  "--file",
+  composeOverridePath,
   "--profile",
   "smoke",
 ];
@@ -257,6 +282,7 @@ async function assertNoLeakage() {
 async function runSmoke() {
   await compose(["config", "--quiet"]);
   await compose(["build", "--no-cache", "app"]);
+  await compose(["up", "--detach", "postgres", "minio"]);
   await compose(["run", "--rm", "bootstrap-admin"]);
   await compose(["up", "--detach", "--wait", "app", "worker"]);
   await compose(["run", "--rm", "smoke"]);
@@ -264,6 +290,46 @@ async function runSmoke() {
   await assertProcessTree("app", "server.js");
   await assertProcessTree("worker", "runtime/worker.mjs");
   await assertNoLeakage();
+}
+
+async function runFileLifecycleAcceptance() {
+  await compose([
+    "exec",
+    "--no-TTY",
+    "postgres",
+    "createdb",
+    "--username",
+    environment.POSTGRES_USER,
+    "humans_lifecycle_test",
+  ]);
+  try {
+    await execute(
+      "corepack",
+      [
+        "pnpm",
+        "vitest",
+        "run",
+        "tests/integration/minio-upload.test.ts",
+        "--no-file-parallelism",
+      ],
+      { capture: false },
+    );
+  } finally {
+    await compose(
+      [
+        "exec",
+        "--no-TTY",
+        "postgres",
+        "dropdb",
+        "--force",
+        "--if-exists",
+        "--username",
+        environment.POSTGRES_USER,
+        "humans_lifecycle_test",
+      ],
+      { capture: true },
+    );
+  }
 }
 
 async function runPersistenceAndRestore() {
@@ -470,8 +536,10 @@ process.once("SIGTERM", () => beginSignalShutdown("SIGTERM"));
 
 try {
   await runSmoke();
-  if (mode === "lifecycle") await runPersistenceAndRestore();
-  else
+  if (mode === "lifecycle") {
+    await runFileLifecycleAcceptance();
+    await runPersistenceAndRestore();
+  } else
     process.stdout.write(
       `Compose smoke passed for isolated project ${project}; one image ran migrate/app/worker/smoke with private backends.\n`,
     );

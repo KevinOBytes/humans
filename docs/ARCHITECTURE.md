@@ -116,6 +116,28 @@ code regeneration atomically replaces prior unused codes.
 5. Mutations use optimistic versions and idempotency keys where retries can occur, then write a redacted audit event.
 6. Files remain quarantined until checksum, size, type, and configured scan policy checks succeed.
 
+### Private file lifecycle
+
+Upload-session ownership is bound to a session user, not merely a workspace.
+Creation persists a server-generated controlled key and schedules expiration
+cleanup before returning a short-lived checksum-bound upload grant. Listing,
+regrant, and cancellation require `file:create`; API keys cannot invoke these
+user-bound recovery operations. Regrant locks and revalidates the same pending,
+unexpired session before signing its existing key. Cancellation locks the
+session against completion, atomically changes only `pending` to
+`cleanup_pending`, clears prior cleanup completion, advances the existing
+durable cleanup job to the present, and writes a redacted audit event before a
+best-effort exact-key delete.
+
+Files expose only safe variant metadata through workspace- and visibility-
+scoped services. Provider, bucket, and object keys remain repository/worker
+details. Archival requires `file:delete`, revalidates live user or API-key
+authority inside the write transaction, locks the visible file, applies its
+expected version, primes the archived mutation result, and enqueues a durable
+file-target cleanup. The worker locks the persisted primary and variant
+locations, rejects runtime/provider location drift, deletes only those exact
+keys, revalidates the location set, and then records redacted completion.
+
 Protected exact values use purpose-separated envelope encryption for display
 material and a different, workspace-bound HMAC key for equality lookup. The
 v1 blind indexes are not reversible search text, and legacy version-null rows

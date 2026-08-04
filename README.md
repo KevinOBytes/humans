@@ -91,6 +91,23 @@ pushes and deletion are blocked, and merged branches are deleted automatically.
 See [Repository governance](docs/REPOSITORY_GOVERNANCE.md) and
 [Dependency policy](docs/DEPENDENCY_POLICY.md).
 
+## Private file lifecycle
+
+The evidence workspace creates checksum-bound private upload sessions for
+session users, verifies the stored bytes before a file becomes available, and
+shows only the current user's pending uploads. A user can resume a pending
+upload only by reselecting a local file with the same name, byte length, and
+SHA-256 digest, or cancel it into immediate durable cleanup. Available files
+can be downloaded, and authorized users or API keys with `file:delete` can
+archive a visible file with optimistic version confirmation.
+
+GraphQL exposes file and variant metadata but never provider, bucket, or object
+key coordinates. Archive cleanup reads those coordinates only inside the
+worker, deletes the exact primary and variant objects, and preserves unrelated
+siblings. `pnpm test:db` includes the real-context file API and durable cleanup
+suites. The required Compose lifecycle additionally runs the opt-in
+GraphQL-to-MinIO archival acceptance against an isolated database and bucket.
+
 ## Search and reproducible graph analysis
 
 The current deterministic research slice is exposed entirely through generated GraphQL operations:

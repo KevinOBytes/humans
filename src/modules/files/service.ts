@@ -9,16 +9,25 @@ import {
   resourceVisibilitySql,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
-import { withResearchWriteTransaction } from "@/modules/audit/transactions";
+import {
+  runResearchTransaction,
+  withResearchWriteTransaction,
+} from "@/modules/audit/transactions";
 
 import {
   createFilesRepository,
   type FileRow,
+  type FileVariantRow,
   type UploadSessionRow,
 } from "./repository";
 import { noOpFileScanner, type FileScanner } from "./scanner";
 import { ensureArchivedFileCleanupJob, ensureFileCleanupJob } from "./cleanup";
-import type { UploadPurpose, UploadValidationInput } from "./types";
+import {
+  uploadSessionStates,
+  type UploadPurpose,
+  type UploadSessionState,
+  type UploadValidationInput,
+} from "./types";
 import {
   assertFileTransition,
   UPLOAD_COMPLETION_CAPACITY,
@@ -114,6 +123,38 @@ function decodeCursor(
     throw createGraphQLError(
       "VALIDATION_FAILED",
       "The file cursor is invalid.",
+    );
+  }
+}
+
+function encodeUploadSessionCursor(row: UploadSessionRow): string {
+  return Buffer.from(
+    JSON.stringify({ v: 1, t: row.createdAt.toISOString(), i: row.id }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function decodeUploadSessionCursor(
+  value?: string | null,
+): { createdAt: Date; id: string } | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    ) as { v?: unknown; t?: unknown; i?: unknown };
+    const createdAt = new Date(typeof parsed.t === "string" ? parsed.t : "");
+    if (
+      parsed.v !== 1 ||
+      typeof parsed.i !== "string" ||
+      !Number.isFinite(createdAt.getTime())
+    ) {
+      throw new Error("invalid");
+    }
+    return { createdAt, id: parsed.i };
+  } catch {
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "The upload-session cursor is invalid.",
     );
   }
 }
@@ -623,6 +664,186 @@ export function createFilesService(
       return { session: created.session, file: scanned, issues: [] as const };
     },
 
+    async listUploadSessions(input: {
+      first?: number | null;
+      after?: string | null;
+      states?: readonly UploadSessionState[] | null;
+    }) {
+      requireSessionActor(context);
+      requirePermission(context, "file:create");
+      const first = input.first ?? 20;
+      if (!Number.isInteger(first) || first < 1 || first > 100) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The page size is invalid.",
+        );
+      }
+      const states = input.states?.length
+        ? [...new Set(input.states)]
+        : ["pending" as const];
+      if (
+        states.length > uploadSessionStates.length ||
+        states.some((state) => !uploadSessionStates.includes(state))
+      ) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The upload-session state filter is invalid.",
+        );
+      }
+      const rows = await repository.listUploadSessions({
+        actorId: context.actor.id,
+        workspaceId: context.workspaceId,
+        limit: first + 1,
+        states,
+        cursor: decodeUploadSessionCursor(input.after),
+      });
+      const nodes = rows.slice(0, first);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > first,
+          endCursor: nodes.length
+            ? encodeUploadSessionCursor(nodes.at(-1)!)
+            : null,
+        },
+      };
+    },
+
+    async regrantUploadSession(uploadSessionId: string) {
+      requireSessionActor(context);
+      requirePermission(context, "file:create");
+      const store = runtime.objectStore;
+      if (!store) return providerUnavailable();
+      const result = await runResearchTransaction(
+        context,
+        { requiredPermissions: ["file:create"] },
+        async (transactionContext) => {
+          const txRepository = createFilesRepository(
+            transactionContext.database,
+          );
+          const session = await txRepository.lockSession({
+            id: uploadSessionId,
+            workspaceId: context.workspaceId,
+            actorId: context.actor.id,
+          });
+          if (!session) return { state: "not_found" as const };
+          if (session.state !== "pending") {
+            return { state: "conflict" as const };
+          }
+          const now = new Date();
+          if (session.expiresAt <= now) {
+            const expired = await txRepository.setSessionState({
+              id: session.id,
+              workspaceId: context.workspaceId,
+              from: ["pending"],
+              state: "expired",
+              failureCode: "SESSION_EXPIRED",
+              completedAt: null,
+              updatedAt: now,
+              updatedBy: context.actor.id,
+            });
+            if (expired && encryptionKey) {
+              await ensureFileCleanupJob({
+                database: transactionContext.database,
+                encryptionKey,
+                workspaceId: context.workspaceId,
+                uploadSessionId: session.id,
+                expiresAt: session.expiresAt,
+                createdBy: context.actor.id,
+                scheduledAt: now,
+              });
+            }
+            return { state: "conflict" as const };
+          }
+          return { state: "pending" as const, session };
+        },
+      );
+      if (result.state === "not_found") return notFound();
+      if (result.state === "conflict") {
+        throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
+      }
+      try {
+        const grant = await store.createUpload({
+          workspaceId: context.workspaceId,
+          key: result.session.objectKey,
+          bytes: result.session.maxBytes,
+          contentType: result.session.expectedMediaType!,
+          checksumSha256: result.session.expectedChecksum!,
+        });
+        return { session: result.session, grant, issues: [] as const };
+      } catch {
+        return providerUnavailable();
+      }
+    },
+
+    async cancelUploadSession(uploadSessionId: string) {
+      requireSessionActor(context);
+      requirePermission(context, "file:create");
+      if (!encryptionKey) return providerUnavailable();
+      const now = new Date();
+      const result = await runResearchTransaction(
+        context,
+        { requiredPermissions: ["file:create"] },
+        async (transactionContext) => {
+          const txRepository = createFilesRepository(
+            transactionContext.database,
+          );
+          const session = await txRepository.lockSession({
+            id: uploadSessionId,
+            workspaceId: context.workspaceId,
+            actorId: context.actor.id,
+          });
+          if (!session) return { state: "not_found" as const };
+          if (session.state !== "pending") {
+            return { state: "conflict" as const };
+          }
+          const cancelled = await txRepository.setSessionState({
+            id: session.id,
+            workspaceId: context.workspaceId,
+            from: ["pending"],
+            state: "cleanup_pending",
+            failureCode: "USER_CANCELLED",
+            completedAt: null,
+            cleanupCompletedAt: null,
+            updatedAt: now,
+            updatedBy: context.actor.id,
+          });
+          if (!cancelled) return { state: "conflict" as const };
+          await ensureFileCleanupJob({
+            database: transactionContext.database,
+            encryptionKey,
+            workspaceId: context.workspaceId,
+            uploadSessionId: session.id,
+            expiresAt: session.expiresAt,
+            createdBy: context.actor.id,
+            scheduledAt: now,
+          });
+          await audit.write(transactionContext.database, {
+            action: "file.upload_cancelled",
+            changedFields: ["state"],
+            metadata: { state: "cleanup_pending" },
+            resourceId: session.id,
+            resourceKind: "upload_session",
+            sensitivity: session.sensitivity,
+          });
+          return { state: "cancelled" as const, session: cancelled };
+        },
+      );
+      if (result.state === "not_found") return notFound();
+      if (result.state === "conflict") {
+        throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
+      }
+      try {
+        await runtime.objectStore?.delete({
+          workspaceId: context.workspaceId,
+          key: result.session.objectKey,
+        });
+      } catch {
+        // The immediate durable cleanup job remains authoritative.
+      }
+      return { session: result.session, issues: [] as const };
+    },
+
     async get(id: string): Promise<FileRow | null> {
       requirePermission(context, "file:read");
       return repository.getFile({
@@ -641,17 +862,14 @@ export function createFilesService(
         );
       }
       if (!encryptionKey) return providerUnavailable();
-      const current = await repository.getFile({
-        id: fileId,
-        workspaceId: context.workspaceId,
-        visibility,
-      });
-      if (!current) return notFound();
       const now = new Date();
-      const archived = await withResearchWriteTransaction(
+      const archived = await runResearchTransaction(
         context,
-        async (database) => {
-          const txRepository = createFilesRepository(database);
+        { requiredPermissions: ["file:delete"] },
+        async (transactionContext) => {
+          const txRepository = createFilesRepository(
+            transactionContext.database,
+          );
           const locked = await txRepository.lockFileForArchive({
             id: fileId,
             workspaceId: context.workspaceId,
@@ -670,13 +888,13 @@ export function createFilesService(
           });
           if (!file) return { state: "conflict" as const };
           await ensureArchivedFileCleanupJob({
-            database,
+            database: transactionContext.database,
             encryptionKey,
             workspaceId: context.workspaceId,
             fileId,
             createdBy: context.actor.type === "user" ? context.actor.id : null,
           });
-          await audit.write(database, {
+          await audit.write(transactionContext.database, {
             action: "file.archived",
             changedFields: ["deletedAt"],
             resourceId: fileId,
@@ -691,6 +909,20 @@ export function createFilesService(
         throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
       }
       return { file: archived.file, issues: [] as const };
+    },
+
+    async listVariants(fileId: string): Promise<readonly FileVariantRow[]> {
+      requirePermission(context, "file:read");
+      const file = await repository.getFile({
+        id: fileId,
+        workspaceId: context.workspaceId,
+        visibility,
+      });
+      if (!file) return notFound();
+      return repository.listFileVariants({
+        fileId,
+        workspaceId: context.workspaceId,
+      });
     },
 
     async getByIds(

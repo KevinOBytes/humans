@@ -13,6 +13,7 @@ import {
   CreateWorkspaceFileDownloadDocument,
   CreateWorkspaceUploadDocument,
   FileWorkspaceItemFragmentDoc,
+  RegrantWorkspaceUploadDocument,
   type FileWorkspaceItemFragment,
   type UploadPurpose,
 } from "@/graphql/generated/graphql";
@@ -46,6 +47,10 @@ async function sha256(file: File): Promise<string> {
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function checksumDigest(value: string): string {
+  return value.replace(/^sha256:/u, "").toLowerCase();
 }
 
 function firstIssue(
@@ -167,6 +172,103 @@ export function UploadPanel({
         {status ?? "Select one supported file to begin."}
       </p>
     </section>
+  );
+}
+
+export function UploadRecoveryControl({
+  session,
+  onCompleted,
+}: {
+  session: {
+    id: string;
+    originalName: string;
+    byteSize: number;
+    checksumSha256: string;
+  };
+  onCompleted?(file: FileWorkspaceItemFragment): void;
+}) {
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  async function resume(file: File) {
+    setBusy(true);
+    setStatus("Checking the selected file…");
+    try {
+      const digest = await sha256(file);
+      if (
+        file.name !== session.originalName ||
+        file.size !== session.byteSize ||
+        digest !== checksumDigest(session.checksumSha256)
+      ) {
+        setStatus("The selected file does not match the pending upload.");
+        return;
+      }
+      const regranted = await executeBrowserGraphQL(
+        RegrantWorkspaceUploadDocument,
+        { id: session.id },
+      );
+      if (!regranted.ok) throw new Error("regrant_failed");
+      const recovery = regranted.data.regrantUploadSession;
+      if (
+        firstIssue(recovery?.issues) ||
+        recovery?.grant?.method !== "PUT" ||
+        !recovery.grant.url
+      ) {
+        throw new Error("regrant_failed");
+      }
+      setStatus("Uploading and verifying…");
+      const response = await fetch(recovery.grant.url, {
+        method: "PUT",
+        headers: grantHeaders(recovery.grant.headers),
+        body: file,
+      });
+      if (!response.ok) throw new Error("upload_failed");
+      const completed = await executeBrowserGraphQL(
+        CompleteWorkspaceUploadDocument,
+        { uploadSessionId: session.id },
+      );
+      if (!completed.ok || firstIssue(completed.data.completeUpload?.issues)) {
+        throw new Error("completion_failed");
+      }
+      const uploaded = readFragment(
+        FileWorkspaceItemFragmentDoc,
+        completed.data.completeUpload?.file,
+      );
+      if (!uploaded?.id) throw new Error("completion_failed");
+      setStatus(completedUploadStatus(uploaded));
+      onCompleted?.(uploaded);
+      if (inputRef.current) inputRef.current.value = "";
+    } catch {
+      setStatus("The pending upload could not be resumed. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <label htmlFor={inputId} className="text-sm font-medium">
+        Resume {session.originalName}
+      </label>
+      <Input
+        ref={inputRef}
+        id={inputId}
+        className="mt-2 max-w-sm file:mr-3 file:border-0 file:bg-transparent file:text-sm file:font-semibold"
+        type="file"
+        disabled={busy}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          if (file) void resume(file);
+        }}
+      />
+      {status ? (
+        <p className="text-muted-foreground mt-2 text-xs" role="alert">
+          {status}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
