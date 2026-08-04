@@ -741,6 +741,10 @@ export type UpdateRelationshipInput = {
   sensitivity?: Sensitivity | null | undefined;
   state?: string | null | undefined;
   strength?: number | null | undefined;
+  temporalPrecision?: RelationshipTemporalPrecision | null | undefined;
+  temporalSemantics?: RelationshipTemporalSemantics | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
 };
 
 export type UpdateSavedQueryInput = {

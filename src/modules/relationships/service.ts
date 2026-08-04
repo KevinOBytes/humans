@@ -787,6 +787,10 @@ export function createRelationshipsService(context: ResearchServiceContext) {
       confidence?: number | null;
       state?: string | null;
       sensitivity?: string | null;
+      temporalSemantics?: string | null;
+      temporalPrecision?: string | null;
+      validFrom?: string | Date | null;
+      validUntil?: string | Date | null;
       metadata?: unknown;
     }): Promise<MutationOutcome<RelationshipRow>> {
       const current = await repository.get({
@@ -892,6 +896,41 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             });
           else patch.sensitivity = value;
           changed.push("sensitivity");
+        }
+        const temporal = validateTemporal({
+          semantics:
+            input.temporalSemantics === undefined
+              ? locked.temporalSemantics
+              : (input.temporalSemantics ?? "unknown"),
+          precision:
+            input.temporalPrecision === undefined
+              ? locked.temporalPrecision
+              : (input.temporalPrecision ?? "unknown"),
+          earliest:
+            input.validFrom === undefined ? locked.validFrom : input.validFrom,
+          latest:
+            input.validUntil === undefined
+              ? locked.validUntil
+              : input.validUntil,
+        });
+        issues.push(...temporal.issues);
+        if (temporal.issues.length === 0) {
+          if (input.temporalSemantics !== undefined) {
+            patch.temporalSemantics = temporal.value!.semantics;
+            changed.push("temporalSemantics");
+          }
+          if (input.temporalPrecision !== undefined) {
+            patch.temporalPrecision = temporal.value!.precision;
+            changed.push("temporalPrecision");
+          }
+          if (input.validFrom !== undefined) {
+            patch.validFrom = temporal.value!.earliest;
+            changed.push("validFrom");
+          }
+          if (input.validUntil !== undefined) {
+            patch.validUntil = temporal.value!.latest;
+            changed.push("validUntil");
+          }
         }
         const metadata = validateBoundedJson(
           input.metadata === undefined ? locked.metadata : input.metadata,
