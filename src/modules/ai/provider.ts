@@ -11,6 +11,7 @@ import {
   isPublicProviderAddress,
   type AiProvider,
   type AiProviderGenerateInput,
+  type AiProviderMessage,
   type AiProviderName,
   type AiProviderTurn,
 } from "./types";
@@ -34,6 +35,8 @@ const MAX_TOOL_CALLS = 8;
 const MAX_TOOL_LOOP_DEPTH = 4;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 60_000;
+const FINAL_ANSWER_CONTRACT =
+  'When returning a final answer instead of tool calls: Return the final answer only as a JSON object with exactly two fields: {"answer": string, "citations": array}. The answer must be non-empty and at most 64,000 UTF-8 bytes. Include at most 20 citations. Each citation must contain exactly "resourceId" (UUID) and may contain "evidenceId" (UUID) and "excerpt" (at most 1,000 UTF-8 bytes). Use an empty citations array when no returned resource supports the answer. Do not wrap the JSON in Markdown or add prose outside it.';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -128,7 +131,7 @@ const citationSchema = z
 const finalAnswerSchema = z
   .object({
     answer: z.string().min(1).max(64_000),
-    citations: z.array(citationSchema).max(20).default([]),
+    citations: z.array(citationSchema).max(20),
   })
   .strict();
 const toolCallSchema = z
@@ -291,10 +294,14 @@ function requestBody(input: AiProviderGenerateInput, model: string): string {
   ) {
     throw providerError("CAPABILITY_UNSUPPORTED");
   }
-  if (!input.messages.length || input.messages.length > MAX_MESSAGES) {
+  const requestedMessages: readonly AiProviderMessage[] = [
+    { role: "system", content: FINAL_ANSWER_CONTRACT },
+    ...input.messages,
+  ];
+  if (!input.messages.length || requestedMessages.length > MAX_MESSAGES) {
     throw providerError("REQUEST_INVALID");
   }
-  const messages = input.messages.map((message) => {
+  const messages = requestedMessages.map((message) => {
     const hasToolCalls = Boolean(message.toolCalls?.length);
     if (
       !["system", "user", "assistant", "tool"].includes(message.role) ||
@@ -418,23 +425,23 @@ function parseTurn(body: string): AiProviderTurn {
   try {
     structuredCandidate = JSON.parse(message.content);
   } catch {
-    structuredCandidate = undefined;
-  }
-  if (structuredCandidate !== undefined) {
-    const structured = finalAnswerSchema.safeParse(structuredCandidate);
-    if (!structured.success) throw providerError("PROVIDER_RESPONSE_INVALID");
-    return Object.freeze({
-      type: "answer",
-      answer: structured.data.answer,
-      citations: Object.freeze(structured.data.citations),
-    });
-  }
-  if (message.content.length > 64_000)
     throw providerError("PROVIDER_RESPONSE_INVALID");
+  }
+  const structured = finalAnswerSchema.safeParse(structuredCandidate);
+  if (
+    !structured.success ||
+    byteLength(structured.data.answer) > 64_000 ||
+    structured.data.citations.some(
+      (citation) =>
+        citation.excerpt !== undefined && byteLength(citation.excerpt) > 1_000,
+    )
+  ) {
+    throw providerError("PROVIDER_RESPONSE_INVALID");
+  }
   return Object.freeze({
     type: "answer",
-    answer: message.content,
-    citations: Object.freeze([]),
+    answer: structured.data.answer,
+    citations: Object.freeze(structured.data.citations),
   });
 }
 

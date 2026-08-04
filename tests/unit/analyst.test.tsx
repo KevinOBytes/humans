@@ -220,6 +220,30 @@ describe("Analyst", () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps increasing and caps polling delays across fresh active run projections", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const pollTimes: number[] = [];
+    const read = vi.fn().mockImplementation(async () => {
+      pollTimes.push(Date.now());
+      return run({ state: "running" });
+    });
+    render(analyst(adapter({ read }), { pollDelayMs: 10 }));
+    fireEvent.change(screen.getByLabelText("Question"), {
+      target: { value: "Keep a bounded polling cadence" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+    await act(async () => undefined);
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await act(async () => vi.advanceTimersToNextTimerAsync());
+    }
+
+    expect(pollTimes).toEqual([
+      10, 30, 70, 150, 310, 630, 1_270, 2_550, 5_110, 10_230, 18_230, 26_230,
+    ]);
+  });
+
   it("cancels an active run and stops polling", async () => {
     const cancel = vi.fn().mockResolvedValue(run({ state: "cancelled" }));
     const read = vi.fn().mockImplementation(
@@ -313,6 +337,7 @@ describe("Analyst", () => {
     expect(
       await screen.findByText("The resumed poll returned this result."),
     ).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
     const calls = read.mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(read).toHaveBeenCalledTimes(calls);

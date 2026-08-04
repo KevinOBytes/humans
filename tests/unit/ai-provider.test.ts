@@ -29,7 +29,10 @@ function runtime(override: Partial<AiProviderRuntime> = {}): AiProviderRuntime {
         choices: [
           {
             finish_reason: "stop",
-            message: { content: "Answer", role: "assistant" },
+            message: {
+              content: '{"answer":"Answer","citations":[]}',
+              role: "assistant",
+            },
           },
         ],
       }),
@@ -178,7 +181,10 @@ describe("AI provider boundary", () => {
         choices: [
           {
             finish_reason: "stop",
-            message: { content: "Answer", role: "assistant" },
+            message: {
+              content: '{"answer":"Answer","citations":[]}',
+              role: "assistant",
+            },
           },
         ],
       }),
@@ -405,6 +411,86 @@ describe("AI provider boundary", () => {
     });
   });
 
+  it("serializes the bounded final-answer contract and parses its cited response", async () => {
+    const resourceId = "018f0d90-1111-7111-8111-111111111111";
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: JSON.stringify({
+                answer: "Alice is connected to Bob.",
+                citations: [{ resourceId, excerpt: "Connected record" }],
+              }),
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).resolves.toEqual({
+      type: "answer",
+      answer: "Alice is connected to Bob.",
+      citations: [{ resourceId, excerpt: "Connected record" }],
+    });
+
+    const serializedRequest = transport.mock.calls[0]![0].body;
+    const request = JSON.parse(serializedRequest) as {
+      messages: Array<{ content: string; role: string }>;
+    };
+    expect(request.messages[0]).toMatchObject({ role: "system" });
+    expect(request.messages[0]!.content).toContain(
+      "Return the final answer only as a JSON object",
+    );
+    expect(request.messages[0]!.content).toContain('"answer"');
+    expect(request.messages[0]!.content).toContain('"citations"');
+    expect(request.messages[0]!.content).toContain("64,000 UTF-8 bytes");
+    expect(request.messages[0]!.content).toContain("at most 20 citations");
+    expect(serializedRequest).not.toContain("test-provider-key-value");
+  });
+
+  it("rejects prose outside the required final-answer JSON contract", async () => {
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Unstructured answer" },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).rejects.toMatchObject({
+      code: "PROVIDER_RESPONSE_INVALID",
+    });
+  });
+
+  it("rejects a final-answer object missing the required citations field", async () => {
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: JSON.stringify({ answer: "Missing citations array" }),
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).rejects.toMatchObject({
+      code: "PROVIDER_RESPONSE_INVALID",
+    });
+  });
+
   it("rejects malformed structured answers instead of treating JSON as text", async () => {
     const transport = vi.fn<AiTransport>(async () =>
       response({
@@ -471,7 +557,10 @@ describe("AI provider boundary", () => {
         choices: [
           {
             finish_reason: "stop",
-            message: { role: "assistant", content: "Done" },
+            message: {
+              role: "assistant",
+              content: '{"answer":"Done","citations":[]}',
+            },
           },
         ],
       }),
@@ -506,7 +595,7 @@ describe("AI provider boundary", () => {
     const body = JSON.parse(transport.mock.calls[0]![0].body) as {
       messages: Array<Record<string, unknown>>;
     };
-    expect(body.messages[1]).toMatchObject({
+    expect(body.messages[2]).toMatchObject({
       role: "assistant",
       content: null,
       tool_calls: [

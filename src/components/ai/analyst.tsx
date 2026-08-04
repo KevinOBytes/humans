@@ -229,6 +229,7 @@ function AnalystState({
     if (runIdRef.current && next.id !== runIdRef.current) return;
     runIdRef.current = next.id;
     setRun(next);
+    setFormError(null);
     setMessage(
       next.state === "pending"
         ? "Analysis queued."
@@ -242,8 +243,10 @@ function AnalystState({
     );
   }
 
+  const activeRunId = run && !terminalStates.has(run.state) ? run.id : null;
+
   useEffect(() => {
-    if (!run || terminalStates.has(run.state)) return;
+    if (!activeRunId) return;
     const generation = ++pollGenerationRef.current;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -252,7 +255,7 @@ function AnalystState({
       const request = controller();
       pollControllerRef.current = request;
       void adapter
-        .read(run.id, { signal: request.signal })
+        .read(activeRunId, { signal: request.signal })
         .then((next) => {
           if (
             disposed ||
@@ -306,7 +309,7 @@ function AnalystState({
       pollControllerRef.current?.abort();
       pollControllerRef.current = null;
     };
-  }, [adapter, pollDelayMs, pollRevision, run]);
+  }, [activeRunId, adapter, pollDelayMs, pollRevision]);
 
   useEffect(() => {
     if (run && terminalStates.has(run.state)) {
