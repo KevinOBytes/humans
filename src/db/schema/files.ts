@@ -75,6 +75,22 @@ export const files = pgTable(
     }).onDelete("restrict"),
     check("files_byte_size_check", sql`${table.byteSize} >= 0`),
     check("files_version_check", sql`${table.version} > 0`),
+    check(
+      "files_quarantine_state_check",
+      sql`${table.quarantineState} IN ('pending', 'quarantined', 'available', 'rejected')`,
+    ),
+    check(
+      "files_scan_state_check",
+      sql`${table.scanState} IN ('pending', 'clean', 'not_required', 'infected', 'error')`,
+    ),
+    check(
+      "files_ocr_state_check",
+      sql`${table.ocrState} IN ('pending', 'processing', 'completed', 'not_requested', 'error')`,
+    ),
+    check(
+      "files_extraction_state_check",
+      sql`${table.extractionState} IN ('pending', 'processing', 'completed', 'not_requested', 'error')`,
+    ),
   ],
 );
 
@@ -103,6 +119,12 @@ export const fileVariants = pgTable(
       table.workspaceId,
       table.parentFileId,
       table.kind,
+    ),
+    unique("file_variants_workspace_storage_key_unique").on(
+      table.workspaceId,
+      table.storageProvider,
+      table.storageBucket,
+      table.storageKey,
     ),
     foreignKey({
       name: "file_variants_workspace_parent_file_fk",
@@ -173,6 +195,14 @@ export const uploadSessions = pgTable(
       table.state,
       table.expiresAt,
       table.id,
+    ),
+    check(
+      "upload_sessions_state_check",
+      sql`${table.state} IN ('pending', 'verifying', 'completed', 'rejected', 'expired', 'cleanup_pending')`,
+    ),
+    check(
+      "upload_sessions_completion_columns_check",
+      sql`(${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.failureCode} IS NULL) OR (${table.state} <> 'completed' AND ${table.completedAt} IS NULL)`,
     ),
   ],
 );

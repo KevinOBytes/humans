@@ -3,10 +3,11 @@ import type { JobHandler } from "@/worker/registry";
 
 export type FileCleanupJobService = {
   executeFileCleanupJob(input: {
+    fileId?: string;
     jobId: string;
     renewLease(): Promise<boolean>;
     signal: AbortSignal;
-    uploadSessionId: string;
+    uploadSessionId?: string;
     workspaceId: string;
   }): Promise<{ resultReferences?: readonly string[] } | void>;
 };
@@ -19,7 +20,9 @@ export function createFileCleanupHandler(
       throw new JobExecutionError("dependency_unavailable", "retryable");
     }
     return service.executeFileCleanupJob({
-      uploadSessionId: payload.uploadSessionId,
+      ...("fileId" in payload
+        ? { fileId: payload.fileId }
+        : { uploadSessionId: payload.uploadSessionId }),
       jobId: context.job.id,
       workspaceId: context.job.workspaceId,
       renewLease: context.renewLease,

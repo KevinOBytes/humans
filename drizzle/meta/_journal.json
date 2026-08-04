@@ -134,6 +134,13 @@
       "when": 1785818659060,
       "tag": "0018_task13_ai_analyst",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785850529876,
+      "tag": "0019_file_lifecycle",
+      "breakpoints": true
     }
   ]
 }

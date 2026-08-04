@@ -10,7 +10,7 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { newId } from "@/db/id";
-import { files, uploadSessions } from "@/db/schema/files";
+import { fileVariants, files, uploadSessions } from "@/db/schema/files";
 import { auditEvents, jobs } from "@/db/schema/operations";
 import type { RedisStore } from "@/lib/redis";
 import type { ObjectStore } from "@/lib/storage/types";
@@ -265,6 +265,68 @@ liveDescribe("durable file cleanup", () => {
       run("019cc7c4-6ed2-7e0a-aed8-e5d451c96d04"),
     ).resolves.toMatchObject({ claimed: 1, completed: 1 });
     expect(store.objects.has(retained)).toBe(true);
+  });
+
+  it("deletes every archived file object and safely resumes after a partial retry", async () => {
+    const actor = await fixture.createActor("owner");
+    const fileId = newId();
+    const primaryKey = `uploads/${fileId}/${newId()}`;
+    const variantKey = `variants/${fileId}/${newId()}`;
+    await fixture.database.insert(files).values({
+      id: fileId,
+      workspaceId: actor.workspaceId,
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey: primaryKey,
+      originalName: "archived.txt",
+      byteSize: 1,
+      checksum: `sha256:${"33".repeat(32)}`,
+      uploadedBy: actor.userId,
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+      deletedAt: new Date(),
+      deletedBy: actor.userId,
+    });
+    await fixture.database.insert(fileVariants).values({
+      id: newId(),
+      workspaceId: actor.workspaceId,
+      parentFileId: fileId,
+      kind: "thumbnail",
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey: variantKey,
+      checksum: `sha256:${"34".repeat(32)}`,
+      createdBy: actor.userId,
+    });
+    store.objects.add(`${actor.workspaceId}:${primaryKey}`);
+    store.objects.add(`${actor.workspaceId}:${variantKey}`);
+    store.failDeletes = 1;
+    const { ensureArchivedFileCleanupJob } =
+      await import("@/modules/files/cleanup");
+    await ensureArchivedFileCleanupJob({
+      database: fixture.database,
+      encryptionKey,
+      workspaceId: actor.workspaceId,
+      fileId,
+      createdBy: actor.userId,
+    });
+
+    await expect(run(newId())).resolves.toMatchObject({
+      completed: 0,
+      deferred: 1,
+    });
+    await fixture.database
+      .update(jobs)
+      .set({ scheduledAt: new Date(0) })
+      .where(eq(jobs.kind, "file_cleanup"));
+    await expect(run(newId())).resolves.toMatchObject({ completed: 1 });
+    expect(store.objects.has(`${actor.workspaceId}:${primaryKey}`)).toBe(false);
+    expect(store.objects.has(`${actor.workspaceId}:${variantKey}`)).toBe(false);
+    const [archived] = await fixture.database
+      .select({ id: files.id })
+      .from(files)
+      .where(eq(files.id, fileId));
+    expect(archived?.id).toBe(fileId);
   });
 
   it.each([

@@ -17,7 +17,7 @@ import {
   type UploadSessionRow,
 } from "./repository";
 import { noOpFileScanner, type FileScanner } from "./scanner";
-import { ensureFileCleanupJob } from "./cleanup";
+import { ensureArchivedFileCleanupJob, ensureFileCleanupJob } from "./cleanup";
 import type { UploadPurpose, UploadValidationInput } from "./types";
 import {
   assertFileTransition,
@@ -47,7 +47,7 @@ export type FileServiceRuntime = {
 
 function requirePermission(
   context: FileServiceContext,
-  permission: "file:create" | "file:read",
+  permission: "file:create" | "file:delete" | "file:read",
 ): void {
   if (!context.permissions.has(permission)) {
     throw createGraphQLError("FORBIDDEN", publicErrorMessage("FORBIDDEN"));
@@ -630,6 +630,67 @@ export function createFilesService(
         workspaceId: context.workspaceId,
         visibility,
       });
+    },
+
+    async archiveFile(fileId: string, expectedVersion: number) {
+      requirePermission(context, "file:delete");
+      if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The file version is invalid.",
+        );
+      }
+      if (!encryptionKey) return providerUnavailable();
+      const current = await repository.getFile({
+        id: fileId,
+        workspaceId: context.workspaceId,
+        visibility,
+      });
+      if (!current) return notFound();
+      const now = new Date();
+      const archived = await withResearchWriteTransaction(
+        context,
+        async (database) => {
+          const txRepository = createFilesRepository(database);
+          const locked = await txRepository.lockFileForArchive({
+            id: fileId,
+            workspaceId: context.workspaceId,
+            visibility,
+          });
+          if (!locked) return { state: "not_found" as const };
+          if (locked.version !== expectedVersion) {
+            return { state: "conflict" as const };
+          }
+          const file = await txRepository.archiveFile({
+            id: fileId,
+            workspaceId: context.workspaceId,
+            expectedVersion,
+            deletedAt: now,
+            deletedBy: context.actor.id,
+          });
+          if (!file) return { state: "conflict" as const };
+          await ensureArchivedFileCleanupJob({
+            database,
+            encryptionKey,
+            workspaceId: context.workspaceId,
+            fileId,
+            createdBy: context.actor.type === "user" ? context.actor.id : null,
+          });
+          await audit.write(database, {
+            action: "file.archived",
+            changedFields: ["deletedAt"],
+            resourceId: fileId,
+            resourceKind: "file",
+            sensitivity: file.sensitivity,
+          });
+          return { state: "archived" as const, file };
+        },
+      );
+      if (archived.state === "not_found") return notFound();
+      if (archived.state === "conflict") {
+        throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
+      }
+      return { file: archived.file, issues: [] as const };
     },
 
     async getByIds(

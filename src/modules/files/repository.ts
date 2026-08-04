@@ -4,6 +4,7 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
   isNull,
   lt,
   or,
@@ -11,7 +12,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 
-import { files, uploadSessions } from "@/db/schema/files";
+import { fileVariants, files, uploadSessions } from "@/db/schema/files";
 import { newId } from "@/db/id";
 import { workspaceSettings, workspaceUsage } from "@/db/schema/workspaces";
 import type { Database } from "@/modules/auth/bootstrap-admin";
@@ -139,6 +140,106 @@ export function createFilesRepository(database: Database) {
       const [row] = await database.insert(files).values(input).returning();
       if (!row) throw new Error("File insert did not return a row");
       return row;
+    },
+
+    async lockFileForArchive(input: {
+      id: string;
+      workspaceId: string;
+      visibility: SQL;
+    }): Promise<FileRow | null> {
+      const [row] = await database
+        .select()
+        .from(files)
+        .where(
+          and(
+            eq(files.workspaceId, input.workspaceId),
+            eq(files.id, input.id),
+            isNull(files.deletedAt),
+            input.visibility,
+          ),
+        )
+        .limit(1)
+        .for("update");
+      return row ?? null;
+    },
+
+    async archiveFile(input: {
+      id: string;
+      workspaceId: string;
+      expectedVersion: number;
+      deletedAt: Date;
+      deletedBy: string;
+    }): Promise<FileRow | null> {
+      const [row] = await database
+        .update(files)
+        .set({
+          deletedAt: input.deletedAt,
+          deletedBy: input.deletedBy,
+          updatedAt: input.deletedAt,
+          updatedBy: input.deletedBy,
+          version: sql`${files.version} + 1`,
+        })
+        .where(
+          and(
+            eq(files.workspaceId, input.workspaceId),
+            eq(files.id, input.id),
+            isNull(files.deletedAt),
+            eq(files.version, input.expectedVersion),
+          ),
+        )
+        .returning();
+      return row ?? null;
+    },
+
+    async lockArchivedFileObjectKeys(input: {
+      id: string;
+      workspaceId: string;
+    }): Promise<readonly string[] | null> {
+      const [file] = await database
+        .select({ storageKey: files.storageKey })
+        .from(files)
+        .where(
+          and(
+            eq(files.workspaceId, input.workspaceId),
+            eq(files.id, input.id),
+            isNotNull(files.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!file) return null;
+      const variants = await database
+        .select({ storageKey: fileVariants.storageKey })
+        .from(fileVariants)
+        .where(
+          and(
+            eq(fileVariants.workspaceId, input.workspaceId),
+            eq(fileVariants.parentFileId, input.id),
+          ),
+        )
+        .orderBy(fileVariants.id);
+      return [
+        file.storageKey,
+        ...variants.map((variant) => variant.storageKey),
+      ];
+    },
+
+    async getCompletedSessionForFile(input: {
+      fileId: string;
+      workspaceId: string;
+    }): Promise<UploadSessionRow | null> {
+      const [row] = await database
+        .select()
+        .from(uploadSessions)
+        .where(
+          and(
+            eq(uploadSessions.workspaceId, input.workspaceId),
+            eq(uploadSessions.fileId, input.fileId),
+            eq(uploadSessions.state, "completed"),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
     },
 
     async updateScan(input: {

@@ -9,6 +9,7 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 import { JobExecutionError } from "@/modules/jobs/types";
 import { createJobsService, jobPayloadHash } from "@/modules/jobs/service";
 import { equalJobHashes } from "@/modules/jobs/types";
+import { createFilesRepository } from "./repository";
 
 const CLEANUP_DELAY_MS = 60 * 60_000;
 
@@ -22,6 +23,79 @@ export function fileCleanupIdempotencyKey(input: {
       `humans:file-cleanup:v1\0${input.workspaceId}\0${input.uploadSessionId}`,
     )
     .digest("hex");
+}
+
+export function archivedFileCleanupIdempotencyKey(input: {
+  encryptionKey: string;
+  fileId: string;
+  workspaceId: string;
+}): string {
+  return createHmac("sha256", Buffer.from(input.encryptionKey, "hex"))
+    .update(
+      `humans:archived-file-cleanup:v1\0${input.workspaceId}\0${input.fileId}`,
+    )
+    .digest("hex");
+}
+
+export async function ensureArchivedFileCleanupJob(input: {
+  createdBy?: string | null;
+  database: Database;
+  encryptionKey: string;
+  fileId: string;
+  workspaceId: string;
+}) {
+  const service = createJobsService({
+    database: input.database,
+    encryptionKey: input.encryptionKey,
+  });
+  const payload = { kind: "file_cleanup" as const, fileId: input.fileId };
+  const idempotencyKey = archivedFileCleanupIdempotencyKey(input);
+  const scheduledAt = new Date();
+  let job;
+  try {
+    job = await service.enqueue({
+      workspaceId: input.workspaceId,
+      idempotencyKey,
+      payload,
+      createdBy: input.createdBy,
+      scheduledAt,
+    });
+  } catch (error) {
+    const expectedHash = jobPayloadHash(payload);
+    const legacy = await service.repository.getByIdempotency({
+      workspaceId: input.workspaceId,
+      kind: "file_cleanup",
+      idempotencyKey,
+    });
+    if (
+      !legacy ||
+      legacy.requestHash !== null ||
+      !equalJobHashes(legacy.payloadHash, expectedHash)
+    ) {
+      throw error;
+    }
+    job = await service.repository.repairLegacyRequestHash({
+      id: legacy.id,
+      workspaceId: input.workspaceId,
+      payloadHash: expectedHash,
+      requestHash: expectedHash,
+    });
+    if (!job) throw error;
+  }
+  if (job.state === "completed" || job.state === "dead_letter") {
+    const requeued = await service.repository.requeueTerminalCleanup({
+      id: job.id,
+      workspaceId: input.workspaceId,
+      scheduledAt,
+    });
+    if (requeued) return requeued;
+    const current = await service.repository.getById({
+      id: job.id,
+      workspaceId: input.workspaceId,
+    });
+    if (current) return current;
+  }
+  return job;
 }
 
 export async function ensureFileCleanupJob(input: {
@@ -170,12 +244,26 @@ export function createFileCleanupService(input: {
 }) {
   return {
     async executeFileCleanupJob(job: {
+      fileId?: string;
       jobId: string;
       renewLease(): Promise<boolean>;
       signal: AbortSignal;
-      uploadSessionId: string;
+      uploadSessionId?: string;
       workspaceId: string;
     }): Promise<{ resultReferences: readonly string[] }> {
+      if (job.fileId) {
+        return executeArchivedFileCleanupJob(input, {
+          fileId: job.fileId,
+          jobId: job.jobId,
+          renewLease: job.renewLease,
+          signal: job.signal,
+          workspaceId: job.workspaceId,
+        });
+      }
+      if (!job.uploadSessionId) {
+        throw new JobExecutionError("cleanup_target_invalid", "permanent");
+      }
+      const uploadSessionId = job.uploadSessionId;
       if (job.signal.aborted) {
         throw job.signal.reason instanceof Error
           ? job.signal.reason
@@ -188,7 +276,7 @@ export function createFileCleanupService(input: {
           .where(
             and(
               eq(uploadSessions.workspaceId, job.workspaceId),
-              eq(uploadSessions.id, job.uploadSessionId),
+              eq(uploadSessions.id, uploadSessionId),
               lte(
                 uploadSessions.expiresAt,
                 sql`clock_timestamp() - interval '1 hour'`,
@@ -305,4 +393,63 @@ export function createFileCleanupService(input: {
       return { resultReferences: [session.id] };
     },
   };
+}
+
+async function executeArchivedFileCleanupJob(
+  input: { database: Database; objectStore: ObjectStore },
+  job: {
+    fileId: string;
+    jobId: string;
+    renewLease(): Promise<boolean>;
+    signal: AbortSignal;
+    workspaceId: string;
+  },
+): Promise<{ resultReferences: readonly string[] }> {
+  if (job.signal.aborted) {
+    throw job.signal.reason instanceof Error
+      ? job.signal.reason
+      : new JobExecutionError("worker_draining", "retryable");
+  }
+  const objectKeys = await input.database.transaction(async (transaction) => {
+    const keys = await createFilesRepository(
+      transaction as unknown as Database,
+    ).lockArchivedFileObjectKeys({
+      id: job.fileId,
+      workspaceId: job.workspaceId,
+    });
+    if (!keys)
+      throw new JobExecutionError("archived_file_not_found", "permanent");
+    return keys;
+  });
+  for (const key of objectKeys) {
+    if (job.signal.aborted) {
+      throw job.signal.reason instanceof Error
+        ? job.signal.reason
+        : new JobExecutionError("worker_draining", "retryable");
+    }
+    if (!(await job.renewLease())) {
+      throw new JobExecutionError("lease_lost", "retryable");
+    }
+    try {
+      await input.objectStore.delete({ workspaceId: job.workspaceId, key });
+    } catch {
+      throw new JobExecutionError("storage_unavailable", "retryable");
+    }
+  }
+  await input.database.transaction(async (transaction) => {
+    await transaction.insert(auditEvents).values({
+      id: newId(),
+      workspaceId: job.workspaceId,
+      actorUserId: null,
+      sessionId: null,
+      apiKeyId: null,
+      action: "file.cleanup_completed",
+      resourceKind: "file",
+      resourceId: job.fileId,
+      requestId: `worker:${job.jobId}`,
+      redactedDiff: { deleted: true, jobId: job.jobId },
+      outcome: "success",
+    });
+  });
+  return { resultReferences: [job.fileId] };
 }

@@ -8,7 +8,8 @@ import { eq } from "drizzle-orm";
 
 import { sessions } from "@/db/schema/auth";
 import { newId } from "@/db/id";
-import { uploadSessions } from "@/db/schema/files";
+import { files, uploadSessions } from "@/db/schema/files";
+import { jobs } from "@/db/schema/operations";
 import { workspaceUsage } from "@/db/schema/workspaces";
 import type { ObjectStore } from "@/lib/storage/types";
 import { createFilesService } from "@/modules/files/service";
@@ -97,7 +98,7 @@ async function fileServiceFor(
           retryAfterMs: 0,
         }),
       },
-      permissions: new Set(["file:create", "file:read"]),
+      permissions: new Set(["file:create", "file:delete", "file:read"]),
       requestId: newId(),
       searchIndexMaintenance: disabledSearchIndexMaintenance,
       workspaceId: actor.workspaceId,
@@ -198,6 +199,68 @@ liveDescribe("file service", () => {
       service.completeUpload(created.session.id),
     ).resolves.toMatchObject({
       file: { id: completed.file.id },
+    });
+  });
+
+  it("archives an authorized file with optimistic versioning and enqueues durable cleanup", async () => {
+    const actor = await fixture.createActor("owner");
+    const service = await fileServiceFor(fixture, actor, store);
+    const body = new TextEncoder().encode("archive evidence");
+    const created = await service.createUploadSession({
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      claimedMediaType: "text/plain",
+      originalName: "archive.txt",
+      purpose: "EVIDENCE",
+    });
+    store.objects.set(
+      `${actor.workspaceId}:${created.session.objectKey}`,
+      body,
+    );
+    const completed = await service.completeUpload(created.session.id);
+
+    const result = await service.archiveFile(
+      completed.file.id,
+      completed.file.version,
+    );
+    expect(result.file).toMatchObject({
+      id: completed.file.id,
+      deletedAt: expect.any(Date),
+      version: completed.file.version + 1,
+    });
+    await expect(service.get(completed.file.id)).resolves.toBeNull();
+    const [cleanup] = await fixture.database
+      .select({ kind: jobs.kind, state: jobs.state })
+      .from(jobs)
+      .where(eq(jobs.workspaceId, actor.workspaceId));
+    expect(cleanup).toMatchObject({ kind: "file_cleanup", state: "queued" });
+  });
+
+  it("does not archive on a stale version or through another workspace", async () => {
+    const actor = await fixture.createActor("owner");
+    const service = await fileServiceFor(fixture, actor, store);
+    const fileId = newId();
+    await fixture.database.insert(files).values({
+      id: fileId,
+      workspaceId: actor.workspaceId,
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey: `uploads/${fileId}/${newId()}`,
+      originalName: "stale.txt",
+      byteSize: 1,
+      checksum: `sha256:${"aa".repeat(32)}`,
+      uploadedBy: actor.userId,
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+    });
+    const other = await fixture.createActor("owner");
+    const otherService = await fileServiceFor(fixture, other, store);
+
+    await expect(service.archiveFile(fileId, 2)).rejects.toMatchObject({
+      extensions: { code: "CONFLICT" },
+    });
+    await expect(otherService.archiveFile(fileId, 1)).rejects.toMatchObject({
+      extensions: { code: "NOT_FOUND" },
     });
   });
 
