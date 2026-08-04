@@ -362,12 +362,26 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     const matrix = JSON.parse(
       await readFile("tests/acceptance/graphql-product-matrix.json", "utf8"),
     ) as {
-      domains: Array<{ generatedOperations: string[] }>;
+      domains: Array<{ evidence: string[]; generatedOperations: string[] }>;
     };
     const requiredOperations = [
-      ...new Set(matrix.domains.flatMap((entry) => entry.generatedOperations)),
+      ...new Set(
+        matrix.domains
+          .filter(({ evidence }) =>
+            evidence.includes(
+              "tests/integration/graphql-product-acceptance.test.ts",
+            ),
+          )
+          .flatMap((entry) => entry.generatedOperations),
+      ),
     ].sort();
-    expect([...executed].sort()).toEqual(requiredOperations);
+    const allDeclaredOperations = new Set(
+      matrix.domains.flatMap((entry) => entry.generatedOperations),
+    );
+    expect([...executed]).toEqual(expect.arrayContaining(requiredOperations));
+    expect(
+      [...executed].every((operation) => allDeclaredOperations.has(operation)),
+    ).toBe(true);
   });
 
   it("enforces strict scalars, tagged input unions, pagination, batching, and stable issues", async () => {

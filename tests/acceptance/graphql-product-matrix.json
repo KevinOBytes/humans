@@ -1,13 +1,15 @@
 {
-  "version": 1,
+  "version": 2,
   "inventorySource": "docs/REQUIREMENTS.md HUM-FR-007 and HUM-FR-025",
   "domains": [
     {
       "domain": "people",
+      "evidence": ["tests/integration/graphql-product-acceptance.test.ts"],
       "generatedOperations": ["CreatePerson", "PeopleList"]
     },
     {
       "domain": "facts",
+      "evidence": ["tests/integration/graphql-product-acceptance.test.ts"],
       "generatedOperations": [
         "CreateFactDefinition",
         "CreateFact",
@@ -16,6 +18,7 @@
     },
     {
       "domain": "relationships",
+      "evidence": ["tests/integration/graphql-product-acceptance.test.ts"],
       "generatedOperations": [
         "CreateRelationshipType",
         "CreateRelationship",
@@ -24,6 +27,7 @@
     },
     {
       "domain": "evidence",
+      "evidence": ["tests/integration/graphql-product-acceptance.test.ts"],
       "generatedOperations": [
         "CreateSource",
         "CreateEvidenceItem",
@@ -33,21 +37,72 @@
     },
     {
       "domain": "files",
-      "generatedOperations": ["EvidenceFiles"]
+      "evidence": ["tests/integration/graphql-product-files-imports.test.ts"],
+      "generatedOperations": [
+        "CreateWorkspaceUpload",
+        "PendingWorkspaceUploads",
+        "CompleteWorkspaceUpload",
+        "EvidenceFiles"
+      ]
     },
     {
       "domain": "imports",
-      "generatedOperations": ["ImportHistory"]
+      "evidence": ["tests/integration/graphql-product-files-imports.test.ts"],
+      "generatedOperations": [
+        "SaveWorkspaceImportMapping",
+        "ImportMappingOptions",
+        "PrepareWorkspaceImport",
+        "StartWorkspaceImport",
+        "ImportHistory",
+        "ImportRowDiagnostics"
+      ]
     },
     {
       "domain": "search",
+      "evidence": ["tests/integration/graphql-product-acceptance.test.ts"],
       "generatedOperations": [
         "SearchWorkbenchSearch",
         "SearchWorkbenchSavedQueries"
       ]
     },
     {
+      "domain": "contacts-and-locations",
+      "evidence": [
+        "tests/integration/graphql-product-contacts-settings.test.ts"
+      ],
+      "generatedOperations": [
+        "CreatePersonContact",
+        "UpdatePersonContact",
+        "CreatePlace",
+        "CreatePersonAddress",
+        "PersonLocations",
+        "ContactEditProjection",
+        "AddressEditProjection"
+      ]
+    },
+    {
+      "domain": "settings-members-api-keys-audit",
+      "evidence": [
+        "tests/integration/graphql-product-contacts-settings.test.ts"
+      ],
+      "generatedOperations": [
+        "SettingsPolicyPosture",
+        "UpdateWorkspaceMemberRole",
+        "IssueWorkspaceInvitation",
+        "SettingsWorkspaceDirectory",
+        "CreateOrganizationApiKey",
+        "SettingsOrganizationApiKeys",
+        "SettingsAuditEvents"
+      ]
+    },
+    {
+      "domain": "dashboard",
+      "evidence": ["tests/integration/graphql-product-dashboard-graph.test.ts"],
+      "generatedOperations": ["DashboardOverview"]
+    },
+    {
       "domain": "graph-explorer-and-saved-views",
+      "evidence": ["tests/integration/graphql-product-acceptance.test.ts"],
       "generatedOperations": [
         "GraphPage",
         "CreateGraphView",
@@ -55,16 +110,25 @@
       ]
     },
     {
+      "domain": "graph-analysis",
+      "evidence": ["tests/integration/graphql-product-dashboard-graph.test.ts"],
+      "generatedOperations": [
+        "RunGraphAnalysis",
+        "GraphAnalysisRuns",
+        "GraphAnalysisResults",
+        "GraphAnalysisExport",
+        "RerunGraphAnalysis",
+        "CreateGraphSnapshot",
+        "ReplayGraphSnapshot"
+      ]
+    },
+    {
       "domain": "ai-analysis",
+      "evidence": ["tests/integration/graphql-product-acceptance.test.ts"],
       "generatedOperations": ["StartAiAnalysis", "AiRun"]
     }
   ],
-  "remainingDomains": [
-    "contacts-and-locations",
-    "settings-members-api-keys-audit",
-    "dashboard",
-    "graph-analysis"
-  ],
+  "remainingDomains": [],
   "contracts": {
     "strict-scalars": {
       "evidence": [
