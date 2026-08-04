@@ -49,6 +49,7 @@ query SettingsPolicyPosture {
 query SettingsOrganizationApiKeys($offset: Int) {
   settingsOrganizationApiKeys(offset: $offset) {
     nodes {
+      actionId
       name
       fingerprint
       state
@@ -63,6 +64,33 @@ query SettingsOrganizationApiKeys($offset: Int) {
     total
     hasPrevious
     hasMore
+    allowedScopes
+  }
+}
+
+mutation CreateOrganizationApiKey($input: CreateOrganizationApiKeyInput!) {
+  createOrganizationApiKey(input: $input) {
+    actionId
+    code
+    requestId
+    secret
+  }
+}
+
+mutation RotateOrganizationApiKey($input: RotateOrganizationApiKeyInput!) {
+  rotateOrganizationApiKey(input: $input) {
+    actionId
+    code
+    requestId
+    secret
+  }
+}
+
+mutation RevokeOrganizationApiKey($input: RevokeOrganizationApiKeyInput!) {
+  revokeOrganizationApiKey(input: $input) {
+    actionId
+    code
+    requestId
   }
 }
 

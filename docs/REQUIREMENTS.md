@@ -11,7 +11,7 @@ This matrix converts the approved Humans MVP design into numbered, verifiable ac
 | `HUM-FR-003` | Validated environment values idempotently create or reconcile the initial administrator without retaining the bootstrap password.                                                                                                                                                                                                                   | Repeated bootstrap integration test and secret-redaction assertion.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Incomplete |
 | `HUM-FR-004` | Multiple users can create or select isolated workspaces, invite members through Resend, and manage owner, admin, analyst, contributor, and viewer roles.                                                                                                                                                                                            | Task 21A provides generated GraphQL invitation issue/resend/cancel and member role/removal mutations, transaction-local authorization and redacted audit, principal-bound HMAC idempotency, owner invariants, encrypted invitation mail outbox delivery, credential-safe acceptance handoff, and accessible owner/admin settings controls. Focused PostgreSQL, GraphQL, and Chromium/axe tests cover the implemented boundary; the complete recipient acceptance, admin-role, resend/removal, responsive/RTL/zoom, provider-failure, and race matrix remains release work.                                  | Incomplete |
 | `HUM-FR-005` | Resource/action permissions, access policies, resource grants, retention policies, legal holds, deletion requests, and consent records can narrow access and lifecycle behavior for sensitive records.                                                                                                                                              | Domain authorization matrix and repository integration tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Incomplete |
-| `HUM-FR-006` | Workspace-scoped API keys are hashed, permissioned, expirable, revocable, and never combine authority with a browser session.                                                                                                                                                                                                                       | API-key lifecycle and authentication-mode tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Incomplete |
+| `HUM-FR-006` | Workspace-scoped API keys are hashed, permissioned, expirable, revocable, and never combine authority with a browser session.                                                                                                                                                                                                                       | `tests/unit/api-key-action-id.test.ts`, `tests/unit/api-key-administration.test.tsx`, and `tests/integration/api-key-lifecycle.test.ts` cover opaque handles, one-time secret presentation, live owner/admin authorization, tenant isolation, create/rotate/revoke, redaction, audit records, and API-key/session separation.                                                                                                                                                                                                                                                                               | Complete   |
 | `HUM-FR-007` | GraphQL Yoga at `/api/graphql` is the canonical typed API for people, facts, relationships, evidence, files, imports, search, graph queries, saved views, and AI analysis.                                                                                                                                                                          | Schema snapshot, generated-operation drift check, and real-context GraphQL tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Incomplete |
 | `HUM-FR-008` | A person record stores UUIDv7 identity, workspace, presentation names, biography, lifecycle status, sensitivity, confidence, merge target, accepted name/photo selections, actor timestamps, version, and soft deletion.                                                                                                                            | Drizzle schema checks and people repository tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Incomplete |
 | `HUM-FR-009` | Birth, death, sex, gender, pronouns, occupation, nationality, and other research claims are facts; accepted presentation fields explicitly select a fact rather than duplicate it on the person.                                                                                                                                                    | Schema and domain tests for fact-backed field selection.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Incomplete |
@@ -85,8 +85,8 @@ runtime configuration. Migration runs migrations only; explicit source and
 Compose bootstrap commands use a dedicated parser and entrypoint. App, worker,
 migration, and seed services do not receive `ADMIN_*`. `HUM-FR-003` remains
 **Incomplete** pending hosted release and recovery acceptance, and
-`HUM-FR-006` and `HUM-FR-031` remain **Incomplete** because API-key and the
-remaining settings mutations are not implemented by this boundary.
+`HUM-FR-031` remains **Incomplete** because policy/provider and the remaining
+settings mutations are not implemented by this boundary.
 
 ## Current Task 21A workspace-member administration evidence
 
@@ -103,9 +103,31 @@ member and invitation write boundary:
 The Task 21A mutation boundary is implemented, but `HUM-FR-004` remains
 **Incomplete** until its full recipient acceptance, administrator-role,
 resend/removal, responsive/RTL/zoom, provider-failure, and race acceptance
-matrix is recorded. `HUM-FR-005`, `HUM-FR-006`, and `HUM-FR-031` also remain
-**Incomplete**; Task 21A does not claim API-key, policy, provider, or
-whole-settings completion.
+matrix is recorded. `HUM-FR-005` and `HUM-FR-031` also remain **Incomplete**;
+Task 21A does not claim policy, provider, or whole-settings completion.
+
+## Current API-key lifecycle evidence
+
+Task 21B closes `HUM-FR-006` with an application-owned GraphQL lifecycle:
+
+- Only current owner/admin browser sessions can create, rotate, or revoke
+  organization keys. API-key principals and lower roles are rejected before
+  any lifecycle effect. Every requested permission is parsed against the
+  closed application vocabulary and restricted to the actor's current live
+  role.
+- Better Auth creates hashed organization keys; the plaintext key is returned
+  only by the successful create/rotate payload. The browser presents it in
+  transient state with an explicit save/copy warning. Lists, later reads,
+  errors, and audit records remain redacted.
+- Settings lists use an HMAC-derived opaque action ID rather than a database or
+  organization identifier. Revocation disables rather than deletes a key.
+  Rotation provisions and validates its replacement before a transactionally
+  audited disable of the original; failed replacement creation leaves the
+  original usable.
+- Create, rotate, and revoke write redacted, user- and request-attributed
+  audit events. Focused unit/component coverage and a PostgreSQL/GraphQL
+  integration suite cover the lifecycle, authorization, tenant isolation,
+  validation, redaction, and replacement safety contracts.
 
 ## Current Task 12 implementation evidence
 

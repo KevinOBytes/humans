@@ -1,6 +1,8 @@
-import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, or, gt } from "drizzle-orm";
 
+import { newId } from "@/db/id";
 import { apiKeys, members } from "@/db/schema/auth";
+import { auditEvents } from "@/db/schema/operations";
 import {
   accessPolicies,
   retentionPolicies,
@@ -52,6 +54,29 @@ export function createSettingsRepository(database: Database) {
         .limit(2);
       return active.length === 1;
     },
+    async readAdministrativeMembership(input: {
+      memberId: string;
+      userId: string;
+      workspaceId: string;
+    }): Promise<{ role: "admin" | "owner" } | null> {
+      const active = await database
+        .select({ role: members.role })
+        .from(members)
+        .where(
+          and(
+            eq(members.id, input.memberId),
+            eq(members.userId, input.userId),
+            eq(members.workspaceId, input.workspaceId),
+            inArray(members.role, ["owner", "admin"]),
+          ),
+        )
+        .limit(2);
+      const row = active[0];
+      return active.length === 1 &&
+        (row?.role === "owner" || row?.role === "admin")
+        ? { role: row.role }
+        : null;
+    },
     async listOrganizationApiKeys(input: {
       workspaceId: string;
       limit: number;
@@ -64,6 +89,7 @@ export function createSettingsRepository(database: Database) {
       const [rows, totals] = await Promise.all([
         database
           .select({
+            id: apiKeys.id,
             name: apiKeys.name,
             prefix: apiKeys.prefix,
             start: apiKeys.start,
@@ -82,6 +108,97 @@ export function createSettingsRepository(database: Database) {
         database.select({ value: count() }).from(apiKeys).where(where),
       ]);
       return { rows, total: totals[0]?.value ?? 0 };
+    },
+    async findOrganizationApiKeyCandidates(workspaceId: string) {
+      return database
+        .select({
+          id: apiKeys.id,
+          enabled: apiKeys.enabled,
+          expiresAt: apiKeys.expiresAt,
+        })
+        .from(apiKeys)
+        .where(
+          and(
+            eq(apiKeys.workspaceId, workspaceId),
+            eq(apiKeys.configId, "organization"),
+          ),
+        );
+    },
+    async disableOrganizationApiKey(input: {
+      apiKeyId: string;
+      workspaceId: string;
+    }): Promise<boolean> {
+      const updated = await database
+        .update(apiKeys)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(apiKeys.id, input.apiKeyId),
+            eq(apiKeys.workspaceId, input.workspaceId),
+            eq(apiKeys.configId, "organization"),
+            eq(apiKeys.enabled, true),
+          ),
+        )
+        .returning({ id: apiKeys.id });
+      return updated.length === 1;
+    },
+    async disableOrganizationApiKeyWithAudit(input: {
+      action: "settings.api_key.revoke" | "settings.api_key.rotate";
+      apiKeyId: string;
+      actor: { id: string; sessionId: string };
+      changedFields: readonly string[];
+      requestId: string;
+      workspaceId: string;
+    }): Promise<boolean> {
+      return database.transaction(async (transaction) => {
+        const updated = await transaction
+          .update(apiKeys)
+          .set({ enabled: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(apiKeys.id, input.apiKeyId),
+              eq(apiKeys.workspaceId, input.workspaceId),
+              eq(apiKeys.configId, "organization"),
+              eq(apiKeys.enabled, true),
+              or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date())),
+            ),
+          )
+          .returning({ id: apiKeys.id });
+        if (updated.length !== 1) return false;
+        await transaction.insert(auditEvents).values({
+          id: newId(),
+          workspaceId: input.workspaceId,
+          actorUserId: input.actor.id,
+          sessionId: input.actor.sessionId,
+          action: input.action,
+          resourceKind: "api_key",
+          resourceId: null,
+          requestId: input.requestId,
+          redactedDiff: { changedFields: [...input.changedFields] },
+          outcome: "success",
+        });
+        return true;
+      });
+    },
+    async recordApiKeyLifecycleAudit(input: {
+      action: "settings.api_key.create";
+      actor: { id: string; sessionId: string };
+      changedFields: readonly string[];
+      requestId: string;
+      workspaceId: string;
+    }): Promise<void> {
+      await database.insert(auditEvents).values({
+        id: newId(),
+        workspaceId: input.workspaceId,
+        actorUserId: input.actor.id,
+        sessionId: input.actor.sessionId,
+        action: input.action,
+        resourceKind: "api_key",
+        resourceId: null,
+        requestId: input.requestId,
+        redactedDiff: { changedFields: [...input.changedFields] },
+        outcome: "success",
+      });
     },
     async readPolicySettings(
       workspaceId: string,

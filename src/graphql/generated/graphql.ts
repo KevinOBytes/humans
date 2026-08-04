@@ -162,6 +162,12 @@ export type CreateNoteInput = {
   subject?: NoteSubjectInput | null | undefined;
 };
 
+export type CreateOrganizationApiKeyInput = {
+  expiresInSeconds?: number | null | undefined;
+  name: string;
+  scopes: Array<string>;
+};
+
 export type CreatePersonAddressInput = {
   addressKind: string;
   confidence?: number | null | undefined;
@@ -529,6 +535,17 @@ export type ReviseFactInput = {
   sensitivity?: Sensitivity | null | undefined;
   state?: FactState | null | undefined;
   value?: FactValueInput | null | undefined;
+};
+
+export type RevokeOrganizationApiKeyInput = {
+  actionId: string;
+};
+
+export type RotateOrganizationApiKeyInput = {
+  actionId: string;
+  expiresInSeconds?: number | null | undefined;
+  name: string;
+  scopes: Array<string>;
 };
 
 export type RunGraphAnalysisInput = {
@@ -3114,7 +3131,9 @@ export type SettingsOrganizationApiKeysQuery = {
     total: number;
     hasPrevious: boolean;
     hasMore: boolean;
+    allowedScopes: Array<string>;
     nodes: Array<{
+      actionId: string;
       name: string;
       fingerprint: string;
       state: string;
@@ -3124,6 +3143,44 @@ export type SettingsOrganizationApiKeysQuery = {
       expiresAt: string | null;
       lastUsedAt: string | null;
     }>;
+  };
+};
+
+export type CreateOrganizationApiKeyMutationVariables = Exact<{
+  input: CreateOrganizationApiKeyInput;
+}>;
+
+export type CreateOrganizationApiKeyMutation = {
+  createOrganizationApiKey: {
+    actionId: string | null;
+    code: string;
+    requestId: string;
+    secret: string | null;
+  };
+};
+
+export type RotateOrganizationApiKeyMutationVariables = Exact<{
+  input: RotateOrganizationApiKeyInput;
+}>;
+
+export type RotateOrganizationApiKeyMutation = {
+  rotateOrganizationApiKey: {
+    actionId: string | null;
+    code: string;
+    requestId: string;
+    secret: string | null;
+  };
+};
+
+export type RevokeOrganizationApiKeyMutationVariables = Exact<{
+  input: RevokeOrganizationApiKeyInput;
+}>;
+
+export type RevokeOrganizationApiKeyMutation = {
+  revokeOrganizationApiKey: {
+    actionId: string | null;
+    code: string;
+    requestId: string;
   };
 };
 
@@ -6956,6 +7013,7 @@ export const SettingsOrganizationApiKeysDocument = new TypedDocumentString(
     query SettingsOrganizationApiKeys($offset: Int) {
   settingsOrganizationApiKeys(offset: $offset) {
     nodes {
+      actionId
       name
       fingerprint
       state
@@ -6970,15 +7028,69 @@ export const SettingsOrganizationApiKeysDocument = new TypedDocumentString(
     total
     hasPrevious
     hasMore
+    allowedScopes
   }
 }
     `,
   {
-    hash: "sha256:464aed8b56454ed492e72c2951a970fa797e1192cbbe85ea9cdb8e8b4513fea2",
+    hash: "sha256:ad75d07b102a9f44e871ca1829516c733157fdf01e1313a4d7cf46e0aca8ab9d",
   },
 ) as unknown as TypedDocumentString<
   SettingsOrganizationApiKeysQuery,
   SettingsOrganizationApiKeysQueryVariables
+>;
+export const CreateOrganizationApiKeyDocument = new TypedDocumentString(
+  `
+    mutation CreateOrganizationApiKey($input: CreateOrganizationApiKeyInput!) {
+  createOrganizationApiKey(input: $input) {
+    actionId
+    code
+    requestId
+    secret
+  }
+}
+    `,
+  {
+    hash: "sha256:51ed27cd4d704bca9a7f76334fc02292dbcd6fd65b21effc08f95f808473b11d",
+  },
+) as unknown as TypedDocumentString<
+  CreateOrganizationApiKeyMutation,
+  CreateOrganizationApiKeyMutationVariables
+>;
+export const RotateOrganizationApiKeyDocument = new TypedDocumentString(
+  `
+    mutation RotateOrganizationApiKey($input: RotateOrganizationApiKeyInput!) {
+  rotateOrganizationApiKey(input: $input) {
+    actionId
+    code
+    requestId
+    secret
+  }
+}
+    `,
+  {
+    hash: "sha256:10dfee84646531365fda45a33fab9e36701d75e00482d0ddf36e63d1eda90a36",
+  },
+) as unknown as TypedDocumentString<
+  RotateOrganizationApiKeyMutation,
+  RotateOrganizationApiKeyMutationVariables
+>;
+export const RevokeOrganizationApiKeyDocument = new TypedDocumentString(
+  `
+    mutation RevokeOrganizationApiKey($input: RevokeOrganizationApiKeyInput!) {
+  revokeOrganizationApiKey(input: $input) {
+    actionId
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:5f4b7b22eded03a3f6ebcba79e6131159596aa221288503dc21300720ac851d0",
+  },
+) as unknown as TypedDocumentString<
+  RevokeOrganizationApiKeyMutation,
+  RevokeOrganizationApiKeyMutationVariables
 >;
 export const SettingsWorkspaceDirectoryDocument = new TypedDocumentString(
   `

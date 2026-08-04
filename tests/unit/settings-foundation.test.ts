@@ -84,6 +84,7 @@ describe("safe settings read models", () => {
     };
     const member = mapSafeMember(memberSource);
     const apiKeySource = {
+      actionId: "ak_safe-action-id",
       id: "key-id",
       configId: "organization",
       referenceId: "organization-id",
@@ -110,6 +111,7 @@ describe("safe settings read models", () => {
       joinedAt: "2026-08-01T00:00:00.000Z",
     });
     expect(apiKey).toEqual({
+      actionId: "ak_safe-action-id",
       name: "Reporting",
       fingerprint: "hum_abc123",
       state: "active",
