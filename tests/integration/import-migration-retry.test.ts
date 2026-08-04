@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { createHash, createHmac } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 
 import { eq } from "drizzle-orm";
@@ -31,6 +31,11 @@ const prerequisites = [
   "drizzle/0005_task11_upload_session_metadata.sql",
   "drizzle/0006_task11_import_job_lifecycle.sql",
 ] as const;
+const remainingMigrations = readdirSync("drizzle")
+  .filter((name) => /^\d{4}_.+\.sql$/u.test(name))
+  .filter((name) => Number.parseInt(name.slice(0, 4), 10) > 7)
+  .sort()
+  .map((name) => `drizzle/${name}`);
 
 function withDatabase(url: string, database: string): string {
   const parsed = new URL(url);
@@ -411,6 +416,10 @@ liveDescribe("Task 11 import lifecycle forward migration", () => {
     expect(new Set(migrationAudits.map(({ id }) => id))).toEqual(
       new Set(reconciledIds),
     );
+
+    for (const migration of remainingMigrations) {
+      await applyMigrationFile(upgrade, migration);
+    }
 
     const database = drizzle(upgrade, { schema });
     const csvBody = Buffer.from(
