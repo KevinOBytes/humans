@@ -12,3 +12,18 @@ b744a30d5381ce360904a9da1a8ca1cb35b4c234:tests/integration/import-worker.test.ts
 97854632ab8c807c853106eaee57c144fe275d39:tests/unit/env.test.ts:generic-api-key:20
 97854632ab8c807c853106eaee57c144fe275d39:tests/unit/env.test.ts:generic-api-key:46
 b70e8931476cbd85516520f85da93c42c956ba9e:docs/superpowers/specs/2026-07-10-humans-mvp-design.md:generic-api-key:293
+
+# Public alpha history uses privacy-safe squash commits, so reviewed synthetic
+# fixture and prose fingerprints differ from the internal implementation history.
+767a61e7ccfa3bf0d50ad28db88338cfaebe52e4:docs/superpowers/specs/2026-07-10-humans-mvp-design.md:generic-api-key:293
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/integration/imports-api.test.ts:generic-api-key:825
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/integration/search-index-maintenance.test.ts:generic-api-key:47
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/integration/import-worker.test.ts:generic-api-key:40
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/integration/import-worker.test.ts:generic-api-key:696
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/integration/import-identity-service.test.ts:generic-api-key:20
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/integration/worker-research-transactions.test.ts:generic-api-key:47
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:17
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:23
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:43
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:47
+a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:185
