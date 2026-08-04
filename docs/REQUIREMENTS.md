@@ -1,6 +1,6 @@
 # MVP requirements
 
-This matrix converts the approved Humans design into numbered, verifiable acceptance requirements. The current usable self-hosted MVP boundary is narrower than full production readiness and is recorded in `docs/releases/MVP.md`. `TODO.md` contains every row marked **Incomplete**; those rows remain hardening or production-release work even when an implemented subset is part of the usable MVP. A requirement changes to **Complete** only when its stated tests or runtime checks pass in the current repository state.
+This matrix converts the approved Humans design into numbered, verifiable acceptance requirements. Full MVP completion requires this current matrix and the release evidence defined by `HUM-NFR-018`, including the Vercel deployment contract in `HUM-FR-035`. The current usable self-hosted alpha and MVP release-candidate boundary is recorded in `docs/releases/SELF_HOSTED_ALPHA.md`; it does not redefine or move incomplete design requirements outside the MVP. `TODO.md` contains every row marked **Incomplete**. A requirement changes to **Complete** only when its stated tests or runtime checks pass in the current repository state.
 
 ## Functional requirements
 

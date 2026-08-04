@@ -1,8 +1,8 @@
 # Humans
 
-Humans is an open-source, workspace-scoped research platform for building evidence-backed records about people and the relationships between them. The usable self-hosted MVP combines structured facts, provenance, a social graph, GraphQL, file ingestion, and cited analysis through an OpenAI-compatible model.
+Humans is an open-source, workspace-scoped research platform for building evidence-backed records about people and the relationships between them. The current self-hosted alpha combines structured facts, provenance, a social graph, GraphQL, file ingestion, and cited analysis through an OpenAI-compatible model.
 
-> **Project status:** usable self-hosted MVP; not production-ready. The current tree supports an authenticated, workspace-scoped research loop through generated GraphQL operations: people, facts, relationships, evidence, private files, CSV/JSON imports, search, graph exploration and deterministic analysis, plus a cited AI analyst when an operator configures a reachable provider. [The MVP release boundary](docs/releases/MVP.md) states what is proven and what is not. [TODO.md](TODO.md) remains the authoritative requirement-linked hardening backlog; Vercel deployment proof, external-provider acceptance, mutable policy administration, extraction runs, and the remaining exhaustive security, accessibility, performance, and recovery matrices are not finished.
+> **Project status:** usable self-hosted alpha and MVP release candidate; neither the full MVP nor production readiness is complete. The current tree supports an authenticated, workspace-scoped research loop through generated GraphQL operations: people, facts, relationships, evidence, private files, CSV/JSON imports, search, graph exploration and deterministic analysis, plus a cited AI analyst when an operator configures a reachable provider. [The self-hosted alpha boundary](docs/releases/SELF_HOSTED_ALPHA.md) states what is proven and what is not. [TODO.md](TODO.md) remains the authoritative requirement-linked MVP closure and production-hardening backlog; Vercel deployment proof, external-provider acceptance, mutable policy administration, extraction runs, and the remaining exhaustive security, accessibility, performance, and recovery matrices are not finished.
 
 ## Quick start
 
@@ -206,7 +206,8 @@ external-provider smoke, deployment proof, or production-readiness evidence.
 
 The application is designed for one contract in two modes, but only the local
 dependency topology and self-hosted application path are part of the current
-usable MVP boundary. The hosted Vercel path still requires deployment evidence:
+usable alpha boundary. The hosted Vercel path still requires deployment
+evidence before full MVP completion:
 
 - **Vercel:** Neon PostgreSQL, Upstash Redis, S3-compatible storage such as Cloudflare R2, Resend, and an OpenAI-compatible model endpoint.
 - **Docker Compose:** the application and worker with PostgreSQL, Redis, MinIO, bucket initialization, and optional Ollama.
@@ -271,8 +272,8 @@ blind index. Phone, email, and other protected contacts support durable create,
 read, update, and archive operations with post-write authorization checks.
 
 Deployment evidence is not complete yet. Track it in [TODO.md](TODO.md) and use
-[the MVP release boundary](docs/releases/MVP.md) rather than treating this
-foundation as production-ready.
+[the self-hosted alpha boundary](docs/releases/SELF_HOSTED_ALPHA.md) rather than
+treating this foundation as a completed MVP or as production-ready.
 
 ## Security and privacy
 
@@ -282,7 +283,7 @@ Humans is designed for sensitive research data. Workspace isolation, record-leve
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Requirements](docs/REQUIREMENTS.md)
-- [MVP release boundary](docs/releases/MVP.md)
+- [Self-hosted alpha boundary](docs/releases/SELF_HOSTED_ALPHA.md)
 - [Product and interface design](docs/DESIGN.md)
 - [Docker operations](docs/operations/docker.md)
 - [Authentication operations](docs/operations/authentication.md)

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the current research core usable as a self-hosted MVP by enabling authorized person-overview corrections and providing a deterministic, production-valid Compose first-run path.
+**Goal:** Make the current research core usable as a self-hosted alpha and MVP release candidate by enabling authorized person-overview corrections and providing a deterministic, production-valid Compose first-run path without claiming full MVP completion.
 
 **Architecture:** Reuse the generated `UpdatePersonDocument` and existing `PersonForm`/mutation-feedback conventions; no new server API or repository path is introduced. Keep administrator secrets confined to the existing one-shot bootstrap service, correct the Docker environment contract, and add one operator command that renders, starts, bootstraps, and reports the local stack without silently enabling Ollama or weakening production validation.
 
@@ -121,19 +121,19 @@
 - Modify: `README.md`
 - Modify: `TODO.md`
 - Modify: `docs/REQUIREMENTS.md`
-- Create: `docs/releases/MVP.md`
+- Create: `docs/releases/SELF_HOSTED_ALPHA.md`
 
 **Interfaces:**
 - Consumes: passing Task 1/2 tests plus existing CI/Compose evidence at the release commit.
-- Produces: an honest MVP capability statement, explicit post-MVP hardening backlog, and exact verification commands without claiming Vercel or external-provider proof.
+- Produces: an honest self-hosted alpha capability statement, explicit MVP-closure and production-hardening backlog, and exact verification commands without claiming full MVP completion, Vercel proof, or external-provider proof.
 
 - [ ] **Step 1: Reconcile stale requirement wording**
 
   Update only rows where the audit found implementation already exists (`HUM-FR-007`, `HUM-FR-008`, `HUM-FR-024`, `HUM-FR-027`, `HUM-FR-036`). Preserve incomplete status for missing sub-capabilities, but replace misleading “implement” TODO text with the precise residual.
 
-- [ ] **Step 2: Record the MVP boundary**
+- [ ] **Step 2: Record the self-hosted alpha boundary**
 
-  Define the usable MVP as the authenticated single- or multi-workspace research loop, generated GraphQL API, person/fact/evidence/relationship/file/import/search/graph/AI surfaces, and tested Docker dependencies. List Vercel proof, mutable policy administration, webhooks, extraction runs, external email/provider acceptance, full performance budgets, and remaining exhaustive matrices as post-MVP hardening.
+  Define the usable alpha and MVP release candidate as the authenticated single- or multi-workspace research loop, generated GraphQL API, person/fact/evidence/relationship/file/import/search/graph/AI surfaces, and tested Docker dependencies. Preserve Vercel proof, mutable policy administration, webhooks, extraction runs, external email/provider acceptance, full performance budgets, and remaining exhaustive matrices as MVP-closure or production-hardening work according to the approved requirement contract.
 
 - [ ] **Step 3: Run complete release gates**
 
@@ -143,6 +143,6 @@
 - [ ] **Step 4: Commit**
 
   ```sh
-  git add README.md TODO.md docs/REQUIREMENTS.md docs/releases/MVP.md
-  git commit -m "docs: define the usable MVP release boundary"
+  git add README.md TODO.md docs/REQUIREMENTS.md docs/releases/SELF_HOSTED_ALPHA.md
+  git commit -m "docs: define the self-hosted alpha boundary"
   ```

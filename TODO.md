@@ -1,10 +1,12 @@
-# MVP hardening and production backlog
+# MVP closure and production hardening backlog
 
-The usable self-hosted MVP boundary is documented in `docs/releases/MVP.md`.
-Every incomplete requirement is listed exactly once below and remains release
-hardening or production-readiness work. Remove an item only in the same change
-that updates `docs/REQUIREMENTS.md` to **Complete** and records passing test or
-runtime evidence.
+The usable self-hosted alpha and MVP release-candidate boundary is documented in
+`docs/releases/SELF_HOSTED_ALPHA.md`. Every incomplete requirement is listed
+exactly once below. Full MVP completion still requires the full current matrix
+and the release evidence required by `HUM-NFR-018`; the alpha label does not
+reclassify any design requirement as post-MVP. Remove an item only in the same
+change that updates `docs/REQUIREMENTS.md` to **Complete** and records passing
+test or runtime evidence.
 
 `HUM-FR-017` remains complete and intentionally absent: PostgreSQL integration
 coverage includes the short-transaction upload-attempt fence, non-blocking
