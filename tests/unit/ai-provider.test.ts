@@ -44,6 +44,25 @@ const input = {
   toolLoopDepth: 0,
 };
 
+async function settleWithin<T>(
+  promise: Promise<T>,
+  milliseconds = 200,
+): Promise<T | "HUNG"> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve("HUNG"), milliseconds);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        resolve(error as T);
+      },
+    );
+  });
+}
+
 describe("AI provider boundary", () => {
   it("rejects providers outside the closed selection", () => {
     expect(() =>
@@ -65,7 +84,7 @@ describe("AI provider boundary", () => {
           apiKey: provider === "ollama" ? undefined : "test-provider-key-value",
           resolver:
             provider === "compatible"
-              ? async () => [{ address: "203.0.113.10", family: 4 }]
+              ? async () => [{ address: "93.184.216.34", family: 4 }]
               : undefined,
         }),
       );
@@ -123,11 +142,19 @@ describe("AI provider boundary", () => {
     "172.16.1.2",
     "192.168.1.2",
     "224.0.0.1",
+    "192.0.2.1",
+    "198.18.0.1",
+    "198.51.100.1",
+    "203.0.113.1",
     "::1",
     "fe80::1",
     "fc00::1",
     "ff02::1",
     "::ffff:7f00:1",
+    "2001:2::1",
+    "2001:db8::1",
+    "3fff::1",
+    "5f00::1",
   ])("rejects compatible endpoint address %s", async (address) => {
     const provider = createAiProvider(
       runtime({
@@ -144,7 +171,7 @@ describe("AI provider boundary", () => {
 
   it("revalidates DNS for every compatible request and pins the chosen address", async () => {
     const resolver = vi.fn(async () => [
-      { address: "203.0.113.10", family: 4 as const },
+      { address: "93.184.216.34", family: 4 as const },
     ]);
     const transport = vi.fn<AiTransport>(async () =>
       response({
@@ -170,7 +197,7 @@ describe("AI provider boundary", () => {
 
     expect(resolver).toHaveBeenCalledTimes(2);
     expect(transport.mock.calls[0]?.[0]).toMatchObject({
-      address: "203.0.113.10",
+      address: "93.184.216.34",
       hostname: "ai.example.com",
       rejectRedirects: true,
     });
@@ -205,6 +232,100 @@ describe("AI provider boundary", () => {
       message: "The AI provider timed out.",
     });
     expect(signal?.aborted).toBe(true);
+  });
+
+  it("times out while compatible-provider DNS resolution is stalled", async () => {
+    const resolver = vi.fn(
+      () => new Promise<readonly string[]>(() => undefined),
+    );
+    const transport = vi.fn<AiTransport>();
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+        transport,
+        timeoutMs: 5,
+      }),
+    );
+
+    const outcome = await settleWithin(provider.generate(input));
+
+    expect(outcome).toMatchObject({
+      code: "PROVIDER_TIMEOUT",
+      message: "The AI provider timed out.",
+    });
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("observes caller cancellation during compatible-provider DNS resolution", async () => {
+    const controller = new AbortController();
+    const resolver = vi.fn(
+      () => new Promise<readonly string[]>(() => undefined),
+    );
+    const transport = vi.fn<AiTransport>();
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+        transport,
+      }),
+    );
+    const pending = provider.generate({ ...input, signal: controller.signal });
+    controller.abort();
+
+    const outcome = await settleWithin(pending);
+
+    expect(outcome).toMatchObject({
+      code: "PROVIDER_ABORTED",
+      message: "The AI provider request was cancelled.",
+    });
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("re-checks cancellation that occurs as DNS resolution completes", async () => {
+    const controller = new AbortController();
+    const resolver = vi.fn(async () => {
+      controller.abort();
+      return ["93.184.216.34"];
+    });
+    const transport = vi.fn<AiTransport>(
+      () => new Promise<never>(() => undefined),
+    );
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+        transport,
+      }),
+    );
+
+    const outcome = await settleWithin(
+      provider.generate({ ...input, signal: controller.signal }),
+    );
+
+    expect(outcome).toMatchObject({ code: "PROVIDER_ABORTED" });
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("rejects an already-aborted compatible request before DNS resolution", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const resolver = vi.fn(async () => ["93.184.216.34"]);
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+      }),
+    );
+
+    await expect(
+      provider.generate({ ...input, signal: controller.signal }),
+    ).rejects.toMatchObject({ code: "PROVIDER_ABORTED" });
+    expect(resolver).not.toHaveBeenCalled();
   });
 
   it("maps caller aborts to a stable error", async () => {

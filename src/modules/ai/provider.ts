@@ -462,24 +462,6 @@ export function createAiProvider(runtime: AiProviderRuntime): AiProvider {
     async generate(input: AiProviderGenerateInput): Promise<AiProviderTurn> {
       if (input.signal?.aborted) throw providerError("PROVIDER_ABORTED");
       const body = requestBody(input, runtime.model);
-      let address: AiResolvedAddress | undefined;
-      if (runtime.provider === "compatible") {
-        let resolved: readonly (string | AiResolvedAddress)[];
-        try {
-          resolved = await resolver(endpoint.hostname);
-        } catch {
-          throw providerError("PROVIDER_UNAVAILABLE");
-        }
-        const addresses = resolved.map(normalizeAddress);
-        if (
-          !addresses.length ||
-          addresses.some(({ address }) => !isPublicProviderAddress(address))
-        ) {
-          throw providerError("CONFIGURATION_INVALID");
-        }
-        address = addresses[0];
-      }
-
       const controller = new AbortController();
       let timedOut = false;
       let callerAborted = false;
@@ -488,6 +470,7 @@ export function createAiProvider(runtime: AiProviderRuntime): AiProvider {
         controller.abort();
       };
       input.signal?.addEventListener("abort", abortFromCaller, { once: true });
+      if (input.signal?.aborted) abortFromCaller();
       const timer = setTimeout(() => {
         timedOut = true;
         controller.abort();
@@ -502,6 +485,25 @@ export function createAiProvider(runtime: AiProviderRuntime): AiProvider {
         );
       });
       try {
+        let address: AiResolvedAddress | undefined;
+        if (runtime.provider === "compatible") {
+          const resolved = await Promise.race([
+            resolver(endpoint.hostname),
+            abortPromise,
+          ]);
+          if (input.signal?.aborted) abortFromCaller();
+          if (controller.signal.aborted)
+            throw providerError("PROVIDER_ABORTED");
+          const addresses = resolved.map(normalizeAddress);
+          if (
+            !addresses.length ||
+            addresses.some(({ address }) => !isPublicProviderAddress(address))
+          ) {
+            throw providerError("CONFIGURATION_INVALID");
+          }
+          address = addresses[0];
+        }
+
         const response = await Promise.race([
           transport({
             url: new URL(endpoint.href),
