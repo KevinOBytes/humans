@@ -1,0 +1,132 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783731685793,
+      "tag": "0000_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783731686609,
+      "tag": "0001_task4_invariants",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783733613943,
+      "tag": "0002_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785523087941,
+      "tag": "0003_task5_corrective",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785528208576,
+      "tag": "0004_task6_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785612756020,
+      "tag": "0005_task11_upload_session_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785624910035,
+      "tag": "0006_task11_import_job_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785631540348,
+      "tag": "0007_task11_review_repairs",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785650539102,
+      "tag": "0008_task12_foundations",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785738902902,
+      "tag": "0009_task12_search_analysis",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785754641837,
+      "tag": "0010_task12_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785784568754,
+      "tag": "0011_task18_contact_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785790642952,
+      "tag": "0012_task18_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785791864341,
+      "tag": "0013_task18_lock_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785796097081,
+      "tag": "0014_task20_auth_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785806125186,
+      "tag": "0015_task20_auth_email_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785808947313,
+      "tag": "0016_task20_auth_email_retention_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785811024591,
+      "tag": "0017_task21a_workspace_members",
+      "breakpoints": true
+    }
+  ]
+}

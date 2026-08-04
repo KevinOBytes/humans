@@ -1,0 +1,14 @@
+# Reviewed synthetic fixtures and prose; exact historical fingerprints only.
+4c1edc7fe30a37ad0018eda3fee892106715d8bf:tests/integration/search-index-maintenance.test.ts:generic-api-key:47
+b744a30d5381ce360904a9da1a8ca1cb35b4c234:tests/integration/imports-api.test.ts:generic-api-key:727
+09701042ca5ee9a4de884d749e1569a90f595240:tests/integration/worker-research-transactions.test.ts:generic-api-key:42
+b744a30d5381ce360904a9da1a8ca1cb35b4c234:tests/integration/import-worker.test.ts:generic-api-key:28
+b744a30d5381ce360904a9da1a8ca1cb35b4c234:tests/integration/import-worker.test.ts:generic-api-key:491
+0e94e8191ec9d89535a36a5ed7f42064390be7c7:tests/integration/import-identity-service.test.ts:generic-api-key:19
+392032ada3fca73cf9f91defebadc73ef79c77e1:tests/unit/env.test.ts:generic-api-key:13
+392032ada3fca73cf9f91defebadc73ef79c77e1:tests/unit/env.test.ts:generic-api-key:18
+392032ada3fca73cf9f91defebadc73ef79c77e1:tests/unit/env.test.ts:generic-api-key:32
+392032ada3fca73cf9f91defebadc73ef79c77e1:tests/unit/env.test.ts:generic-api-key:36
+97854632ab8c807c853106eaee57c144fe275d39:tests/unit/env.test.ts:generic-api-key:20
+97854632ab8c807c853106eaee57c144fe275d39:tests/unit/env.test.ts:generic-api-key:46
+b70e8931476cbd85516520f85da93c42c956ba9e:docs/superpowers/specs/2026-07-10-humans-mvp-design.md:generic-api-key:293

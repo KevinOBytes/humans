@@ -1,0 +1,18 @@
+query Viewer {
+  viewer {
+    id
+    actorType
+    role
+    permissions
+    workspace {
+      id
+      organizationId
+      name
+    }
+  }
+  workspace {
+    id
+    organizationId
+    name
+  }
+}

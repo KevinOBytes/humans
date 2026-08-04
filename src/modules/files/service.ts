@@ -1,0 +1,761 @@
+import { files } from "@/db/schema/files";
+import { newId } from "@/db/id";
+import { createGraphQLError, publicErrorMessage } from "@/graphql/errors";
+import type { RequestOperationLimiter } from "@/graphql/operation-limiter";
+import type { ObjectStore } from "@/lib/storage/types";
+import {
+  canAccessResource,
+  createAuditService,
+  resourceVisibilitySql,
+  type ResearchServiceContext,
+} from "@/modules/audit/service";
+import { withResearchWriteTransaction } from "@/modules/audit/transactions";
+
+import {
+  createFilesRepository,
+  type FileRow,
+  type UploadSessionRow,
+} from "./repository";
+import { noOpFileScanner, type FileScanner } from "./scanner";
+import { ensureFileCleanupJob } from "./cleanup";
+import type { UploadPurpose, UploadValidationInput } from "./types";
+import {
+  assertFileTransition,
+  UPLOAD_COMPLETION_CAPACITY,
+  uploadCompletionCost,
+  uploadPurposeMaxBytes,
+  validateUploadRequest,
+  verifyUploadStream,
+} from "./validation";
+
+const GRANT_TTL_MS = 5 * 60_000;
+const VERIFY_TIMEOUT_MS = 60_000;
+const MAX_PENDING_ACTOR = 5;
+const MAX_PENDING_WORKSPACE = 100;
+
+export type FileServiceContext = ResearchServiceContext & {
+  operationLimiter: RequestOperationLimiter;
+};
+
+export type FileServiceRuntime = {
+  objectStore?: ObjectStore;
+  scanner?: FileScanner;
+  storageBucket: string;
+  storageProvider: "minio" | "r2" | "s3";
+  encryptionKey?: string;
+};
+
+function requirePermission(
+  context: FileServiceContext,
+  permission: "file:create" | "file:read",
+): void {
+  if (!context.permissions.has(permission)) {
+    throw createGraphQLError("FORBIDDEN", publicErrorMessage("FORBIDDEN"));
+  }
+}
+
+function requireSessionActor(
+  context: FileServiceContext,
+): asserts context is FileServiceContext & {
+  actor: Extract<FileServiceContext["actor"], { type: "user" }>;
+} {
+  if (context.actor.type !== "user") {
+    throw createGraphQLError("FORBIDDEN", publicErrorMessage("FORBIDDEN"));
+  }
+}
+
+function notFound(): never {
+  throw createGraphQLError("NOT_FOUND", publicErrorMessage("NOT_FOUND"));
+}
+
+function providerUnavailable(): never {
+  throw createGraphQLError(
+    "PROVIDER_UNAVAILABLE",
+    publicErrorMessage("PROVIDER_UNAVAILABLE"),
+  );
+}
+
+function uploadRejected(): never {
+  throw createGraphQLError(
+    "UPLOAD_REJECTED",
+    publicErrorMessage("UPLOAD_REJECTED"),
+  );
+}
+
+function encodeCursor(row: FileRow): string {
+  return Buffer.from(
+    JSON.stringify({ v: 1, t: row.createdAt.toISOString(), i: row.id }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function decodeCursor(
+  value?: string | null,
+): { createdAt: Date; id: string } | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    ) as {
+      v?: unknown;
+      t?: unknown;
+      i?: unknown;
+    };
+    const createdAt = new Date(typeof parsed.t === "string" ? parsed.t : "");
+    if (
+      parsed.v !== 1 ||
+      typeof parsed.i !== "string" ||
+      !Number.isFinite(createdAt.getTime())
+    ) {
+      throw new Error("invalid");
+    }
+    return { createdAt, id: parsed.i };
+  } catch {
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "The file cursor is invalid.",
+    );
+  }
+}
+
+function failureCode(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (message.includes("checksum")) return "CHECKSUM_MISMATCH";
+  if (message.includes("size") || message.includes("bytes"))
+    return "SIZE_MISMATCH";
+  if (message.includes("utf")) return "INVALID_ENCODING";
+  if (message.includes("type") || message.includes("content"))
+    return "TYPE_MISMATCH";
+  if (
+    message.includes("csv") ||
+    message.includes("json") ||
+    message.includes("import")
+  ) {
+    return "INVALID_IMPORT_CONTENT";
+  }
+  return "CONTENT_REJECTED";
+}
+
+export function createFilesService(
+  context: FileServiceContext,
+  runtime: FileServiceRuntime,
+) {
+  if (runtime.objectStore && !runtime.encryptionKey) {
+    throw new TypeError(
+      "DATA_ENCRYPTION_KEY is required when object storage is enabled",
+    );
+  }
+  const encryptionKey = runtime.encryptionKey;
+  const repository = createFilesRepository(context.database);
+  const audit = createAuditService(context);
+  const scanner = runtime.scanner ?? noOpFileScanner;
+  const visibility = resourceVisibilitySql(context, {
+    id: files.id,
+    resourceKind: "file",
+    sensitivity: files.sensitivity,
+  });
+
+  async function rejectSession(
+    session: UploadSessionRow,
+    code: string,
+  ): Promise<void> {
+    await withResearchWriteTransaction(context, async (database) => {
+      const txRepository = createFilesRepository(database);
+      const updated = await txRepository.setSessionState({
+        id: session.id,
+        workspaceId: context.workspaceId,
+        from: ["verifying", "pending"],
+        state: "rejected",
+        failureCode: code.slice(0, 64),
+        updatedAt: new Date(),
+        updatedBy: context.actor.id,
+      });
+      if (updated) {
+        await audit.write(database, {
+          action: "file.upload_rejected",
+          changedFields: ["state", "failureCode"],
+          metadata: { failureCode: code.slice(0, 64) },
+          resourceId: session.id,
+          resourceKind: "upload_session",
+          sensitivity: session.sensitivity,
+        });
+        if (encryptionKey) {
+          await ensureFileCleanupJob({
+            database,
+            encryptionKey,
+            workspaceId: context.workspaceId,
+            uploadSessionId: session.id,
+            expiresAt: session.expiresAt,
+            createdBy: context.actor.type === "user" ? context.actor.id : null,
+          });
+        }
+      }
+    });
+    try {
+      await runtime.objectStore?.delete({
+        workspaceId: context.workspaceId,
+        key: session.objectKey,
+      });
+    } catch {
+      // Durable rejected state is the source of truth for exact-key cleanup.
+    }
+  }
+
+  return {
+    async createUploadSession(input: UploadValidationInput) {
+      requireSessionActor(context);
+      requirePermission(context, "file:create");
+      const store = runtime.objectStore;
+      if (!store) return providerUnavailable();
+      let validated: ReturnType<typeof validateUploadRequest>;
+      try {
+        validated = validateUploadRequest(input);
+      } catch {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The upload request is invalid.",
+        );
+      }
+      if (!(await repository.isStorageEnabled(context.workspaceId))) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "Storage is disabled for this workspace.",
+        );
+      }
+      await context.operationLimiter.consume({
+        cost: 1,
+        operationClass: "file.upload.create.actor",
+        policy: {
+          capacity: 20,
+          refillAmount: 20,
+          refillIntervalMs: 15 * 60_000,
+          ttlMs: 15 * 60_000,
+        },
+      });
+      await context.operationLimiter.consume({
+        cost: 1,
+        operationClass: "file.upload.create.workspace",
+        scope: "workspace",
+        policy: {
+          capacity: 100,
+          refillAmount: 100,
+          refillIntervalMs: 60 * 60_000,
+          ttlMs: 60 * 60_000,
+        },
+      });
+      const now = new Date();
+      const id = newId();
+      const expiresAt = new Date(now.getTime() + GRANT_TTL_MS);
+      const objectKey = `uploads/${id}/${newId()}`;
+      const session = await withResearchWriteTransaction(
+        context,
+        async (database) => {
+          const txRepository = createFilesRepository(database);
+          await txRepository.serializeUploadCapacity(context.workspaceId);
+          const [actorPending, workspacePending] = await Promise.all([
+            txRepository.countPending({
+              actorId: context.actor.id,
+              workspaceId: context.workspaceId,
+              now,
+            }),
+            txRepository.countPending({
+              workspaceId: context.workspaceId,
+              now,
+            }),
+          ]);
+          if (
+            actorPending >= MAX_PENDING_ACTOR ||
+            workspacePending >= MAX_PENDING_WORKSPACE
+          ) {
+            throw createGraphQLError(
+              "RATE_LIMITED",
+              publicErrorMessage("RATE_LIMITED"),
+            );
+          }
+          const created = await txRepository.createSession({
+            id,
+            workspaceId: context.workspaceId,
+            actorId: context.actor.id,
+            intendedPurpose: validated.purpose,
+            originalName: validated.originalName,
+            sensitivity: validated.sensitivity,
+            maxBytes: validated.byteSize,
+            expectedChecksum: validated.checksumSha256,
+            expectedMediaType: validated.claimedMediaType,
+            objectKey,
+            state: "pending",
+            expiresAt,
+            createdAt: now,
+            createdBy: context.actor.id,
+            updatedAt: now,
+            updatedBy: context.actor.id,
+          });
+          if (encryptionKey) {
+            await ensureFileCleanupJob({
+              database,
+              encryptionKey,
+              workspaceId: context.workspaceId,
+              uploadSessionId: created.id,
+              expiresAt: created.expiresAt,
+              createdBy: context.actor.id,
+            });
+          }
+          await audit.write(database, {
+            action: "file.upload_session_created",
+            changedFields: ["state", "intendedPurpose", "maxBytes"],
+            metadata: {
+              byteSize: validated.byteSize,
+              purpose: validated.purpose,
+            },
+            resourceId: created.id,
+            resourceKind: "upload_session",
+            sensitivity: validated.sensitivity,
+          });
+          return created;
+        },
+      );
+      try {
+        const grant = await store.createUpload({
+          workspaceId: context.workspaceId,
+          key: session.objectKey,
+          bytes: session.maxBytes,
+          contentType: session.expectedMediaType!,
+          checksumSha256: session.expectedChecksum!,
+        });
+        return { session, grant, issues: [] as const };
+      } catch {
+        return providerUnavailable();
+      }
+    },
+
+    async completeUpload(uploadSessionId: string) {
+      requireSessionActor(context);
+      requirePermission(context, "file:create");
+      const store = runtime.objectStore;
+      if (!store) return providerUnavailable();
+      const initial = await repository.getSession({
+        id: uploadSessionId,
+        workspaceId: context.workspaceId,
+      });
+      if (!initial || initial.actorId !== context.actor.id) return notFound();
+      await context.operationLimiter.consume({
+        cost: uploadCompletionCost(initial.maxBytes),
+        operationClass: "file.upload.complete.actor",
+        policy: {
+          capacity: UPLOAD_COMPLETION_CAPACITY,
+          refillAmount: UPLOAD_COMPLETION_CAPACITY,
+          refillIntervalMs: 15 * 60_000,
+          ttlMs: 15 * 60_000,
+        },
+      });
+      const claim = await withResearchWriteTransaction(
+        context,
+        async (database) => {
+          const txRepository = createFilesRepository(database);
+          const session = await txRepository.lockSession({
+            id: uploadSessionId,
+            workspaceId: context.workspaceId,
+          });
+          if (!session || session.actorId !== context.actor.id)
+            return notFound();
+          if (session.state === "completed" && session.fileId) {
+            const file = await txRepository.getFile({
+              id: session.fileId,
+              workspaceId: context.workspaceId,
+            });
+            if (!file) throw new Error("Completed upload file is missing");
+            return { mode: "replay" as const, session, file };
+          }
+          if (session.state !== "pending") {
+            throw createGraphQLError(
+              "CONFLICT",
+              "The upload session is not pending.",
+            );
+          }
+          const now = new Date();
+          if (session.expiresAt <= now) {
+            await txRepository.setSessionState({
+              id: session.id,
+              workspaceId: context.workspaceId,
+              from: ["pending"],
+              state: "expired",
+              failureCode: "SESSION_EXPIRED",
+              updatedAt: now,
+              updatedBy: context.actor.id,
+            });
+            return { mode: "expired" as const };
+          }
+          const verifying = await txRepository.setSessionState({
+            id: session.id,
+            workspaceId: context.workspaceId,
+            from: ["pending"],
+            state: "verifying",
+            updatedAt: now,
+            updatedBy: context.actor.id,
+          });
+          if (!verifying) {
+            throw createGraphQLError(
+              "CONFLICT",
+              publicErrorMessage("CONFLICT"),
+            );
+          }
+          return { mode: "verify" as const, session: verifying };
+        },
+      );
+      if (claim.mode === "expired") {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "The upload session has expired.",
+        );
+      }
+      if (claim.mode === "replay") {
+        return {
+          session: claim.session,
+          file: claim.file,
+          issues: [] as const,
+        };
+      }
+      const session = claim.session;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
+      let verified:
+        | { byteSize: number; checksum: string; detectedType: string }
+        | undefined;
+      try {
+        const metadata = await store.getMetadata({
+          workspaceId: context.workspaceId,
+          key: session.objectKey,
+        });
+        if (!metadata) {
+          await rejectSession(session, "OBJECT_MISSING");
+          return uploadRejected();
+        }
+        const object = await store.openRead(
+          { workspaceId: context.workspaceId, key: session.objectKey },
+          { maxBytes: session.maxBytes, signal: controller.signal },
+        );
+        if (!object) {
+          await rejectSession(session, "OBJECT_MISSING");
+          return uploadRejected();
+        }
+        verified = await verifyUploadStream({
+          stream: object.body,
+          originalName: session.originalName,
+          claimedMediaType: session.expectedMediaType!,
+          purpose: session.intendedPurpose as UploadPurpose,
+          expectedBytes: session.maxBytes,
+          expectedChecksumSha256: session.expectedChecksum!,
+        });
+      } catch (error) {
+        if (error instanceof TypeError) {
+          await rejectSession(session, failureCode(error));
+          return uploadRejected();
+        }
+        await withResearchWriteTransaction(context, async (database) => {
+          await createFilesRepository(database).setSessionState({
+            id: session.id,
+            workspaceId: context.workspaceId,
+            from: ["verifying"],
+            state: "pending",
+            failureCode: "PROVIDER_RETRYABLE",
+            updatedAt: new Date(),
+            updatedBy: context.actor.id,
+          });
+        });
+        return providerUnavailable();
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (!verified) return uploadRejected();
+      const now = new Date();
+      const created = await withResearchWriteTransaction(
+        context,
+        async (database) => {
+          const txRepository = createFilesRepository(database);
+          const locked = await txRepository.lockSession({
+            id: session.id,
+            workspaceId: context.workspaceId,
+          });
+          if (!locked) return notFound();
+          if (locked.state === "completed" && locked.fileId) {
+            const existing = await txRepository.getFile({
+              id: locked.fileId,
+              workspaceId: context.workspaceId,
+            });
+            if (!existing) throw new Error("Completed upload file is missing");
+            return { session: locked, file: existing };
+          }
+          if (locked.state !== "verifying") {
+            throw createGraphQLError(
+              "CONFLICT",
+              publicErrorMessage("CONFLICT"),
+            );
+          }
+          const file = await txRepository.createFile({
+            id: newId(),
+            workspaceId: context.workspaceId,
+            storageProvider: runtime.storageProvider,
+            storageBucket: runtime.storageBucket,
+            storageKey: locked.objectKey,
+            originalName: locked.originalName,
+            mediaType: locked.expectedMediaType,
+            detectedType: verified!.detectedType,
+            byteSize: verified!.byteSize,
+            checksum: verified!.checksum,
+            quarantineState: "quarantined",
+            scanState: "pending",
+            ocrState: "not_requested",
+            extractionState: "not_requested",
+            sensitivity: locked.sensitivity,
+            uploadedBy: context.actor.id,
+            createdAt: now,
+            createdBy: context.actor.id,
+            updatedAt: now,
+            updatedBy: context.actor.id,
+          });
+          const completed = await txRepository.setSessionState({
+            id: locked.id,
+            workspaceId: context.workspaceId,
+            from: ["verifying"],
+            state: "completed",
+            fileId: file.id,
+            failureCode: null,
+            completedAt: now,
+            updatedAt: now,
+            updatedBy: context.actor.id,
+          });
+          if (!completed) throw new Error("Upload completion state was lost");
+          await txRepository.addStorageUsage({
+            workspaceId: context.workspaceId,
+            byteSize: file.byteSize,
+            now,
+            actorId: context.actor.id,
+          });
+          await audit.write(database, {
+            action: "file.upload_completed",
+            changedFields: ["quarantineState", "scanState", "byteSize"],
+            metadata: { byteSize: file.byteSize },
+            resourceId: file.id,
+            resourceKind: "file",
+            sensitivity: file.sensitivity,
+          });
+          return { session: completed, file };
+        },
+      );
+      let scan;
+      try {
+        scan = await scanner.scan({
+          byteSize: created.file.byteSize,
+          detectedType: created.file.detectedType!,
+          open: () =>
+            store.openRead(
+              {
+                workspaceId: context.workspaceId,
+                key: created.file.storageKey,
+              },
+              { maxBytes: created.file.byteSize },
+            ),
+        });
+      } catch {
+        scan = { state: "error" as const, code: "SCANNER_UNAVAILABLE" };
+      }
+      const quarantineState =
+        scan.state === "clean" || scan.state === "not_required"
+          ? "available"
+          : scan.state === "infected"
+            ? "rejected"
+            : "quarantined";
+      if (quarantineState !== "quarantined") {
+        assertFileTransition(
+          "quarantined",
+          quarantineState,
+          scan.state === "infected" ? "infected" : scan.state,
+        );
+      }
+      const scanned = await withResearchWriteTransaction(
+        context,
+        async (database) => {
+          const row = await createFilesRepository(database).updateScan({
+            id: created.file.id,
+            workspaceId: context.workspaceId,
+            quarantineState,
+            scanState: scan.state,
+            updatedAt: new Date(),
+            updatedBy: context.actor.id,
+          });
+          if (!row) throw new Error("File scan transition was lost");
+          await audit.write(database, {
+            action: "file.scan_recorded",
+            changedFields: ["quarantineState", "scanState"],
+            metadata: { scanState: scan.state },
+            resourceId: row.id,
+            resourceKind: "file",
+            sensitivity: row.sensitivity,
+          });
+          if (scan.state === "infected" && encryptionKey) {
+            const session = await createFilesRepository(database).getSession({
+              id: created.session.id,
+              workspaceId: context.workspaceId,
+            });
+            if (!session) throw new Error("Upload session is missing");
+            await ensureFileCleanupJob({
+              database,
+              encryptionKey,
+              workspaceId: context.workspaceId,
+              uploadSessionId: session.id,
+              expiresAt: session.expiresAt,
+              createdBy: context.actor.id,
+            });
+          }
+          return row;
+        },
+      );
+      if (scan.state === "infected") {
+        try {
+          await store.delete({
+            workspaceId: context.workspaceId,
+            key: created.file.storageKey,
+          });
+        } catch {
+          // Rejected state remains fail closed if deletion must be retried.
+        }
+      }
+      return { session: created.session, file: scanned, issues: [] as const };
+    },
+
+    async get(id: string): Promise<FileRow | null> {
+      requirePermission(context, "file:read");
+      return repository.getFile({
+        id,
+        workspaceId: context.workspaceId,
+        visibility,
+      });
+    },
+
+    async getByIds(
+      ids: readonly string[],
+    ): Promise<readonly (FileRow | null)[]> {
+      requirePermission(context, "file:read");
+      const rows = await repository.getFiles({
+        ids,
+        workspaceId: context.workspaceId,
+        visibility,
+      });
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      return ids.map((id) => byId.get(id) ?? null);
+    },
+
+    async list(input: {
+      first?: number | null;
+      after?: string | null;
+      availability?: string | null;
+    }) {
+      requirePermission(context, "file:read");
+      const first = input.first ?? 25;
+      if (!Number.isInteger(first) || first < 1 || first > 100) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The page size is invalid.",
+        );
+      }
+      const availability = input.availability?.toLowerCase() ?? null;
+      if (
+        availability &&
+        !["quarantined", "available", "rejected"].includes(availability)
+      ) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The file filter is invalid.",
+        );
+      }
+      const rows = await repository.listFiles({
+        workspaceId: context.workspaceId,
+        limit: first + 1,
+        cursor: decodeCursor(input.after),
+        availability,
+        visibility,
+      });
+      const nodes = rows.slice(0, first);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > first,
+          endCursor: nodes.length ? encodeCursor(nodes.at(-1)!) : null,
+        },
+      };
+    },
+
+    async createDownload(fileId: string) {
+      requirePermission(context, "file:read");
+      const store = runtime.objectStore;
+      if (!store) return providerUnavailable();
+      await context.operationLimiter.consume({
+        cost: 1,
+        operationClass: "file.download.actor",
+        policy: {
+          capacity: 60,
+          refillAmount: 60,
+          refillIntervalMs: 60_000,
+          ttlMs: 60_000,
+        },
+      });
+      const file = await repository.getFile({
+        id: fileId,
+        workspaceId: context.workspaceId,
+        visibility,
+      });
+      if (!file) return notFound();
+      if (
+        !(await canAccessResource(context.database, context, {
+          id: file.id,
+          resourceKind: "file",
+          sensitivity: file.sensitivity,
+        }))
+      ) {
+        return notFound();
+      }
+      if (
+        file.quarantineState !== "available" ||
+        !["clean", "not_required"].includes(file.scanState)
+      ) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "The file is not available for download.",
+        );
+      }
+      let grant;
+      try {
+        grant = await store.createDownload({
+          workspaceId: context.workspaceId,
+          key: file.storageKey,
+          fileName: file.originalName,
+        });
+      } catch {
+        return providerUnavailable();
+      }
+      await withResearchWriteTransaction(context, (database) =>
+        audit.write(database, {
+          action: "file.download_grant_created",
+          changedFields: [],
+          resourceId: file.id,
+          resourceKind: "file",
+          sensitivity: file.sensitivity,
+        }),
+      );
+      return { file, grant, issues: [] as const };
+    },
+
+    async purposeForFile(fileId: string): Promise<string | null> {
+      return repository.purposeForFile({
+        fileId,
+        workspaceId: context.workspaceId,
+      });
+    },
+
+    maxBytesForPurpose(purpose: UploadPurpose): number {
+      return uploadPurposeMaxBytes(purpose);
+    },
+  };
+}
+
+export type FilesService = ReturnType<typeof createFilesService>;

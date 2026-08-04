@@ -1,0 +1,81 @@
+fragment SearchWorkbenchHit on SearchHit {
+  id
+  kind
+  title
+  rank
+  updatedAt
+  snippet {
+    matched
+    text
+  }
+}
+
+fragment SearchWorkbenchPage on SearchConnection {
+  nodes {
+    ...SearchWorkbenchHit
+  }
+  pageInfo {
+    endCursor
+    hasNextPage
+  }
+}
+
+fragment SearchWorkbenchSavedQuery on SavedQuery {
+  id
+  ownerPrincipalId
+  name
+  sharing
+  queryAst
+  version
+  createdAt
+  updatedAt
+  archivedAt
+}
+
+query SearchWorkbenchSearch($input: SearchInput!) {
+  search(input: $input) {
+    ...SearchWorkbenchPage
+  }
+}
+
+query SearchWorkbenchSavedQueries($first: Int = 25, $after: String) {
+  savedQueries(first: $first, after: $after) {
+    nodes {
+      ...SearchWorkbenchSavedQuery
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+
+query SearchWorkbenchSavedQueryById($id: UUID!) {
+  savedQuery(id: $id) {
+    ...SearchWorkbenchSavedQuery
+  }
+}
+
+mutation SearchWorkbenchCreateSavedQuery($input: CreateSavedQueryInput!) {
+  createSavedQuery(input: $input) {
+    ...SearchWorkbenchSavedQuery
+  }
+}
+
+mutation SearchWorkbenchUpdateSavedQuery($input: UpdateSavedQueryInput!) {
+  updateSavedQuery(input: $input) {
+    ...SearchWorkbenchSavedQuery
+  }
+}
+
+mutation SearchWorkbenchArchiveSavedQuery($id: UUID!, $expectedVersion: Int!) {
+  archiveSavedQuery(id: $id, expectedVersion: $expectedVersion) {
+    ...SearchWorkbenchSavedQuery
+  }
+}
+
+mutation SearchWorkbenchRunSavedQuery($id: UUID!) {
+  runSavedQuery(id: $id) {
+    ...SearchWorkbenchPage
+  }
+}

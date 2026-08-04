@@ -1,0 +1,338 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        timeout-minutes: 5
+        with:
+          version: 11.11.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        timeout-minutes: 5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: corepack pnpm install --frozen-lockfile
+      - name: Check formatting
+        timeout-minutes: 5
+        run: corepack pnpm format:check
+      - name: Lint
+        timeout-minutes: 5
+        run: corepack pnpm lint
+      - name: Type check
+        timeout-minutes: 5
+        run: corepack pnpm typecheck
+      - name: Run unit tests
+        timeout-minutes: 10
+        run: corepack pnpm test:unit
+
+  generated-drift:
+    name: generated-drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        timeout-minutes: 5
+        with:
+          version: 11.11.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        timeout-minutes: 5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: corepack pnpm install --frozen-lockfile
+      - name: Check Drizzle schema metadata
+        timeout-minutes: 5
+        run: corepack pnpm db:check
+      - name: Check Drizzle generated migration drift
+        timeout-minutes: 5
+        run: corepack pnpm db:drift:check
+      - name: Check Better Auth generated schema
+        timeout-minutes: 5
+        run: corepack pnpm auth:schema:check
+      - name: Check generated GraphQL operations
+        timeout-minutes: 5
+        run: corepack pnpm codegen:check
+
+  database-integration:
+    name: database-integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18.3-bookworm
+        env:
+          POSTGRES_DB: humans_test
+          POSTGRES_USER: humans
+          POSTGRES_PASSWORD: synthetic-ci-database-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U humans -d humans_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql://humans:synthetic-ci-database-password@127.0.0.1:5432/humans_test
+      ALLOW_TEST_DATABASE_RESET: "true"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        timeout-minutes: 5
+        with:
+          version: 11.11.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        timeout-minutes: 5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: corepack pnpm install --frozen-lockfile
+      - name: Run real PostgreSQL integration seam
+        timeout-minutes: 15
+        run: corepack pnpm test:db
+
+  production-build:
+    name: production-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        timeout-minutes: 5
+        with:
+          version: 11.11.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        timeout-minutes: 5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: corepack pnpm install --frozen-lockfile
+      - name: Build production application
+        timeout-minutes: 15
+        run: corepack pnpm build
+
+  compose-lifecycle:
+    name: compose-lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      POSTGRES_PASSWORD: synthetic-compose-postgres-password
+      REDIS_PASSWORD: synthetic-compose-redis-password
+      MINIO_ROOT_USER: synthetic-compose-minio-user
+      MINIO_ROOT_PASSWORD: synthetic-compose-minio-password
+      AUTH_SECRET: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      AUTH_ENCRYPTION_KEY: 1111111111111111111111111111111111111111111111111111111111111111
+      DATA_ENCRYPTION_KEY: 2222222222222222222222222222222222222222222222222222222222222222
+      PROTECTED_LOOKUP_HMAC_KEY: 3333333333333333333333333333333333333333333333333333333333333333
+      OPERATION_LIMIT_HMAC_KEY: 4444444444444444444444444444444444444444444444444444444444444444
+      ADMIN_PASSWORD: Synthetic-CI-Admin-Password-42!
+      RESEND_API_KEY: re_test_synthetic_ci_only
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        timeout-minutes: 5
+        with:
+          version: 11.11.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        timeout-minutes: 5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: corepack pnpm install --frozen-lockfile
+      - name: Check Compose contracts
+        timeout-minutes: 5
+        run: corepack pnpm test:compose:config
+      - name: Validate Compose model
+        timeout-minutes: 5
+        run: docker compose --profile smoke config --quiet
+      - name: Run isolated Compose lifecycle
+        timeout-minutes: 35
+        run: corepack pnpm test:compose:lifecycle
+
+  dependency-policy:
+    name: dependency-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        timeout-minutes: 5
+        with:
+          version: 11.11.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        timeout-minutes: 5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: corepack pnpm install --frozen-lockfile
+      - name: Check production dependency licenses
+        timeout-minutes: 5
+        run: corepack pnpm deps:licenses
+      - name: Audit production dependencies
+        timeout-minutes: 5
+        run: corepack pnpm deps:audit
+      - name: Review pull-request dependency changes
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        timeout-minutes: 5
+        with:
+          fail-on-severity: high
+          allow-licenses: 0BSD, Apache-2.0, BSD-2-Clause, BSD-3-Clause, BlueOak-1.0.0, CC-BY-4.0, CC0-1.0, ISC, LGPL-3.0-or-later, MIT, MIT-0, MPL-2.0, Unlicense
+          comment-summary-in-pr: never
+
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        timeout-minutes: 5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan history and pull-request changes
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        timeout-minutes: 10
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  image-security:
+    name: image-security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        timeout-minutes: 5
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        timeout-minutes: 5
+        with:
+          node-version: 24
+      - name: Build the exact local image once
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        timeout-minutes: 20
+        with:
+          context: .
+          load: true
+          no-cache: true
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          sbom: false
+          tags: humans-ci:${{ github.sha }}
+      - name: Verify exact runtime image boundary
+        timeout-minutes: 5
+        run: node scripts/verify-runtime-image.mjs humans-ci:${{ github.sha }} .tmp/runtime-manifest.json
+      - name: Verify Distroless image optimization
+        timeout-minutes: 5
+        run: node scripts/verify-runtime-image-optimizer.mjs humans-ci:${{ github.sha }}
+      - name: Generate the exact-image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        timeout-minutes: 10
+        with:
+          image: humans-ci:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: humans-image-sbom-${{ github.sha }}
+          dependency-snapshot: false
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Verify SBOM structure
+        timeout-minutes: 2
+        run: node scripts/verify-runtime-sbom.mjs .tmp/runtime-manifest.json sbom.spdx.json
+      - name: Upload bounded SBOM artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        timeout-minutes: 5
+        with:
+          name: humans-image-sbom-${{ github.sha }}
+          path: sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Scan the exact local image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        timeout-minutes: 10
+        with:
+          scan-type: image
+          image-ref: humans-ci:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: 1
+          cache: false
