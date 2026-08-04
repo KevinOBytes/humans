@@ -992,13 +992,18 @@ export function createImportsService(
         await flush();
         parseImportMapping(structural, parsed.columns);
       } catch (error) {
-        const failed = await repository.failPrepare({
-          actorId: context.actor.id,
-          generation: stagingGeneration,
-          importId: stagedImport.id,
-          owner: stagingOwner,
-          workspaceId: context.workspaceId,
-        });
+        const failed = await runResearchTransaction(
+          context,
+          { requiredPermissions: ["import:create"] },
+          async (scopedContext) =>
+            createImportsRepository(scopedContext.database).failPrepare({
+              actorId: context.actor.id,
+              generation: stagingGeneration,
+              importId: stagedImport.id,
+              owner: stagingOwner,
+              workspaceId: context.workspaceId,
+            }),
+        );
         if (error && typeof error === "object" && "extensions" in error)
           throw error;
         if (!failed) {

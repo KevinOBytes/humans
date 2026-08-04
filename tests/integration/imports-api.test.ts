@@ -16,6 +16,7 @@ import {
 } from "@/db/schema/files";
 import { jobs } from "@/db/schema/operations";
 import { relationshipTypes } from "@/db/schema/relationships";
+import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 import type { ObjectStore } from "@/lib/storage/types";
 import { createFilesService } from "@/modules/files/service";
 import { createImportsService } from "@/modules/imports/service";
@@ -23,6 +24,7 @@ import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenan
 import { createJobsService } from "@/modules/jobs/service";
 
 import { ResearchFixture } from "../support/research-fixture";
+import { createTestConnection, createTestDatabase } from "../support/auth";
 import type { SessionActor } from "../support/graphql";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -113,19 +115,26 @@ class MemoryStore implements ObjectStore {
 }
 
 async function serviceContext(fixture: ResearchFixture, actor: SessionActor) {
-  const [session] = await fixture.database
-    .select({ id: sessions.id })
-    .from(sessions)
-    .where(eq(sessions.userId, actor.userId))
-    .limit(1);
-  if (!session) throw new Error("fixture session is missing");
+  const [[session], [member]] = await Promise.all([
+    fixture.database
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(eq(sessions.userId, actor.userId))
+      .limit(1),
+    fixture.database
+      .select({ role: members.role })
+      .from(members)
+      .where(eq(members.id, actor.memberId))
+      .limit(1),
+  ]);
+  if (!session || !member) throw new Error("fixture membership is missing");
   return {
     actor: {
       type: "user" as const,
       id: actor.userId,
       memberId: actor.memberId,
       principalId: actor.principalId,
-      role: "owner",
+      role: member.role,
       sessionId: session.id,
     },
     database: fixture.database,
@@ -349,6 +358,40 @@ liveDescribe("import staging and durable start", () => {
         normalizedPayload: { kind: "PERSON", rowKey: "p-1" },
       },
     ]);
+    await fixture.database
+      .update(filesTable)
+      .set({ sensitivity: "restricted" })
+      .where(eq(filesTable.id, completed.file.id));
+    await expect(
+      service.prepareImport({
+        fileId: completed.file.id,
+        mappingId: saved.mapping.id,
+        idempotencyKey: "prepare-people-v1",
+        mode: "COMMIT",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+    const policyId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: actor.workspaceId,
+      name: "Prepared import source",
+      sensitivityCeiling: "restricted",
+      resourceKinds: ["file"],
+      state: "active",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values({
+      id: newId(),
+      workspaceId: actor.workspaceId,
+      policyId,
+      memberId: actor.memberId,
+      resourceId: completed.file.id,
+      resourceKind: "file",
+      state: "active",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
     const replay = await service.prepareImport({
       fileId: completed.file.id,
       mappingId: saved.mapping.id,
@@ -551,151 +594,123 @@ liveDescribe("import staging and durable start", () => {
     }
   });
 
-  it("serializes membership removal against a prepare claim before any import write", async () => {
-    const actor = await fixture.createActor("owner");
-    const context = await serviceContext(fixture, actor);
-    const store = new MemoryStore();
-    const fileService = createFilesService(context, {
-      encryptionKey,
-      objectStore: store,
-      storageBucket: "private",
-      storageProvider: "minio",
-    });
-    const body = new TextEncoder().encode(
-      "external_id,name\nrace-1,Locked User\n",
-    );
-    const upload = await fileService.createUploadSession({
-      originalName: "authority-race.csv",
-      claimedMediaType: "text/csv",
-      byteSize: body.byteLength,
-      checksumSha256: createHash("sha256").update(body).digest("hex"),
-      purpose: "CSV_IMPORT",
-    });
-    store.objects.set(`${actor.workspaceId}:${upload.session.objectKey}`, body);
-    const completed = await fileService.completeUpload(upload.session.id);
-    const service = createImportsService(context, {
-      encryptionKey,
-      objectStore: store,
-    });
-    const mapping = await service.saveMapping({
-      name: "Authority race mapping",
-      format: "CSV",
-      definition: {
-        version: 1,
-        recordKind: "PERSON",
-        rowKeySource: "external_id",
-        person: {
-          displayNameSource: "name",
-          primaryNameKind: "legal",
-          fields: [],
-        },
-        facts: [],
-        defaults: {},
-      },
-    });
-    const databaseUrl = process.env.TEST_DATABASE_URL!;
-    const gate = postgres(databaseUrl, { max: 1, prepare: false });
-    const revoker = postgres(databaseUrl, { max: 1, prepare: false });
-    const observer = postgres(databaseUrl, { max: 1, prepare: false });
-    const gateKey = 8_104_202_608;
-    const revokerName = `task1_import_revoker_${newId()}`;
-    let gateHeld = false;
-    let preparePromise: Promise<
-      Awaited<ReturnType<typeof service.prepareImport>>
-    > | null = null;
-    let removalPromise: Promise<unknown> | null = null;
-    try {
-      await fixture.connection.unsafe(`
-        CREATE OR REPLACE FUNCTION task1_import_prepare_gate()
-        RETURNS trigger LANGUAGE plpgsql AS $$
-        BEGIN
-          PERFORM pg_advisory_xact_lock(${gateKey});
-          RETURN NEW;
-        END $$;
-        CREATE TRIGGER task1_import_prepare_gate_trigger
-        BEFORE INSERT ON imports
-        FOR EACH ROW EXECUTE FUNCTION task1_import_prepare_gate();
-      `);
-      await gate`SELECT pg_advisory_lock(${gateKey})`;
-      gateHeld = true;
-      preparePromise = service.prepareImport({
-        fileId: completed.file.id,
-        mappingId: mapping.mapping.id,
-        idempotencyKey: "prepare-authority-race-v1",
+  it.each(["role demotion", "membership removal"] as const)(
+    "rejects prepare when %s wins the live-authority race",
+    async (revocation) => {
+      const owner = await fixture.createActor("owner");
+      const actor = await fixture.createWorkspaceMember(owner, "contributor");
+      const ownerContext = await serviceContext(fixture, owner);
+      const writerConnection = createTestConnection(1);
+      const context = {
+        ...(await serviceContext(fixture, actor)),
+        database: createTestDatabase(writerConnection),
+      };
+      const store = new MemoryStore();
+      const fileService = createFilesService(ownerContext, {
+        encryptionKey,
+        objectStore: store,
+        storageBucket: "private",
+        storageProvider: "minio",
       });
-      let prepareBlocked = false;
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const [activity] = await observer<[{ waiting: boolean }]>`
-          SELECT EXISTS (
-            SELECT 1
-            FROM pg_stat_activity
-            WHERE datname = current_database()
-              AND wait_event = 'advisory'
-              AND query ILIKE '%insert into "imports"%'
-          ) AS waiting
-        `;
-        if (activity?.waiting) {
-          prepareBlocked = true;
-          break;
-        }
-        await delay(10);
-      }
-      expect(prepareBlocked).toBe(true);
-      await revoker`SELECT set_config('application_name', ${revokerName}, false)`;
-      removalPromise = revoker`
-        DELETE FROM members WHERE id = ${actor.memberId}::uuid
-      `;
-      let removalBlocked = false;
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const [activity] = await observer<[{ blocked: boolean }]>`
-          SELECT EXISTS (
-            SELECT 1 FROM pg_stat_activity
-            WHERE application_name = ${revokerName}
-              AND wait_event_type = 'Lock'
-          ) AS blocked
-        `;
-        if (activity?.blocked) {
-          removalBlocked = true;
-          break;
-        }
-        await delay(10);
-      }
-      expect(removalBlocked).toBe(true);
-      await gate`SELECT pg_advisory_unlock(${gateKey})`;
-      gateHeld = false;
-      await expect(preparePromise).resolves.toMatchObject({
-        import: { state: "preview_ready", totalRows: 1 },
-      });
-      await removalPromise;
-      expect(
-        await fixture.database
-          .select({ id: importsTable.id })
-          .from(importsTable)
-          .where(eq(importsTable.workspaceId, actor.workspaceId)),
-      ).toHaveLength(1);
-    } finally {
-      if (gateHeld) {
-        await gate`SELECT pg_advisory_unlock(${gateKey})`.catch(
-          () => undefined,
-        );
-      }
-      await fixture.connection
-        .unsafe(
-          "DROP TRIGGER IF EXISTS task1_import_prepare_gate_trigger ON imports; DROP FUNCTION IF EXISTS task1_import_prepare_gate();",
-        )
-        .catch(() => undefined);
-      await Promise.allSettled(
-        [preparePromise, removalPromise].filter(
-          (promise): promise is Promise<unknown> => promise !== null,
-        ),
+      const body = new TextEncoder().encode(
+        "external_id,name\nrace-1,Locked User\n",
       );
-      await Promise.all([gate.end(), revoker.end(), observer.end()]);
-    }
-  });
+      const upload = await fileService.createUploadSession({
+        originalName: "authority-race.csv",
+        claimedMediaType: "text/csv",
+        byteSize: body.byteLength,
+        checksumSha256: createHash("sha256").update(body).digest("hex"),
+        purpose: "CSV_IMPORT",
+      });
+      store.objects.set(
+        `${owner.workspaceId}:${upload.session.objectKey}`,
+        body,
+      );
+      const completed = await fileService.completeUpload(upload.session.id);
+      const ownerService = createImportsService(ownerContext, {
+        encryptionKey,
+        objectStore: store,
+      });
+      const mapping = await ownerService.saveMapping({
+        name: "Authority race mapping",
+        format: "CSV",
+        definition: {
+          version: 1,
+          recordKind: "PERSON",
+          rowKeySource: "external_id",
+          person: {
+            displayNameSource: "name",
+            primaryNameKind: "legal",
+            fields: [],
+          },
+          facts: [],
+          defaults: {},
+        },
+      });
+      const databaseUrl = process.env.TEST_DATABASE_URL!;
+      const observer = postgres(databaseUrl, { max: 1, prepare: false });
+      const service = createImportsService(context, {
+        encryptionKey,
+        objectStore: store,
+      });
+      let preparePromise: Promise<
+        Awaited<ReturnType<typeof service.prepareImport>>
+      > | null = null;
+      try {
+        await fixture.connection.begin(async (revoker) => {
+          await revoker`
+          SELECT id FROM members WHERE id = ${actor.memberId} FOR UPDATE
+        `;
+          preparePromise = service.prepareImport({
+            fileId: completed.file.id,
+            mappingId: mapping.mapping.id,
+            idempotencyKey: `prepare-${revocation.replaceAll(" ", "-")}-race-v1`,
+          });
+          let prepareBlocked = false;
+          for (let attempt = 0; attempt < 100; attempt += 1) {
+            const [activity] = await observer<[{ blocked: boolean }]>`
+            SELECT EXISTS (
+              SELECT 1 FROM pg_stat_activity
+              WHERE datname = current_database()
+                AND wait_event_type = 'Lock'
+            ) AS blocked
+          `;
+            if (activity?.blocked) {
+              prepareBlocked = true;
+              break;
+            }
+            await delay(10);
+          }
+          expect(prepareBlocked).toBe(true);
+          if (revocation === "role demotion") {
+            await revoker`
+            UPDATE members SET role = 'viewer' WHERE id = ${actor.memberId}
+          `;
+          } else {
+            await revoker`
+            DELETE FROM members WHERE id = ${actor.memberId}
+          `;
+          }
+        });
+        await expect(preparePromise).rejects.toMatchObject({
+          extensions: { code: "FORBIDDEN" },
+        });
+        expect(
+          await fixture.database
+            .select({ id: importsTable.id })
+            .from(importsTable)
+            .where(eq(importsTable.workspaceId, actor.workspaceId)),
+        ).toHaveLength(0);
+      } finally {
+        if (preparePromise) await Promise.allSettled([preparePromise]);
+        await Promise.all([writerConnection.end(), observer.end()]);
+      }
+    },
+  );
 
   it("serializes the per-actor cap when a member starts imports created by a peer", async () => {
     const owner = await fixture.createActor("owner");
-    const member = await fixture.createWorkspaceMember(owner, "analyst");
+    const member = await fixture.createWorkspaceMember(owner, "contributor");
     const ownerContext = await serviceContext(fixture, owner);
     const memberContext = await serviceContext(fixture, member);
     const store = new MemoryStore();
