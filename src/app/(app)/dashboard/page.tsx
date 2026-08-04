@@ -15,6 +15,17 @@ import {
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
 
+function incompleteDashboardData(): never {
+  throw new Error("Dashboard data is incomplete.");
+}
+
+function requiredText(value: string | null | undefined): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return incompleteDashboardData();
+  }
+  return value;
+}
+
 export default async function DashboardPage() {
   const context = await getAppContext();
   if (!context.viewer) return null;
@@ -28,79 +39,69 @@ export default async function DashboardPage() {
     PersonSummaryFragmentDoc,
     data.dashboardRecentPeople.nodes,
   );
+  if (!data.imports?.nodes) incompleteDashboardData();
   const imports = readFragment(
     ImportWorkspaceItemFragmentDoc,
-    data.imports?.nodes ?? [],
+    data.imports.nodes,
   );
   const role = context.viewer.role ?? "member";
   const normalizedRole = role.toLowerCase();
 
-  const graphAnalyses = data.dashboardRecentGraphAnalyses.nodes.flatMap(
-    (analysis): DashboardGraphAnalysis[] =>
-      analysis.id && analysis.createdAt
-        ? [
-            {
-              id: analysis.id,
-              algorithm: analysis.algorithm ?? "analysis",
-              state: analysis.state ?? "unknown",
-              createdAt: analysis.createdAt,
-              completedAt: analysis.completedAt,
-            },
-          ]
-        : [],
-  );
-  const aiAnalyses = data.dashboardRecentAiAnalyses.nodes.flatMap(
-    (analysis): DashboardAiAnalysis[] =>
-      analysis.id && analysis.createdAt
-        ? [
-            {
-              id: analysis.id,
-              provider: analysis.provider ?? "compatible",
-              model: analysis.model ?? "model unavailable",
-              state: analysis.state ?? "unknown",
-              createdAt: analysis.createdAt,
-              completedAt: analysis.completedAt,
-            },
-          ]
-        : [],
-  );
-  const normalizedImports = imports.flatMap((item): DashboardImport[] =>
-    item.id && item.createdAt
-      ? [
-          {
-            id: item.id,
-            format: item.format ?? "data",
-            state: item.state ?? "unknown",
-            totalRows: item.totalRows,
-            acceptedRows: item.acceptedRows,
-            rejectedRows: item.rejectedRows,
-            createdAt: item.createdAt,
-          },
-        ]
-      : [],
-  );
-  const activity = includeActivity
-    ? (data.auditEvents?.nodes ?? []).flatMap((event): DashboardActivity[] =>
-        event.action && event.occurredAt
-          ? [
-              {
-                action: event.action,
-                resourceKind: event.resourceKind ?? "workspace",
-                outcome: event.outcome ?? "recorded",
-                occurredAt: event.occurredAt,
-                actorKind: event.actor?.kind ?? "system",
-                actorLabel: event.actor?.label ?? "System",
-              },
-            ]
-          : [],
-      )
-    : null;
+  const graphAnalyses: DashboardGraphAnalysis[] =
+    data.dashboardRecentGraphAnalyses.nodes.map((analysis) => ({
+      id: requiredText(analysis.id),
+      algorithm: requiredText(analysis.algorithm),
+      state: requiredText(analysis.state),
+      createdAt: requiredText(analysis.createdAt),
+      completedAt: analysis.completedAt,
+    }));
+  const aiAnalyses: DashboardAiAnalysis[] =
+    data.dashboardRecentAiAnalyses.nodes.map((analysis) => ({
+      id: requiredText(analysis.id),
+      provider: requiredText(analysis.provider),
+      model: requiredText(analysis.model),
+      state: requiredText(analysis.state),
+      createdAt: requiredText(analysis.createdAt),
+      completedAt: analysis.completedAt,
+    }));
+  const normalizedImports: DashboardImport[] = imports.map((item) => ({
+    id: requiredText(item.id),
+    format: requiredText(item.format),
+    state: requiredText(item.state),
+    totalRows: item.totalRows,
+    acceptedRows: item.acceptedRows,
+    rejectedRows: item.rejectedRows,
+    createdAt: requiredText(item.createdAt),
+  }));
+  let activity: DashboardActivity[] | null = null;
+  if (includeActivity) {
+    if (!data.auditEvents?.nodes) incompleteDashboardData();
+    activity = data.auditEvents.nodes.map((event) => {
+      if (!event.actor) incompleteDashboardData();
+      return {
+        action: requiredText(event.action),
+        resourceKind: requiredText(event.resourceKind),
+        outcome: requiredText(event.outcome),
+        occurredAt: requiredText(event.occurredAt),
+        actorKind: requiredText(event.actor.kind),
+        actorLabel: requiredText(event.actor.label),
+      };
+    });
+  }
+
+  const canStartImport = [
+    "file:create",
+    "import:create",
+    "import:run",
+    "person:create",
+  ].every((permission) => permissions.includes(permission));
 
   return (
     <DashboardOverview
       workspaceName={context.viewer.workspace.name}
       role={role}
       canCreatePerson={permissions.includes("person:create")}
+      canStartImport={canStartImport}
       canManagePolicies={
         normalizedRole === "owner" || normalizedRole === "admin"
       }

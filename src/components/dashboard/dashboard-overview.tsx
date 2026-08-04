@@ -61,6 +61,7 @@ export type DashboardOverviewProps = {
   workspaceName: string;
   role: string;
   canCreatePerson: boolean;
+  canStartImport: boolean;
   canManagePolicies: boolean;
   canReadActivity: boolean;
   statistics: {
@@ -173,6 +174,7 @@ export function DashboardOverview({
   workspaceName,
   role,
   canCreatePerson,
+  canStartImport,
   canManagePolicies,
   canReadActivity,
   statistics,
@@ -185,8 +187,10 @@ export function DashboardOverview({
   return (
     <div className="space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <p className="text-primary text-sm font-semibold">{workspaceName}</p>
+        <div className="max-w-full min-w-0">
+          <p className="text-primary text-sm font-semibold [overflow-wrap:anywhere] break-words">
+            {workspaceName}
+          </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
             Research dashboard
           </h1>
@@ -325,12 +329,14 @@ export function DashboardOverview({
           ) : (
             <div className="mt-4 space-y-3">
               <EmptyState>No imports have been started yet.</EmptyState>
-              <Link
-                href="/imports"
-                className="text-primary text-sm font-semibold underline"
-              >
-                Start an import
-              </Link>
+              {canStartImport ? (
+                <Link
+                  href="/imports"
+                  className="text-primary text-sm font-semibold underline"
+                >
+                  Start an import
+                </Link>
+              ) : null}
             </div>
           )}
         </section>
@@ -348,8 +354,10 @@ export function DashboardOverview({
                   className="py-4 first:pt-0 last:pb-0"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{analysis.label}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold [overflow-wrap:anywhere] break-words">
+                        {analysis.label}
+                      </p>
                       <p className="text-muted-foreground mt-1 text-xs">
                         Created{" "}
                         <time dateTime={analysis.createdAt}>
@@ -450,9 +458,9 @@ export function DashboardOverview({
                 className="py-4 first:pt-0 last:pb-0"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-semibold">{humanize(event.action)}</p>
-                    <p className="text-muted-foreground mt-1 text-xs">
+                    <p className="text-muted-foreground mt-1 text-xs [overflow-wrap:anywhere] break-words">
                       {event.actorLabel} ({humanize(event.actorKind)}) ·{" "}
                       {humanize(event.resourceKind)}
                     </p>

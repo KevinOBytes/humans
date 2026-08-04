@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { render, screen, within } from "@testing-library/react";
+import { parse, visit } from "graphql";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "@/app/(app)/dashboard/page";
@@ -29,6 +30,7 @@ const baseProps: DashboardOverviewProps = {
   workspaceName: "Field Research",
   role: "owner",
   canCreatePerson: true,
+  canStartImport: true,
   canManagePolicies: true,
   canReadActivity: true,
   statistics: { visiblePeople: 12, visibleRelationships: 18 },
@@ -106,6 +108,22 @@ const baseProps: DashboardOverviewProps = {
   ],
 };
 
+function emptyDashboardResponse(includeActivity = false) {
+  return {
+    dashboardRecentPeople: { nodes: [] },
+    imports: { nodes: [] },
+    dashboardRecentGraphAnalyses: { nodes: [] },
+    dashboardRecentAiAnalyses: { nodes: [] },
+    graphStatistics: { visiblePeople: 0, visibleRelationships: 0 },
+    workspacePolicySummary: {
+      defaultRetentionDays: null,
+      aiEnabled: false,
+      storageEnabled: false,
+    },
+    ...(includeActivity ? { auditEvents: { nodes: [] } } : {}),
+  };
+}
+
 describe("DashboardOverview", () => {
   beforeEach(() => {
     pageMocks.executeServerGraphQL.mockReset();
@@ -171,8 +189,10 @@ describe("DashboardOverview", () => {
         {...baseProps}
         role="viewer"
         canCreatePerson={false}
+        canStartImport={false}
         canManagePolicies={false}
         canReadActivity={false}
+        imports={[]}
         activity={null}
       />,
     );
@@ -180,6 +200,7 @@ describe("DashboardOverview", () => {
     expect(screen.queryByRole("link", { name: "Add person" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Manage policies" })).toBeNull();
     expect(screen.queryByRole("link", { name: "View audit log" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Start an import" })).toBeNull();
     expect(
       screen.getByText("Activity is managed by workspace administrators."),
     ).toBeInTheDocument();
@@ -209,6 +230,52 @@ describe("DashboardOverview", () => {
     expect(
       screen.getByText("No workspace activity has been recorded yet."),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Start an import" }),
+    ).toHaveAttribute("href", "/imports");
+  });
+
+  it("wraps long workspace, analysis, and activity actor values inside cards", () => {
+    const longWorkspace = "workspace".repeat(30);
+    const longAnalysis = "provider-model".repeat(30);
+    const longActor = "actor".repeat(40);
+    render(
+      <DashboardOverview
+        {...baseProps}
+        workspaceName={longWorkspace}
+        analyses={[
+          {
+            id: "long-analysis",
+            kind: "AI",
+            label: longAnalysis,
+            state: "RUNNING",
+            createdAt: "2026-08-04T17:00:00.000Z",
+            completedAt: null,
+          },
+        ]}
+        activity={[
+          {
+            ...baseProps.activity![0]!,
+            actorLabel: longActor,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(longWorkspace)).toHaveClass(
+      "break-words",
+      "[overflow-wrap:anywhere]",
+    );
+    expect(screen.getByText(longAnalysis)).toHaveClass(
+      "break-words",
+      "[overflow-wrap:anywhere]",
+    );
+    expect(
+      screen.getByText(
+        (content, element) =>
+          element?.tagName === "P" && content.startsWith(longActor),
+      ),
+    ).toHaveClass("break-words", "[overflow-wrap:anywhere]");
   });
 
   it("uses IDs as the deterministic tie-breaker for merged analyses", () => {
@@ -250,19 +317,9 @@ describe("DashboardOverview", () => {
           workspace: { name: "Field Research" },
         },
       });
-      pageMocks.executeServerGraphQL.mockResolvedValue({
-        dashboardRecentPeople: { nodes: [] },
-        imports: { nodes: [] },
-        dashboardRecentGraphAnalyses: { nodes: [] },
-        dashboardRecentAiAnalyses: { nodes: [] },
-        graphStatistics: { visiblePeople: 0, visibleRelationships: 0 },
-        workspacePolicySummary: {
-          defaultRetentionDays: null,
-          aiEnabled: false,
-          storageEnabled: false,
-        },
-        ...(expected ? { auditEvents: { nodes: [] } } : {}),
-      });
+      pageMocks.executeServerGraphQL.mockResolvedValue(
+        emptyDashboardResponse(expected),
+      );
 
       const result =
         (await DashboardPage()) as ReactElement<DashboardOverviewProps>;
@@ -277,11 +334,140 @@ describe("DashboardOverview", () => {
     },
   );
 
+  it("requires the complete import wizard permission set", async () => {
+    pageMocks.getAppContext.mockResolvedValue({
+      viewer: {
+        role: "contributor",
+        permissions: [
+          "file:create",
+          "import:create",
+          "import:run",
+          "person:create",
+        ],
+        workspace: { name: "Field Research" },
+      },
+    });
+    pageMocks.executeServerGraphQL.mockResolvedValue(emptyDashboardResponse());
+
+    const allowed =
+      (await DashboardPage()) as ReactElement<DashboardOverviewProps>;
+    expect(allowed.props.canStartImport).toBe(true);
+
+    pageMocks.getAppContext.mockResolvedValue({
+      viewer: {
+        role: "contributor",
+        permissions: ["file:create", "import:create", "person:create"],
+        workspace: { name: "Field Research" },
+      },
+    });
+    const denied =
+      (await DashboardPage()) as ReactElement<DashboardOverviewProps>;
+    expect(denied.props.canStartImport).toBe(false);
+  });
+
+  it.each([
+    {
+      label: "an import without a format",
+      response: () => ({
+        ...emptyDashboardResponse(),
+        imports: {
+          nodes: [
+            {
+              id: "import-1",
+              format: null,
+              state: "COMPLETED",
+              createdAt: "2026-08-04T10:00:00.000Z",
+            },
+          ],
+        },
+      }),
+    },
+    {
+      label: "an AI analysis without a model",
+      response: () => ({
+        ...emptyDashboardResponse(),
+        dashboardRecentAiAnalyses: {
+          nodes: [
+            {
+              id: "ai-1",
+              provider: "OPENAI",
+              model: null,
+              state: "COMPLETED",
+              createdAt: "2026-08-04T10:00:00.000Z",
+              completedAt: null,
+            },
+          ],
+        },
+      }),
+    },
+    {
+      label: "a graph analysis without a state",
+      response: () => ({
+        ...emptyDashboardResponse(),
+        dashboardRecentGraphAnalyses: {
+          nodes: [
+            {
+              id: "graph-1",
+              algorithm: "PAGERANK",
+              state: null,
+              createdAt: "2026-08-04T10:00:00.000Z",
+              completedAt: null,
+            },
+          ],
+        },
+      }),
+    },
+    {
+      label: "an audit event without an actor",
+      audit: true,
+      response: () => ({
+        ...emptyDashboardResponse(true),
+        auditEvents: {
+          nodes: [
+            {
+              action: "person.updated",
+              resourceKind: "person",
+              outcome: "SUCCESS",
+              occurredAt: "2026-08-04T10:00:00.000Z",
+              actor: null,
+            },
+          ],
+        },
+      }),
+    },
+  ])(
+    "rejects malformed dashboard data: $label",
+    async ({ response, audit }) => {
+      pageMocks.getAppContext.mockResolvedValue({
+        viewer: {
+          role: audit ? "owner" : "viewer",
+          permissions: audit ? ["audit:read"] : [],
+          workspace: { name: "Field Research" },
+        },
+      });
+      pageMocks.executeServerGraphQL.mockResolvedValue(response());
+
+      await expect(DashboardPage()).rejects.toThrow(
+        "Dashboard data is incomplete.",
+      );
+    },
+  );
+
   it("keeps the generated dashboard selection free of restricted analysis and audit data", () => {
     const operation = DashboardOverviewDocument.toString();
     expect(operation).toContain("@include(if: $includeActivity)");
-    expect(operation).not.toMatch(
-      /\b(?:prompt|answer|errorCode|toolCalls|diff|objectKey|storageKey|credential)\b/u,
+    const fieldNames = new Set<string>();
+    visit(parse(operation), {
+      Field(node) {
+        fieldNames.add(node.name.value);
+      },
+    });
+    expect([...fieldNames]).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /(?:prompt|answer|error|tool|citation|diff|credential|secret|objectKey|storage(?!Enabled)|bucket)/iu,
+        ),
+      ]),
     );
   });
 });
