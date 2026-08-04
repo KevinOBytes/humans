@@ -11,6 +11,11 @@ import {
 } from "@/db/schema/graph";
 import { people } from "@/db/schema/people";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
+import {
+  createGraphSnapshotManifest,
+  graphSnapshotManifestMaterial,
+  type GraphSnapshotManifestInput,
+} from "@/modules/graph/snapshot-manifest";
 
 import { ResearchFixture } from "../support/research-fixture";
 
@@ -40,6 +45,12 @@ const matrix = [
     configuration: { projection: "authorized-visible-incidence-v1" },
     explanation:
       "Visible relationship incidence count in this authorized snapshot.",
+    expected: [
+      { personId: personIds[0], rank: 2, value: 2 },
+      { personId: personIds[1], rank: 3, value: 2 },
+      { personId: personIds[2], rank: 1, value: 4 },
+      { personId: personIds[3], rank: 4, value: 2 },
+    ],
     metricKey: "degree",
     version: "graphology@0.26.0/degree/humans-v1",
   },
@@ -54,6 +65,12 @@ const matrix = [
     },
     explanation:
       "PageRank over this authorized snapshot using relationship direction, alpha 0.85, tolerance 1e-8, and at most 200 iterations.",
+    expected: [
+      { personId: personIds[0], rank: 4, value: 0.0375 },
+      { personId: personIds[1], rank: 3, value: 0.0534375 },
+      { personId: personIds[2], rank: 1, value: 0.4711148734056677 },
+      { personId: personIds[3], rank: 2, value: 0.4379476265943322 },
+    ],
     metricKey: "pagerank",
     version: "graphology-metrics@2.4.0/pagerank/humans-v2",
   },
@@ -69,6 +86,12 @@ const matrix = [
     },
     explanation:
       "Community label in a seeded undirected simple projection; parallel visible relationships are aggregated by count.",
+    expected: [
+      { personId: personIds[0], rank: 3, value: 1 },
+      { personId: personIds[1], rank: 4, value: 1 },
+      { personId: personIds[2], rank: 1, value: 2 },
+      { personId: personIds[3], rank: 2, value: 2 },
+    ],
     metricKey: "community",
     version: "graphology-communities-louvain@2.0.2/humans-undirected-v1",
   },
@@ -245,9 +268,133 @@ liveDescribe("graph algorithm live matrix", () => {
     return exported.content;
   }
 
+  it("replays a shipped PageRank v1 snapshot and reruns it with the current bounded contract", async () => {
+    const owner = await seed();
+    const created = await fixture.execute<{
+      createGraphSnapshot: { id: string };
+    }>({
+      jar: owner.jar,
+      query: `mutation($input: RunGraphAnalysisInput!) {
+        createGraphSnapshot(input: $input) { id }
+      }`,
+      variables: {
+        input: {
+          algorithm: "PAGERANK",
+          filter: {
+            mode: "WORKSPACE",
+            nodeLimit: 10,
+            edgeLimit: 10,
+            includeIsolates: true,
+          },
+        },
+      },
+    });
+    expect(created.body?.errors).toBeUndefined();
+    const snapshotId = created.body?.data?.createGraphSnapshot.id;
+    if (!snapshotId) throw new Error("Historical snapshot fixture failed.");
+    const [stored] = await fixture.database
+      .select()
+      .from(graphSnapshots)
+      .where(eq(graphSnapshots.id, snapshotId));
+    if (!stored) throw new Error("Historical snapshot row was not persisted.");
+
+    const configuration = {
+      alpha: 0.85,
+      maxIterations: 100,
+      projection: "authorized-directed-aggregate-count-v1",
+      tolerance: 1e-8,
+      weight: "relationship-count",
+    } as const;
+    const algorithmVersion = "graphology-metrics@2.4.0/pagerank/humans-v1";
+    const historical = createGraphSnapshotManifest({
+      ...(stored.manifestMaterial as GraphSnapshotManifestInput),
+      algorithmConfiguration: configuration,
+      algorithmVersion,
+    });
+    await fixture.connection`
+      ALTER TABLE graph_snapshots
+      DISABLE TRIGGER graph_snapshots_immutable_trigger
+    `;
+    try {
+      await fixture.connection`
+        UPDATE graph_snapshots SET
+          algorithm_version = ${algorithmVersion},
+          algorithm_config_hash = ${historical.algorithmConfigHash},
+          algorithm_configuration = ${JSON.stringify(configuration)}::jsonb,
+          manifest_hash = ${historical.manifestHash},
+          manifest_material = ${JSON.stringify(
+            graphSnapshotManifestMaterial(historical),
+          )}::jsonb
+        WHERE id = ${snapshotId}
+      `;
+    } finally {
+      await fixture.connection`
+        ALTER TABLE graph_snapshots
+        ENABLE TRIGGER graph_snapshots_immutable_trigger
+      `;
+    }
+
+    const replay = await fixture.execute<{
+      replayGraphSnapshot: { snapshot: { id: string }; valid: boolean };
+    }>({
+      jar: owner.jar,
+      query: `mutation($input: ReplayGraphSnapshotInput!) {
+        replayGraphSnapshot(input: $input) { valid snapshot { id } }
+      }`,
+      variables: { input: { snapshotId } },
+    });
+    expect(replay.body).toEqual({
+      data: {
+        replayGraphSnapshot: { snapshot: { id: snapshotId }, valid: true },
+      },
+    });
+
+    const rerun = await fixture.execute<{
+      rerunGraphAnalysis: { metrics: Metric[]; run: { id: string } };
+    }>({
+      jar: owner.jar,
+      query: `mutation($input: RerunGraphAnalysisInput!) {
+        rerunGraphAnalysis(input: $input) {
+          run { id }
+          metrics { personId metricKey value rank algorithmVersion explanation }
+        }
+      }`,
+      variables: { input: { algorithm: "PAGERANK", snapshotId } },
+    });
+    expect(rerun.body?.errors).toBeUndefined();
+    const rerunPayload = rerun.body?.data?.rerunGraphAnalysis;
+    expect(rerunPayload?.metrics).toHaveLength(personIds.length);
+    expect(
+      rerunPayload?.metrics.every(
+        ({ algorithmVersion: version }) =>
+          version === "graphology-metrics@2.4.0/pagerank/humans-v2",
+      ),
+    ).toBe(true);
+    const currentRun = rerunPayload?.run.id
+      ? await fixture.database
+          .select()
+          .from(analysisRuns)
+          .where(eq(analysisRuns.id, rerunPayload.run.id))
+      : [];
+    expect(currentRun).toEqual([
+      expect.objectContaining({
+        algorithm: "PAGERANK",
+        algorithmVersion: "graphology-metrics@2.4.0/pagerank/humans-v2",
+        state: "completed",
+      }),
+    ]);
+  });
+
   it.each(matrix)(
     "persists, pages, replays, repeats, and safely exports $algorithm",
-    async ({ algorithm, configuration, explanation, metricKey, version }) => {
+    async ({
+      algorithm,
+      configuration,
+      explanation,
+      expected,
+      metricKey,
+      version,
+    }) => {
       const owner = await seed();
       const created = await fixture.execute<{
         runGraphAnalysis: {
@@ -304,6 +451,13 @@ liveDescribe("graph algorithm live matrix", () => {
         ),
       ).toBe(true);
       if (!payload) throw new Error("Graph algorithm fixture failed.");
+      for (const semantic of expected) {
+        const metric = payload.metrics.find(
+          ({ personId }) => personId === semantic.personId,
+        );
+        expect(metric?.rank).toBe(semantic.rank);
+        expect(metric?.value).toBeCloseTo(semantic.value, 12);
+      }
 
       const [storedRun] = await fixture.database
         .select()

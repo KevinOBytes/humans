@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateGraphMetrics } from "@/modules/graph/metrics";
+import {
+  calculateGraphMetrics,
+  graphAnalysisVersionContract,
+} from "@/modules/graph/metrics";
 import { graphResultFixture, IDS } from "../fixtures/graph";
 
 describe("graph metrics", () => {
@@ -36,6 +39,28 @@ describe("graph metrics", () => {
     expect(first[0]?.algorithmVersion).toBe(
       "graphology-metrics@2.4.0/pagerank/humans-v2",
     );
+  });
+
+  it("recognizes only the shipped and current PageRank manifest contracts", () => {
+    expect(
+      graphAnalysisVersionContract(
+        "PAGERANK",
+        "graphology-metrics@2.4.0/pagerank/humans-v1",
+      ),
+    ).toMatchObject({
+      configuration: { maxIterations: 100, tolerance: 1e-8 },
+      version: "graphology-metrics@2.4.0/pagerank/humans-v1",
+    });
+    expect(
+      graphAnalysisVersionContract(
+        "PAGERANK",
+        "graphology-metrics@2.4.0/pagerank/humans-v2",
+      ),
+    ).toMatchObject({
+      configuration: { maxIterations: 200, tolerance: 1e-8 },
+      version: "graphology-metrics@2.4.0/pagerank/humans-v2",
+    });
+    expect(graphAnalysisVersionContract("PAGERANK", "unknown")).toBeNull();
   });
 
   it("normalizes seeded Louvain communities by their smallest UUID", () => {

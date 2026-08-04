@@ -19,6 +19,8 @@ import {
   GRAPH_ANALYSIS_CONTRACTS,
   graphAnalysisCapViolation,
   graphAnalysisConfiguration,
+  graphAnalysisVersionContract,
+  type GraphAnalysisVersionContract,
   type GraphAnalysisAlgorithm,
 } from "./metrics";
 import {
@@ -1118,6 +1120,7 @@ export function createGraphService(context: GraphServiceContext) {
     database: Database,
     input: {
       algorithm: GraphAnalysisAlgorithm;
+      algorithmContract?: GraphAnalysisVersionContract;
       filter: NormalizedGraphFilter;
       graph: GraphResult;
     },
@@ -1133,12 +1136,20 @@ export function createGraphService(context: GraphServiceContext) {
         ]),
       ).values(),
     ];
+    const algorithmContract =
+      input.algorithmContract ??
+      graphAnalysisVersionContract(
+        input.algorithm,
+        GRAPH_ANALYSIS_CONTRACTS[input.algorithm].version,
+      );
+    if (!algorithmContract)
+      throw new TypeError("The graph analysis contract is unsupported.");
     return createGraphSnapshotManifest({
       actorKind: context.actor.type === "apiKey" ? "API_KEY" : "USER",
       actorPrincipalId: context.actor.principalId,
       algorithm: input.algorithm,
-      algorithmConfiguration: graphAnalysisConfiguration(input.algorithm),
-      algorithmVersion: GRAPH_ANALYSIS_CONTRACTS[input.algorithm].version,
+      algorithmConfiguration: algorithmContract.configuration,
+      algorithmVersion: algorithmContract.version,
       authorization: await currentAuthorizationVector(database, input.graph),
       query: input.filter,
       personVersions: input.graph.nodes.map(({ id, version }) => ({
@@ -1931,6 +1942,16 @@ export function createGraphService(context: GraphServiceContext) {
               )
                 return invalidate();
               const algorithm = snapshot.algorithm as GraphAnalysisAlgorithm;
+              const algorithmContract = graphAnalysisVersionContract(
+                algorithm,
+                snapshot.algorithmVersion,
+              );
+              if (
+                !algorithmContract ||
+                canonical(snapshot.algorithmConfiguration) !==
+                  canonical(algorithmContract.configuration)
+              )
+                return invalidate();
               const filter = normalizeFilterOrError(
                 snapshot.queryInput as GraphFilterInput,
               );
@@ -1946,6 +1967,7 @@ export function createGraphService(context: GraphServiceContext) {
                 return invalidate();
               const manifest = await currentManifest(database, {
                 algorithm,
+                algorithmContract,
                 filter,
                 graph,
               });
@@ -2194,6 +2216,19 @@ export function createGraphService(context: GraphServiceContext) {
               );
             const sourceAlgorithm =
               snapshot.algorithm as GraphAnalysisAlgorithm;
+            const sourceAlgorithmContract = graphAnalysisVersionContract(
+              sourceAlgorithm,
+              snapshot.algorithmVersion,
+            );
+            if (
+              !sourceAlgorithmContract ||
+              canonical(snapshot.algorithmConfiguration) !==
+                canonical(sourceAlgorithmContract.configuration)
+            )
+              throw createGraphQLError(
+                "PRECONDITION_FAILED",
+                "The graph snapshot is no longer reproducible.",
+              );
             const filter = normalizeFilterOrError(
               snapshot.queryInput as GraphFilterInput,
             );
@@ -2231,6 +2266,7 @@ export function createGraphService(context: GraphServiceContext) {
             }
             const manifest = await currentManifest(database, {
               algorithm: sourceAlgorithm,
+              algorithmContract: sourceAlgorithmContract,
               filter,
               graph,
             });

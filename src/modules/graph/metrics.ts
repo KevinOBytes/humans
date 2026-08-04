@@ -77,6 +77,41 @@ export const GRAPH_ANALYSIS_CONTRACTS = {
   },
 } as const;
 
+const HISTORICAL_PAGERANK_V1 = Object.freeze({
+  configuration: Object.freeze({
+    alpha: 0.85,
+    maxIterations: 100,
+    projection: "authorized-directed-aggregate-count-v1",
+    tolerance: 1e-8,
+    weight: "relationship-count",
+  }),
+  explanation:
+    "PageRank over this authorized snapshot using relationship direction, alpha 0.85, tolerance 1e-8, and at most 100 iterations.",
+  version: "graphology-metrics@2.4.0/pagerank/humans-v1",
+});
+
+export type GraphAnalysisVersionContract = Readonly<{
+  configuration: Readonly<Record<string, unknown>>;
+  explanation: string;
+  version: string;
+}>;
+
+export function graphAnalysisVersionContract(
+  algorithm: GraphAnalysisAlgorithm,
+  version: string,
+): GraphAnalysisVersionContract | null {
+  const current = GRAPH_ANALYSIS_CONTRACTS[algorithm];
+  if (version === current.version)
+    return {
+      configuration: graphAnalysisConfiguration(algorithm),
+      explanation: current.explanation,
+      version: current.version,
+    };
+  return algorithm === "PAGERANK" && version === HISTORICAL_PAGERANK_V1.version
+    ? HISTORICAL_PAGERANK_V1
+    : null;
+}
+
 export function graphAnalysisCapViolation(
   nodeLimit: number,
   edgeLimit: number,
