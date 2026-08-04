@@ -209,6 +209,20 @@ dependency topology and self-hosted application path are part of the current
 usable alpha boundary. The hosted Vercel path still requires deployment
 evidence before full MVP completion:
 
+When a hosted deployment URL is available, you can run:
+
+```sh
+VERCEL_SMOKE_URL=https://humans.kevinbytes.com \
+VERCEL_SMOKE_CRON_SECRET=<cron-secret> \
+pnpm vercel:smoke
+```
+
+The command validates:
+
+- `/api/health/live` and `/api/health/ready` reachability
+- unauthenticated GraphQL boundary response shape
+- `/api/jobs/run` auth enforcement with an invalid secret and optional secret probe
+
 - **Vercel:** Neon PostgreSQL, Upstash Redis, S3-compatible storage such as Cloudflare R2, Resend, and an OpenAI-compatible model endpoint.
 - **Docker Compose:** the application and worker with PostgreSQL, Redis, MinIO, bucket initialization, and optional Ollama.
 

@@ -17,6 +17,7 @@
     "dev": "next dev",
     "build": "next build",
     "runtime:build": "node scripts/build-runtime-artifacts.mjs",
+    "vercel:smoke": "node scripts/vercel-deployment-smoke.mjs",
     "runtime:image:verify": "node scripts/verify-runtime-image.mjs",
     "runtime:image:optimizer": "node scripts/verify-runtime-image-optimizer.mjs",
     "runtime:sbom:verify": "node scripts/verify-runtime-sbom.mjs",

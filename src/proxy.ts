@@ -1,68 +1,52 @@
-import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 
-const protectedPrefixes = [
-  "/dashboard",
-  "/people",
-  "/graph",
-  "/search",
-  "/analyst",
-  "/evidence",
-  "/imports",
-  "/settings",
-] as const;
+import { routeProxy } from "@/route-proxy";
 
-export function proxy(request: NextRequest): NextResponse {
-  if (
-    request.nextUrl.pathname === "/reset-password" &&
-    request.nextUrl.searchParams.has("token")
-  ) {
-    const token = request.nextUrl.searchParams.get("token")!;
-    const clean = new URL("/reset-password", request.url);
-    clean.hash = new URLSearchParams({ token }).toString();
-    return NextResponse.redirect(clean);
+const securityHeaders = {
+  "content-security-policy":
+    "default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests",
+  "cross-origin-opener-policy": "same-origin",
+  "cross-origin-resource-policy": "same-origin",
+  "origin-agent-cluster": "?1",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
+  "x-permitted-cross-domain-policies": "none",
+  "x-xss-protection": "0",
+  "permissions-policy":
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=()",
+};
+
+function applySecurityHeaders(request: NextRequest, response: NextResponse) {
+  if (!request.nextUrl.pathname.startsWith("/api/")) {
+    response.headers.set("cache-control", "no-store");
   }
-
-  if (
-    request.nextUrl.pathname === "/accept-invitation" &&
-    request.nextUrl.searchParams.has("id")
-  ) {
-    const id = request.nextUrl.searchParams.get("id")!;
-    const clean = new URL("/accept-invitation", request.url);
-    clean.hash = new URLSearchParams({ id }).toString();
-    return NextResponse.redirect(clean);
+  for (const [name, value] of Object.entries(securityHeaders)) {
+    if (
+      request.nextUrl.protocol === "http:" &&
+      (name === "strict-transport-security" ||
+        name === "content-security-policy")
+    ) {
+      if (name === "content-security-policy") {
+        response.headers.set(
+          name,
+          value.replace("; upgrade-insecure-requests", ""),
+        );
+      }
+      continue;
+    }
+    response.headers.set(name, value);
   }
+  return response;
+}
 
-  const hasSessionCookie = Boolean(getSessionCookie(request));
-  const isProtected = protectedPrefixes.some(
-    (prefix) =>
-      request.nextUrl.pathname === prefix ||
-      request.nextUrl.pathname.startsWith(`${prefix}/`),
-  );
-
-  if (isProtected && !hasSessionCookie) {
-    const signIn = new URL("/sign-in", request.url);
-    signIn.searchParams.set(
-      "returnTo",
-      `${request.nextUrl.pathname}${request.nextUrl.search}`,
-    );
-    return NextResponse.redirect(signIn);
-  }
-
-  return NextResponse.next();
+export default function proxy(request: NextRequest) {
+  return applySecurityHeaders(request, routeProxy(request));
 }
 
 export const config = {
   matcher: [
-    "/dashboard/:path*",
-    "/people/:path*",
-    "/graph/:path*",
-    "/search/:path*",
-    "/analyst/:path*",
-    "/evidence/:path*",
-    "/imports/:path*",
-    "/settings/:path*",
-    "/reset-password",
-    "/accept-invitation",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest).*)",
   ],
 };
