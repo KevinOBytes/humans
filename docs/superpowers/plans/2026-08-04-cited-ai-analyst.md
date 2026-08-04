@@ -181,46 +181,43 @@ git add src/db/schema drizzle src/modules/jobs src/worker/registry.ts tests
 git commit -m "feat: add principal-attributed AI job protocol"
 ```
 
-### Task 3: Atomic AI service and durable execution
+### Task 3: Atomic AI analysis persistence service
 
 **Files:**
 - Create: `src/modules/ai/repository.ts`
 - Create: `src/modules/ai/service.ts`
-- Create: `src/worker/handlers/ai-analysis.ts`
-- Modify: `src/worker/runtime.ts`
 - Test: `tests/integration/ai-analysis.test.ts`
-- Test: `tests/integration/worker-research-transactions.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1 `AiProvider`/research tools and Task 2 principal-attributed AI/job schema plus `AiExecuteJobPayload`.
-- Produces: `startAiAnalysis(input)`, `readAiRun(id)`, `cancelAiRun(id)`, and `createAiAnalysisHandler(runtime)` for Task 4's GraphQL registration.
+- Produces: `startAiAnalysis(input)`, `readAiRun(id)`, `cancelAiRun(id)`, and repository compare-and-set methods consumed by Task 4's worker handler and Task 5's GraphQL registration.
 - `StartAiAnalysisInput` contains a bounded question, optional closed scope of person/evidence UUIDs, and a required client idempotency key. It never accepts provider/model/base URL/tool names.
 - `AiRun` returns state, timestamps, provider/model disclosure, validated answer, validated citations, and redacted tool summaries; it never returns prompt content, base URL, provider request, API key, or raw error.
 
-- [ ] **Step 1: Write failing service, worker, authorization, and idempotency tests**
+- [ ] **Step 1: Write failing persistence, authorization, and idempotency tests**
 
-Use live PostgreSQL fixtures and injected fake provider/Redis seams to cover user and API-key principal attribution; cross-workspace non-disclosure; principal-bound idempotency replay/conflict/independence; atomic thread/message/run/job/idempotency/audit creation; current authority at enqueue, each tool call, and result commit; revocation/grant removal after enqueue; valid/forged/foreign/hidden/unreturned citations; provider retry/dead-letter redaction; stale claim fencing; cancellation; and exactly-once finalization.
+Use live PostgreSQL fixtures to cover user and API-key principal attribution; cross-workspace non-disclosure; principal-bound idempotency replay/conflict/independence; atomic thread/message/run/job/idempotency/audit creation; encrypted prompt/job payload and domain-separated HMACs; current authority at enqueue/read/cancel; cancellation compare-and-set behavior; public-safe run projection; and repository compare-and-set primitives that require current job claim generation/lease for Task 4 finalization.
 
 - [ ] **Step 2: Verify focused tests fail**
 
 ```bash
-corepack pnpm vitest run tests/integration/ai-analysis.test.ts tests/integration/worker-research-transactions.test.ts --no-file-parallelism
+corepack pnpm vitest run tests/integration/ai-analysis.test.ts --no-file-parallelism
 ```
 
-Expected: fail because the AI repository, service, and real handler do not exist.
+Expected: fail because the AI repository and service do not exist.
 
 - [ ] **Step 3: Implement atomic service and repository operations**
 
 Start analysis in one transaction. Normalize the question and scope; HMAC-bind request material to workspace, principal, operation, and idempotency key; create or replay an idempotency row; create one private thread when needed; encrypt the user message and job payload; store HMAC digests and provider/base-URL fingerprint; enqueue one `ai_execute` job; and write a redacted audit event.
 
-The handler loads current authority, decrypts input, executes at most four provider/tool boundaries, records only allowlisted redacted summaries, validates citations against the run ledger and current visibility, then commits assistant message/citations/final state only while the job claim and lease remain current. Cancellation and finalization use compare-and-set transitions.
+Expose repository primitives for Task 4 to load a pending run, record a bounded redacted tool call, finalize exactly once with assistant message/citations, or record a stable failure only while the matching job claim generation and lease remain current. Cancellation uses compare-and-set transitions and never returns another principal's run.
 
 - [ ] **Step 4: Pass focused database/worker tests and static gates**
 
 Run:
 
 ```bash
-corepack pnpm vitest run tests/integration/ai-analysis.test.ts tests/integration/worker-research-transactions.test.ts --no-file-parallelism
+corepack pnpm vitest run tests/integration/ai-analysis.test.ts --no-file-parallelism
 corepack pnpm typecheck
 corepack pnpm lint
 ```
@@ -230,11 +227,55 @@ Expected: all pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/modules/ai src/worker tests/integration/ai-analysis.test.ts tests/integration/worker-research-transactions.test.ts
-git commit -m "feat: persist and execute cited AI analysis"
+git add src/modules/ai/repository.ts src/modules/ai/service.ts tests/integration/ai-analysis.test.ts
+git commit -m "feat: add atomic AI analysis persistence"
 ```
 
-### Task 4: Canonical GraphQL analyst API
+### Task 4: Authorized durable AI execution handler
+
+**Files:**
+- Create: `src/worker/handlers/ai-analysis.ts`
+- Modify: `src/worker/runtime.ts`
+- Test: `tests/integration/worker-research-transactions.test.ts`
+
+**Interfaces:**
+- Consumes: Task 1 provider/tools, Task 2 `AiExecuteJobPayload`, and Task 3 repository compare-and-set operations.
+- Produces: `createAiAnalysisHandler(runtime)`, registered as the production `aiExecute` handler.
+
+- [ ] **Step 1: Write failing execution/fencing tests**
+
+Use live PostgreSQL and injected fake-provider/Redis seams to cover current principal authority before each tool and final write; revocation/grant removal after enqueue; valid/forged/foreign/hidden/unreturned citations; bounded tool-loop execution; provider retry/dead-letter redaction; stale claim/lease unable to persist output; cancellation during a tool boundary; and exactly-once assistant message/citations across replay.
+
+- [ ] **Step 2: Verify handler tests fail**
+
+```bash
+corepack pnpm vitest run tests/integration/worker-research-transactions.test.ts --no-file-parallelism
+```
+
+Expected: fail because the real AI handler is not registered.
+
+- [ ] **Step 3: Implement and register the real handler**
+
+Load current authority, decrypt input, execute at most four provider/tool boundaries, record only allowlisted redacted summaries, validate citations against the tool-returned ledger and current visibility, then commit assistant message/citations/final state only while the job claim and lease remain current. Map provider failures to stable retryable/permanent codes without retaining upstream material. Replace the retryable placeholder in production runtime.
+
+- [ ] **Step 4: Pass focused worker and static gates**
+
+```bash
+corepack pnpm vitest run tests/integration/worker-research-transactions.test.ts --no-file-parallelism
+corepack pnpm typecheck
+corepack pnpm lint
+```
+
+Expected: all pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/worker src/modules/ai tests/integration/worker-research-transactions.test.ts
+git commit -m "feat: execute authorized cited AI analysis"
+```
+
+### Task 5: Canonical GraphQL analyst API
 
 **Files:**
 - Create: `src/modules/ai/graphql.ts`
@@ -285,7 +326,7 @@ git add src/modules/ai/graphql.ts src/graphql src/app/api/graphql tests/integrat
 git commit -m "feat: expose cited AI analysis through GraphQL"
 ```
 
-### Task 5: Generated analyst client, accessible UI, and release evidence
+### Task 6: Generated analyst client, accessible UI, and release evidence
 
 **Files:**
 - Create: `src/graphql/operations/analyst.graphql`
