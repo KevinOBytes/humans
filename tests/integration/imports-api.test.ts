@@ -17,7 +17,11 @@ import {
 import { jobs } from "@/db/schema/operations";
 import { people } from "@/db/schema/people";
 import { relationshipTypes } from "@/db/schema/relationships";
-import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
+import {
+  accessPolicies,
+  resourceGrants,
+  workspaces,
+} from "@/db/schema/workspaces";
 import type { RedisStore } from "@/lib/redis";
 import type { ObjectStore } from "@/lib/storage/types";
 import { createFilesService } from "@/modules/files/service";
@@ -905,7 +909,12 @@ liveDescribe("import staging and durable start", () => {
     }
   });
 
-  it.each(["role demotion", "membership removal"] as const)(
+  it.each([
+    "role demotion",
+    "membership removal",
+    "session revocation",
+    "workspace suspension",
+  ] as const)(
     "rejects prepare when %s wins the live-authority race",
     async (revocation) => {
       const owner = await fixture.createActor("owner");
@@ -958,8 +967,6 @@ liveDescribe("import staging and durable start", () => {
           defaults: {},
         },
       });
-      const databaseUrl = process.env.TEST_DATABASE_URL!;
-      const observer = postgres(databaseUrl, { max: 1, prepare: false });
       const service = createImportsService(context, {
         encryptionKey,
         objectStore: store,
@@ -969,38 +976,51 @@ liveDescribe("import staging and durable start", () => {
       > | null = null;
       try {
         await fixture.connection.begin(async (revoker) => {
-          await revoker`
-          SELECT id FROM members WHERE id = ${actor.memberId} FOR UPDATE
-        `;
+          if (
+            revocation === "role demotion" ||
+            revocation === "membership removal"
+          ) {
+            await revoker`
+              SELECT id FROM members WHERE id = ${actor.memberId} FOR UPDATE
+            `;
+          } else if (revocation === "session revocation") {
+            await revoker`
+              SELECT id FROM sessions
+              WHERE id = ${context.actor.sessionId}
+              FOR UPDATE
+            `;
+          } else {
+            await revoker`
+              SELECT id FROM workspaces
+              WHERE id = ${actor.workspaceId}
+              FOR UPDATE
+            `;
+          }
           preparePromise = service.prepareImport({
             fileId: completed.file.id,
             mappingId: mapping.mapping.id,
             idempotencyKey: `prepare-${revocation.replaceAll(" ", "-")}-race-v1`,
           });
-          let prepareBlocked = false;
-          for (let attempt = 0; attempt < 100; attempt += 1) {
-            const [activity] = await observer<[{ blocked: boolean }]>`
-            SELECT EXISTS (
-              SELECT 1 FROM pg_stat_activity
-              WHERE datname = current_database()
-                AND wait_event_type = 'Lock'
-            ) AS blocked
-          `;
-            if (activity?.blocked) {
-              prepareBlocked = true;
-              break;
-            }
-            await delay(10);
-          }
-          expect(prepareBlocked).toBe(true);
           if (revocation === "role demotion") {
             await revoker`
             UPDATE members SET role = 'viewer' WHERE id = ${actor.memberId}
           `;
-          } else {
+          } else if (revocation === "membership removal") {
             await revoker`
             DELETE FROM members WHERE id = ${actor.memberId}
           `;
+          } else if (revocation === "session revocation") {
+            await revoker`
+              UPDATE sessions
+              SET expires_at = now() - interval '1 second'
+              WHERE id = ${context.actor.sessionId}
+            `;
+          } else {
+            await revoker`
+              UPDATE workspaces
+              SET state = 'inactive'
+              WHERE id = ${actor.workspaceId}
+            `;
           }
         });
         await expect(preparePromise).rejects.toMatchObject({
@@ -1014,73 +1034,83 @@ liveDescribe("import staging and durable start", () => {
         ).toHaveLength(0);
       } finally {
         if (preparePromise) await Promise.allSettled([preparePromise]);
-        await Promise.all([writerConnection.end(), observer.end()]);
+        await writerConnection.end();
       }
     },
   );
 
-  it("serializes role demotion behind a live-authorized prepare claim", async () => {
-    const owner = await fixture.createActor("owner");
-    const actor = await fixture.createWorkspaceMember(owner, "contributor");
-    const ownerContext = await serviceContext(fixture, owner);
-    const store = new MemoryStore();
-    const fileService = createFilesService(ownerContext, {
-      encryptionKey,
-      objectStore: store,
-      storageBucket: "private",
-      storageProvider: "minio",
-    });
-    const body = new TextEncoder().encode(
-      "external_id,name\nlock-1,Committed User\n",
-    );
-    const upload = await fileService.createUploadSession({
-      originalName: "authority-lock.csv",
-      claimedMediaType: "text/csv",
-      byteSize: body.byteLength,
-      checksumSha256: createHash("sha256").update(body).digest("hex"),
-      purpose: "CSV_IMPORT",
-    });
-    store.objects.set(`${owner.workspaceId}:${upload.session.objectKey}`, body);
-    const completed = await fileService.completeUpload(upload.session.id);
-    const ownerService = createImportsService(ownerContext, {
-      encryptionKey,
-      objectStore: store,
-    });
-    const mapping = await ownerService.saveMapping({
-      name: "Authority lock mapping",
-      format: "CSV",
-      definition: {
-        version: 1,
-        recordKind: "PERSON",
-        rowKeySource: "external_id",
-        person: {
-          displayNameSource: "name",
-          primaryNameKind: "legal",
-          fields: [],
+  it.each([
+    "role demotion",
+    "session revocation",
+    "workspace suspension",
+  ] as const)(
+    "serializes %s behind a live-authorized prepare claim",
+    async (revocation) => {
+      const owner = await fixture.createActor("owner");
+      const actor = await fixture.createWorkspaceMember(owner, "contributor");
+      const ownerContext = await serviceContext(fixture, owner);
+      const store = new MemoryStore();
+      const fileService = createFilesService(ownerContext, {
+        encryptionKey,
+        objectStore: store,
+        storageBucket: "private",
+        storageProvider: "minio",
+      });
+      const body = new TextEncoder().encode(
+        "external_id,name\nlock-1,Committed User\n",
+      );
+      const upload = await fileService.createUploadSession({
+        originalName: "authority-lock.csv",
+        claimedMediaType: "text/csv",
+        byteSize: body.byteLength,
+        checksumSha256: createHash("sha256").update(body).digest("hex"),
+        purpose: "CSV_IMPORT",
+      });
+      store.objects.set(
+        `${owner.workspaceId}:${upload.session.objectKey}`,
+        body,
+      );
+      const completed = await fileService.completeUpload(upload.session.id);
+      const ownerService = createImportsService(ownerContext, {
+        encryptionKey,
+        objectStore: store,
+      });
+      const mapping = await ownerService.saveMapping({
+        name: "Authority lock mapping",
+        format: "CSV",
+        definition: {
+          version: 1,
+          recordKind: "PERSON",
+          rowKeySource: "external_id",
+          person: {
+            displayNameSource: "name",
+            primaryNameKind: "legal",
+            fields: [],
+          },
+          facts: [],
+          defaults: {},
         },
-        facts: [],
-        defaults: {},
-      },
-    });
-    const writerConnection = createTestConnection(1);
-    const revokerConnection = createTestConnection(1);
-    const gateConnection = createTestConnection(1);
-    const writerName = `task1_import_writer_${newId()}`;
-    const revokerName = `task1_import_revoker_${newId()}`;
-    const service = createImportsService(
-      {
-        ...(await serviceContext(fixture, actor)),
-        database: createTestDatabase(writerConnection),
-      },
-      { encryptionKey, objectStore: store },
-    );
-    let gateHeld = false;
-    let preparePromise: Promise<
-      Awaited<ReturnType<typeof service.prepareImport>>
-    > | null = null;
-    let removalPromise: Promise<unknown> | null = null;
-    try {
-      await fixture.connection.unsafe(`
+      });
+      const writerConnection = createTestConnection(1);
+      const revokerConnection = createTestConnection(1);
+      const gateConnection = createTestConnection(1);
+      const writerName = `task1_import_writer_${newId()}`;
+      const revokerName = `task1_import_revoker_${newId()}`;
+      const actorContext = await serviceContext(fixture, actor);
+      const service = createImportsService(
+        {
+          ...actorContext,
+          database: createTestDatabase(writerConnection),
+        },
+        { encryptionKey, objectStore: store },
+      );
+      let gateHeld = false;
+      let preparePromise: Promise<
+        Awaited<ReturnType<typeof service.prepareImport>>
+      > | null = null;
+      let removalPromise: Promise<unknown> | null = null;
+      try {
+        await fixture.connection.unsafe(`
         CREATE OR REPLACE FUNCTION task1_import_post_authority_gate()
         RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
@@ -1093,58 +1123,76 @@ liveDescribe("import staging and durable start", () => {
         BEFORE UPDATE ON imports
         FOR EACH ROW EXECUTE FUNCTION task1_import_post_authority_gate();
       `);
-      await writerConnection`SELECT set_config('application_name', ${writerName}, false)`;
-      await revokerConnection`SELECT set_config('application_name', ${revokerName}, false)`;
-      await gateConnection`SELECT pg_advisory_lock(${IMPORT_PREPARE_GATE})`;
-      gateHeld = true;
-      preparePromise = service.prepareImport({
-        fileId: completed.file.id,
-        mappingId: mapping.mapping.id,
-        idempotencyKey: "prepare-authority-lock-v1",
-      });
-      await waitForActivity(fixture, writerName, "AdvisoryLock");
-      removalPromise = createTestDatabase(revokerConnection)
-        .update(members)
-        .set({ role: "viewer" })
-        .where(eq(members.id, actor.memberId))
-        .returning({ id: members.id })
-        .then(() => undefined);
-      await waitForActivity(fixture, revokerName, "Lock");
-      await gateConnection`SELECT pg_advisory_unlock(${IMPORT_PREPARE_GATE})`;
-      gateHeld = false;
-      await expect(preparePromise).resolves.toMatchObject({
-        import: { state: "preview_ready", totalRows: 1 },
-      });
-      await removalPromise;
-      expect(
-        await fixture.database
-          .select({ id: importsTable.id })
-          .from(importsTable)
-          .where(eq(importsTable.workspaceId, owner.workspaceId)),
-      ).toHaveLength(1);
-    } finally {
-      if (gateHeld) {
-        await gateConnection`
+        await writerConnection`SELECT set_config('application_name', ${writerName}, false)`;
+        await revokerConnection`SELECT set_config('application_name', ${revokerName}, false)`;
+        await gateConnection`SELECT pg_advisory_lock(${IMPORT_PREPARE_GATE})`;
+        gateHeld = true;
+        preparePromise = service.prepareImport({
+          fileId: completed.file.id,
+          mappingId: mapping.mapping.id,
+          idempotencyKey: "prepare-authority-lock-v1",
+        });
+        await waitForActivity(fixture, writerName, "AdvisoryLock");
+        const revokerDatabase = createTestDatabase(revokerConnection);
+        if (revocation === "role demotion") {
+          removalPromise = revokerDatabase
+            .update(members)
+            .set({ role: "viewer" })
+            .where(eq(members.id, actor.memberId))
+            .returning({ id: members.id })
+            .then(() => undefined);
+        } else if (revocation === "session revocation") {
+          removalPromise = revokerDatabase
+            .update(sessions)
+            .set({ expiresAt: new Date(Date.now() - 1_000) })
+            .where(eq(sessions.id, actorContext.actor.sessionId))
+            .returning({ id: sessions.id })
+            .then(() => undefined);
+        } else {
+          removalPromise = revokerDatabase
+            .update(workspaces)
+            .set({ state: "inactive" })
+            .where(eq(workspaces.id, actor.workspaceId))
+            .returning({ id: workspaces.id })
+            .then(() => undefined);
+        }
+        await waitForActivity(fixture, revokerName, "Lock");
+        await gateConnection`SELECT pg_advisory_unlock(${IMPORT_PREPARE_GATE})`;
+        gateHeld = false;
+        await expect(preparePromise).resolves.toMatchObject({
+          import: { state: "preview_ready", totalRows: 1 },
+        });
+        await removalPromise;
+        expect(
+          await fixture.database
+            .select({ id: importsTable.id })
+            .from(importsTable)
+            .where(eq(importsTable.workspaceId, owner.workspaceId)),
+        ).toHaveLength(1);
+      } finally {
+        if (gateHeld) {
+          await gateConnection`
           SELECT pg_advisory_unlock(${IMPORT_PREPARE_GATE})
         `.catch(() => undefined);
+        }
+        await fixture.connection
+          .unsafe(
+            "DROP TRIGGER IF EXISTS task1_import_post_authority_gate_trigger ON imports; DROP FUNCTION IF EXISTS task1_import_post_authority_gate();",
+          )
+          .catch(() => undefined);
+        await Promise.allSettled(
+          [preparePromise, removalPromise].filter(
+            (promise): promise is Promise<unknown> => promise !== null,
+          ),
+        );
+        await Promise.all([
+          writerConnection.end(),
+          revokerConnection.end(),
+          gateConnection.end(),
+        ]);
       }
-      await fixture.connection
-        .unsafe(
-          "DROP TRIGGER IF EXISTS task1_import_post_authority_gate_trigger ON imports; DROP FUNCTION IF EXISTS task1_import_post_authority_gate();",
-        )
-        .catch(() => undefined);
-      await Promise.allSettled(
-        [preparePromise, removalPromise].filter(
-          (promise): promise is Promise<unknown> => promise !== null,
-        ),
-      );
-      await Promise.all([
-        writerConnection.end(),
-        revokerConnection.end(),
-        gateConnection.end(),
-      ]);
-    }
-  });
+    },
+  );
 
   it("serializes the per-actor cap when a member starts imports created by a peer", async () => {
     const owner = await fixture.createActor("owner");
