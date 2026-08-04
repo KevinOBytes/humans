@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
@@ -105,6 +105,7 @@ function createProbePng() {
 }
 
 const probeDirectory = await mkdtemp(join(tmpdir(), "humans-image-probe-"));
+await chmod(probeDirectory, 0o755);
 const containerName = `humans-image-probe-${randomUUID()}`;
 let started = false;
 try {
