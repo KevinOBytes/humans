@@ -29,7 +29,6 @@ recovery.
 - [ ] `HUM-FR-023` Implement workspace-policy-controlled restricted-prompt omission/retention beyond the implemented read-only tool allowlist, authorization checks, citation validation, and provider/model disclosure.
 - [ ] `HUM-FR-024` Implement webhook lifecycle, signed delivery, retry execution, and acceptance coverage beyond the implemented durable jobs, immutable audit events, and idempotency records.
 - [ ] `HUM-FR-025` Complete the whole-MVP GraphQL operation and production-introspection matrix beyond the generated Task 12 search, saved-query, snapshot/replay, deterministic analysis, and export operations.
-- [ ] `HUM-FR-027` Complete recent-import, recent-analysis, activity, concise graph-statistic, and policy-summary dashboard panels plus owner/lower-privilege browser acceptance beyond the implemented workspace setup, selection, and recent-people surface.
 - [ ] `HUM-FR-028` Complete names/reconciliation, timeline, person-file, and contradictory-fact profile workflows plus full accessibility acceptance beyond the implemented people search/create, overview edit, facts, relationships, evidence, notes, contacts, and activity surfaces.
 - [ ] `HUM-FR-029` Complete graph editing and performance acceptance beyond the existing explorer, accessible table fallback, and Task 12 snapshot/analysis/result/export controls.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes.

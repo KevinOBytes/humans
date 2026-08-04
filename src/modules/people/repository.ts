@@ -1,4 +1,15 @@
-import { and, asc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import { people } from "@/db/schema/people";
 import type { Database } from "@/modules/auth/bootstrap-admin";
@@ -86,6 +97,35 @@ export function createPeopleRepository(database: Database) {
           ),
         )
         .orderBy(asc(sortExpression), asc(people.id))
+        .limit(input.limit);
+    },
+
+    async listRecent(input: {
+      workspaceId: string;
+      limit: number;
+      cursor?: { updatedAt: Date; id: string } | null;
+      visibility?: SQL;
+    }): Promise<PersonRow[]> {
+      return database
+        .select()
+        .from(people)
+        .where(
+          and(
+            eq(people.workspaceId, input.workspaceId),
+            isNull(people.deletedAt),
+            input.visibility,
+            input.cursor
+              ? or(
+                  lt(people.updatedAt, input.cursor.updatedAt),
+                  and(
+                    eq(people.updatedAt, input.cursor.updatedAt),
+                    lt(people.id, input.cursor.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(people.updatedAt), desc(people.id))
         .limit(input.limit);
     },
 

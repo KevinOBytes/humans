@@ -20,8 +20,14 @@ import {
   type AiCitation,
   type AiRepositoryRuntime,
   type AiRun,
+  type AiRunHistoryItem,
   type AiScope,
 } from "./repository";
+import type { Connection } from "@/modules/people/service";
+import {
+  decodeAiRunHistoryCursor,
+  encodeAiRunHistoryCursor,
+} from "./repository-domain";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -292,6 +298,20 @@ function validateRunId(id: string): string {
   return id.toLowerCase();
 }
 
+export function normalizeAiRunHistoryPage(input: {
+  after?: string | null;
+  first?: number | null;
+}): { after: string | null; first: number } {
+  const first = input.first ?? 5;
+  if (!Number.isInteger(first) || first < 1 || first > 10) {
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "first must be between 1 and 10.",
+    );
+  }
+  return { after: input.after ?? null, first };
+}
+
 export function createAiAnalysisService(
   context: ResearchServiceContext,
   runtime: AiAnalysisRuntime,
@@ -383,6 +403,55 @@ export function createAiAnalysisService(
 
     readAiRun,
 
+    async listOwnedRuns(input: {
+      after?: string | null;
+      first?: number | null;
+    }): Promise<Connection<AiRunHistoryItem>> {
+      const page = normalizeAiRunHistoryPage(input);
+      const binding = {
+        principalId: context.actor.principalId,
+        workspaceId: context.workspaceId,
+      };
+      let after = null;
+      try {
+        after = page.after
+          ? decodeAiRunHistoryCursor(page.after, binding, runtime.hmacKey)
+          : null;
+      } catch {
+        throw createGraphQLError("VALIDATION_FAILED", "The cursor is invalid.");
+      }
+      return runResearchTransaction(
+        context,
+        { requiredPermissions: ["analysis:read"] },
+        async (scopedContext) => {
+          const rows = await createAiRepository(
+            scopedContext.database,
+            repositoryRuntime,
+          ).listOwnedRuns({
+            actorPrincipalId: scopedContext.actor.principalId,
+            after,
+            limit: page.first + 1,
+            workspaceId: scopedContext.workspaceId,
+          });
+          const nodes = rows.slice(0, page.first);
+          const last = nodes.at(-1);
+          return {
+            nodes,
+            pageInfo: {
+              endCursor: last
+                ? encodeAiRunHistoryCursor(
+                    { createdAt: last.createdAt, id: last.id },
+                    binding,
+                    runtime.hmacKey,
+                  )
+                : null,
+              hasNextPage: rows.length > page.first,
+            },
+          };
+        },
+      );
+    },
+
     async cancelAiRun(id: string): Promise<AiRun | null> {
       const runId = validateRunId(id);
       return runResearchTransaction(
@@ -412,4 +481,10 @@ export function createAiAnalysisService(
   };
 }
 
-export type { AiCitation, AiRun, AiScope, AiToolSummary } from "./repository";
+export type {
+  AiCitation,
+  AiRun,
+  AiRunHistoryItem,
+  AiScope,
+  AiToolSummary,
+} from "./repository";

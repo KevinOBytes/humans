@@ -309,6 +309,18 @@ export function createSettingsService(input: {
       }
       return settings;
     },
+    async readWorkspacePolicySummary() {
+      const summary = await repository.readWorkspacePolicySummary(
+        input.workspaceId,
+      );
+      if (!summary) {
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "Workspace settings are unavailable.",
+        );
+      }
+      return summary;
+    },
     async createOrganizationApiKey(inputValue: {
       expiresInSeconds?: number | null;
       name: string;

@@ -427,6 +427,18 @@ const GraphAnalysisRunConnection = builder
       pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
     }),
   });
+const GraphStatistics = builder
+  .objectRef<{ visiblePeople: number; visibleRelationships: number }>(
+    "GraphStatistics",
+  )
+  .implement({
+    fields: (t) => ({
+      visiblePeople: t.exposeInt("visiblePeople", { nullable: false }),
+      visibleRelationships: t.exposeInt("visibleRelationships", {
+        nullable: false,
+      }),
+    }),
+  });
 type GraphAnalysisResultRecord = {
   id: string;
   analysisRunId: string;
@@ -687,6 +699,36 @@ export function registerGraphGraphQL(): void {
         requireGraphRead(context);
         requirePermission(context, "analysis", "read");
         return context.services.graph.listAnalysisRuns(args);
+      },
+    }),
+    dashboardRecentGraphAnalyses: t.field({
+      type: GraphAnalysisRunConnection,
+      nullable: false,
+      args: { first: t.arg.int(), after: t.arg.string() },
+      complexity: (args) => ({
+        field: 2,
+        multiplier:
+          args.first == null
+            ? 5
+            : Number.isInteger(args.first) &&
+                args.first >= 1 &&
+                args.first <= 10
+              ? args.first
+              : 11,
+      }),
+      resolve: (_root, args, context) => {
+        requireGraphRead(context);
+        requirePermission(context, "analysis", "read");
+        return context.services.graph.listRecentAnalysisRuns(args);
+      },
+    }),
+    graphStatistics: t.field({
+      type: GraphStatistics,
+      nullable: false,
+      complexity: { field: 6, multiplier: 1 },
+      resolve: (_root, _args, context) => {
+        requireGraphRead(context);
+        return context.services.graph.statistics();
       },
     }),
     graphAnalysisResults: t.field({

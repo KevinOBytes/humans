@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import {
@@ -30,6 +30,8 @@ import {
   validateRedactedToolJson,
   type AiRepositoryRuntime,
   type AiRun,
+  type AiRunHistoryCursor,
+  type AiRunHistoryItem,
   type AiToolSummary,
   type StartAiRowsInput,
 } from "./repository-domain";
@@ -189,6 +191,66 @@ export function createAiRepository(
   return {
     ...worker,
     readOwnedRun,
+
+    async listOwnedRuns(input: {
+      actorPrincipalId: string;
+      after: AiRunHistoryCursor | null;
+      limit: number;
+      workspaceId: string;
+    }): Promise<AiRunHistoryItem[]> {
+      const rows = await database
+        .select({
+          completedAt: aiRuns.completedAt,
+          createdAt: aiRuns.createdAt,
+          id: aiRuns.id,
+          model: aiRuns.model,
+          provider: aiRuns.provider,
+          startedAt: aiRuns.startedAt,
+          state: aiRuns.state,
+        })
+        .from(aiRuns)
+        .innerJoin(
+          aiThreads,
+          and(
+            eq(aiThreads.workspaceId, aiRuns.workspaceId),
+            eq(aiThreads.id, aiRuns.threadId),
+            eq(aiThreads.ownerId, input.actorPrincipalId),
+            eq(aiThreads.sharing, "private"),
+            isNull(aiThreads.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(aiRuns.workspaceId, input.workspaceId),
+            eq(aiRuns.createdBy, input.actorPrincipalId),
+            input.after
+              ? or(
+                  lt(aiRuns.createdAt, input.after.createdAt),
+                  and(
+                    eq(aiRuns.createdAt, input.after.createdAt),
+                    lt(aiRuns.id, input.after.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(aiRuns.createdAt), desc(aiRuns.id))
+        .limit(input.limit);
+      return rows.map((row) => {
+        if (!validAiProvider(row.provider) || !validAiRunState(row.state)) {
+          throw new Error("Invalid persisted AI run metadata");
+        }
+        return Object.freeze({
+          completedAt: row.completedAt,
+          createdAt: row.createdAt,
+          id: row.id,
+          model: row.model,
+          provider: row.provider,
+          startedAt: row.startedAt,
+          state: row.state,
+        });
+      });
+    },
 
     async insertStartedAnalysis(
       input: StartAiRowsInput,
@@ -408,6 +470,8 @@ export type {
   AiJobClaim,
   AiRepositoryRuntime,
   AiRun,
+  AiRunHistoryCursor,
+  AiRunHistoryItem,
   AiScope,
   AiToolSummary,
   ClaimedAiRun,
