@@ -162,6 +162,7 @@ export const uploadSessions = pgTable(
     cleanupCompletedAt: domainTimestamp("cleanup_completed_at"),
     uploadAttemptId: uuid("upload_attempt_id"),
     uploadAttemptExpiresAt: domainTimestamp("upload_attempt_expires_at"),
+    storageMutationSettlesAt: domainTimestamp("storage_mutation_settles_at"),
     storageMutationGeneration: integer("storage_mutation_generation")
       .default(0)
       .notNull(),
@@ -205,6 +206,7 @@ export const uploadSessions = pgTable(
     index("upload_sessions_attempt_cleanup_idx").on(
       table.state,
       table.uploadAttemptExpiresAt,
+      table.storageMutationSettlesAt,
       table.expiresAt,
       table.id,
     ),

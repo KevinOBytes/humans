@@ -106,8 +106,13 @@ or object-key coordinates. Upload and download grants for MinIO, R2, and generic
 S3 use the same opaque application storage route; only the application decrypts
 the short-lived grant and reaches the configured provider. Each upload grant is
 bound to its pending database session, and the proxy holds that session lock
-during the bounded provider PUT so cancellation and upload have one authoritative
-ordering. Archive cleanup reads storage coordinates only inside the worker,
+only while it claims or reconciles a durable attempt; no database connection is
+held while the provider PUT streams. The PUT is bounded to 60 seconds, and each
+claim reserves a further 60-second quiescence window before cleanup or a
+replacement claim may proceed. A provider commit followed by a timeout/error
+advances the durable mutation generation and restarts that window, so cleanup
+cannot certify a delete made before an ambiguous publication. Archive cleanup
+reads storage coordinates only inside the worker,
 requires exclusive coordinate ownership, deletes the exact primary and variant
 objects, and records completion once. `pnpm test:db` includes the
 real-context file API and durable cleanup suites. The required Compose lifecycle

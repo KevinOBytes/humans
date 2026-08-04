@@ -138,13 +138,24 @@ expiry no later than the session expiry. The proxy validates request headers
 before claiming the pending session in a short row-locking transaction under
 the current deployment limit. The claim records a fresh upload-attempt UUID and
 a database-clock lease ending no later than the session expiry or 60 seconds
-after the claim. The transaction and its pooled connection are released before
+after the claim, plus a 60-second post-attempt quiescence deadline. The
+transaction and its pooled connection are released before
 the bounded upstream PUT streams any object bytes. A second short transaction
 advances the session's monotonic storage-mutation generation after every
 successful upstream PUT, clears a matching attempt, and reports success only
 while that attempt, its session, and its pending state remain live. Stale
 attempts still advance the generation so their object publication cannot be
 mistaken for an unchanged cleanup target.
+
+An SDK error or timeout is treated as an ambiguous storage mutation, not proof
+that the provider rejected the PUT. It advances the generation before clearing
+the matching attempt and restarts the 60-second quiescence window. Cleanup and
+replacement claims require both the attempt lease and that window to expire.
+Thus a request lost after its claim retains a database fence for at most 120
+seconds from claim (60 seconds of bounded PUT plus 60 seconds of quiescence),
+after which cleanup performs the final exact-key delete. This protocol assumes
+the configured S3-compatible provider finishes or abandons publication within
+that explicit 60-second post-abort bound.
 
 Cancellation can therefore commit while the PUT is in progress. Cleanup
 returns a retryable not-ready result while the matching attempt lease is live;

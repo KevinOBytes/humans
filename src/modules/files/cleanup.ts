@@ -190,6 +190,7 @@ export async function reconcileFileCleanupJobs(input: {
   limit?: number;
 }): Promise<number> {
   const limit = Math.min(Math.max(input.limit ?? 100, 1), 250);
+  const uploadSessionLimit = Math.ceil(limit / 2);
   return input.database.transaction(async (transaction) => {
     const candidates = await transaction
       .select({
@@ -226,7 +227,7 @@ export async function reconcileFileCleanupJobs(input: {
         ),
       )
       .orderBy(asc(uploadSessions.expiresAt), asc(uploadSessions.id))
-      .limit(limit)
+      .limit(uploadSessionLimit)
       .for("update", { of: uploadSessions, skipLocked: true });
 
     for (const session of candidates) {
@@ -258,7 +259,28 @@ export async function reconcileFileCleanupJobs(input: {
           : {}),
       });
     }
-    return candidates.length;
+    const archivedCandidates = await transaction
+      .select({
+        createdBy: files.deletedBy,
+        id: files.id,
+        workspaceId: files.workspaceId,
+      })
+      .from(files)
+      .where(and(isNotNull(files.deletedAt), isNull(files.cleanupCompletedAt)))
+      .orderBy(asc(files.deletedAt), asc(files.id))
+      .limit(limit - candidates.length)
+      .for("update", { skipLocked: true });
+
+    for (const file of archivedCandidates) {
+      await ensureArchivedFileCleanupJob({
+        database: transaction as unknown as Database,
+        encryptionKey: input.encryptionKey,
+        workspaceId: file.workspaceId,
+        fileId: file.id,
+        createdBy: file.createdBy,
+      });
+    }
+    return candidates.length + archivedCandidates.length;
   });
 }
 
@@ -314,6 +336,13 @@ export function createFileCleanupService(input: {
                 isNull(uploadSessions.uploadAttemptId),
                 lte(
                   uploadSessions.uploadAttemptExpiresAt,
+                  sql`clock_timestamp()`,
+                ),
+              ),
+              or(
+                isNull(uploadSessions.storageMutationSettlesAt),
+                lte(
+                  uploadSessions.storageMutationSettlesAt,
                   sql`clock_timestamp()`,
                 ),
               ),

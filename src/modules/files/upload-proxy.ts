@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, lte, or, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { uploadSessions } from "@/db/schema/files";
@@ -18,6 +18,7 @@ const cleanupAttemptTerminalStates = [
   "expired",
   "cleanup_pending",
 ] as const;
+const MUTATION_SETTLEMENT_INTERVAL = sql`interval '60 seconds'`;
 
 function requiresObjectCleanup(state: string): boolean {
   return cleanupAttemptTerminalStates.some((candidate) => candidate === state);
@@ -36,7 +37,7 @@ export function createUploadSessionProxyExecutor(input: {
       const [session] = await transaction
         .select({
           actorId: uploadSessions.actorId,
-          attemptAvailable: sql<boolean>`${uploadSessions.uploadAttemptId} IS NULL OR ${uploadSessions.uploadAttemptExpiresAt} <= clock_timestamp()`,
+          attemptAvailable: sql<boolean>`(${uploadSessions.uploadAttemptId} IS NULL OR ${uploadSessions.uploadAttemptExpiresAt} <= clock_timestamp()) AND (${uploadSessions.storageMutationSettlesAt} IS NULL OR ${uploadSessions.storageMutationSettlesAt} <= clock_timestamp())`,
           expectedChecksum: uploadSessions.expectedChecksum,
           expectedMediaType: uploadSessions.expectedMediaType,
           expiresAt: uploadSessions.expiresAt,
@@ -82,6 +83,7 @@ export function createUploadSessionProxyExecutor(input: {
         .set({
           uploadAttemptId: attemptId,
           uploadAttemptExpiresAt: sql`LEAST(${uploadSessions.expiresAt}, clock_timestamp() + interval '60 seconds')`,
+          storageMutationSettlesAt: sql`LEAST(${uploadSessions.expiresAt}, clock_timestamp() + interval '60 seconds') + ${MUTATION_SETTLEMENT_INTERVAL}`,
           updatedAt: sql`clock_timestamp()`,
         })
         .where(
@@ -96,6 +98,13 @@ export function createUploadSessionProxyExecutor(input: {
                 sql`clock_timestamp()`,
               ),
             ),
+            or(
+              sql`${uploadSessions.storageMutationSettlesAt} IS NULL`,
+              lte(
+                uploadSessions.storageMutationSettlesAt,
+                sql`clock_timestamp()`,
+              ),
+            ),
           ),
         )
         .returning({ id: uploadSessions.id });
@@ -106,7 +115,7 @@ export function createUploadSessionProxyExecutor(input: {
     try {
       await upload();
     } catch (error) {
-      await clearMatchingAttempt(input.database, grant, attemptId);
+      await recordAmbiguousMutation(input.database, grant, attemptId);
       throw error;
     }
 
@@ -134,6 +143,7 @@ export function createUploadSessionProxyExecutor(input: {
           .update(uploadSessions)
           .set({
             storageMutationGeneration: sql`${uploadSessions.storageMutationGeneration} + 1`,
+            storageMutationSettlesAt: sql`GREATEST(COALESCE(${uploadSessions.storageMutationSettlesAt}, clock_timestamp()), clock_timestamp() + ${MUTATION_SETTLEMENT_INTERVAL})`,
             ...(requiresObjectCleanup(session.state) &&
             session.cleanupCompletedAt
               ? { cleanupCompletedAt: null }
@@ -156,6 +166,7 @@ export function createUploadSessionProxyExecutor(input: {
         .update(uploadSessions)
         .set({
           storageMutationGeneration: sql`${uploadSessions.storageMutationGeneration} + 1`,
+          storageMutationSettlesAt: null,
           uploadAttemptId: null,
           uploadAttemptExpiresAt: null,
           ...(!authorized &&
@@ -177,7 +188,7 @@ export function createUploadSessionProxyExecutor(input: {
   };
 }
 
-async function clearMatchingAttempt(
+async function recordAmbiguousMutation(
   database: Database,
   grant: ProxyUploadAuthorization,
   attemptId: string,
@@ -186,6 +197,8 @@ async function clearMatchingAttempt(
     .update(uploadSessions)
     .set({
       cleanupCompletedAt: sql`CASE WHEN ${uploadSessions.state} IN ('rejected', 'expired', 'cleanup_pending') THEN NULL ELSE ${uploadSessions.cleanupCompletedAt} END`,
+      storageMutationGeneration: sql`${uploadSessions.storageMutationGeneration} + 1`,
+      storageMutationSettlesAt: sql`GREATEST(COALESCE(${uploadSessions.storageMutationSettlesAt}, clock_timestamp()), clock_timestamp() + ${MUTATION_SETTLEMENT_INTERVAL})`,
       uploadAttemptId: null,
       uploadAttemptExpiresAt: null,
       updatedAt: sql`clock_timestamp()`,
@@ -198,25 +211,25 @@ async function clearMatchingAttempt(
       ),
     )
     .returning({ id: uploadSessions.id });
-  if (!cleared) await rearmCompletedCleanup(database, grant);
+  if (!cleared) await rearmAmbiguousMutation(database, grant);
 }
 
-async function rearmCompletedCleanup(
+async function rearmAmbiguousMutation(
   database: Database,
   grant: ProxyUploadAuthorization,
 ): Promise<void> {
   await database
     .update(uploadSessions)
     .set({
-      cleanupCompletedAt: null,
+      cleanupCompletedAt: sql`CASE WHEN ${uploadSessions.state} IN ('rejected', 'expired', 'cleanup_pending') THEN NULL ELSE ${uploadSessions.cleanupCompletedAt} END`,
+      storageMutationGeneration: sql`${uploadSessions.storageMutationGeneration} + 1`,
+      storageMutationSettlesAt: sql`GREATEST(COALESCE(${uploadSessions.storageMutationSettlesAt}, clock_timestamp()), clock_timestamp() + ${MUTATION_SETTLEMENT_INTERVAL})`,
       updatedAt: sql`clock_timestamp()`,
     })
     .where(
       and(
         eq(uploadSessions.workspaceId, grant.workspaceId),
         eq(uploadSessions.id, grant.uploadSessionId),
-        inArray(uploadSessions.state, cleanupAttemptTerminalStates),
-        isNotNull(uploadSessions.cleanupCompletedAt),
       ),
     );
 }

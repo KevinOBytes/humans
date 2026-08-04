@@ -461,6 +461,87 @@ liveDescribe("durable file cleanup", () => {
     expect(completionAudits).toHaveLength(1);
   });
 
+  it("revives a dead-lettered archived cleanup and deletes primary plus variants", async () => {
+    const actor = await fixture.createActor("owner");
+    const fileId = newId();
+    const primaryKey = `uploads/${fileId}/${newId()}`;
+    const variantKey = `variants/${fileId}/${newId()}`;
+    await fixture.database.insert(files).values({
+      id: fileId,
+      workspaceId: actor.workspaceId,
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey: primaryKey,
+      originalName: "dead-lettered-archive.txt",
+      byteSize: 1,
+      checksum: `sha256:${"35".repeat(32)}`,
+      uploadedBy: actor.userId,
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+      deletedAt: new Date(),
+      deletedBy: actor.userId,
+    });
+    await fixture.database.insert(fileVariants).values({
+      id: newId(),
+      workspaceId: actor.workspaceId,
+      parentFileId: fileId,
+      kind: "thumbnail",
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey: variantKey,
+      checksum: `sha256:${"36".repeat(32)}`,
+      createdBy: actor.userId,
+    });
+    store.objects.add(`${actor.workspaceId}:${primaryKey}`);
+    store.objects.add(`${actor.workspaceId}:${variantKey}`);
+    store.failDeletes = 5;
+    const { ensureArchivedFileCleanupJob } =
+      await import("@/modules/files/cleanup");
+    const original = await ensureArchivedFileCleanupJob({
+      database: fixture.database,
+      encryptionKey,
+      workspaceId: actor.workspaceId,
+      fileId,
+      createdBy: actor.userId,
+    });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await expect(run(newId())).resolves.toMatchObject({ completed: 0 });
+      await fixture.database
+        .update(jobs)
+        .set({ scheduledAt: new Date(0) })
+        .where(eq(jobs.id, original.id));
+    }
+    const [deadLettered] = await fixture.database
+      .select({ id: jobs.id, state: jobs.state })
+      .from(jobs)
+      .where(eq(jobs.id, original.id));
+    expect(deadLettered).toEqual({ id: original.id, state: "dead_letter" });
+
+    store.failDeletes = 0;
+    await expect(run(newId())).resolves.toMatchObject({
+      claimed: 1,
+      completed: 1,
+    });
+    expect(store.objects.has(`${actor.workspaceId}:${primaryKey}`)).toBe(false);
+    expect(store.objects.has(`${actor.workspaceId}:${variantKey}`)).toBe(false);
+    const [revived] = await fixture.database
+      .select({ id: jobs.id, state: jobs.state })
+      .from(jobs)
+      .where(eq(jobs.id, original.id));
+    expect(revived).toEqual({ id: original.id, state: "completed" });
+    const audits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, fileId),
+          eq(auditEvents.action, "file.cleanup_completed"),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+  });
+
   it("records archived cleanup completion and its audit exactly once across handler retry", async () => {
     const actor = await fixture.createActor("owner");
     const fileId = newId();
@@ -821,8 +902,8 @@ liveDescribe("durable file cleanup", () => {
       store.objects.add(target);
 
       await expect(run(newId())).resolves.toMatchObject({
-        claimed: 1,
-        completed: 1,
+        claimed: deletedAt ? 2 : 1,
+        completed: deletedAt ? 2 : 1,
       });
       expect(store.objects.has(target)).toBe(false);
       const [session] = await fixture.database

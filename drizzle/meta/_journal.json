@@ -162,6 +162,13 @@
       "when": 1785864412190,
       "tag": "0022_storage_mutation_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785866494822,
+      "tag": "0023_storage_mutation_quiescence",
+      "breakpoints": true
     }
   ]
 }

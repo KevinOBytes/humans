@@ -78,6 +78,7 @@ class LifecycleS3Client {
   afterDelete?: () => Promise<void>;
   beforeDelete?: () => Promise<void>;
   beforePut?: () => Promise<void>;
+  throwAfterPut = false;
 
   async send(command: { input: Record<string, unknown> }): Promise<unknown> {
     const key = String(command.input.Key);
@@ -89,6 +90,7 @@ class LifecycleS3Client {
       }
       await this.beforePut?.();
       this.objects.set(key, Buffer.concat(chunks));
+      if (this.throwAfterPut) throw new Error("provider response was lost");
       return {};
     }
     if (command.constructor.name === "DeleteObjectCommand") {
@@ -199,6 +201,7 @@ liveDescribe("authoritative opaque upload fencing", () => {
     client.afterDelete = undefined;
     client.beforeDelete = undefined;
     client.beforePut = undefined;
+    client.throwAfterPut = false;
   });
 
   afterAll(async () => fixture.close());
@@ -427,6 +430,55 @@ liveDescribe("authoritative opaque upload fencing", () => {
     expect(client.objects.size).toBe(1);
   });
 
+  it("quarantines a commit-then-error PUT until a later cleanup pass deletes it", async () => {
+    const pending = await createPending();
+    const putEntered = deferred();
+    const releasePut = deferred();
+    client.throwAfterPut = true;
+    client.beforePut = async () => {
+      putEntered.resolve();
+      await releasePut.promise;
+    };
+    const uploading = handlers().PUT(
+      uploadRequest(pending.grant, pending.body),
+    );
+    await putEntered.promise;
+
+    const cancelled = await cancel(pending.actor, pending.session.id);
+    expect(cancelled.body?.errors).toBeUndefined();
+    releasePut.resolve();
+    expect((await uploading).status).toBe(503);
+    expect(client.objects.size).toBe(1);
+
+    const [ambiguous] = await fixture.database
+      .select({
+        storageMutationGeneration: uploadSessions.storageMutationGeneration,
+      })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(ambiguous?.storageMutationGeneration).toBe(1);
+
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97113"),
+    ).resolves.toMatchObject({ claimed: 1, completed: 0, deferred: 1 });
+    expect(client.objects.size).toBe(1);
+
+    await fixture.connection`
+      UPDATE upload_sessions
+      SET storage_mutation_settles_at = clock_timestamp() - interval '1 second'
+      WHERE id = ${pending.session.id}
+    `;
+    await fixture.database
+      .update(jobs)
+      .set({ scheduledAt: new Date(0) })
+      .where(eq(jobs.kind, "file_cleanup"));
+    client.throwAfterPut = false;
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97114"),
+    ).resolves.toMatchObject({ claimed: 1, completed: 1 });
+    expect(client.objects.size).toBe(0);
+  });
+
   it("recovers cleanup after a crashed upload-attempt lease expires", async () => {
     const pending = await createPending();
     const [session] = await fixture.database
@@ -442,6 +494,7 @@ liveDescribe("authoritative opaque upload fencing", () => {
         failureCode: "USER_CANCELLED",
         uploadAttemptId: attemptId,
         uploadAttemptExpiresAt: new Date(Date.now() + 60_000),
+        storageMutationSettlesAt: new Date(Date.now() + 120_000),
       })
       .where(eq(uploadSessions.id, pending.session.id));
     client.objects.set(
@@ -470,6 +523,14 @@ liveDescribe("authoritative opaque upload fencing", () => {
     await fixture.database
       .update(uploadSessions)
       .set({ uploadAttemptExpiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(uploadSessions.id, pending.session.id));
+    await expect(cleanup.executeFileCleanupJob(job)).rejects.toMatchObject({
+      code: "cleanup_not_ready",
+      failureKind: "retryable",
+    });
+    await fixture.database
+      .update(uploadSessions)
+      .set({ storageMutationSettlesAt: new Date(Date.now() - 1_000) })
       .where(eq(uploadSessions.id, pending.session.id));
     await expect(cleanup.executeFileCleanupJob(job)).resolves.toEqual({
       resultReferences: [pending.session.id],
@@ -515,6 +576,7 @@ liveDescribe("authoritative opaque upload fencing", () => {
       .update(uploadSessions)
       .set({
         uploadAttemptExpiresAt: sql`clock_timestamp() - interval '1 second'`,
+        storageMutationSettlesAt: sql`clock_timestamp() - interval '1 second'`,
       })
       .where(
         and(
@@ -546,6 +608,11 @@ liveDescribe("authoritative opaque upload fencing", () => {
 
     releasePut.resolve();
     expect((await uploading).status).toBe(403);
+
+    await fixture.database
+      .update(uploadSessions)
+      .set({ storageMutationSettlesAt: new Date(Date.now() - 1_000) })
+      .where(eq(uploadSessions.id, pending.session.id));
 
     await expect(
       runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97105"),
@@ -612,6 +679,7 @@ liveDescribe("authoritative opaque upload fencing", () => {
       .update(uploadSessions)
       .set({
         uploadAttemptExpiresAt: sql`clock_timestamp() - interval '1 second'`,
+        storageMutationSettlesAt: sql`clock_timestamp() - interval '1 second'`,
       })
       .where(
         and(
@@ -667,6 +735,10 @@ liveDescribe("authoritative opaque upload fencing", () => {
       .update(jobs)
       .set({ scheduledAt: new Date(0) })
       .where(eq(jobs.id, deferredJob!.id));
+    await fixture.database
+      .update(uploadSessions)
+      .set({ storageMutationSettlesAt: new Date(Date.now() - 1_000) })
+      .where(eq(uploadSessions.id, pending.session.id));
     await expect(
       runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97108"),
     ).resolves.toMatchObject({ claimed: 1, completed: 1 });
@@ -710,7 +782,11 @@ liveDescribe("authoritative opaque upload fencing", () => {
     expect(cancelled.body?.errors).toBeUndefined();
     await fixture.database
       .update(uploadSessions)
-      .set({ uploadAttemptExpiresAt: null, uploadAttemptId: null })
+      .set({
+        uploadAttemptExpiresAt: null,
+        uploadAttemptId: null,
+        storageMutationSettlesAt: new Date(Date.now() - 1_000),
+      })
       .where(eq(uploadSessions.id, pending.session.id));
     const [beforeCleanup] = await fixture.database
       .select({
@@ -771,6 +847,10 @@ liveDescribe("authoritative opaque upload fencing", () => {
       .update(jobs)
       .set({ scheduledAt: new Date(0) })
       .where(eq(jobs.id, deferredJob!.id));
+    await fixture.database
+      .update(uploadSessions)
+      .set({ storageMutationSettlesAt: new Date(Date.now() - 1_000) })
+      .where(eq(uploadSessions.id, pending.session.id));
     await expect(
       runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97111"),
     ).resolves.toMatchObject({ claimed: 1, completed: 1 });
