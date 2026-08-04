@@ -13,6 +13,7 @@ b744a30d5381ce360904a9da1a8ca1cb35b4c234:tests/integration/import-worker.test.ts
 97854632ab8c807c853106eaee57c144fe275d39:tests/unit/env.test.ts:generic-api-key:46
 b70e8931476cbd85516520f85da93c42c956ba9e:docs/superpowers/specs/2026-07-10-humans-mvp-design.md:generic-api-key:293
 060e88b4db29e8337940bec36dccca8fcd80afb8:tests/integration/ai-analysis.test.ts:generic-api-key:681
+5c7271a3dd662707b4a7ea52d177411c3ba9732e:tests/integration/ai-analysis.test.ts:generic-api-key:1460
 
 # Public alpha history uses privacy-safe squash commits, so reviewed synthetic
 # fixture and prose fingerprints differ from the internal implementation history.
