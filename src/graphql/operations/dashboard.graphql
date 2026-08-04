@@ -1,0 +1,54 @@
+query DashboardOverview($includeActivity: Boolean!) {
+  dashboardRecentPeople(first: 8) {
+    nodes {
+      ...PersonSummary
+    }
+  }
+  imports(first: 5) {
+    nodes {
+      ...ImportWorkspaceItem
+    }
+  }
+  dashboardRecentGraphAnalyses(first: 5) {
+    nodes {
+      id
+      algorithm
+      state
+      startedAt
+      completedAt
+      createdAt
+    }
+  }
+  dashboardRecentAiAnalyses(first: 5) {
+    nodes {
+      id
+      provider
+      model
+      state
+      startedAt
+      completedAt
+      createdAt
+    }
+  }
+  graphStatistics {
+    visiblePeople
+    visibleRelationships
+  }
+  workspacePolicySummary {
+    defaultRetentionDays
+    aiEnabled
+    storageEnabled
+  }
+  auditEvents(first: 6) @include(if: $includeActivity) {
+    nodes {
+      action
+      resourceKind
+      outcome
+      occurredAt
+      actor {
+        kind
+        label
+      }
+    }
+  }
+}

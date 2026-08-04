@@ -1,11 +1,16 @@
-import Link from "next/link";
-
 import { getAppContext } from "@/app/(app)/app-session";
-import { PeopleTable } from "@/components/people/people-table";
-import { buttonVariants } from "@/components/ui/button";
+import {
+  DashboardOverview,
+  mergeRecentAnalyses,
+  type DashboardActivity,
+  type DashboardAiAnalysis,
+  type DashboardGraphAnalysis,
+  type DashboardImport,
+} from "@/components/dashboard/dashboard-overview";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
-  DashboardPeopleDocument,
+  DashboardOverviewDocument,
+  ImportWorkspaceItemFragmentDoc,
   PersonSummaryFragmentDoc,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
@@ -13,69 +18,106 @@ import { executeServerGraphQL } from "@/graphql/server-client";
 export default async function DashboardPage() {
   const context = await getAppContext();
   if (!context.viewer) return null;
-  const data = await executeServerGraphQL(DashboardPeopleDocument, {
-    first: 8,
+
+  const permissions = context.viewer.permissions;
+  const includeActivity = permissions.includes("audit:read");
+  const data = await executeServerGraphQL(DashboardOverviewDocument, {
+    includeActivity,
   });
-  const people = readFragment(PersonSummaryFragmentDoc, data.people.nodes);
-  const canCreate = context.viewer.permissions.includes("person:create");
+  const people = readFragment(
+    PersonSummaryFragmentDoc,
+    data.dashboardRecentPeople.nodes,
+  );
+  const imports = readFragment(
+    ImportWorkspaceItemFragmentDoc,
+    data.imports?.nodes ?? [],
+  );
+  const role = context.viewer.role ?? "member";
+  const normalizedRole = role.toLowerCase();
+
+  const graphAnalyses = data.dashboardRecentGraphAnalyses.nodes.flatMap(
+    (analysis): DashboardGraphAnalysis[] =>
+      analysis.id && analysis.createdAt
+        ? [
+            {
+              id: analysis.id,
+              algorithm: analysis.algorithm ?? "analysis",
+              state: analysis.state ?? "unknown",
+              createdAt: analysis.createdAt,
+              completedAt: analysis.completedAt,
+            },
+          ]
+        : [],
+  );
+  const aiAnalyses = data.dashboardRecentAiAnalyses.nodes.flatMap(
+    (analysis): DashboardAiAnalysis[] =>
+      analysis.id && analysis.createdAt
+        ? [
+            {
+              id: analysis.id,
+              provider: analysis.provider ?? "compatible",
+              model: analysis.model ?? "model unavailable",
+              state: analysis.state ?? "unknown",
+              createdAt: analysis.createdAt,
+              completedAt: analysis.completedAt,
+            },
+          ]
+        : [],
+  );
+  const normalizedImports = imports.flatMap((item): DashboardImport[] =>
+    item.id && item.createdAt
+      ? [
+          {
+            id: item.id,
+            format: item.format ?? "data",
+            state: item.state ?? "unknown",
+            totalRows: item.totalRows,
+            acceptedRows: item.acceptedRows,
+            rejectedRows: item.rejectedRows,
+            createdAt: item.createdAt,
+          },
+        ]
+      : [],
+  );
+  const activity = includeActivity
+    ? (data.auditEvents?.nodes ?? []).flatMap((event): DashboardActivity[] =>
+        event.action && event.occurredAt
+          ? [
+              {
+                action: event.action,
+                resourceKind: event.resourceKind ?? "workspace",
+                outcome: event.outcome ?? "recorded",
+                occurredAt: event.occurredAt,
+                actorKind: event.actor?.kind ?? "system",
+                actorLabel: event.actor?.label ?? "System",
+              },
+            ]
+          : [],
+      )
+    : null;
+
   return (
-    <div className="space-y-10">
-      <header className="flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <p className="text-primary text-sm font-semibold">
-            {context.viewer.workspace.name}
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Research dashboard
-          </h1>
-          <p className="text-muted-foreground mt-3 text-sm">
-            Signed in as {context.viewer.role ?? "member"}. Continue the
-            workspace&apos;s most recently updated visible records.
-          </p>
-        </div>
-        {canCreate ? (
-          <Link
-            href="/people/new"
-            className={buttonVariants({ variant: "default" })}
-          >
-            Add person
-          </Link>
-        ) : null}
-      </header>
-      <section aria-labelledby="continue-research-heading">
-        <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <h2
-              id="continue-research-heading"
-              className="text-xl font-semibold"
-            >
-              Continue research
-            </h2>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Recently updated visible people
-            </p>
-          </div>
-          <Link
-            href="/people"
-            className="text-primary text-sm font-semibold underline-offset-4 hover:underline"
-          >
-            View all people
-          </Link>
-        </div>
-        <PeopleTable
-          hasFilters={false}
-          nextHref={null}
-          people={people.map((person) => ({
-            id: person.id,
-            displayName: person.displayName,
-            preferredName: person.preferredName,
-            status: person.status,
-            sensitivity: person.sensitivity,
-            updatedAt: person.updatedAt,
-            version: person.version,
-          }))}
-        />
-      </section>
-    </div>
+    <DashboardOverview
+      workspaceName={context.viewer.workspace.name}
+      role={role}
+      canCreatePerson={permissions.includes("person:create")}
+      canManagePolicies={
+        normalizedRole === "owner" || normalizedRole === "admin"
+      }
+      canReadActivity={includeActivity}
+      statistics={data.graphStatistics}
+      people={people.map((person) => ({
+        id: person.id,
+        displayName: person.displayName,
+        preferredName: person.preferredName,
+        status: person.status,
+        sensitivity: person.sensitivity,
+        updatedAt: person.updatedAt,
+      }))}
+      imports={normalizedImports}
+      analyses={mergeRecentAnalyses(graphAnalyses, aiAnalyses)}
+      policy={data.workspacePolicySummary}
+      activity={activity}
+    />
   );
 }
