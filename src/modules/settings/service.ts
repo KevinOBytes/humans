@@ -168,6 +168,7 @@ export function createSettingsService(input: {
     },
     options: { recordCreateAudit?: boolean } = {},
   ) {
+    await authorizeAdministrator();
     const actor = input.actor;
     if (actor.type !== "user") lifecycleUnavailable();
     const auth = input.auth;
