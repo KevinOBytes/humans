@@ -394,7 +394,12 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
       };
 
       const denied = await fixture.execute<{
-        revokeOrganizationApiKey?: { actionId?: string | null; code?: string };
+        revokeOrganizationApiKey?: {
+          actionId?: string | null;
+          code?: string;
+          requestId?: string;
+          secret?: string | null;
+        };
       }>({
         jar: admin.jar,
         query: REVOKE,
@@ -404,6 +409,7 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
         actionId: null,
         code: "INVALID",
         requestId: expect.any(String),
+        secret: null,
       });
       const [stored] = await fixture.database
         .select({ enabled: apiKeys.enabled })
