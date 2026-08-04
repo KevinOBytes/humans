@@ -205,7 +205,13 @@ export async function visibleResourceIds(
       ),
     );
   const grants = input.lockGrants
-    ? await grantQuery.for("share")
+    ? await grantQuery
+        .orderBy(
+          resourceGrants.resourceId,
+          resourceGrants.id,
+          accessPolicies.id,
+        )
+        .for("share")
     : await grantQuery;
   const resourceById = new Map(
     protectedResources.map((resource) => [resource.id, resource]),

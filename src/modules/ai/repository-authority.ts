@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 
 import { evidenceItems } from "@/db/schema/evidence";
 import { people } from "@/db/schema/people";
@@ -151,72 +151,106 @@ export async function authorizeAiReferences(
     scope: AiScope;
     workspaceId: string;
   },
-): Promise<boolean> {
+): Promise<readonly AiReference[] | null> {
+  // Phase 1: lock live authority. The lock remains held by the caller's
+  // transaction through every following phase and the eventual write.
   const authority = await currentAuthority(database, input);
-  if (!authority) return false;
-  if (input.references.length === 0) return true;
-  const referenceKeys = input.references.map(
-    (reference) => `${reference.kind}:${reference.id}`,
-  );
-  if (new Set(referenceKeys).size !== referenceKeys.length) return false;
+  if (!authority) return null;
+
+  // Phase 2: collapse duplicates and establish the global kind/UUID order.
+  const references = [
+    ...new Map(
+      input.references.map((reference) => [
+        `${reference.kind}:${reference.id}`,
+        { id: reference.id, kind: reference.kind },
+      ]),
+    ).values(),
+  ].sort((left, right) => {
+    if (left.kind !== right.kind) return left.kind === "person" ? -1 : 1;
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  });
+  if (references.length === 0) return Object.freeze(references);
   const allowedPeople = new Set(input.scope.personIds);
   const allowedEvidence = new Set(input.scope.evidenceIds);
   if (
-    input.references.some((reference) =>
+    references.some((reference) =>
       reference.kind === "person"
         ? !allowedPeople.has(reference.id)
         : !allowedEvidence.has(reference.id),
     )
   ) {
-    return false;
+    return null;
   }
-  const personIds = input.references
+  const personIds = references
     .filter((reference) => reference.kind === "person")
     .map((reference) => reference.id);
-  const evidenceIds = input.references
+  const evidenceIds = references
     .filter((reference) => reference.kind === "evidence")
     .map((reference) => reference.id);
-  if (personIds.length) {
-    if (!authority.permissions.has("person:read")) return false;
-    const rows = await database
-      .select({ id: people.id, sensitivity: people.sensitivity })
-      .from(people)
-      .where(
-        and(
-          eq(people.workspaceId, input.workspaceId),
-          inArray(people.id, personIds),
-          isNull(people.deletedAt),
-        ),
-      )
-      .for("share");
-    if (rows.length !== personIds.length) return false;
+  if (personIds.length && !authority.permissions.has("person:read")) {
+    return null;
+  }
+  if (evidenceIds.length && !authority.permissions.has("evidence:read")) {
+    return null;
+  }
+
+  // Phase 3: lock every resource row before consulting any grant. The kind
+  // order is person then evidence; each query locks rows in ascending UUID.
+  const personRows = personIds.length
+    ? await database
+        .select({ id: people.id, sensitivity: people.sensitivity })
+        .from(people)
+        .where(
+          and(
+            eq(people.workspaceId, input.workspaceId),
+            inArray(people.id, personIds),
+            isNull(people.deletedAt),
+          ),
+        )
+        .orderBy(asc(people.id))
+        .for("share")
+    : [];
+  const evidenceRows = evidenceIds.length
+    ? await database
+        .select({
+          id: evidenceItems.id,
+          sensitivity: evidenceItems.sensitivity,
+        })
+        .from(evidenceItems)
+        .where(
+          and(
+            eq(evidenceItems.workspaceId, input.workspaceId),
+            inArray(evidenceItems.id, evidenceIds),
+            isNull(evidenceItems.deletedAt),
+          ),
+        )
+        .orderBy(asc(evidenceItems.id))
+        .for("share")
+    : [];
+  if (
+    personRows.length !== personIds.length ||
+    evidenceRows.length !== evidenceIds.length
+  ) {
+    return null;
+  }
+
+  // Phase 4: only after all resource locks are held, evaluate visibility and
+  // take deterministic shared locks on every applicable grant/policy row.
+  if (personRows.length) {
     const visible = await visibleResourceIds(database, authority, {
       lockGrants: true,
       resourceKind: "person",
-      resources: rows,
+      resources: personRows,
     });
-    if (visible.size !== personIds.length) return false;
+    if (visible.size !== personIds.length) return null;
   }
-  if (evidenceIds.length) {
-    if (!authority.permissions.has("evidence:read")) return false;
-    const rows = await database
-      .select({ id: evidenceItems.id, sensitivity: evidenceItems.sensitivity })
-      .from(evidenceItems)
-      .where(
-        and(
-          eq(evidenceItems.workspaceId, input.workspaceId),
-          inArray(evidenceItems.id, evidenceIds),
-          isNull(evidenceItems.deletedAt),
-        ),
-      )
-      .for("share");
-    if (rows.length !== evidenceIds.length) return false;
+  if (evidenceRows.length) {
     const visible = await visibleResourceIds(database, authority, {
       lockGrants: true,
       resourceKind: "evidence",
-      resources: rows,
+      resources: evidenceRows,
     });
-    if (visible.size !== evidenceIds.length) return false;
+    if (visible.size !== evidenceIds.length) return null;
   }
-  return true;
+  return Object.freeze(references);
 }

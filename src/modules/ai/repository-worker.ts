@@ -212,17 +212,17 @@ export function createAiWorkerRepository(
           const run = await lockClaimedRun(transaction, input);
           if (!run) return false;
           const protectedInput = await loadValidatedRunInput(transaction, run);
-          if (
-            !protectedInput ||
-            !(await authorizeAiReferences(transaction, {
+          if (!protectedInput) return false;
+          const authorizedReferences = await authorizeAiReferences(
+            transaction,
+            {
               principalId: run.createdBy,
               references: resourceReferences,
               scope: protectedInput.scope,
               workspaceId: input.workspaceId,
-            }))
-          ) {
-            return false;
-          }
+            },
+          );
+          if (authorizedReferences === null) return false;
           const [{ count }] = await transaction
             .select({ count: sql<number>`count(*)::int` })
             .from(aiToolCalls)
@@ -241,7 +241,7 @@ export function createAiWorkerRepository(
             approvedToolName: input.approvedToolName,
             redactedArguments,
             redactedResultSummary,
-            resourceReferences,
+            resourceReferences: authorizedReferences,
             state: "completed",
             startedAt: now,
             completedAt: now,
@@ -285,17 +285,17 @@ export function createAiWorkerRepository(
               ]),
             ).values(),
           ];
-          if (
-            !(await authorizeAiReferences(transaction, {
+          const authorizedCitationReferences = await authorizeAiReferences(
+            transaction,
+            {
               principalId: run.createdBy,
               references: citationReferences,
               scope: protectedInput.scope,
               workspaceId: input.workspaceId,
-            }))
-          ) {
-            return false;
-          }
-          if (citationReferences.length) {
+            },
+          );
+          if (authorizedCitationReferences === null) return false;
+          if (authorizedCitationReferences.length) {
             const toolRows = await transaction
               .select({ references: aiToolCalls.resourceReferences })
               .from(aiToolCalls)
@@ -319,7 +319,7 @@ export function createAiWorkerRepository(
               return false;
             }
             if (
-              citationReferences.some(
+              authorizedCitationReferences.some(
                 (reference) =>
                   !returned.has(`${reference.kind}:${reference.id}`),
               )

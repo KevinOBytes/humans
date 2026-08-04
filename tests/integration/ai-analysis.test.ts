@@ -12,6 +12,7 @@ import {
   aiToolCalls,
 } from "@/db/schema/ai";
 import { apiKeys, members, sessions } from "@/db/schema/auth";
+import { evidenceItems, sources } from "@/db/schema/evidence";
 import { locationMutationIdempotency } from "@/db/schema/locations";
 import { auditEvents, jobs } from "@/db/schema/operations";
 import { people } from "@/db/schema/people";
@@ -146,11 +147,18 @@ liveDescribe("atomic AI analysis persistence", () => {
 
   async function claimedRun(
     context: ResearchServiceContext,
-    input: { idempotencyKey: string; personId: string },
+    input: {
+      evidenceIds?: readonly string[];
+      idempotencyKey: string;
+      personIds: readonly string[];
+    },
   ) {
     const run = await service(context).startAiAnalysis({
       question: "Concurrency authority boundary",
-      scope: { personIds: [input.personId] },
+      scope: {
+        evidenceIds: input.evidenceIds ?? [],
+        personIds: input.personIds,
+      },
       idempotencyKey: input.idempotencyKey,
     });
     const leaseOwner = newId();
@@ -171,6 +179,34 @@ liveDescribe("atomic AI analysis persistence", () => {
       },
       run,
     };
+  }
+
+  async function createEvidence(
+    owner: SessionActor,
+    sensitivity: "confidential" | "internal" = "internal",
+  ): Promise<string> {
+    const sourceId = newId();
+    const evidenceId = newId();
+    await fixture.database.insert(sources).values({
+      id: sourceId,
+      workspaceId: owner.workspaceId,
+      kind: "archive",
+      title: `AI evidence ${evidenceId}`,
+      sensitivity,
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(evidenceItems).values({
+      id: evidenceId,
+      workspaceId: owner.workspaceId,
+      sourceId,
+      checksum: `sha256:${evidenceId.replaceAll("-", "").repeat(2)}`,
+      reviewState: "accepted",
+      sensitivity,
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    return evidenceId;
   }
 
   async function installAiWriteGate(target: "assistant" | "tool") {
@@ -920,6 +956,169 @@ liveDescribe("atomic AI analysis persistence", () => {
     expect(await fixture.database.select().from(aiToolCalls)).toHaveLength(0);
   });
 
+  it("locks all mixed-kind resources before the first grant or policy lock", async () => {
+    const owner = await fixture.createActor();
+    const analyst = await fixture.createWorkspaceMember(owner, "analyst");
+    const context = await userContext(analyst, "analyst");
+    const personResult = await fixture.createPerson(owner, {
+      displayName: "Mixed Lock Person",
+      sensitivity: "CONFIDENTIAL",
+    });
+    const personId = required(
+      personResult.body?.data?.createPerson?.person?.id,
+    );
+    const evidenceId = await createEvidence(owner, "confidential");
+    const policyId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: owner.workspaceId,
+      name: "Mixed AI readers",
+      sensitivityCeiling: "confidential",
+      resourceKinds: ["person", "evidence"],
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values([
+      {
+        id: newId(),
+        workspaceId: owner.workspaceId,
+        policyId,
+        memberId: analyst.memberId,
+        resourceId: personId,
+        resourceKind: "person",
+        state: "active",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      },
+      {
+        id: newId(),
+        workspaceId: owner.workspaceId,
+        policyId,
+        memberId: analyst.memberId,
+        resourceId: evidenceId,
+        resourceKind: "evidence",
+        state: "active",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      },
+    ]);
+    const { binding } = await claimedRun(context, {
+      evidenceIds: [evidenceId],
+      idempotencyKey: "mixed-lock-order",
+      personIds: [personId],
+    });
+    const statements: string[] = [];
+    const connection = createTestConnection(1, (_connection, query) => {
+      statements.push(query);
+    });
+    try {
+      expect(
+        await createAiRepository(createTestDatabase(connection), {
+          encryptionKey,
+          hmacKey,
+        }).recordClaimedToolCall({
+          ...binding,
+          approvedToolName: "research.mixed_summary",
+          redactedArguments: { resourceCount: 2 },
+          redactedResultSummary: { resultCount: 2 },
+          resourceReferences: [
+            { kind: "evidence", id: evidenceId },
+            { kind: "person", id: personId },
+          ],
+        }),
+      ).toBe(true);
+    } finally {
+      await connection.end();
+    }
+    const personLock = statements.findIndex((statement) =>
+      statement.includes('from "people"'),
+    );
+    const evidenceLock = statements.findIndex((statement) =>
+      statement.includes('from "evidence_items"'),
+    );
+    const grantStatements = statements.filter((statement) =>
+      statement.includes('from "resource_grants"'),
+    );
+    const grantLocks = statements
+      .map((statement, index) =>
+        grantStatements.includes(statement) ? index : -1,
+      )
+      .filter((index) => index >= 0);
+    expect({ evidenceLock, grantLocks, personLock }).toSatisfy(
+      (order: {
+        evidenceLock: number;
+        grantLocks: number[];
+        personLock: number;
+      }) =>
+        order.personLock >= 0 &&
+        order.personLock < order.evidenceLock &&
+        order.evidenceLock < (order.grantLocks[0] ?? -1) &&
+        order.grantLocks.length === 2 &&
+        order.grantLocks[0]! < order.grantLocks[1]!,
+    );
+    expect(
+      grantStatements.every((statement) =>
+        statement.includes(
+          'order by "resource_grants"."resource_id", "resource_grants"."id", "access_policies"."id"',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("deduplicates mixed references into canonical kind and UUID order", async () => {
+    const owner = await fixture.createActor();
+    const context = await userContext(owner);
+    const personIds = await Promise.all(
+      ["Canonical Person A", "Canonical Person B"].map(async (displayName) =>
+        required(
+          (
+            await fixture.createPerson(owner, {
+              displayName,
+            })
+          ).body?.data?.createPerson?.person?.id,
+        ),
+      ),
+    );
+    const evidenceIds = await Promise.all([
+      createEvidence(owner),
+      createEvidence(owner),
+    ]);
+    const { binding } = await claimedRun(context, {
+      evidenceIds,
+      idempotencyKey: "mixed-canonical-order",
+      personIds,
+    });
+    expect(
+      await createAiRepository(fixture.database, {
+        encryptionKey,
+        hmacKey,
+      }).recordClaimedToolCall({
+        ...binding,
+        approvedToolName: "research.mixed_summary",
+        redactedArguments: { resourceCount: 4 },
+        redactedResultSummary: { resultCount: 4 },
+        resourceReferences: [
+          { kind: "evidence", id: evidenceIds[1]! },
+          { kind: "person", id: personIds[1]! },
+          { kind: "evidence", id: evidenceIds[0]! },
+          { kind: "person", id: personIds[0]! },
+          { kind: "person", id: personIds[1]! },
+          { kind: "evidence", id: evidenceIds[1]! },
+        ],
+      }),
+    ).toBe(true);
+    const [stored] = await fixture.database
+      .select({ references: aiToolCalls.resourceReferences })
+      .from(aiToolCalls);
+    expect(stored?.references).toEqual([
+      ...[...personIds].sort().map((id) => ({ kind: "person" as const, id })),
+      ...[...evidenceIds]
+        .sort()
+        .map((id) => ({ kind: "evidence" as const, id })),
+    ]);
+  });
+
   it.each(["membership", "workspace"] as const)(
     "serializes user %s deactivation against a claimed tool write",
     async (revocation) => {
@@ -933,7 +1132,7 @@ liveDescribe("atomic AI analysis persistence", () => {
       );
       const { binding } = await claimedRun(context, {
         idempotencyKey: `user-authority-race-${revocation}`,
-        personId,
+        personIds: [personId],
       });
       const result = await raceAiWriteAgainstRevocation({
         target: "tool",
@@ -982,7 +1181,7 @@ liveDescribe("atomic AI analysis persistence", () => {
       );
       const { binding } = await claimedRun(context, {
         idempotencyKey: `api-key-race-${revocation}`,
-        personId,
+        personIds: [personId],
       });
       const repository = createAiRepository(fixture.database, {
         encryptionKey,
@@ -1049,7 +1248,7 @@ liveDescribe("atomic AI analysis persistence", () => {
       );
       const { binding } = await claimedRun(context, {
         idempotencyKey: `resource-race-${revocation}`,
-        personId,
+        personIds: [personId],
       });
       const result = await raceAiWriteAgainstRevocation({
         target: "tool",
@@ -1080,86 +1279,96 @@ liveDescribe("atomic AI analysis persistence", () => {
     },
   );
 
-  it("serializes grant revocation against claimed citation finalization", async () => {
-    const owner = await fixture.createActor();
-    const analyst = await fixture.createWorkspaceMember(owner, "analyst");
-    const context = await userContext(analyst, "analyst");
-    const personResult = await fixture.createPerson(owner, {
-      displayName: "Granted Citation Person",
-      sensitivity: "CONFIDENTIAL",
-    });
-    const personId = required(
-      personResult.body?.data?.createPerson?.person?.id,
-    );
-    const policyId = newId();
-    const grantId = newId();
-    await fixture.database.insert(accessPolicies).values({
-      id: policyId,
-      workspaceId: owner.workspaceId,
-      name: "AI citation readers",
-      sensitivityCeiling: "confidential",
-      resourceKinds: ["person"],
-      state: "active",
-      createdBy: owner.principalId,
-      updatedBy: owner.principalId,
-    });
-    await fixture.database.insert(resourceGrants).values({
-      id: grantId,
-      workspaceId: owner.workspaceId,
-      policyId,
-      memberId: analyst.memberId,
-      resourceId: personId,
-      resourceKind: "person",
-      state: "active",
-      createdBy: owner.principalId,
-      updatedBy: owner.principalId,
-    });
-    const { binding } = await claimedRun(context, {
-      idempotencyKey: "grant-race",
-      personId,
-    });
-    const repository = createAiRepository(fixture.database, {
-      encryptionKey,
-      hmacKey,
-    });
-    expect(
-      await repository.recordClaimedToolCall({
-        ...binding,
-        approvedToolName: "research.person_summary",
-        redactedArguments: { personCount: 1 },
-        redactedResultSummary: { resultCount: 1 },
-        resourceReferences: [{ kind: "person", id: personId }],
-      }),
-    ).toBe(true);
-
-    const result = await raceAiWriteAgainstRevocation({
-      target: "assistant",
-      write: (database) =>
-        createAiRepository(database, {
-          encryptionKey,
-          hmacKey,
-        }).finalizeClaimedRun({
+  it.each(["grant", "policy"] as const)(
+    "serializes %s revocation against claimed citation finalization",
+    async (revocation) => {
+      const owner = await fixture.createActor();
+      const analyst = await fixture.createWorkspaceMember(owner, "analyst");
+      const context = await userContext(analyst, "analyst");
+      const personResult = await fixture.createPerson(owner, {
+        displayName: "Granted Citation Person",
+        sensitivity: "CONFIDENTIAL",
+      });
+      const personId = required(
+        personResult.body?.data?.createPerson?.person?.id,
+      );
+      const policyId = newId();
+      const grantId = newId();
+      await fixture.database.insert(accessPolicies).values({
+        id: policyId,
+        workspaceId: owner.workspaceId,
+        name: "AI citation readers",
+        sensitivityCeiling: "confidential",
+        resourceKinds: ["person"],
+        state: "active",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      });
+      await fixture.database.insert(resourceGrants).values({
+        id: grantId,
+        workspaceId: owner.workspaceId,
+        policyId,
+        memberId: analyst.memberId,
+        resourceId: personId,
+        resourceKind: "person",
+        state: "active",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      });
+      const { binding } = await claimedRun(context, {
+        idempotencyKey: `${revocation}-race`,
+        personIds: [personId],
+      });
+      const repository = createAiRepository(fixture.database, {
+        encryptionKey,
+        hmacKey,
+      });
+      expect(
+        await repository.recordClaimedToolCall({
           ...binding,
-          answer: "The granted tool result supports this claim.",
-          citations: [
-            {
-              claimText: "Granted tool result.",
-              locator: null,
-              resourceId: personId,
-              resourceKind: "person",
-            },
-          ],
+          approvedToolName: "research.person_summary",
+          redactedArguments: { personCount: 1 },
+          redactedResultSummary: { resultCount: 1 },
+          resourceReferences: [{ kind: "person", id: personId }],
         }),
-      revoke: async (database) => {
-        await database
-          .update(resourceGrants)
-          .set({ state: "inactive" })
-          .where(eq(resourceGrants.id, grantId));
-      },
-    });
-    expect(result).toEqual({ revocation: "blocked", wrote: true });
-    expect(await fixture.database.select().from(aiCitations)).toHaveLength(1);
-  });
+      ).toBe(true);
+
+      const result = await raceAiWriteAgainstRevocation({
+        target: "assistant",
+        write: (database) =>
+          createAiRepository(database, {
+            encryptionKey,
+            hmacKey,
+          }).finalizeClaimedRun({
+            ...binding,
+            answer: "The granted tool result supports this claim.",
+            citations: [
+              {
+                claimText: "Granted tool result.",
+                locator: null,
+                resourceId: personId,
+                resourceKind: "person",
+              },
+            ],
+          }),
+        revoke: async (database) => {
+          if (revocation === "grant") {
+            await database
+              .update(resourceGrants)
+              .set({ state: "inactive" })
+              .where(eq(resourceGrants.id, grantId));
+            return;
+          }
+          await database
+            .update(accessPolicies)
+            .set({ state: "disabled" })
+            .where(eq(accessPolicies.id, policyId));
+        },
+      });
+      expect(result).toEqual({ revocation: "blocked", wrote: true });
+      expect(await fixture.database.select().from(aiCitations)).toHaveLength(1);
+    },
+  );
 
   it("records only a stable failure while the matching unexpired claim remains current", async () => {
     const owner = await fixture.createActor();
