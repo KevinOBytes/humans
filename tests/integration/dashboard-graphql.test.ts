@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { newId } from "@/db/id";
-import { analysisRuns, graphSnapshots } from "@/db/schema/graph";
+import { analysisRuns, graphSnapshots, graphViews } from "@/db/schema/graph";
 import { people } from "@/db/schema/people";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import {
@@ -418,5 +418,338 @@ liveDescribe("dashboard GraphQL summaries", () => {
         Object.keys(result.body?.data?.workspacePolicySummary ?? {}),
       ).toEqual(["defaultRetentionDays", "aiEnabled", "storageEnabled"]);
     }
+  });
+
+  it("reauthorizes non-empty recent analysis manifests and excludes private and foreign runs", async () => {
+    const owner = await fixture.createActor();
+    const viewer = await fixture.createWorkspaceMember(owner, "viewer");
+    const foreign = await fixture.createActor();
+    const ids = {
+      source: "018f0000-0000-7000-8000-000000008001",
+      target: "018f0000-0000-7000-8000-000000008002",
+      relationshipType: "018f0000-0000-7000-8000-000000008101",
+      relationship: "018f0000-0000-7000-8000-000000008201",
+      directSnapshot: "018f0000-0000-7000-8000-000000008301",
+      privateSnapshot: "018f0000-0000-7000-8000-000000008302",
+      directRun: "018f0000-0000-7000-8000-000000008401",
+      privateRun: "018f0000-0000-7000-8000-000000008402",
+      privateView: "018f0000-0000-7000-8000-000000008501",
+      foreignPerson: "018f0000-0000-7000-8000-000000008601",
+      foreignSnapshot: "018f0000-0000-7000-8000-000000008701",
+      foreignRun: "018f0000-0000-7000-8000-000000008801",
+    } as const;
+    await fixture.database.insert(people).values([
+      {
+        id: ids.source,
+        workspaceId: owner.workspaceId,
+        displayName: "Visible manifest source",
+        sensitivity: "internal",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      },
+      {
+        id: ids.target,
+        workspaceId: owner.workspaceId,
+        displayName: "Granted manifest target",
+        sensitivity: "confidential",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      },
+      {
+        id: ids.foreignPerson,
+        workspaceId: foreign.workspaceId,
+        displayName: "Foreign manifest person",
+        sensitivity: "internal",
+        createdBy: foreign.principalId,
+        updatedBy: foreign.principalId,
+      },
+    ]);
+    await fixture.database.insert(relationshipTypes).values({
+      id: ids.relationshipType,
+      workspaceId: owner.workspaceId,
+      key: "dashboard-manifest-link",
+      forwardLabel: "links",
+      inverseLabel: "linked by",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(relationships).values({
+      id: ids.relationship,
+      workspaceId: owner.workspaceId,
+      sourcePersonId: ids.source,
+      targetPersonId: ids.target,
+      relationshipTypeId: ids.relationshipType,
+      sensitivity: "confidential",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    const policyId = newId();
+    const personGrantId = newId();
+    const relationshipGrantId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: owner.workspaceId,
+      name: "Dashboard manifest grants",
+      sensitivityCeiling: "confidential",
+      resourceKinds: ["person", "relationship"],
+      roleBindings: {},
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values([
+      {
+        id: personGrantId,
+        workspaceId: owner.workspaceId,
+        policyId,
+        role: "viewer",
+        resourceId: ids.target,
+        resourceKind: "person",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      },
+      {
+        id: relationshipGrantId,
+        workspaceId: owner.workspaceId,
+        policyId,
+        role: "viewer",
+        resourceId: ids.relationship,
+        resourceKind: "relationship",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      },
+    ]);
+    await fixture.database.insert(graphViews).values({
+      id: ids.privateView,
+      workspaceId: owner.workspaceId,
+      ownerId: owner.userId,
+      name: "Owner-only dashboard analysis",
+      filters: {
+        mode: "WORKSPACE",
+        rootPersonIds: [],
+        sensitivities: [],
+      },
+      sharing: "private",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    const manifest = {
+      queryInput: {
+        mode: "WORKSPACE",
+        rootPersonIds: [],
+        sensitivities: [],
+      },
+      includedPersonVersions: { [ids.source]: 1, [ids.target]: 1 },
+      includedRelationshipVersions: { [ids.relationship]: 1 },
+    } as const;
+    await fixture.database.insert(graphSnapshots).values([
+      {
+        id: ids.directSnapshot,
+        workspaceId: owner.workspaceId,
+        ...snapshotContract(viewer.principalId),
+        ...manifest,
+        graphViewId: null,
+        createdBy: viewer.principalId,
+      },
+      {
+        id: ids.privateSnapshot,
+        workspaceId: owner.workspaceId,
+        ...snapshotContract(owner.principalId),
+        ...manifest,
+        graphViewId: ids.privateView,
+        createdBy: owner.principalId,
+      },
+      {
+        id: ids.foreignSnapshot,
+        workspaceId: foreign.workspaceId,
+        ...snapshotContract(foreign.principalId),
+        graphViewId: null,
+        queryInput: {
+          mode: "WORKSPACE",
+          rootPersonIds: [],
+          sensitivities: [],
+        },
+        includedPersonVersions: { [ids.foreignPerson]: 1 },
+        includedRelationshipVersions: {},
+        createdBy: foreign.principalId,
+      },
+    ]);
+    const createdAt = new Date("2026-08-04T14:00:00.000Z");
+    await fixture.database.insert(analysisRuns).values([
+      {
+        id: ids.directRun,
+        workspaceId: owner.workspaceId,
+        ...analysisContract(viewer.principalId),
+        algorithm: "DEGREE",
+        graphSnapshotId: ids.directSnapshot,
+        createdAt,
+        createdBy: viewer.principalId,
+      },
+      {
+        id: ids.privateRun,
+        workspaceId: owner.workspaceId,
+        ...analysisContract(owner.principalId),
+        algorithm: "DEGREE",
+        graphSnapshotId: ids.privateSnapshot,
+        createdAt,
+        createdBy: owner.principalId,
+      },
+      {
+        id: ids.foreignRun,
+        workspaceId: foreign.workspaceId,
+        ...analysisContract(foreign.principalId),
+        algorithm: "DEGREE",
+        graphSnapshotId: ids.foreignSnapshot,
+        createdAt,
+        createdBy: foreign.principalId,
+      },
+    ]);
+
+    const recent = async () =>
+      fixture.execute<{
+        dashboardRecentGraphAnalyses: {
+          nodes: Array<{ id: string }>;
+          pageInfo: { endCursor: string | null };
+        };
+      }>({
+        jar: viewer.jar,
+        query: `query { dashboardRecentGraphAnalyses(first: 10) { nodes { id } pageInfo { endCursor } } }`,
+      });
+    const visible = await recent();
+    expect(visible.body?.errors).toBeUndefined();
+    expect(visible.body?.data?.dashboardRecentGraphAnalyses.nodes).toEqual([
+      { id: ids.directRun },
+    ]);
+    expect(JSON.stringify(visible.body)).not.toContain(ids.privateRun);
+    expect(JSON.stringify(visible.body)).not.toContain(ids.foreignRun);
+
+    await fixture.database
+      .update(resourceGrants)
+      .set({ state: "inactive" })
+      .where(eq(resourceGrants.id, relationshipGrantId));
+    expect(
+      (await recent()).body?.data?.dashboardRecentGraphAnalyses.nodes,
+    ).toEqual([]);
+    await fixture.database
+      .update(resourceGrants)
+      .set({ state: "active" })
+      .where(eq(resourceGrants.id, relationshipGrantId));
+    await fixture.database
+      .update(resourceGrants)
+      .set({ state: "inactive" })
+      .where(eq(resourceGrants.id, personGrantId));
+    expect(
+      (await recent()).body?.data?.dashboardRecentGraphAnalyses.nodes,
+    ).toEqual([]);
+    await fixture.database
+      .update(resourceGrants)
+      .set({ state: "active" })
+      .where(eq(resourceGrants.id, personGrantId));
+    expect(
+      (await recent()).body?.data?.dashboardRecentGraphAnalyses.nodes,
+    ).toEqual([{ id: ids.directRun }]);
+
+    const cursor =
+      visible.body?.data?.dashboardRecentGraphAnalyses.pageInfo.endCursor;
+    expect(cursor).toEqual(expect.any(String));
+    for (const after of [
+      "not-a-cursor",
+      `${cursor?.slice(0, -1)}${cursor?.endsWith("a") ? "b" : "a"}`,
+    ]) {
+      const invalid = await fixture.execute({
+        jar: viewer.jar,
+        query: `query($after: String) { dashboardRecentGraphAnalyses(first: 1, after: $after) { nodes { id } } }`,
+        variables: { after },
+      });
+      expectGraphQLError(invalid, "VALIDATION_FAILED");
+    }
+    const foreignCursor = await fixture.execute<{
+      dashboardRecentGraphAnalyses: {
+        pageInfo: { endCursor: string | null };
+      };
+    }>({
+      jar: foreign.jar,
+      query: `query { dashboardRecentGraphAnalyses(first: 1) { pageInfo { endCursor } } }`,
+    });
+    const wrongWorkspace = await fixture.execute({
+      jar: viewer.jar,
+      query: `query($after: String) { dashboardRecentGraphAnalyses(first: 1, after: $after) { nodes { id } } }`,
+      variables: {
+        after:
+          foreignCursor.body?.data?.dashboardRecentGraphAnalyses.pageInfo
+            .endCursor,
+      },
+    });
+    expectGraphQLError(wrongWorkspace, "VALIDATION_FAILED");
+
+    // Recent-people cursors deliberately follow the existing unsigned,
+    // shape-validated research-cursor convention. Malformed values still fail.
+    const malformedPeople = await fixture.execute({
+      jar: viewer.jar,
+      query: `query { dashboardRecentPeople(first: 1, after: "not-a-cursor") { nodes { id } } }`,
+    });
+    expectGraphQLError(malformedPeople, "VALIDATION_FAILED");
+  });
+
+  it("fails closed with stable request IDs when API keys lack dashboard read scopes", async () => {
+    const owner = await fixture.createActor();
+    const graphScopeCases = [
+      {
+        missing: "graph",
+        permissions: {
+          workspace: ["read"],
+          person: ["read"],
+          relationship: ["read"],
+        },
+      },
+      {
+        missing: "person",
+        permissions: {
+          workspace: ["read"],
+          graph: ["read"],
+          relationship: ["read"],
+        },
+      },
+      {
+        missing: "relationship",
+        permissions: {
+          workspace: ["read"],
+          graph: ["read"],
+          person: ["read"],
+        },
+      },
+    ] as const;
+    for (const [index, testCase] of graphScopeCases.entries()) {
+      const key = await fixture.provisionKey(owner, testCase.permissions);
+      const requestId = `0198f27c-d63e-726b-801c-dc751c05390${index}`;
+      const result = await fixture.execute({
+        apiKey: key.key,
+        headers: { "x-request-id": requestId },
+        query: `query { graphStatistics { visiblePeople visibleRelationships } }`,
+      });
+      expectGraphQLError(result, "FORBIDDEN");
+      expect(result.requestId).toBe(requestId);
+      expect(result.body?.errors?.[0]?.message).toBe(
+        "This operation is not permitted.",
+      );
+      expect(JSON.stringify(result.body)).not.toContain(testCase.missing);
+    }
+
+    const key = await fixture.provisionKey(owner, {
+      graph: ["read"],
+      person: ["read"],
+      relationship: ["read"],
+    });
+    const requestId = "0198f27c-d63e-726b-801c-dc751c0539a4";
+    const policy = await fixture.execute({
+      apiKey: key.key,
+      headers: { "x-request-id": requestId },
+      query: `query { workspacePolicySummary { defaultRetentionDays aiEnabled storageEnabled } }`,
+    });
+    expectGraphQLError(policy, "FORBIDDEN");
+    expect(policy.requestId).toBe(requestId);
+    expect(policy.body?.errors?.[0]?.message).toBe(
+      "This operation is not permitted.",
+    );
   });
 });
