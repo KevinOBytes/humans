@@ -27,3 +27,16 @@ a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:
 a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:43
 a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:47
 a95cf6348073154586076cb5a2d116ab1befe49d:tests/unit/env.test.ts:generic-api-key:185
+
+# GitHub squash-merge commit for the same reviewed synthetic fixtures.
+cd76ecda459100fef612d50858818f6ca02341fb:tests/integration/imports-api.test.ts:generic-api-key:825
+cd76ecda459100fef612d50858818f6ca02341fb:tests/integration/search-index-maintenance.test.ts:generic-api-key:47
+cd76ecda459100fef612d50858818f6ca02341fb:tests/integration/import-identity-service.test.ts:generic-api-key:20
+cd76ecda459100fef612d50858818f6ca02341fb:tests/integration/worker-research-transactions.test.ts:generic-api-key:47
+cd76ecda459100fef612d50858818f6ca02341fb:tests/unit/env.test.ts:generic-api-key:17
+cd76ecda459100fef612d50858818f6ca02341fb:tests/unit/env.test.ts:generic-api-key:23
+cd76ecda459100fef612d50858818f6ca02341fb:tests/unit/env.test.ts:generic-api-key:43
+cd76ecda459100fef612d50858818f6ca02341fb:tests/unit/env.test.ts:generic-api-key:47
+cd76ecda459100fef612d50858818f6ca02341fb:tests/unit/env.test.ts:generic-api-key:185
+cd76ecda459100fef612d50858818f6ca02341fb:tests/integration/import-worker.test.ts:generic-api-key:40
+cd76ecda459100fef612d50858818f6ca02341fb:tests/integration/import-worker.test.ts:generic-api-key:696

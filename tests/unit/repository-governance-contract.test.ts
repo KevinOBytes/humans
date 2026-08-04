@@ -119,7 +119,7 @@ describe("repository governance contract", () => {
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith("#"));
 
-    expect(ignoreLines).toHaveLength(25);
+    expect(ignoreLines).toHaveLength(36);
     for (const line of ignoreLines) {
       expect(line).toMatch(/^[a-f0-9]{40}:[^:*?\[\]{}]+:generic-api-key:\d+$/u);
     }
