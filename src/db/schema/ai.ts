@@ -27,17 +27,17 @@ export const aiThreads = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    ownerId: text("owner_id").notNull(),
+    ownerId: uuid("owner_id").notNull(),
     title: text("title").notNull(),
     sharing: text("sharing").default("private").notNull(),
     retentionDays: integer("retention_days"),
     version: integer("version").default(1).notNull(),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),
-    createdBy: text("created_by").notNull(),
+    createdBy: uuid("created_by").notNull(),
     updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
-    updatedBy: text("updated_by").notNull(),
+    updatedBy: uuid("updated_by").notNull(),
     deletedAt: domainTimestamp("deleted_at"),
-    deletedBy: text("deleted_by"),
+    deletedBy: uuid("deleted_by"),
   },
   (table) => [
     unique("ai_threads_workspace_id_unique").on(table.workspaceId, table.id),
@@ -49,10 +49,22 @@ export const aiThreads = pgTable(
     foreignKey({
       name: "ai_threads_workspace_owner_fk",
       columns: [table.workspaceId, table.ownerId],
-      foreignColumns: [
-        workspacePrincipals.workspaceId,
-        workspacePrincipals.userId,
-      ],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_threads_workspace_creator_fk",
+      columns: [table.workspaceId, table.createdBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_threads_workspace_updater_fk",
+      columns: [table.workspaceId, table.updatedBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_threads_workspace_deleter_fk",
+      columns: [table.workspaceId, table.deletedBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
     }).onDelete("restrict"),
     check(
       "ai_threads_retention_check",
@@ -75,9 +87,9 @@ export const aiMessages = pgTable(
     contentHash: text("content_hash").notNull(),
     citationCount: integer("citation_count").default(0).notNull(),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),
-    createdBy: text("created_by").notNull(),
+    createdBy: uuid("created_by").notNull(),
     updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
-    updatedBy: text("updated_by").notNull(),
+    updatedBy: uuid("updated_by").notNull(),
   },
   (table) => [
     unique("ai_messages_workspace_id_unique").on(table.workspaceId, table.id),
@@ -99,10 +111,12 @@ export const aiMessages = pgTable(
     foreignKey({
       name: "ai_messages_workspace_actor_fk",
       columns: [table.workspaceId, table.createdBy],
-      foreignColumns: [
-        workspacePrincipals.workspaceId,
-        workspacePrincipals.userId,
-      ],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_messages_workspace_updater_fk",
+      columns: [table.workspaceId, table.updatedBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
     }).onDelete("restrict"),
     check(
       "ai_messages_role_check",
@@ -135,7 +149,7 @@ export const aiRuns = pgTable(
     completedAt: domainTimestamp("completed_at"),
     errorCode: text("error_code"),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),
-    createdBy: text("created_by").notNull(),
+    createdBy: uuid("created_by").notNull(),
   },
   (table) => [
     unique("ai_runs_workspace_id_unique").on(table.workspaceId, table.id),
@@ -166,10 +180,7 @@ export const aiRuns = pgTable(
     foreignKey({
       name: "ai_runs_workspace_actor_fk",
       columns: [table.workspaceId, table.createdBy],
-      foreignColumns: [
-        workspacePrincipals.workspaceId,
-        workspacePrincipals.userId,
-      ],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
     }).onDelete("restrict"),
     check(
       "ai_runs_usage_check",

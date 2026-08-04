@@ -14,6 +14,7 @@ import { and, eq } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { organizations } from "@/db/schema/auth";
 import { auditEvents, jobs } from "@/db/schema/operations";
+import { workspacePrincipals } from "@/db/schema/principals";
 import { workspaces } from "@/db/schema/workspaces";
 import { createJobsService } from "@/modules/jobs/service";
 import { JobExecutionError } from "@/modules/jobs/types";
@@ -145,6 +146,62 @@ liveDescribe("durable PostgreSQL job executor", () => {
     return id;
   }
 
+  async function seedSystemPrincipal(workspaceId: string): Promise<string> {
+    const principalId = newId();
+    await database.insert(workspacePrincipals).values({
+      id: principalId,
+      principalType: "system",
+      systemKey: `jobs-test-${principalId}`,
+      workspaceId,
+    });
+    return principalId;
+  }
+
+  it("enqueues and executes principal-attributed AI jobs through the existing executor", async () => {
+    const workspaceId = await seedWorkspace();
+    const principalId = await seedSystemPrincipal(workspaceId);
+    const service = createJobsService({ database, encryptionKey });
+    const aiHandler = vi.fn(async () => ({ resultReferences: [workspaceId] }));
+    const job = await service.enqueue({
+      workspaceId,
+      principalId,
+      idempotencyKey: "ai-principal",
+      payload: { kind: "ai_execute", runId: newId() },
+    });
+
+    await expect(
+      service.enqueue({
+        workspaceId,
+        createdBy: "legacy-user",
+        principalId,
+        idempotencyKey: "ai-conflicting-principals",
+        payload: { kind: "ai_execute", runId: newId() },
+      }),
+    ).rejects.toThrow("Invalid durable job attribution");
+
+    await expect(
+      runJobsOnce({
+        database,
+        encryptionKey,
+        redis: new MemoryRedis(),
+        registry: createJobRegistry({
+          aiExecute: aiHandler,
+          importExecute: async () => undefined,
+          fileCleanup: async () => undefined,
+        }),
+        workerId: "019cc7c4-6ed2-7e0a-aed8-e5d451c96cf0",
+      }),
+    ).resolves.toMatchObject({ claimed: 1, completed: 1 });
+    expect(aiHandler).toHaveBeenCalledOnce();
+    expect(
+      await service.repository.getById({ id: job.id, workspaceId }),
+    ).toMatchObject({
+      principalId,
+      createdBy: null,
+      state: "completed",
+    });
+  });
+
   it("claims a durable job once, requires the Redis owner, and records system completion", async () => {
     const workspaceId = await seedWorkspace();
     const service = createJobsService({ database, encryptionKey });
@@ -155,6 +212,7 @@ liveDescribe("durable PostgreSQL job executor", () => {
     });
     const handler = vi.fn(async () => ({ resultReferences: [workspaceId] }));
     const registry = createJobRegistry({
+      aiExecute: async () => undefined,
       importExecute: handler,
       fileCleanup: async () => undefined,
     });
@@ -239,6 +297,7 @@ liveDescribe("durable PostgreSQL job executor", () => {
       encryptionKey,
       redis: new MemoryRedis(),
       registry: createJobRegistry({
+        aiExecute: async () => undefined,
         importExecute: async () => undefined,
         fileCleanup: handler,
       }),
@@ -297,6 +356,7 @@ liveDescribe("durable PostgreSQL job executor", () => {
       encryptionKey,
       redis,
       registry: createJobRegistry({
+        aiExecute: async () => undefined,
         importExecute: async () => undefined,
         fileCleanup: handler,
       }),
@@ -390,6 +450,7 @@ liveDescribe("durable PostgreSQL job executor", () => {
       now: () => new Date("2100-01-01T00:00:00.000Z"),
       random: () => 0,
       registry: createJobRegistry({
+        aiExecute: async () => undefined,
         importExecute: async () => {
           throw new Error("provider credentials must not be persisted");
         },
@@ -449,6 +510,7 @@ liveDescribe("durable PostgreSQL job executor", () => {
       encryptionKey,
       redis,
       registry: createJobRegistry({
+        aiExecute: async () => undefined,
         importExecute: async () => undefined,
         fileCleanup: handler,
       }),
@@ -486,6 +548,7 @@ liveDescribe("durable PostgreSQL job executor", () => {
           encryptionKey,
           redis: new FailingRedis(phase),
           registry: createJobRegistry({
+            aiExecute: async () => undefined,
             importExecute: async () => undefined,
             fileCleanup: handler,
           }),
@@ -634,6 +697,7 @@ liveDescribe("durable PostgreSQL job executor", () => {
       encryptionKey,
       redis: new MemoryRedis(),
       registry: createJobRegistry({
+        aiExecute: async () => undefined,
         importExecute: async () => {
           throw new Error("transient service outage");
         },
@@ -672,6 +736,7 @@ liveDescribe("durable PostgreSQL job executor", () => {
       encryptionKey,
       redis: new MemoryRedis(),
       registry: createJobRegistry({
+        aiExecute: async () => undefined,
         importExecute: async () => undefined,
         fileCleanup: handler,
       }),

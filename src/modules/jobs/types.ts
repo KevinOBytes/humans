@@ -1,6 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 
-export const jobKinds = ["import_execute", "file_cleanup"] as const;
+export const jobKinds = [
+  "import_execute",
+  "file_cleanup",
+  "ai_execute",
+] as const;
 export type JobKind = (typeof jobKinds)[number];
 
 export const jobStates = [
@@ -21,7 +25,13 @@ export type FileCleanupJobPayload = {
   uploadSessionId: string;
 };
 
-export type JobPayload = ImportExecuteJobPayload | FileCleanupJobPayload;
+export type AiExecuteJobPayload = Readonly<{
+  kind: "ai_execute";
+  runId: string;
+}>;
+
+export type JobPayload =
+  ImportExecuteJobPayload | FileCleanupJobPayload | AiExecuteJobPayload;
 
 export const MAX_JOB_ATTEMPTS = 5;
 export const JOB_LEASE_MS = 60_000;
@@ -59,6 +69,18 @@ export function parseJobPayload(value: unknown, kind?: JobKind): JobPayload {
       importId: String(record.importId).toLowerCase(),
     };
   }
+  if (record.kind === "ai_execute") {
+    if (
+      Object.keys(record).length !== 2 ||
+      !UUID.test(String(record.runId ?? ""))
+    ) {
+      throw new TypeError("Invalid job payload");
+    }
+    return {
+      kind: record.kind,
+      runId: String(record.runId).toLowerCase(),
+    };
+  }
   if (
     Object.keys(record).length !== 2 ||
     !UUID.test(String(record.uploadSessionId ?? ""))
@@ -73,12 +95,17 @@ export function parseJobPayload(value: unknown, kind?: JobKind): JobPayload {
 
 export function canonicalJobPayload(payload: JobPayload): string {
   const parsed = parseJobPayload(payload);
-  return parsed.kind === "import_execute"
-    ? JSON.stringify({ importId: parsed.importId, kind: parsed.kind })
-    : JSON.stringify({
+  switch (parsed.kind) {
+    case "import_execute":
+      return JSON.stringify({ importId: parsed.importId, kind: parsed.kind });
+    case "file_cleanup":
+      return JSON.stringify({
         kind: parsed.kind,
         uploadSessionId: parsed.uploadSessionId,
       });
+    case "ai_execute":
+      return JSON.stringify({ kind: parsed.kind, runId: parsed.runId });
+  }
 }
 
 export function equalJobHashes(left: string, right: string): boolean {

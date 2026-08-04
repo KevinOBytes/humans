@@ -16,6 +16,7 @@ import {
 } from "@/worker/handlers/import";
 import { createJobRegistry } from "@/worker/registry";
 import { runJobsOnce } from "@/worker/run-once";
+import { JobExecutionError } from "@/modules/jobs/types";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { createSearchIndexMaintenance } from "@/modules/search/indexer";
 import {
@@ -30,6 +31,9 @@ export function createRuntimeJobRegistry(input: {
   searchIndexMaintenance: SearchIndexMaintenance;
 }) {
   return createJobRegistry({
+    aiExecute: async () => {
+      throw new JobExecutionError("ai_handler_unavailable", "retryable");
+    },
     importExecute: createImportExecuteHandler(
       createImportExecuteService({
         database: input.database,

@@ -249,6 +249,7 @@ async function runWorker(
     encryptionKey,
     redis: new MemoryRedis(),
     registry: createJobRegistry({
+      aiExecute: async () => undefined,
       importExecute: createImportExecuteHandler(
         createImportExecuteService({
           database,
