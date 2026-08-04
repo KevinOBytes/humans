@@ -8,25 +8,40 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { newId } from "@/db/id";
-import { sessions } from "@/db/schema/auth";
+import { members, sessions } from "@/db/schema/auth";
 import {
   files as filesTable,
   importRows,
   imports as importsTable,
 } from "@/db/schema/files";
 import { jobs } from "@/db/schema/operations";
+import { people } from "@/db/schema/people";
 import { relationshipTypes } from "@/db/schema/relationships";
+import {
+  accessPolicies,
+  resourceGrants,
+  workspaces,
+} from "@/db/schema/workspaces";
+import type { RedisStore } from "@/lib/redis";
 import type { ObjectStore } from "@/lib/storage/types";
 import { createFilesService } from "@/modules/files/service";
 import { createImportsService } from "@/modules/imports/service";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { createJobsService } from "@/modules/jobs/service";
+import {
+  createImportExecuteHandler,
+  createImportExecuteService,
+} from "@/worker/handlers/import";
+import { createJobRegistry } from "@/worker/registry";
+import { runJobsOnce } from "@/worker/run-once";
 
 import { ResearchFixture } from "../support/research-fixture";
+import { createTestConnection, createTestDatabase } from "../support/auth";
 import type { SessionActor } from "../support/graphql";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const encryptionKey = "31".repeat(32);
+const IMPORT_PREPARE_GATE = 8_104_202_609;
 
 function importJobIdempotencyHash(input: {
   actorId: string;
@@ -63,6 +78,34 @@ function importJobRequestHash(input: {
 
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+async function waitForActivity(
+  fixture: ResearchFixture,
+  applicationName: string,
+  expectedWaitEventType: "AdvisoryLock" | "Lock",
+): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const [activity] = await fixture.connection<
+      [{ waitEvent: string | null; waitEventType: string | null }]
+    >`
+      SELECT wait_event AS "waitEvent", wait_event_type AS "waitEventType"
+      FROM pg_stat_activity
+      WHERE application_name = ${applicationName}
+    `;
+    if (
+      expectedWaitEventType === "AdvisoryLock"
+        ? activity?.waitEvent === "advisory"
+        : activity?.waitEventType === "Lock"
+    ) {
+      return;
+    }
+    await delay(10);
+  }
+  throw new Error(
+    `Timed out waiting for ${applicationName} ${expectedWaitEventType}`,
+  );
+}
 
 class MemoryStore implements ObjectStore {
   readonly objects = new Map<string, Uint8Array>();
@@ -112,20 +155,88 @@ class MemoryStore implements ObjectStore {
   }
 }
 
+class MemoryRedis implements RedisStore {
+  private readonly leases = new Map<string, string>();
+
+  get(): Promise<string | null> {
+    return Promise.resolve(null);
+  }
+  set(): Promise<void> {
+    return Promise.resolve();
+  }
+  delete(): Promise<void> {
+    return Promise.resolve();
+  }
+  increment(): Promise<number> {
+    return Promise.resolve(1);
+  }
+  acquireLease(key: string, token: string): Promise<boolean> {
+    if (this.leases.has(key)) return Promise.resolve(false);
+    this.leases.set(key, token);
+    return Promise.resolve(true);
+  }
+  extendLease(key: string, token: string): Promise<boolean> {
+    return Promise.resolve(this.leases.get(key) === token);
+  }
+  releaseLease(key: string, token: string): Promise<boolean> {
+    if (this.leases.get(key) !== token) return Promise.resolve(false);
+    this.leases.delete(key);
+    return Promise.resolve(true);
+  }
+  consumeTokenBucket(): Promise<{
+    allowed: boolean;
+    remainingMicrotokens: number;
+    retryAfterMs: number;
+  }> {
+    return Promise.resolve({
+      allowed: true,
+      remainingMicrotokens: 0,
+      retryAfterMs: 0,
+    });
+  }
+}
+
+async function runImportWorker(fixture: ResearchFixture, workerId: string) {
+  return runJobsOnce({
+    database: fixture.database,
+    encryptionKey,
+    redis: new MemoryRedis(),
+    registry: createJobRegistry({
+      aiExecute: async () => undefined,
+      importExecute: createImportExecuteHandler(
+        createImportExecuteService({
+          database: fixture.database,
+          encryptionKey,
+          searchIndexMaintenance: disabledSearchIndexMaintenance,
+        }),
+      ),
+      fileCleanup: async () => undefined,
+    }),
+    workerId,
+  });
+}
+
 async function serviceContext(fixture: ResearchFixture, actor: SessionActor) {
-  const [session] = await fixture.database
-    .select({ id: sessions.id })
-    .from(sessions)
-    .where(eq(sessions.userId, actor.userId))
-    .limit(1);
-  if (!session) throw new Error("fixture session is missing");
+  const [[session], [member]] = await Promise.all([
+    fixture.database
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(eq(sessions.userId, actor.userId))
+      .limit(1),
+    fixture.database
+      .select({ role: members.role })
+      .from(members)
+      .where(eq(members.id, actor.memberId))
+      .limit(1),
+  ]);
+  if (!session || !member) throw new Error("fixture membership is missing");
   return {
     actor: {
       type: "user" as const,
       id: actor.userId,
       memberId: actor.memberId,
       principalId: actor.principalId,
-      role: "owner",
+      role: member.role,
       sessionId: session.id,
     },
     database: fixture.database,
@@ -240,6 +351,219 @@ liveDescribe("import staging and durable start", () => {
   beforeEach(async () => fixture.reset());
   afterAll(async () => fixture.close());
 
+  it("uploads, replays, queues, and executes a mixed JSON import", async () => {
+    const actor = await fixture.createActor("owner");
+    const context = await serviceContext(fixture, actor);
+    const store = new MemoryStore();
+    const fileService = createFilesService(context, {
+      encryptionKey,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const body = new TextEncoder().encode(
+      JSON.stringify([
+        { external_id: "json-valid", name: "JSON Valid" },
+        { external_id: "json-rejected" },
+      ]),
+    );
+    const upload = await fileService.createUploadSession({
+      originalName: "people.json",
+      claimedMediaType: "application/json",
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      purpose: "JSON_IMPORT",
+    });
+    store.objects.set(`${actor.workspaceId}:${upload.session.objectKey}`, body);
+    const completed = await fileService.completeUpload(upload.session.id);
+    const service = createImportsService(context, {
+      encryptionKey,
+      objectStore: store,
+    });
+    const saved = await service.saveMapping({
+      name: "JSON people",
+      format: "JSON",
+      definition: {
+        version: 1,
+        recordKind: "PERSON",
+        rowKeySource: "external_id",
+        person: {
+          displayNameSource: "name",
+          primaryNameKind: "legal",
+          fields: [],
+        },
+        facts: [],
+        defaults: {},
+      },
+    });
+
+    const prepared = await service.prepareImport({
+      fileId: completed.file.id,
+      mappingId: saved.mapping.id,
+      idempotencyKey: "prepare-json-acceptance-v1",
+      mode: "COMMIT",
+    });
+    expect(prepared.import).toMatchObject({
+      format: "JSON",
+      state: "preview_ready",
+      totalRows: 2,
+      rejectedRows: 1,
+    });
+    expect(prepared.preview).toMatchObject([
+      {
+        rowNumber: 1,
+        state: "pending",
+        normalizedPayload: { kind: "PERSON", rowKey: "json-valid" },
+      },
+      {
+        rowNumber: 2,
+        state: "rejected",
+        issues: [
+          {
+            code: "ROW_VALIDATION_FAILED",
+            message: "The row does not satisfy the selected mapping.",
+          },
+        ],
+      },
+    ]);
+    const preparedReplay = await service.prepareImport({
+      fileId: completed.file.id,
+      mappingId: saved.mapping.id,
+      idempotencyKey: "prepare-json-acceptance-v1",
+      mode: "COMMIT",
+    });
+    expect(preparedReplay.import.id).toBe(prepared.import.id);
+
+    const queued = await service.startImport({
+      importId: prepared.import.id,
+      expectedVersion: prepared.import.version,
+      idempotencyKey: "run-json-acceptance-v1",
+    });
+    expect(queued.import).toMatchObject({ state: "queued" });
+    const queuedReplay = await service.startImport({
+      importId: prepared.import.id,
+      expectedVersion: prepared.import.version,
+      idempotencyKey: "run-json-acceptance-v1",
+    });
+    expect(queuedReplay.job.id).toBe(queued.job.id);
+
+    await expect(
+      runImportWorker(fixture, "019cc7c4-6ed2-7e0a-aed8-e5d451c96d01"),
+    ).resolves.toMatchObject({ claimed: 1, completed: 1, deadLettered: 0 });
+
+    const rows = await fixture.database
+      .select()
+      .from(importRows)
+      .where(eq(importRows.importId, prepared.import.id));
+    const succeeded = rows.find((row) => row.state === "succeeded");
+    const rejected = rows.find((row) => row.state === "rejected");
+    const [person] = await fixture.database
+      .select({ id: people.id })
+      .from(people)
+      .where(eq(people.workspaceId, actor.workspaceId));
+    expect(succeeded?.resultReferences).toHaveLength(3);
+    expect(succeeded?.resultReferences).toContain(person?.id);
+    expect(rejected).toMatchObject({
+      resultReferences: [],
+      validationErrors: [
+        {
+          code: "ROW_VALIDATION_FAILED",
+          message: "The row does not satisfy the selected mapping.",
+        },
+      ],
+    });
+    const [storedImport] = await fixture.database
+      .select()
+      .from(importsTable)
+      .where(eq(importsTable.id, prepared.import.id));
+    expect(storedImport).toMatchObject({
+      state: "completed_with_errors",
+      totalRows: 2,
+      acceptedRows: 1,
+      rejectedRows: 1,
+    });
+  });
+
+  it("retains one safe rejection diagnostic after the preview issue budget is spent", async () => {
+    const actor = await fixture.createActor("owner");
+    const context = await serviceContext(fixture, actor);
+    const store = new MemoryStore();
+    const fileService = createFilesService(context, {
+      encryptionKey,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const body = new TextEncoder().encode(
+      JSON.stringify([
+        ...Array.from({ length: 200 }, (_, index) => ({
+          external_id: `formula-${index + 1}`,
+          name: `=formula-${index + 1}`,
+        })),
+        { external_id: "private-rejected-row-key" },
+      ]),
+    );
+    const upload = await fileService.createUploadSession({
+      originalName: "bounded-diagnostics.json",
+      claimedMediaType: "application/json",
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      purpose: "JSON_IMPORT",
+    });
+    store.objects.set(`${actor.workspaceId}:${upload.session.objectKey}`, body);
+    const completed = await fileService.completeUpload(upload.session.id);
+    const service = createImportsService(context, {
+      encryptionKey,
+      objectStore: store,
+    });
+    const mapping = await service.saveMapping({
+      name: "Bounded JSON diagnostics",
+      format: "JSON",
+      definition: {
+        version: 1,
+        recordKind: "PERSON",
+        rowKeySource: "external_id",
+        person: {
+          displayNameSource: "name",
+          primaryNameKind: "legal",
+          fields: [],
+        },
+        facts: [],
+        defaults: {},
+      },
+    });
+
+    const prepared = await service.prepareImport({
+      fileId: completed.file.id,
+      mappingId: mapping.mapping.id,
+      idempotencyKey: ["prepare", "bounded", "diagnostics", "v1"].join("-"),
+      mode: "COMMIT",
+    });
+    expect(prepared.preview).toHaveLength(100);
+    expect(prepared.import).toMatchObject({
+      totalRows: 201,
+      rejectedRows: 1,
+    });
+    const [rejected] = await fixture.database
+      .select()
+      .from(importRows)
+      .where(
+        and(
+          eq(importRows.importId, prepared.import.id),
+          eq(importRows.rowNumber, 201),
+        ),
+      );
+    expect(rejected?.validationErrors).toEqual([
+      {
+        code: "ROW_VALIDATION_FAILED",
+        message: "The row does not satisfy the selected mapping.",
+      },
+    ]);
+    expect(JSON.stringify(rejected?.validationErrors)).not.toContain(
+      "private-rejected-row-key",
+    );
+  });
+
   it("stages a verified CSV, replays preparation, and queues one sealed job", async () => {
     const actor = await fixture.createActor("owner");
     const [session] = await fixture.database
@@ -349,6 +673,40 @@ liveDescribe("import staging and durable start", () => {
         normalizedPayload: { kind: "PERSON", rowKey: "p-1" },
       },
     ]);
+    await fixture.database
+      .update(filesTable)
+      .set({ sensitivity: "restricted" })
+      .where(eq(filesTable.id, completed.file.id));
+    await expect(
+      service.prepareImport({
+        fileId: completed.file.id,
+        mappingId: saved.mapping.id,
+        idempotencyKey: "prepare-people-v1",
+        mode: "COMMIT",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+    const policyId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: actor.workspaceId,
+      name: "Prepared import source",
+      sensitivityCeiling: "restricted",
+      resourceKinds: ["file"],
+      state: "active",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values({
+      id: newId(),
+      workspaceId: actor.workspaceId,
+      policyId,
+      memberId: actor.memberId,
+      resourceId: completed.file.id,
+      resourceKind: "file",
+      state: "active",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
     const replay = await service.prepareImport({
       fileId: completed.file.id,
       mappingId: saved.mapping.id,
@@ -551,9 +909,294 @@ liveDescribe("import staging and durable start", () => {
     }
   });
 
+  it.each([
+    "role demotion",
+    "membership removal",
+    "session revocation",
+    "workspace suspension",
+  ] as const)(
+    "rejects prepare when %s wins the live-authority race",
+    async (revocation) => {
+      const owner = await fixture.createActor("owner");
+      const actor = await fixture.createWorkspaceMember(owner, "contributor");
+      const ownerContext = await serviceContext(fixture, owner);
+      const writerConnection = createTestConnection(1);
+      const context = {
+        ...(await serviceContext(fixture, actor)),
+        database: createTestDatabase(writerConnection),
+      };
+      const store = new MemoryStore();
+      const fileService = createFilesService(ownerContext, {
+        encryptionKey,
+        objectStore: store,
+        storageBucket: "private",
+        storageProvider: "minio",
+      });
+      const body = new TextEncoder().encode(
+        "external_id,name\nrace-1,Locked User\n",
+      );
+      const upload = await fileService.createUploadSession({
+        originalName: "authority-race.csv",
+        claimedMediaType: "text/csv",
+        byteSize: body.byteLength,
+        checksumSha256: createHash("sha256").update(body).digest("hex"),
+        purpose: "CSV_IMPORT",
+      });
+      store.objects.set(
+        `${owner.workspaceId}:${upload.session.objectKey}`,
+        body,
+      );
+      const completed = await fileService.completeUpload(upload.session.id);
+      const ownerService = createImportsService(ownerContext, {
+        encryptionKey,
+        objectStore: store,
+      });
+      const mapping = await ownerService.saveMapping({
+        name: "Authority race mapping",
+        format: "CSV",
+        definition: {
+          version: 1,
+          recordKind: "PERSON",
+          rowKeySource: "external_id",
+          person: {
+            displayNameSource: "name",
+            primaryNameKind: "legal",
+            fields: [],
+          },
+          facts: [],
+          defaults: {},
+        },
+      });
+      const service = createImportsService(context, {
+        encryptionKey,
+        objectStore: store,
+      });
+      let preparePromise: Promise<
+        Awaited<ReturnType<typeof service.prepareImport>>
+      > | null = null;
+      try {
+        await fixture.connection.begin(async (revoker) => {
+          if (
+            revocation === "role demotion" ||
+            revocation === "membership removal"
+          ) {
+            await revoker`
+              SELECT id FROM members WHERE id = ${actor.memberId} FOR UPDATE
+            `;
+          } else if (revocation === "session revocation") {
+            await revoker`
+              SELECT id FROM sessions
+              WHERE id = ${context.actor.sessionId}
+              FOR UPDATE
+            `;
+          } else {
+            await revoker`
+              SELECT id FROM workspaces
+              WHERE id = ${actor.workspaceId}
+              FOR UPDATE
+            `;
+          }
+          preparePromise = service.prepareImport({
+            fileId: completed.file.id,
+            mappingId: mapping.mapping.id,
+            idempotencyKey: `prepare-${revocation.replaceAll(" ", "-")}-race-v1`,
+          });
+          if (revocation === "role demotion") {
+            await revoker`
+            UPDATE members SET role = 'viewer' WHERE id = ${actor.memberId}
+          `;
+          } else if (revocation === "membership removal") {
+            await revoker`
+            DELETE FROM members WHERE id = ${actor.memberId}
+          `;
+          } else if (revocation === "session revocation") {
+            await revoker`
+              UPDATE sessions
+              SET expires_at = now() - interval '1 second'
+              WHERE id = ${context.actor.sessionId}
+            `;
+          } else {
+            await revoker`
+              UPDATE workspaces
+              SET state = 'inactive'
+              WHERE id = ${actor.workspaceId}
+            `;
+          }
+        });
+        await expect(preparePromise).rejects.toMatchObject({
+          extensions: { code: "FORBIDDEN" },
+        });
+        expect(
+          await fixture.database
+            .select({ id: importsTable.id })
+            .from(importsTable)
+            .where(eq(importsTable.workspaceId, actor.workspaceId)),
+        ).toHaveLength(0);
+      } finally {
+        if (preparePromise) await Promise.allSettled([preparePromise]);
+        await writerConnection.end();
+      }
+    },
+  );
+
+  it.each([
+    "role demotion",
+    "session revocation",
+    "workspace suspension",
+  ] as const)(
+    "serializes %s behind a live-authorized prepare claim",
+    async (revocation) => {
+      const owner = await fixture.createActor("owner");
+      const actor = await fixture.createWorkspaceMember(owner, "contributor");
+      const ownerContext = await serviceContext(fixture, owner);
+      const store = new MemoryStore();
+      const fileService = createFilesService(ownerContext, {
+        encryptionKey,
+        objectStore: store,
+        storageBucket: "private",
+        storageProvider: "minio",
+      });
+      const body = new TextEncoder().encode(
+        "external_id,name\nlock-1,Committed User\n",
+      );
+      const upload = await fileService.createUploadSession({
+        originalName: "authority-lock.csv",
+        claimedMediaType: "text/csv",
+        byteSize: body.byteLength,
+        checksumSha256: createHash("sha256").update(body).digest("hex"),
+        purpose: "CSV_IMPORT",
+      });
+      store.objects.set(
+        `${owner.workspaceId}:${upload.session.objectKey}`,
+        body,
+      );
+      const completed = await fileService.completeUpload(upload.session.id);
+      const ownerService = createImportsService(ownerContext, {
+        encryptionKey,
+        objectStore: store,
+      });
+      const mapping = await ownerService.saveMapping({
+        name: "Authority lock mapping",
+        format: "CSV",
+        definition: {
+          version: 1,
+          recordKind: "PERSON",
+          rowKeySource: "external_id",
+          person: {
+            displayNameSource: "name",
+            primaryNameKind: "legal",
+            fields: [],
+          },
+          facts: [],
+          defaults: {},
+        },
+      });
+      const writerConnection = createTestConnection(1);
+      const revokerConnection = createTestConnection(1);
+      const gateConnection = createTestConnection(1);
+      const writerName = `task1_import_writer_${newId()}`;
+      const revokerName = `task1_import_revoker_${newId()}`;
+      const actorContext = await serviceContext(fixture, actor);
+      const service = createImportsService(
+        {
+          ...actorContext,
+          database: createTestDatabase(writerConnection),
+        },
+        { encryptionKey, objectStore: store },
+      );
+      let gateHeld = false;
+      let preparePromise: Promise<
+        Awaited<ReturnType<typeof service.prepareImport>>
+      > | null = null;
+      let removalPromise: Promise<unknown> | null = null;
+      try {
+        await fixture.connection.unsafe(`
+        CREATE OR REPLACE FUNCTION task1_import_post_authority_gate()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.state = 'staging' AND NEW.state = 'preview_ready' THEN
+            PERFORM pg_advisory_xact_lock(${IMPORT_PREPARE_GATE});
+          END IF;
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER task1_import_post_authority_gate_trigger
+        BEFORE UPDATE ON imports
+        FOR EACH ROW EXECUTE FUNCTION task1_import_post_authority_gate();
+      `);
+        await writerConnection`SELECT set_config('application_name', ${writerName}, false)`;
+        await revokerConnection`SELECT set_config('application_name', ${revokerName}, false)`;
+        await gateConnection`SELECT pg_advisory_lock(${IMPORT_PREPARE_GATE})`;
+        gateHeld = true;
+        preparePromise = service.prepareImport({
+          fileId: completed.file.id,
+          mappingId: mapping.mapping.id,
+          idempotencyKey: "prepare-authority-lock-v1",
+        });
+        await waitForActivity(fixture, writerName, "AdvisoryLock");
+        const revokerDatabase = createTestDatabase(revokerConnection);
+        if (revocation === "role demotion") {
+          removalPromise = revokerDatabase
+            .update(members)
+            .set({ role: "viewer" })
+            .where(eq(members.id, actor.memberId))
+            .returning({ id: members.id })
+            .then(() => undefined);
+        } else if (revocation === "session revocation") {
+          removalPromise = revokerDatabase
+            .update(sessions)
+            .set({ expiresAt: new Date(Date.now() - 1_000) })
+            .where(eq(sessions.id, actorContext.actor.sessionId))
+            .returning({ id: sessions.id })
+            .then(() => undefined);
+        } else {
+          removalPromise = revokerDatabase
+            .update(workspaces)
+            .set({ state: "inactive" })
+            .where(eq(workspaces.id, actor.workspaceId))
+            .returning({ id: workspaces.id })
+            .then(() => undefined);
+        }
+        await waitForActivity(fixture, revokerName, "Lock");
+        await gateConnection`SELECT pg_advisory_unlock(${IMPORT_PREPARE_GATE})`;
+        gateHeld = false;
+        await expect(preparePromise).resolves.toMatchObject({
+          import: { state: "preview_ready", totalRows: 1 },
+        });
+        await removalPromise;
+        expect(
+          await fixture.database
+            .select({ id: importsTable.id })
+            .from(importsTable)
+            .where(eq(importsTable.workspaceId, owner.workspaceId)),
+        ).toHaveLength(1);
+      } finally {
+        if (gateHeld) {
+          await gateConnection`
+          SELECT pg_advisory_unlock(${IMPORT_PREPARE_GATE})
+        `.catch(() => undefined);
+        }
+        await fixture.connection
+          .unsafe(
+            "DROP TRIGGER IF EXISTS task1_import_post_authority_gate_trigger ON imports; DROP FUNCTION IF EXISTS task1_import_post_authority_gate();",
+          )
+          .catch(() => undefined);
+        await Promise.allSettled(
+          [preparePromise, removalPromise].filter(
+            (promise): promise is Promise<unknown> => promise !== null,
+          ),
+        );
+        await Promise.all([
+          writerConnection.end(),
+          revokerConnection.end(),
+          gateConnection.end(),
+        ]);
+      }
+    },
+  );
+
   it("serializes the per-actor cap when a member starts imports created by a peer", async () => {
     const owner = await fixture.createActor("owner");
-    const member = await fixture.createWorkspaceMember(owner, "analyst");
+    const member = await fixture.createWorkspaceMember(owner, "contributor");
     const ownerContext = await serviceContext(fixture, owner);
     const memberContext = await serviceContext(fixture, member);
     const store = new MemoryStore();

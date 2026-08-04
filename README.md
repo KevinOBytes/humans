@@ -2,7 +2,7 @@
 
 Humans is an open-source, workspace-scoped research platform for building evidence-backed records about people and the relationships between them. The planned MVP combines structured facts, provenance, a social graph, GraphQL, file ingestion, and cited analysis through an OpenAI-compatible model.
 
-> **Project status:** usable alpha; not production-ready. The current tree includes an authenticated GraphQL application shell, tenant-safe research services, workspace member and invitation administration, an application-owned API-key lifecycle, an authorized search workbench, deterministic graph analysis, and a cited AI analyst. [TODO.md](TODO.md) remains the authoritative requirement-linked backlog; final API-key activation atomicity, policy administration, complete invitation acceptance evidence, deployment proof, optional Ollama smoke, and the remaining production gates are not finished.
+> **Project status:** usable alpha; not production-ready. The current tree includes an authenticated GraphQL application shell, tenant-safe research services, workspace member and invitation administration, an application-owned API-key lifecycle, an access-controlled import preparation/execution slice with full JSON execution and bounded row diagnostics, an authorized search workbench, deterministic graph analysis, and a cited AI analyst. [TODO.md](TODO.md) remains the authoritative requirement-linked backlog; final API-key activation atomicity, policy administration, complete invitation acceptance evidence, extraction runs beyond their current schema-only foundation, deployment proof, optional Ollama smoke, and the remaining production gates are not finished.
 
 ## Quick start
 
