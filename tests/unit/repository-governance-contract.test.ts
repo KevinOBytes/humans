@@ -92,10 +92,10 @@ describe("repository governance contract", () => {
     expect(governance).toContain("manifest-list digest");
     expect(dependencies).toContain("fail closed");
     expect(dependencies).toContain("expiry");
-    expect(requirements).toMatch(/^\| `HUM-NFR-014` .+\| Complete   \|$/m);
-    expect(requirements).toMatch(/^\| `HUM-NFR-017` .+\| Complete   \|$/m);
-    expect(requirements).toMatch(/^\| `HUM-NFR-010` .+\| Complete   \|$/m);
-    expect(requirements).toMatch(/^\| `HUM-NFR-019` .+\| Complete   \|$/m);
+    expect(requirements).toMatch(/^\| `HUM-NFR-014` .+\| Complete\s*\|$/m);
+    expect(requirements).toMatch(/^\| `HUM-NFR-017` .+\| Complete\s*\|$/m);
+    expect(requirements).toMatch(/^\| `HUM-NFR-010` .+\| Complete\s*\|$/m);
+    expect(requirements).toMatch(/^\| `HUM-NFR-019` .+\| Complete\s*\|$/m);
     expect(todo).not.toContain("`HUM-NFR-010`");
     expect(todo).not.toContain("`HUM-NFR-014`");
     expect(todo).not.toContain("`HUM-NFR-017`");
