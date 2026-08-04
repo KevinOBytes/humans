@@ -18,7 +18,7 @@ services:
         condition: service_completed_successfully
 
   ollama:
-    image: ollama/ollama:0.13.5
+    image: ollama/ollama:0.13.5@sha256:2c9595c555fd70a28363489ac03bd5bf9e7c5bdf2890373c3a830ffd7252ce6d
     profiles: ["ollama"]
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -34,7 +34,7 @@ services:
       - edge
 
   ollama-init:
-    image: ollama/ollama:0.13.5
+    image: ollama/ollama:0.13.5@sha256:2c9595c555fd70a28363489ac03bd5bf9e7c5bdf2890373c3a830ffd7252ce6d
     profiles: ["ollama"]
     environment:
       OLLAMA_HOST: http://ollama:11434

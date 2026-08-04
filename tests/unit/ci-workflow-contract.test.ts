@@ -145,6 +145,7 @@ describe("CI workflow contract", () => {
       "corepack pnpm test:db",
       "corepack pnpm build",
       "corepack pnpm test:compose:config",
+      "corepack pnpm compose:images:verify",
       "corepack pnpm test:compose:lifecycle",
       "corepack pnpm deps:licenses",
       "corepack pnpm deps:audit",
