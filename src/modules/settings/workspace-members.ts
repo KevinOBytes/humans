@@ -28,6 +28,8 @@ import {
 export type WorkspaceMemberRuntime = {
   appUrl: string;
   authSecret: string;
+  /** Test-fixture seam for lifecycle authorization-to-write regressions. */
+  beforeApiKeyLifecycleWrite?: () => Promise<void> | void;
   emailSender: EmailSender;
   encryptionKey: string;
 };

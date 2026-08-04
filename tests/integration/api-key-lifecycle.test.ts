@@ -3,9 +3,10 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { apiKeys } from "@/db/schema/auth";
+import { apiKeys, members } from "@/db/schema/auth";
 import { auditEvents } from "@/db/schema/operations";
 
+import { TestEmailSender, testAdminEnv } from "../support/auth";
 import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
 
@@ -71,12 +72,24 @@ const REVOKE = /* GraphQL */ `
 
 liveDescribe("HUM-FR-006 API-key lifecycle", () => {
   let fixture: ResearchFixture;
+  let beforeApiKeyLifecycleWrite: (() => Promise<void> | void) | undefined;
 
   beforeAll(async () => {
-    fixture = new ResearchFixture();
+    fixture = new ResearchFixture({
+      settingsRuntime: {
+        appUrl: testAdminEnv.NEXT_PUBLIC_APP_URL,
+        authSecret: testAdminEnv.AUTH_SECRET,
+        beforeApiKeyLifecycleWrite: () => beforeApiKeyLifecycleWrite?.(),
+        emailSender: new TestEmailSender(),
+        encryptionKey: testAdminEnv.AUTH_ENCRYPTION_KEY,
+      },
+    });
     await fixture.reset();
   });
-  beforeEach(async () => fixture.reset());
+  beforeEach(async () => {
+    beforeApiKeyLifecycleWrite = undefined;
+    await fixture.reset();
+  });
   afterAll(async () => fixture.close());
 
   it("creates, rotates, revokes, audits, and never rereads a plaintext key", async () => {
@@ -85,6 +98,7 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
       createOrganizationApiKey?: {
         actionId?: string | null;
         code?: string;
+        requestId?: string;
         secret?: string | null;
       };
     }>({
@@ -142,6 +156,7 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
       rotateOrganizationApiKey?: {
         actionId?: string | null;
         code?: string;
+        requestId?: string;
         secret?: string | null;
       };
     }>({
@@ -175,7 +190,11 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
     ).toBe("API_KEY");
 
     const revoked = await fixture.execute<{
-      revokeOrganizationApiKey?: { actionId?: string | null; code?: string };
+      revokeOrganizationApiKey?: {
+        actionId?: string | null;
+        code?: string;
+        requestId?: string;
+      };
     }>({
       jar: owner.jar,
       query: REVOKE,
@@ -196,8 +215,11 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
     const audit = await fixture.database
       .select({
         action: auditEvents.action,
+        actorUserId: auditEvents.actorUserId,
         redactedDiff: auditEvents.redactedDiff,
         resourceId: auditEvents.resourceId,
+        requestId: auditEvents.requestId,
+        sessionId: auditEvents.sessionId,
       })
       .from(auditEvents)
       .where(eq(auditEvents.workspaceId, owner.workspaceId));
@@ -209,6 +231,36 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
       ]),
     );
     expect(audit.every((row) => row.resourceId === null)).toBe(true);
+    const lifecycleAudit = audit.filter((row) =>
+      [
+        "settings.api_key.create",
+        "settings.api_key.rotate",
+        "settings.api_key.revoke",
+      ].includes(row.action),
+    );
+    expect(lifecycleAudit).toHaveLength(3);
+    expect(lifecycleAudit).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "settings.api_key.create",
+          actorUserId: owner.userId,
+          requestId: first?.requestId,
+          sessionId: expect.any(String),
+        }),
+        expect.objectContaining({
+          action: "settings.api_key.rotate",
+          actorUserId: owner.userId,
+          requestId: replacement?.requestId,
+          sessionId: expect.any(String),
+        }),
+        expect.objectContaining({
+          action: "settings.api_key.revoke",
+          actorUserId: owner.userId,
+          requestId: revoked.body?.data?.revokeOrganizationApiKey?.requestId,
+          sessionId: expect.any(String),
+        }),
+      ]),
+    );
     expect(JSON.stringify(audit)).not.toContain(first?.secret ?? "");
     expect(JSON.stringify(audit)).not.toContain(replacement?.secret ?? "");
   });
@@ -315,4 +367,59 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
       ).body?.data?.viewer?.actorType,
     ).toBe("API_KEY");
   });
+
+  it.each(["demotion", "removal"] as const)(
+    "revalidates an admin %s inside the disable transaction",
+    async (change) => {
+      const owner = await fixture.createActor();
+      const admin = await fixture.createWorkspaceMember(owner, "admin");
+      await fixture.provisionKey(owner, { person: ["read"] });
+      const listed = await fixture.execute<{
+        settingsOrganizationApiKeys?: { nodes?: Array<{ actionId: string }> };
+      }>({ jar: admin.jar, query: LIST });
+      const actionId =
+        listed.body?.data?.settingsOrganizationApiKeys?.nodes?.[0]?.actionId;
+
+      beforeApiKeyLifecycleWrite = async () => {
+        if (change === "demotion") {
+          await fixture.database
+            .update(members)
+            .set({ role: "viewer" })
+            .where(eq(members.id, admin.memberId));
+          return;
+        }
+        await fixture.database
+          .delete(members)
+          .where(eq(members.id, admin.memberId));
+      };
+
+      const denied = await fixture.execute<{
+        revokeOrganizationApiKey?: { actionId?: string | null; code?: string };
+      }>({
+        jar: admin.jar,
+        query: REVOKE,
+        variables: { input: { actionId } },
+      });
+      expect(denied.body?.data?.revokeOrganizationApiKey).toEqual({
+        actionId: null,
+        code: "INVALID",
+        requestId: expect.any(String),
+      });
+      const [stored] = await fixture.database
+        .select({ enabled: apiKeys.enabled })
+        .from(apiKeys)
+        .where(eq(apiKeys.workspaceId, owner.workspaceId));
+      expect(stored?.enabled).toBe(true);
+      const deniedAudit = await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.action, "settings.api_key.revoke"),
+          ),
+        );
+      expect(deniedAudit).toHaveLength(0);
+    },
+  );
 });

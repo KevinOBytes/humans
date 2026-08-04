@@ -302,6 +302,7 @@ export function createSettingsService(input: {
       let replacementKey: string | null = null;
       try {
         replacementKey = await apiKeyIdForAction(replacement.actionId);
+        await input.runtime?.beforeApiKeyLifecycleWrite?.();
         const rotated = await repository.disableOrganizationApiKeyWithAudit({
           action: "settings.api_key.rotate",
           apiKeyId: current.id,
@@ -310,7 +311,7 @@ export function createSettingsService(input: {
           requestId,
           workspaceId: input.workspaceId,
         });
-        if (!rotated) {
+        if (rotated !== "APPLIED") {
           await repository
             .disableOrganizationApiKey({
               apiKeyId: replacementKey,
@@ -344,6 +345,7 @@ export function createSettingsService(input: {
       }
       if (actor.type !== "user") lifecycleUnavailable();
       try {
+        await input.runtime?.beforeApiKeyLifecycleWrite?.();
         const revoked = await repository.disableOrganizationApiKeyWithAudit({
           action: "settings.api_key.revoke",
           apiKeyId: current.id,
@@ -353,8 +355,8 @@ export function createSettingsService(input: {
           workspaceId: input.workspaceId,
         });
         return {
-          actionId: revoked ? actionId : null,
-          code: revoked ? "APPLIED" : "INVALID",
+          actionId: revoked === "APPLIED" ? actionId : null,
+          code: revoked === "APPLIED" ? "APPLIED" : "INVALID",
           requestId,
         } as const;
       } catch {

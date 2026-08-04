@@ -1,4 +1,14 @@
-import { and, count, desc, eq, inArray, isNull, or, gt } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { apiKeys, members } from "@/db/schema/auth";
@@ -32,6 +42,43 @@ export type PolicySettingsReadModel = {
     deletionBehavior: string;
   }[];
 };
+
+type TransactionDatabase = Parameters<
+  Parameters<Database["transaction"]>[0]
+>[0];
+
+async function lockAndRevalidateAdministrativeActor(input: {
+  actor: { id: string; memberId: string };
+  transaction: TransactionDatabase;
+  workspaceId: string;
+}): Promise<boolean> {
+  await input.transaction.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${input.workspaceId}, 0))`,
+  );
+  const rows = await input.transaction
+    .select({ id: members.id })
+    .from(workspaces)
+    .innerJoin(
+      members,
+      and(
+        eq(members.workspaceId, workspaces.id),
+        eq(members.organizationId, workspaces.organizationId),
+      ),
+    )
+    .where(
+      and(
+        eq(workspaces.id, input.workspaceId),
+        eq(workspaces.state, "active"),
+        isNull(workspaces.deletedAt),
+        eq(members.id, input.actor.memberId),
+        eq(members.userId, input.actor.id),
+        inArray(members.role, ["owner", "admin"]),
+      ),
+    )
+    .limit(2)
+    .for("update");
+  return rows.length === 1;
+}
 
 export function createSettingsRepository(database: Database) {
   return {
@@ -145,12 +192,18 @@ export function createSettingsRepository(database: Database) {
     async disableOrganizationApiKeyWithAudit(input: {
       action: "settings.api_key.revoke" | "settings.api_key.rotate";
       apiKeyId: string;
-      actor: { id: string; sessionId: string };
+      actor: { id: string; memberId: string; sessionId: string };
       changedFields: readonly string[];
       requestId: string;
       workspaceId: string;
-    }): Promise<boolean> {
+    }): Promise<"APPLIED" | "FORBIDDEN" | "INVALID"> {
       return database.transaction(async (transaction) => {
+        const authorized = await lockAndRevalidateAdministrativeActor({
+          actor: input.actor,
+          transaction,
+          workspaceId: input.workspaceId,
+        });
+        if (!authorized) return "FORBIDDEN";
         const updated = await transaction
           .update(apiKeys)
           .set({ enabled: false, updatedAt: new Date() })
@@ -164,7 +217,7 @@ export function createSettingsRepository(database: Database) {
             ),
           )
           .returning({ id: apiKeys.id });
-        if (updated.length !== 1) return false;
+        if (updated.length !== 1) return "INVALID";
         await transaction.insert(auditEvents).values({
           id: newId(),
           workspaceId: input.workspaceId,
@@ -177,7 +230,7 @@ export function createSettingsRepository(database: Database) {
           redactedDiff: { changedFields: [...input.changedFields] },
           outcome: "success",
         });
-        return true;
+        return "APPLIED";
       });
     },
     async recordApiKeyLifecycleAudit(input: {
