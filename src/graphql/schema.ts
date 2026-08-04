@@ -12,6 +12,7 @@ import { registerImportsGraphQL } from "@/modules/imports/graphql";
 import { registerSearchGraphQL } from "@/modules/search/graphql";
 import { registerSettingsGraphQL } from "@/modules/settings/graphql";
 import { registerLocationsGraphQL } from "@/modules/locations/graphql";
+import { registerAiGraphQL } from "@/modules/ai/graphql";
 
 const Workspace = builder.objectRef<SafeWorkspace>("Workspace").implement({
   fields: (t) => ({
@@ -77,5 +78,6 @@ registerImportsGraphQL();
 registerSearchGraphQL();
 registerSettingsGraphQL();
 registerLocationsGraphQL();
+registerAiGraphQL();
 
 export const schema = builder.toSchema();
