@@ -1,0 +1,53 @@
+query GraphSavedViewPage(
+  $id: UUID!
+  $positionsFirst: Int = 250
+  $positionsAfter: String
+) {
+  graphView(id: $id) {
+    id
+    name
+    version
+    sharing
+    filter {
+      mode
+      rootPersonIds
+      depth
+      relationshipTypeIds
+      relationshipStates
+      sensitivities
+      minimumConfidence
+      at
+      from
+      until
+      nodeLimit
+      edgeLimit
+      includeIsolates
+    }
+    layout {
+      version
+      algorithm
+      settings {
+        barnesHutOptimize
+        gravity
+        scalingRatio
+        slowDown
+      }
+    }
+    appearance {
+      version
+      palette
+      showLabels
+    }
+    positions(first: $positionsFirst, after: $positionsAfter) {
+      nodes {
+        id
+        x
+        y
+      }
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+    }
+  }
+}

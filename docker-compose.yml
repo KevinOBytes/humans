@@ -1,0 +1,341 @@
+name: humans
+
+# Exact release tags retain automatic amd64/arm64 selection. If policy requires
+# digests, pin each registry's multi-architecture manifest-list digest and renew
+# it deliberately during upgrades. The community MinIO registry is frozen at a
+# 2025 release and does not provide per-bucket CORS; see the service setting below.
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  DEPLOYMENT_MODE: docker
+  NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-humans}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in an ignored .env file}@postgres:5432/${POSTGRES_DB:-humans}
+  REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in an ignored .env file}@redis:6379
+  STORAGE_PROVIDER: minio
+  STORAGE_ENDPOINT: http://minio:9000
+  STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
+  STORAGE_BUCKET: ${STORAGE_BUCKET:-humans-private}
+  STORAGE_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in an ignored .env file}
+  STORAGE_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in an ignored .env file}
+  STORAGE_FORCE_PATH_STYLE: "true"
+  STORAGE_BUCKET_PUBLIC: "false"
+  AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in an ignored .env file}
+  AUTH_REGISTRATION_MODE: ${AUTH_REGISTRATION_MODE:-invite_only}
+  AUTH_SECURE_COOKIES: ${AUTH_SECURE_COOKIES:-true}
+  AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:-http://localhost:3000}
+  AUTH_ENCRYPTION_KEY: ${AUTH_ENCRYPTION_KEY:?Set AUTH_ENCRYPTION_KEY in an ignored .env file}
+  DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Set DATA_ENCRYPTION_KEY in an ignored .env file}
+  PROTECTED_LOOKUP_HMAC_KEY: ${PROTECTED_LOOKUP_HMAC_KEY:?Set PROTECTED_LOOKUP_HMAC_KEY in an ignored .env file}
+  OPERATION_LIMIT_HMAC_KEY: ${OPERATION_LIMIT_HMAC_KEY:?Set OPERATION_LIMIT_HMAC_KEY in an ignored .env file}
+  TRUSTED_PROXY_MODE: ${TRUSTED_PROXY_MODE:-none}
+  TRUSTED_PROXY_HMAC_KEY: ${TRUSTED_PROXY_HMAC_KEY:-}
+  CRON_SECRET: ${CRON_SECRET:-}
+  RESEND_API_KEY: ${RESEND_API_KEY:?Set RESEND_API_KEY in an ignored .env file}
+  EMAIL_FROM: ${EMAIL_FROM:-Humans <humans@localhost.invalid>}
+  AI_PROVIDER: ${AI_PROVIDER:-ollama}
+  AI_BASE_URL: ${AI_BASE_URL:-http://ollama:11434/v1}
+  AI_MODEL: ${AI_MODEL:-llama3.2:3b}
+
+x-app-service: &app-service
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: ${HUMANS_IMAGE:-humans:local}
+  environment: *app-environment
+  networks:
+    - backend
+    - edge
+  init: true
+  stop_grace_period: 35s
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+  tmpfs:
+    - /tmp:mode=1777,size=64m
+    - /app/.next/cache:uid=65532,gid=65532,mode=0700,size=256m
+  pids_limit: 256
+  mem_limit: 2g
+  cpus: 2.0
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  postgres:
+    image: postgres:18.3-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-humans}
+      POSTGRES_USER: ${POSTGRES_USER:-humans}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in an ignored .env file}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+      start_interval: 2s
+    init: true
+    stop_grace_period: 45s
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 1g
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks:
+      - backend
+
+  redis:
+    image: redis:8.6.1
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in an ignored .env file}
+    command:
+      - /bin/sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+      start_interval: 2s
+    init: true
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 512m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - backend
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in an ignored .env file}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in an ignored .env file}
+      # Community MinIO supports cluster-wide CORS; per-bucket CORS requires AIStor:
+      # https://github.com/minio/minio/discussions/20841
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_CORS_ALLOW_ORIGIN:-http://localhost:3000}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --silent http://localhost:9000/minio/health/live >/dev/null",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+      start_interval: 2s
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 1g
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    restart: unless-stopped
+    volumes:
+      - minio-data:/data
+    networks:
+      - backend
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    entrypoint: ["/bin/sh", "/scripts/minio-init.sh"]
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in an ignored .env file}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in an ignored .env file}
+      MINIO_CORS_ALLOW_ORIGIN: ${MINIO_CORS_ALLOW_ORIGIN:-http://localhost:3000}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-humans-private}
+      MC_CONFIG_DIR: /tmp/.mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16m
+    pids_limit: 50
+    mem_limit: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+    volumes:
+      - ./docker/minio-init.sh:/scripts/minio-init.sh:ro
+    networks:
+      - backend
+
+  migrate:
+    <<: *app-service
+    command: ["--conditions=react-server", "runtime/migrate.mjs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  bootstrap-admin:
+    <<: *app-service
+    command: ["--conditions=react-server", "runtime/bootstrap-admin.mjs"]
+    environment:
+      <<: *app-environment
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_DISPLAY_NAME: ${ADMIN_DISPLAY_NAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["bootstrap"]
+    restart: "no"
+
+  seed:
+    <<: *app-service
+    command: ["runtime/seed.mjs"]
+    environment:
+      <<: *app-environment
+      # Seeding a non-test database is intentionally authorized only for this
+      # explicit, opt-in Compose service.
+      ALLOW_DATABASE_SEED: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["seed"]
+    restart: "no"
+
+  app:
+    <<: *app-service
+    command: ["server.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/nodejs/bin/node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+      start_interval: 2s
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    restart: unless-stopped
+
+  worker:
+    <<: *app-service
+    command: ["--conditions=react-server", "runtime/worker.mjs"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "/app/docker/worker-healthcheck.mjs"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+      start_interval: 2s
+    restart: unless-stopped
+
+  worker-drain-smoke:
+    <<: *app-service
+    command:
+      ["--conditions=react-server", "runtime/worker-active-drain-smoke.mjs"]
+    environment:
+      <<: *app-environment
+      WORKER_DRAIN_IDEMPOTENCY_KEY: ${WORKER_DRAIN_IDEMPOTENCY_KEY:-task15b-active-drain}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "/app/docker/worker-healthcheck.mjs"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+      start_interval: 1s
+    profiles: ["smoke"]
+    restart: "no"
+
+  smoke:
+    <<: *app-service
+    command: ["--conditions=react-server", "runtime/task12-smoke.mjs"]
+    environment:
+      <<: *app-environment
+      TASK12_SMOKE_BASE_URL: http://app:3000
+    depends_on:
+      app:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    networks:
+      - backend
+    profiles: ["smoke"]
+    restart: "no"
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+
+networks:
+  backend:
+    internal: true
+  edge:

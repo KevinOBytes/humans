@@ -1,0 +1,62 @@
+import type { PersonProfileView } from "@/components/research/types";
+
+export const personWithContradictoryFacts: PersonProfileView = {
+  id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894d0",
+  displayName: "Ada Researcher",
+  preferredName: "Ada",
+  biography: "A record with competing birth-date claims.",
+  status: "ACTIVE",
+  sensitivity: "INTERNAL",
+  confidence: 0.8,
+  version: 4,
+  facts: [
+    {
+      id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894d1",
+      namespace: "person",
+      fieldKey: "date_of_birth",
+      label: "Date of birth",
+      value: "1815-12-10",
+      state: "ASSERTED",
+      reviewState: "IN_REVIEW",
+      sensitivity: "INTERNAL",
+      confidence: 0.72,
+      temporalLabel: "Exact",
+      version: 2,
+      selected: true,
+      selectionVersion: 1,
+      revisions: [
+        {
+          id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894e1",
+          revision: 2,
+          changeReason: "Source transcription corrected",
+          createdAt: "2026-07-31T13:00:00.000Z",
+          actorLabel: "Research owner",
+        },
+      ],
+      evidence: [
+        {
+          id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894f1",
+          title: "Archive register",
+          excerpt: "Recorded in the December register.",
+          locator: "page 42",
+        },
+      ],
+    },
+    {
+      id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894d2",
+      namespace: "person",
+      fieldKey: "date_of_birth",
+      label: "Date of birth",
+      value: "1815-12-11",
+      state: "DISPUTED",
+      reviewState: "NEEDS_ATTENTION",
+      sensitivity: "INTERNAL",
+      confidence: 0.44,
+      temporalLabel: "Approximate",
+      version: 1,
+      selected: false,
+      revisions: [],
+      evidence: [],
+    },
+  ],
+};

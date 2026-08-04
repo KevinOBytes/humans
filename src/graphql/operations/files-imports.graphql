@@ -1,0 +1,247 @@
+fragment FileWorkspaceItem on File {
+  id
+  originalName
+  mediaType
+  detectedType
+  byteSize
+  availability
+  scanState
+  sensitivity
+  version
+  createdAt
+  updatedAt
+}
+
+fragment ImportWorkspaceItem on Import {
+  id
+  fileId
+  format
+  state
+  mappingId
+  totalRows
+  acceptedRows
+  rejectedRows
+  startedAt
+  completedAt
+  version
+  createdAt
+  updatedAt
+}
+
+query EvidenceFiles($first: Int, $after: String) {
+  files(first: $first, after: $after) {
+    nodes {
+      ...FileWorkspaceItem
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+query ImportHistory($first: Int, $after: String) {
+  imports(first: $first, after: $after) {
+    nodes {
+      ...ImportWorkspaceItem
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+query ImportRowDiagnostics($importId: UUID!, $first: Int, $after: String) {
+  importRows(importId: $importId, first: $first, after: $after) {
+    nodes {
+      id
+      rowNumber
+      state
+      normalizedPayload
+      issues {
+        code
+        message
+      }
+      resultReferences
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+query ImportMappingOptions {
+  importMappings(first: 20) {
+    nodes {
+      id
+      name
+      format
+      definition
+      version
+      updatedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+mutation CreateWorkspaceUpload($input: CreateUploadSessionInput!) {
+  createUploadSession(input: $input) {
+    session {
+      id
+      state
+      expiresAt
+    }
+    grant {
+      method
+      url
+      expiresAt
+      headers
+      contentLength
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation CompleteWorkspaceUpload($uploadSessionId: UUID!) {
+  completeUpload(uploadSessionId: $uploadSessionId) {
+    session {
+      id
+      state
+      completedAt
+    }
+    file {
+      ...FileWorkspaceItem
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation CreateWorkspaceFileDownload($fileId: UUID!) {
+  createFileDownload(fileId: $fileId) {
+    file {
+      id
+      originalName
+    }
+    grant {
+      method
+      url
+      expiresAt
+      headers
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation SaveWorkspaceImportMapping($input: SaveImportMappingInput!) {
+  saveImportMapping(input: $input) {
+    mapping {
+      id
+      name
+      format
+      definition
+      version
+      updatedAt
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation PrepareWorkspaceImport($input: PrepareImportInput!) {
+  prepareImport(input: $input) {
+    import {
+      ...ImportWorkspaceItem
+    }
+    preview {
+      rowNumber
+      normalizedPayload
+      state
+      issues {
+        code
+        message
+      }
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation StartWorkspaceImport(
+  $importId: UUID!
+  $expectedVersion: Int!
+  $idempotencyKey: String!
+) {
+  startImport(
+    importId: $importId
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
+    import {
+      ...ImportWorkspaceItem
+    }
+    job {
+      id
+      kind
+      state
+      attemptCount
+      scheduledAt
+      errorCode
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation RetryWorkspaceImport(
+  $importId: UUID!
+  $expectedVersion: Int!
+  $idempotencyKey: String!
+) {
+  retryImport(
+    importId: $importId
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
+    import {
+      ...ImportWorkspaceItem
+    }
+    job {
+      id
+      state
+      attemptCount
+      scheduledAt
+      errorCode
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}

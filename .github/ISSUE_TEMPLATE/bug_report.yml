@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible defect without credentials or personal data.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security vulnerabilities do not belong in public issues. Stop here and follow SECURITY.md instead.
+        Do not include credentials or personal data in this report.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: This is not a security vulnerability, and I removed credentials and personal data.
+          required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide minimal steps using synthetic data.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Commit SHA or released version.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - Local development
+        - Docker Compose
+        - Vercel
+        - Other self-hosted deployment
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Add relevant logs or screenshots only after removing private values.
+      render: shell

@@ -1,0 +1,46 @@
+query GraphWorkspaceControls($viewsFirst: Int = 10, $viewsAfter: String) {
+  graphViews(first: $viewsFirst, after: $viewsAfter) {
+    nodes {
+      id
+      name
+      sharing
+      version
+      createdAt
+      updatedAt
+      filter {
+        mode
+        rootPersonIds
+        depth
+        relationshipTypeIds
+        relationshipStates
+        sensitivities
+        minimumConfidence
+        at
+        from
+        until
+        nodeLimit
+        edgeLimit
+        includeIsolates
+      }
+      layout {
+        version
+        algorithm
+        settings {
+          barnesHutOptimize
+          gravity
+          scalingRatio
+          slowDown
+        }
+      }
+      appearance {
+        version
+        palette
+        showLabels
+      }
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}

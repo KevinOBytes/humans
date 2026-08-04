@@ -1,0 +1,34 @@
+name: humans-test
+
+services:
+  postgres:
+    volumes:
+      - type: tmpfs
+        target: /var/lib/postgresql
+
+  redis:
+    volumes:
+      - type: tmpfs
+        target: /data
+
+  minio:
+    volumes:
+      - type: tmpfs
+        target: /data
+
+  app:
+    environment:
+      NEXT_PUBLIC_APP_URL: http://app:3000
+      AUTH_TRUSTED_ORIGINS: http://app:3000
+    ports: !override
+      - "127.0.0.1::3000"
+
+  worker:
+    environment:
+      NEXT_PUBLIC_APP_URL: http://app:3000
+      AUTH_TRUSTED_ORIGINS: http://app:3000
+
+  smoke:
+    environment:
+      NEXT_PUBLIC_APP_URL: http://app:3000
+      AUTH_TRUSTED_ORIGINS: http://app:3000
