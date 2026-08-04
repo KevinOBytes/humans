@@ -23,16 +23,21 @@ type AiReference = Readonly<{
   kind: "evidence" | "person";
 }>;
 
-type CurrentAuthority = Readonly<{
-  actor: ResearchActor;
+export type AiCurrentAuthority = Readonly<{
+  actor: Extract<ResearchActor, { type: "apiKey" | "user" }>;
   permissions: ReadonlySet<PermissionKey>;
   workspaceId: string;
+}>;
+
+export type AuthorizedAiReferences = Readonly<{
+  authority: AiCurrentAuthority;
+  references: readonly AiReference[];
 }>;
 
 async function currentAuthority(
   database: Database,
   input: { principalId: string; workspaceId: string },
-): Promise<CurrentAuthority | null> {
+): Promise<AiCurrentAuthority | null> {
   // The worker-only claimed job/run locks are already held by the caller.
   // After those, keep the global research-write order: live authority rows,
   // resource rows, then visibility grant/policy rows. Shared locks are held
@@ -79,18 +84,18 @@ async function currentAuthority(
     user.memberId &&
     isWorkspaceRole(user.role)
   ) {
-    return {
-      actor: {
+    return Object.freeze({
+      actor: Object.freeze({
         type: "user",
         id: user.userId,
         principalId: user.principalId,
         sessionId: "worker-current-authority",
         memberId: user.memberId,
         role: user.role,
-      },
-      permissions: rolePermissionKeys(user.role),
+      }),
+      permissions: new Set(rolePermissionKeys(user.role)),
       workspaceId: input.workspaceId,
-    };
+    });
   }
   const keyRows = await database
     .select({
@@ -129,16 +134,16 @@ async function currentAuthority(
     .for("share");
   const key = keyRows[0];
   if (keyRows.length === 1 && key?.apiKeyId) {
-    return {
-      actor: {
+    return Object.freeze({
+      actor: Object.freeze({
         type: "apiKey",
         id: key.apiKeyId,
         principalId: key.principalId,
         role: null,
-      },
-      permissions: parseApiKeyPermissionKeys(key.permissions),
+      }),
+      permissions: new Set(parseApiKeyPermissionKeys(key.permissions)),
       workspaceId: input.workspaceId,
-    };
+    });
   }
   return null;
 }
@@ -148,14 +153,22 @@ export async function authorizeAiReferences(
   input: {
     principalId: string;
     references: readonly AiReference[];
+    requiredPermissions?: readonly PermissionKey[];
     scope: AiScope;
     workspaceId: string;
   },
-): Promise<readonly AiReference[] | null> {
+): Promise<AuthorizedAiReferences | null> {
   // Phase 1: lock live authority. The lock remains held by the caller's
   // transaction through every following phase and the eventual write.
   const authority = await currentAuthority(database, input);
   if (!authority) return null;
+  if (
+    input.requiredPermissions?.some(
+      (permission) => !authority.permissions.has(permission),
+    )
+  ) {
+    return null;
+  }
 
   // Phase 2: collapse duplicates and establish the global kind/UUID order.
   const references = [
@@ -169,7 +182,12 @@ export async function authorizeAiReferences(
     if (left.kind !== right.kind) return left.kind === "person" ? -1 : 1;
     return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
   });
-  if (references.length === 0) return Object.freeze(references);
+  if (references.length === 0) {
+    return Object.freeze({
+      authority,
+      references: Object.freeze(references),
+    });
+  }
   const allowedPeople = new Set(input.scope.personIds);
   const allowedEvidence = new Set(input.scope.evidenceIds);
   if (
@@ -252,5 +270,8 @@ export async function authorizeAiReferences(
     });
     if (visible.size !== evidenceIds.length) return null;
   }
-  return Object.freeze(references);
+  return Object.freeze({
+    authority,
+    references: Object.freeze(references),
+  });
 }

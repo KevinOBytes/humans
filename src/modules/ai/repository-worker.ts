@@ -124,6 +124,10 @@ export function createAiWorkerRepository(
         !equalAiDigest(
           message.contentHash,
           prefixedAiPersistenceHmac(runtime, "user-content", plaintext),
+        ) ||
+        !equalAiDigest(
+          run.promptHash,
+          prefixedAiPersistenceHmac(runtime, "prompt", plaintext),
         )
       ) {
         return null;
@@ -132,6 +136,29 @@ export function createAiWorkerRepository(
     } catch {
       return null;
     }
+  }
+
+  function scopeReferences(scope: ClaimedAiRun["scope"]) {
+    return [
+      ...scope.personIds.map((id) => ({ id, kind: "person" as const })),
+      ...scope.evidenceIds.map((id) => ({ id, kind: "evidence" as const })),
+    ];
+  }
+
+  function claimedRunValue(
+    run: StoredRun,
+    parsed: ReturnType<typeof parseStoredAiUserMessage>,
+  ): ClaimedAiRun {
+    return Object.freeze({
+      configurationHash: run.configurationHash,
+      model: run.model,
+      principalId: run.createdBy,
+      promptHash: run.promptHash,
+      provider: run.provider as ClaimedAiRun["provider"],
+      question: parsed.question,
+      scope: parsed.scope,
+      threadId: run.threadId,
+    });
   }
 
   return {
@@ -165,21 +192,64 @@ export function createAiWorkerRepository(
           if (!(await lockCurrentClaim(transaction, input))) {
             throw new AiClaimLostRollback();
           }
-          return Object.freeze({
-            configurationHash: run.configurationHash,
-            model: run.model,
+          return claimedRunValue(run, parsed);
+        });
+      } catch (error) {
+        if (error instanceof AiClaimLostRollback) return null;
+        throw error;
+      }
+    },
+
+    async authorizeClaimedRun(input: AiJobClaim) {
+      try {
+        return await database.transaction(async (transactionValue) => {
+          const transaction = transactionValue as unknown as Database;
+          const run = await lockClaimedRun(transaction, input);
+          if (!run) return null;
+          const parsed = await loadValidatedRunInput(transaction, run);
+          if (!parsed || !validAiProvider(run.provider)) return null;
+          const authorization = await authorizeAiReferences(transaction, {
             principalId: run.createdBy,
-            promptHash: run.promptHash,
-            provider: run.provider,
-            question: parsed.question,
+            references: scopeReferences(parsed.scope),
+            requiredPermissions: ["analysis:read", "analysis:run"],
             scope: parsed.scope,
-            threadId: run.threadId,
+            workspaceId: input.workspaceId,
+          });
+          if (!authorization) return null;
+          if (!(await lockCurrentClaim(transaction, input))) {
+            throw new AiClaimLostRollback();
+          }
+          return Object.freeze({
+            run: claimedRunValue(run, parsed),
+            authority: authorization.authority,
           });
         });
       } catch (error) {
         if (error instanceof AiClaimLostRollback) return null;
         throw error;
       }
+    },
+
+    async isClaimedRunCompleted(input: AiJobClaim): Promise<boolean> {
+      return database.transaction(async (transactionValue) => {
+        const transaction = transactionValue as unknown as Database;
+        const job = await lockCurrentClaim(transaction, input);
+        if (!job?.principalId) return false;
+        const [run] = await transaction
+          .select({ id: aiRuns.id })
+          .from(aiRuns)
+          .where(
+            and(
+              eq(aiRuns.id, input.runId),
+              eq(aiRuns.workspaceId, input.workspaceId),
+              eq(aiRuns.createdBy, job.principalId),
+              eq(aiRuns.state, "completed"),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        return Boolean(run && (await lockCurrentClaim(transaction, input)));
+      });
     },
 
     async recordClaimedToolCall(
@@ -213,16 +283,35 @@ export function createAiWorkerRepository(
           if (!run) return false;
           const protectedInput = await loadValidatedRunInput(transaction, run);
           if (!protectedInput) return false;
-          const authorizedReferences = await authorizeAiReferences(
-            transaction,
-            {
-              principalId: run.createdBy,
-              references: resourceReferences,
-              scope: protectedInput.scope,
-              workspaceId: input.workspaceId,
-            },
+          const authorization = await authorizeAiReferences(transaction, {
+            principalId: run.createdBy,
+            references: scopeReferences(protectedInput.scope),
+            requiredPermissions: ["analysis:read", "analysis:run"],
+            scope: protectedInput.scope,
+            workspaceId: input.workspaceId,
+          });
+          if (!authorization) return false;
+          const authorizedScope = new Set(
+            authorization.references.map(
+              (reference) => `${reference.kind}:${reference.id}`,
+            ),
           );
-          if (authorizedReferences === null) return false;
+          const requestedReferences = new Set(
+            resourceReferences.map(
+              (reference) => `${reference.kind}:${reference.id}`,
+            ),
+          );
+          if (
+            [...requestedReferences].some(
+              (reference) => !authorizedScope.has(reference),
+            )
+          ) {
+            return false;
+          }
+          const authorizedReferences = authorization.references.filter(
+            (reference) =>
+              requestedReferences.has(`${reference.kind}:${reference.id}`),
+          );
           const [{ count }] = await transaction
             .select({ count: sql<number>`count(*)::int` })
             .from(aiToolCalls)
@@ -285,17 +374,28 @@ export function createAiWorkerRepository(
               ]),
             ).values(),
           ];
-          const authorizedCitationReferences = await authorizeAiReferences(
-            transaction,
-            {
-              principalId: run.createdBy,
-              references: citationReferences,
-              scope: protectedInput.scope,
-              workspaceId: input.workspaceId,
-            },
+          const authorization = await authorizeAiReferences(transaction, {
+            principalId: run.createdBy,
+            references: scopeReferences(protectedInput.scope),
+            requiredPermissions: ["analysis:read", "analysis:run"],
+            scope: protectedInput.scope,
+            workspaceId: input.workspaceId,
+          });
+          if (!authorization) return false;
+          const authorizedScope = new Set(
+            authorization.references.map(
+              (reference) => `${reference.kind}:${reference.id}`,
+            ),
           );
-          if (authorizedCitationReferences === null) return false;
-          if (authorizedCitationReferences.length) {
+          if (
+            citationReferences.some(
+              (reference) =>
+                !authorizedScope.has(`${reference.kind}:${reference.id}`),
+            )
+          ) {
+            return false;
+          }
+          if (citationReferences.length) {
             const toolRows = await transaction
               .select({ references: aiToolCalls.resourceReferences })
               .from(aiToolCalls)
@@ -319,7 +419,7 @@ export function createAiWorkerRepository(
               return false;
             }
             if (
-              authorizedCitationReferences.some(
+              citationReferences.some(
                 (reference) =>
                   !returned.has(`${reference.kind}:${reference.id}`),
               )
