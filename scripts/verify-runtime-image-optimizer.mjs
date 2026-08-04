@@ -3,7 +3,6 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
@@ -30,23 +29,33 @@ function run(arguments_, options = {}) {
   return result.stdout.trim();
 }
 
-async function availablePort() {
-  const server = createServer();
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+const requestSource = String.raw`
+  const [path, headersJson] = process.argv.slice(1);
+  const response = await fetch(new URL(path, "http://127.0.0.1:3000"), {
+    headers: JSON.parse(headersJson),
+    signal: AbortSignal.timeout(10_000),
   });
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
-  await new Promise((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
-  if (!port) throw new Error("Unable to allocate an image-optimizer port");
-  return port;
-}
+  const body = Buffer.from(await response.arrayBuffer());
+  process.stdout.write(JSON.stringify({
+    ok: response.ok,
+    status: response.status,
+    contentType: response.headers.get("content-type"),
+    body: body.toString("base64"),
+  }));
+`;
 
-async function fetchBounded(url, headers) {
-  return fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
+function fetchInContainer(path, headers = {}) {
+  return JSON.parse(
+    run([
+      "exec",
+      containerName,
+      "/nodejs/bin/node",
+      "-e",
+      requestSource,
+      path,
+      JSON.stringify(headers),
+    ]),
+  );
 }
 
 function crc32(buffer) {
@@ -117,7 +126,6 @@ try {
       Buffer.from([1, 2, 3, 4, 5]),
     ]),
   );
-  const port = await availablePort();
   run([
     "run",
     "--platform",
@@ -132,47 +140,53 @@ try {
     "/app/.next/cache:uid=65532,gid=65532,mode=0700,size=64m",
     "--volume",
     `${probeDirectory}:/app/public/runtime-probes:ro`,
-    "--publish",
-    `127.0.0.1:${port}:3000`,
     image,
     "server.js",
   ]);
   started = true;
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const readinessDeadline = Date.now() + 15_000;
+  const readinessDeadline = Date.now() + 45_000;
+  let lastReadinessError;
   while (true) {
     try {
-      const response = await fetchBounded(`${baseUrl}/api/health/live`);
+      const response = fetchInContainer("/api/health/live");
       if (response.ok) break;
-    } catch {
+      lastReadinessError = new Error(`liveness returned ${response.status}`);
+    } catch (error) {
+      lastReadinessError = error;
       // The bounded retry below owns startup timing.
     }
     if (Date.now() >= readinessDeadline) {
-      throw new Error("Runtime image did not become live for optimizer proof");
+      const detail =
+        lastReadinessError instanceof Error
+          ? `: ${lastReadinessError.message}`
+          : "";
+      throw new Error(
+        `Runtime image did not become live for optimizer proof${detail}`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
 
   const optimize = (name) =>
-    fetchBounded(
-      `${baseUrl}/_next/image?url=${encodeURIComponent(`/runtime-probes/${name}`)}&w=64&q=75`,
+    fetchInContainer(
+      `/_next/image?url=${encodeURIComponent(`/runtime-probes/${name}`)}&w=64&q=75`,
       { accept: "image/webp" },
     );
-  const valid = await optimize("valid.png");
-  const validBody = Buffer.from(await valid.arrayBuffer());
+  const valid = optimize("valid.png");
+  const validBody = Buffer.from(valid.body, "base64");
   if (
     !valid.ok ||
-    valid.headers.get("content-type") !== "image/webp" ||
+    valid.contentType !== "image/webp" ||
     validBody.subarray(0, 4).toString("ascii") !== "RIFF" ||
     validBody.subarray(8, 12).toString("ascii") !== "WEBP"
   ) {
     throw new Error(
-      `Distroless cache-miss optimizer did not produce valid WebP (status=${valid.status}, type=${valid.headers.get("content-type")}, bytes=${validBody.length}, prefix=${validBody.subarray(0, 16).toString("hex")})`,
+      `Distroless cache-miss optimizer did not produce valid WebP (status=${valid.status}, type=${valid.contentType}, bytes=${validBody.length}, prefix=${validBody.subarray(0, 16).toString("hex")})`,
     );
   }
   for (const name of ["malformed.png", "high-channel.pam"]) {
-    const response = await optimize(name);
-    const body = Buffer.from(await response.arrayBuffer());
+    const response = optimize(name);
+    const body = Buffer.from(response.body, "base64");
     if (
       response.status < 400 ||
       response.status >= 500 ||
@@ -181,7 +195,7 @@ try {
       throw new Error(`${name} was not rejected safely and boundedly`);
     }
   }
-  if (!(await fetchBounded(`${baseUrl}/api/health/live`)).ok) {
+  if (!fetchInContainer("/api/health/live").ok) {
     throw new Error("Image optimizer rejection destabilized the runtime");
   }
 
