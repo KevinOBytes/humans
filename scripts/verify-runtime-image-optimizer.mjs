@@ -131,6 +131,7 @@ try {
     "--platform",
     runtimePlatform,
     "--detach",
+    "--init",
     "--name",
     containerName,
     "--read-only",
@@ -141,8 +142,7 @@ try {
     "--volume",
     `${probeDirectory}:/app/public/runtime-probes:ro`,
     image,
-    "-e",
-    'require("./server.js"); setInterval(() => {}, 2_147_483_647);',
+    "server.js",
   ]);
   started = true;
   const readinessDeadline = Date.now() + 45_000;
@@ -241,6 +241,9 @@ try {
   );
 } catch (error) {
   if (started) {
+    process.stderr.write(
+      `Container state: ${run(["inspect", "--format", "{{json .State}}", containerName])}\n`,
+    );
     process.stderr.write(`${run(["logs", containerName])}\n`);
   }
   throw error;
