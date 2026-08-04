@@ -161,4 +161,36 @@ describe("PersonRecordPage overview editing", () => {
     );
     expect(refresh).toHaveBeenCalledOnce();
   });
+
+  it("sends explicit nulls when optional overview fields are cleared", async () => {
+    const user = userEvent.setup();
+    executeBrowser.mockResolvedValue({
+      ok: true,
+      data: {
+        updatePerson: {
+          person: { ...person, version: 4 },
+          code: null,
+          currentVersion: null,
+          issues: [],
+        },
+      },
+      requestId: "request-update-clear-fields",
+    });
+    await renderPage(["person:read", "person:update"]);
+
+    await user.click(screen.getByRole("button", { name: "Edit overview" }));
+    await user.clear(screen.getByLabelText("Preferred name"));
+    await user.clear(screen.getByLabelText("Sort name"));
+    await user.clear(screen.getByLabelText("Biography"));
+    await user.click(screen.getByRole("button", { name: "Save overview" }));
+
+    await waitFor(() => expect(executeBrowser).toHaveBeenCalledOnce());
+    expect(executeBrowser).toHaveBeenCalledWith(UpdatePersonDocument, {
+      input: expect.objectContaining({
+        biography: null,
+        preferredName: null,
+        sortName: null,
+      }),
+    });
+  });
 });

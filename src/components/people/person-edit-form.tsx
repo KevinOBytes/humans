@@ -65,6 +65,9 @@ export function PersonEditForm({ person }: { person: PersonEditProjection }) {
               id: person.id,
               expectedVersion: person.version,
               ...input,
+              biography: input.biography ?? null,
+              preferredName: input.preferredName ?? null,
+              sortName: input.sortName ?? null,
             },
           });
           if (!result.ok) {

@@ -236,7 +236,12 @@ export function PersonForm({
       </FormField>
       <div className="flex flex-wrap justify-end gap-3">
         {onCancel ? (
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={onCancel}
+          >
             {cancelLabel}
           </Button>
         ) : null}
