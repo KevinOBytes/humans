@@ -612,10 +612,16 @@ export function createEvidenceService(context: ResearchServiceContext) {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
+        const lockedSource = await scoped.getSourceForUpdate({
+          workspaceId: context.workspaceId,
+          id: current.id,
+        });
+        if (!lockedSource) return null;
+        if (lockedSource.version !== input.expectedVersion) return lockedSource;
         if (
           await scoped.hasActiveEvidenceForSource({
             workspaceId: context.workspaceId,
-            sourceId: current.id,
+            sourceId: lockedSource.id,
           })
         ) {
           throw createGraphQLError(
@@ -625,7 +631,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
         }
         const archived = await scoped.archiveSource({
           workspaceId: context.workspaceId,
-          id: current.id,
+          id: lockedSource.id,
           expectedVersion: input.expectedVersion,
           patch: {
             deletedAt: new Date(),
@@ -654,6 +660,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
         ]);
         return archived;
       });
+      if (row && row.deletedAt === null) return conflict(row.version);
       return row
         ? { resource: row, issues: [], code: null }
         : conflict(current.version);
@@ -777,6 +784,15 @@ export function createEvidenceService(context: ResearchServiceContext) {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
+        const lockedSource = await scoped.getSourceForUpdate({
+          workspaceId: context.workspaceId,
+          id: input.sourceId,
+        });
+        if (!lockedSource)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
         const created = await scoped.createEvidence({
           workspaceId: context.workspaceId,
           value: {

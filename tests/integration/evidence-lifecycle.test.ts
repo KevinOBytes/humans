@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { evidenceItems, sources } from "@/db/schema/evidence";
@@ -46,6 +46,7 @@ const ARCHIVE_SOURCE = /* GraphQL */ `
   mutation ArchiveSource($input: ArchiveSourceInput!) {
     archiveSource(input: $input) {
       code
+      currentVersion
       source {
         id
         version
@@ -56,6 +57,29 @@ const ARCHIVE_SOURCE = /* GraphQL */ `
 const ARCHIVE_EVIDENCE = /* GraphQL */ `
   mutation ArchiveEvidence($input: ArchiveEvidenceItemInput!) {
     archiveEvidenceItem(input: $input) {
+      code
+      currentVersion
+      evidenceItem {
+        id
+        version
+      }
+    }
+  }
+`;
+const UPDATE_SOURCE = /* GraphQL */ `
+  mutation UpdateSource($input: UpdateSourceInput!) {
+    updateSource(input: $input) {
+      code
+      source {
+        id
+        version
+      }
+    }
+  }
+`;
+const UPDATE_EVIDENCE = /* GraphQL */ `
+  mutation UpdateEvidence($input: UpdateEvidenceItemInput!) {
+    updateEvidenceItem(input: $input) {
       code
       evidenceItem {
         id
@@ -147,10 +171,31 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
     });
     expectGraphQLError(sourcePrecondition, "PRECONDITION_FAILED");
 
-    const archivedEvidence = await fixture.execute<{
-      archiveEvidenceItem: {
+    const updatedEvidence = await fixture.execute<{
+      updateEvidenceItem: {
         code: string | null;
         evidenceItem: { id: string; version: number } | null;
+      };
+    }>({
+      jar: owner.jar,
+      query: UPDATE_EVIDENCE,
+      variables: {
+        input: {
+          id: createdEvidence.id,
+          expectedVersion: createdEvidence.version,
+          reviewState: "IN_REVIEW",
+        },
+      },
+    });
+    expect(updatedEvidence.body?.data?.updateEvidenceItem).toEqual({
+      code: null,
+      evidenceItem: { id: createdEvidence.id, version: 2 },
+    });
+    const staleEvidenceArchive = await fixture.execute<{
+      archiveEvidenceItem: {
+        code: string | null;
+        currentVersion: number | null;
+        evidenceItem: null;
       };
     }>({
       jar: owner.jar,
@@ -162,9 +207,31 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
         },
       },
     });
+    expect(staleEvidenceArchive.body?.data?.archiveEvidenceItem).toEqual({
+      code: "CONFLICT",
+      currentVersion: 2,
+      evidenceItem: null,
+    });
+
+    const archivedEvidence = await fixture.execute<{
+      archiveEvidenceItem: {
+        code: string | null;
+        evidenceItem: { id: string; version: number } | null;
+      };
+    }>({
+      jar: owner.jar,
+      query: ARCHIVE_EVIDENCE,
+      variables: {
+        input: {
+          id: createdEvidence.id,
+          expectedVersion: 2,
+        },
+      },
+    });
     expect(archivedEvidence.body?.data?.archiveEvidenceItem).toEqual({
       code: null,
-      evidenceItem: { id: createdEvidence.id, version: 2 },
+      currentVersion: null,
+      evidenceItem: { id: createdEvidence.id, version: 3 },
     });
 
     expect(
@@ -180,6 +247,48 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
         ),
     ).toEqual([]);
 
+    const updatedSource = await fixture.execute<{
+      updateSource: {
+        code: string | null;
+        source: { id: string; version: number } | null;
+      };
+    }>({
+      jar: owner.jar,
+      query: UPDATE_SOURCE,
+      variables: {
+        input: {
+          id: createdSource.id,
+          expectedVersion: createdSource.version,
+          title: "Lifecycle source updated",
+        },
+      },
+    });
+    expect(updatedSource.body?.data?.updateSource).toEqual({
+      code: null,
+      source: { id: createdSource.id, version: 2 },
+    });
+    const staleSourceArchive = await fixture.execute<{
+      archiveSource: {
+        code: string | null;
+        currentVersion: number | null;
+        source: null;
+      };
+    }>({
+      jar: owner.jar,
+      query: ARCHIVE_SOURCE,
+      variables: {
+        input: {
+          id: createdSource.id,
+          expectedVersion: createdSource.version,
+        },
+      },
+    });
+    expect(staleSourceArchive.body?.data?.archiveSource).toEqual({
+      code: "CONFLICT",
+      currentVersion: 2,
+      source: null,
+    });
+
     const archivedSource = await fixture.execute<{
       archiveSource: {
         code: string | null;
@@ -189,12 +298,13 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
       jar: owner.jar,
       query: ARCHIVE_SOURCE,
       variables: {
-        input: { id: createdSource.id, expectedVersion: createdSource.version },
+        input: { id: createdSource.id, expectedVersion: 2 },
       },
     });
     expect(archivedSource.body?.data?.archiveSource).toEqual({
       code: null,
-      source: { id: createdSource.id, version: 2 },
+      currentVersion: null,
+      source: { id: createdSource.id, version: 3 },
     });
 
     const visibility = await fixture.execute<{
@@ -262,12 +372,12 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
       );
     expect(storedSource).toMatchObject({
       deletedBy: owner.principalId,
-      version: 2,
+      version: 3,
     });
     expect(storedSource?.deletedAt).toBeInstanceOf(Date);
     expect(storedEvidence).toMatchObject({
       deletedBy: owner.principalId,
-      version: 2,
+      version: 3,
     });
     expect(storedEvidence?.deletedAt).toBeInstanceOf(Date);
 
@@ -294,5 +404,73 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
       expect.arrayContaining(["evidence.archive", "source.archive"]),
     );
     expect(JSON.stringify(archiveAudits)).not.toContain(secret);
+  });
+
+  it("serializes source archival against evidence creation", async () => {
+    const owner = await fixture.createActor();
+    const source = await fixture.execute<{
+      createSource: { source: { id: string; version: number } | null };
+    }>({
+      jar: owner.jar,
+      query: CREATE_SOURCE,
+      variables: { input: { kind: "race-test", title: "Race source" } },
+    });
+    const createdSource = required(source.body?.data?.createSource.source);
+
+    const [archive, create] = await Promise.all([
+      fixture.execute({
+        jar: owner.jar,
+        query: ARCHIVE_SOURCE,
+        variables: {
+          input: {
+            id: createdSource.id,
+            expectedVersion: createdSource.version,
+          },
+        },
+      }),
+      fixture.execute<{
+        createEvidenceItem: { evidenceItem: { id: string } | null };
+      }>({
+        jar: owner.jar,
+        query: CREATE_EVIDENCE,
+        variables: {
+          input: {
+            sourceId: createdSource.id,
+            checksum: `sha256:${"b".repeat(64)}`,
+          },
+        },
+      }),
+    ]);
+    const [storedSource] = await fixture.database
+      .select({ deletedAt: sources.deletedAt })
+      .from(sources)
+      .where(
+        and(
+          eq(sources.workspaceId, owner.workspaceId),
+          eq(sources.id, createdSource.id),
+        ),
+      );
+    const activeEvidence = await fixture.database
+      .select({ id: evidenceItems.id })
+      .from(evidenceItems)
+      .where(
+        and(
+          eq(evidenceItems.workspaceId, owner.workspaceId),
+          eq(evidenceItems.sourceId, createdSource.id),
+          isNull(evidenceItems.deletedAt),
+        ),
+      );
+
+    expect(Boolean(storedSource?.deletedAt && activeEvidence.length > 0)).toBe(
+      false,
+    );
+    if (storedSource?.deletedAt) {
+      expectGraphQLError(create, "NOT_FOUND");
+    } else {
+      expectGraphQLError(archive, "PRECONDITION_FAILED");
+      expect(create.body?.data?.createEvidenceItem.evidenceItem?.id).toEqual(
+        expect.any(String),
+      );
+    }
   });
 });

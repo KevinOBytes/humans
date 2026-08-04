@@ -63,6 +63,21 @@ export function createEvidenceRepository(database: Database) {
         .limit(1);
       return row ?? null;
     },
+    async getSourceForUpdate(input: { workspaceId: string; id: string }) {
+      const [row] = await database
+        .select()
+        .from(sources)
+        .where(
+          and(
+            eq(sources.workspaceId, input.workspaceId),
+            eq(sources.id, input.id),
+            isNull(sources.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      return row ?? null;
+    },
     async getSourcesByIds(input: {
       workspaceId: string;
       ids: readonly string[];
