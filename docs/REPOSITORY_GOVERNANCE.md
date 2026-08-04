@@ -1,10 +1,10 @@
 # Repository governance
 
-This document defines the repository controls Humans maintainers intend to use. The workflow is executable locally and on GitHub Actions, but hosted controls are not yet verified. Creating a public repository does not by itself enable branch protection, required checks, private vulnerability reporting, Dependabot alerts, or hosted secret scanning.
+This document defines the repository controls Humans maintainers use. Live settings were verified through the GitHub API on 2026-08-04 against the public `KevinOBytes/humans` repository. Repository ruleset `20371861` protects `main`; security and merge settings are recorded below. Re-verify these external controls during every release audit because committed files cannot enforce or prove their continued state.
 
-## Required-capable checks
+## Required checks
 
-After the first successful run on the public repository, maintainers should verify the exact check names and require these checks on the default branch:
+The active `Protect main` ruleset requires these exact successful checks on the latest commit before merge:
 
 - `quality`: formatting, lint, TypeScript, and unit tests.
 - `generated-drift`: Drizzle metadata, Better Auth schema, and generated GraphQL operations.
@@ -15,7 +15,7 @@ After the first successful run on the public repository, maintainers should veri
 - `secret-scan`: full-history and pull-request Gitleaks scanning.
 - `image-security`: one local application image, its bounded SBOM artifact, and high/critical vulnerability scanning of that exact image.
 
-The public-repository owner must still confirm branch protection or rulesets, require pull requests, require conversation resolution, prevent force pushes and branch deletion, restrict bypasses, and verify the checks above from an actual workflow run. Record the live evidence before changing `HUM-NFR-014` or `HUM-NFR-017` to Complete.
+Ruleset `20371861` requires pull requests, resolved review conversations, strict current-branch checks, and squash merges. It blocks force pushes and deletion. Only the GitHub repository-admin role has an explicit bypass; ordinary collaborators and automation have none. Successful public runs [30900728396](https://github.com/KevinOBytes/humans/actions/runs/30900728396), [30900760773](https://github.com/KevinOBytes/humans/actions/runs/30900760773), and post-merge `main` run [30901164011](https://github.com/KevinOBytes/humans/actions/runs/30901164011) prove the exact check names and all eight gates.
 
 ## Workflow safety
 
@@ -47,16 +47,17 @@ Dependabot proposes bounded weekly npm/pnpm and GitHub Actions updates. Maintain
 
 Policy exceptions require a named owner, exact package/version or control, justification, compensating controls, and an expiry date. Expired exceptions fail the relevant gate. Renewals require a new review; permanent blanket exceptions are prohibited.
 
-## Public-repository settings checklist
+## Public-repository settings evidence
 
-The following items require live configuration and evidence and are not yet verified:
+The 2026-08-04 live API audit verified:
 
-- Repository visibility, default branch, merge strategy, and deletion policy.
-- Branch protection or rulesets and the actual required check names.
-- Dependabot alerts and security updates.
-- Private vulnerability reporting and the security-policy route.
-- Hosted secret scanning, push protection, and any availability constraints for a public repository.
-- Environment protection, deployment credentials, Vercel integration, and production-domain ownership.
+- The repository is public and `main` is the default branch.
+- Squash is the only enabled merge strategy and merged branches are deleted automatically.
+- Ruleset `20371861` is active for `main` with the pull-request, conversation-resolution, deletion, non-fast-forward, and eight required-check rules described above.
+- Dependabot alerts/security updates, private vulnerability reporting, hosted secret scanning, and push protection are enabled.
+- The committed security policy, contribution templates, issue forms, weekly bounded Dependabot policy, and SHA-pinned workflow remain the reviewed source controls. The live checks above verify only the corresponding hosted settings.
+
+Environment protection, deployment credentials, the Vercel integration, and production-domain ownership remain deployment evidence under the hosting requirements; they are not claimed by the repository-governance rows. `CODEOWNERS` remains intentionally absent until a second verified maintainer account or team exists.
 
 ## Release image verification
 
@@ -65,7 +66,8 @@ builder and Distroless `nodejs24-debian13:nonroot` runtime by immutable
 multi-architecture index digest and records those digests plus the resolution
 date in OCI labels. The image workflow builds `linux/amd64`; local release
 evidence also verifies `linux/arm64`, including the architecture-specific
-Sharp/libvips optimizer path. A hosted workflow result is still required.
+Sharp/libvips optimizer path. Hosted `image-security` evidence is included in
+the successful public runs above.
 
 Before renewing either application base, resolve the official tag, inspect the
 manifest list, confirm both supported architectures, review upstream provenance
