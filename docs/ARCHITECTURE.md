@@ -135,11 +135,21 @@ best-effort exact-key delete.
 Upload tokens encrypt and bind the exact session and session owner as well as
 the workspace, controlled key, expected bytes, media type, checksum, and an
 expiry no later than the session expiry. The proxy validates request headers
-before opening a database transaction, then locks and revalidates the pending
-session under the current deployment limit while it performs the bounded
-upstream PUT. Cancellation takes the same row lock. A PUT that wins completes
-before cancellation deletes it; cancellation that wins makes every earlier
-grant unusable, including after cleanup has completed.
+before claiming the pending session in a short row-locking transaction under
+the current deployment limit. The claim records a fresh upload-attempt UUID and
+a database-clock lease ending no later than the session expiry or 60 seconds
+after the claim. The transaction and its pooled connection are released before
+the bounded upstream PUT streams any object bytes. A second short transaction
+reconciles only the matching attempt, and the proxy reports success only while
+that attempt, its session, and its pending state remain live.
+
+Cancellation can therefore commit while the PUT is in progress. Cleanup
+returns a retryable not-ready result while the matching attempt lease is live;
+after reconciliation or bounded lease expiry it deletes the exact key and
+records completion once. A cancellation that wins makes the late PUT fail
+authorization and leaves its cleanup durably queued, while an expired orphaned
+attempt can be reclaimed or cleaned after process termination without holding
+a database connection during object streaming.
 
 The opaque route also defines the hosted upload envelope. In `vercel` mode,
 upload-session creation rejects every purpose above 4 MiB before storage

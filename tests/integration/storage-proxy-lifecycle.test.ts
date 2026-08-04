@@ -6,9 +6,13 @@ import type { S3Client } from "@aws-sdk/client-s3";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { newId } from "@/db/id";
 import { uploadSessions } from "@/db/schema/files";
 import { parseServerEnv } from "@/lib/env/server-schema";
-import { createStorageProxyHandlers } from "@/lib/storage/proxy";
+import {
+  createStorageProxyHandlers,
+  storageObjectKey,
+} from "@/lib/storage/proxy";
 import { createObjectStore } from "@/lib/storage/s3";
 import type { ObjectStore, SignedObjectRequest } from "@/lib/storage/types";
 import { createFileCleanupService } from "@/modules/files/cleanup";
@@ -49,6 +53,34 @@ class LifecycleS3Client {
       this.objects.delete(key);
       return {};
     }
+    if (command.constructor.name === "HeadObjectCommand") {
+      const object = this.objects.get(key);
+      if (!object) {
+        throw Object.assign(new Error("missing object"), {
+          name: "NoSuchKey",
+        });
+      }
+      return {
+        ContentLength: object.byteLength,
+        ContentType: "text/plain",
+        Metadata: {},
+      };
+    }
+    if (command.constructor.name === "GetObjectCommand") {
+      const object = this.objects.get(key);
+      if (!object) {
+        throw Object.assign(new Error("missing object"), {
+          name: "NoSuchKey",
+        });
+      }
+      return {
+        Body: (async function* () {
+          yield object;
+        })(),
+        ContentLength: object.byteLength,
+        ContentType: "text/plain",
+      };
+    }
     throw new Error(`unexpected ${command.constructor.name}`);
   }
 }
@@ -62,24 +94,6 @@ function uploadRequest(grant: SignedObjectRequest, body: string): Request {
     },
     body,
   });
-}
-
-async function waitForSessionLock(fixture: ResearchFixture): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const [{ blocked }] = await fixture.connection<[{ blocked: boolean }]>`
-      SELECT EXISTS (
-        SELECT 1
-        FROM pg_stat_activity
-        WHERE datname = current_database()
-          AND pid <> pg_backend_pid()
-          AND wait_event_type = 'Lock'
-          AND query ILIKE '%upload_sessions%'
-      ) AS blocked
-    `;
-    if (blocked) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error("Expected cancellation to wait for the upload-session lock");
 }
 
 liveDescribe("authoritative opaque upload fencing", () => {
@@ -246,7 +260,7 @@ liveDescribe("authoritative opaque upload fencing", () => {
     expect(session?.cleanupCompletedAt).toBeInstanceOf(Date);
   });
 
-  it("serializes PUT-first and cancel-first orderings on the upload session", async () => {
+  it("keeps database work and cancellation available during a PUT, then cleans the late object", async () => {
     const putFirst = await createPending();
     const putEntered = deferred();
     const releasePut = deferred();
@@ -258,12 +272,44 @@ liveDescribe("authoritative opaque upload fencing", () => {
       uploadRequest(putFirst.grant, putFirst.body),
     );
     await putEntered.promise;
+    const unrelatedQuery = fixture.connection<[{ available: number }]>`
+      SELECT 1 AS available
+    `;
     const cancellation = cancel(putFirst.actor, putFirst.session.id);
-    await waitForSessionLock(fixture);
+    const availableBeforeRelease = await Promise.race([
+      Promise.all([unrelatedQuery, cancellation]).then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 2_000)),
+    ]);
     releasePut.resolve();
-    expect((await uploading).status).toBe(204);
-    expect((await cancellation).body?.errors).toBeUndefined();
+    const [uploadResponse, [databaseResult, cancelled]] = await Promise.all([
+      uploading,
+      Promise.all([unrelatedQuery, cancellation]),
+    ]);
+
+    expect(availableBeforeRelease).toBe(true);
+    expect(databaseResult[0]?.available).toBe(1);
+    expect(cancelled.body?.errors).toBeUndefined();
+    expect(uploadResponse.status).toBe(403);
+
+    await createFileCleanupService({
+      database: fixture.database,
+      objectStore,
+      storageBucket: "private",
+      storageProvider: "minio",
+    }).executeFileCleanupJob({
+      jobId: "019cc7c4-6ed2-7e0a-aed8-e5d451c97102",
+      renewLease: async () => true,
+      signal: new AbortController().signal,
+      uploadSessionId: putFirst.session.id,
+      workspaceId: putFirst.actor.workspaceId,
+    });
     expect(client.objects.size).toBe(0);
+
+    const [cleaned] = await fixture.database
+      .select({ cleanupCompletedAt: uploadSessions.cleanupCompletedAt })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, putFirst.session.id));
+    expect(cleaned?.cleanupCompletedAt).toBeInstanceOf(Date);
 
     client.beforePut = undefined;
     const cancelFirst = await createPending();
@@ -282,5 +328,103 @@ liveDescribe("authoritative opaque upload fencing", () => {
     releaseDelete.resolve();
     expect((await cancelling).body?.errors).toBeUndefined();
     expect(client.objects.size).toBe(0);
+  });
+
+  it("keeps a non-cancelled PUT eligible for upload completion", async () => {
+    const pending = await createPending();
+
+    const uploaded = await handlers().PUT(
+      uploadRequest(pending.grant, pending.body),
+    );
+
+    expect(uploaded.status).toBe(204);
+    const completed = await fixture.execute({
+      jar: pending.actor.jar,
+      query: /* GraphQL */ `
+        mutation Complete($id: UUID!) {
+          completeUpload(uploadSessionId: $id) {
+            session {
+              id
+              state
+            }
+            file {
+              id
+              availability
+            }
+          }
+        }
+      `,
+      variables: { id: pending.session.id },
+    });
+    expect(completed.body?.errors).toBeUndefined();
+    expect(completed.body?.data?.completeUpload).toMatchObject({
+      session: { state: "COMPLETED" },
+      file: { availability: "AVAILABLE" },
+    });
+    expect(client.objects.size).toBe(1);
+  });
+
+  it("recovers cleanup after a crashed upload-attempt lease expires", async () => {
+    const pending = await createPending();
+    const [session] = await fixture.database
+      .select({ objectKey: uploadSessions.objectKey })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    if (!session) throw new Error("Upload session was not persisted");
+    const attemptId = newId();
+    await fixture.database
+      .update(uploadSessions)
+      .set({
+        state: "cleanup_pending",
+        failureCode: "USER_CANCELLED",
+        uploadAttemptId: attemptId,
+        uploadAttemptExpiresAt: new Date(Date.now() + 60_000),
+      })
+      .where(eq(uploadSessions.id, pending.session.id));
+    client.objects.set(
+      storageObjectKey(pending.actor.workspaceId, session.objectKey),
+      Buffer.from(pending.body),
+    );
+    const cleanup = createFileCleanupService({
+      database: fixture.database,
+      objectStore,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const job = {
+      jobId: "019cc7c4-6ed2-7e0a-aed8-e5d451c97103",
+      renewLease: async () => true,
+      signal: new AbortController().signal,
+      uploadSessionId: pending.session.id,
+      workspaceId: pending.actor.workspaceId,
+    };
+
+    await expect(cleanup.executeFileCleanupJob(job)).rejects.toMatchObject({
+      code: "cleanup_not_ready",
+      failureKind: "retryable",
+    });
+
+    await fixture.database
+      .update(uploadSessions)
+      .set({ uploadAttemptExpiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(uploadSessions.id, pending.session.id));
+    await expect(cleanup.executeFileCleanupJob(job)).resolves.toEqual({
+      resultReferences: [pending.session.id],
+    });
+
+    expect(client.objects.size).toBe(0);
+    const [recovered] = await fixture.database
+      .select({
+        cleanupCompletedAt: uploadSessions.cleanupCompletedAt,
+        uploadAttemptExpiresAt: uploadSessions.uploadAttemptExpiresAt,
+        uploadAttemptId: uploadSessions.uploadAttemptId,
+      })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(recovered).toMatchObject({
+      uploadAttemptExpiresAt: null,
+      uploadAttemptId: null,
+    });
+    expect(recovered?.cleanupCompletedAt).toBeInstanceOf(Date);
   });
 });

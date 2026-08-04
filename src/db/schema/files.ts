@@ -160,6 +160,8 @@ export const uploadSessions = pgTable(
     fileId: uuid("file_id"),
     failureCode: text("failure_code"),
     cleanupCompletedAt: domainTimestamp("cleanup_completed_at"),
+    uploadAttemptId: uuid("upload_attempt_id"),
+    uploadAttemptExpiresAt: domainTimestamp("upload_attempt_expires_at"),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),
     createdBy: text("created_by").notNull(),
     updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
@@ -197,6 +199,12 @@ export const uploadSessions = pgTable(
       table.expiresAt,
       table.id,
     ),
+    index("upload_sessions_attempt_cleanup_idx").on(
+      table.state,
+      table.uploadAttemptExpiresAt,
+      table.expiresAt,
+      table.id,
+    ),
     check(
       "upload_sessions_state_check",
       sql`${table.state} IN ('pending', 'verifying', 'completed', 'rejected', 'expired', 'cleanup_pending')`,
@@ -204,6 +212,10 @@ export const uploadSessions = pgTable(
     check(
       "upload_sessions_completion_columns_check",
       sql`(${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.failureCode} IS NULL) OR (${table.state} <> 'completed' AND ${table.completedAt} IS NULL)`,
+    ),
+    check(
+      "upload_sessions_attempt_pair_check",
+      sql`(${table.uploadAttemptId} IS NULL AND ${table.uploadAttemptExpiresAt} IS NULL) OR (${table.uploadAttemptId} IS NOT NULL AND ${table.uploadAttemptExpiresAt} IS NOT NULL)`,
     ),
   ],
 );

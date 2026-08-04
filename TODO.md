@@ -4,6 +4,11 @@ Every incomplete MVP requirement is listed exactly once. Remove an item only in
 the same change that updates `docs/REQUIREMENTS.md` to **Complete** and records
 passing test or runtime evidence.
 
+`HUM-FR-017` remains complete and intentionally absent: PostgreSQL integration
+coverage includes the short-transaction upload-attempt fence, non-blocking
+cancellation, late-object cleanup, successful completion, and lease-expiry
+recovery.
+
 ## Functional
 
 - [ ] `HUM-FR-003` Complete hosted release evidence and recovery acceptance for the implemented explicit, idempotent administrator bootstrap.
