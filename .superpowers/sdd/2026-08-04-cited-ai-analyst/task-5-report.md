@@ -58,3 +58,25 @@ All commands ran through Node 24 (`mise exec node@24.19.0 --`) from `/Users/kevo
 Self-review found no out-of-scope UI, documentation, browser-operation, or generated-client changes. No provider work is performed in a GraphQL request, and the schema exposes no prompt, encryption, provider transport, key, URL/fingerprint, job, raw tool, upstream response, or internal error fields.
 
 Concerns: none.
+
+## Fix round 1: exact mutation permissions
+
+Fix commit: `8df7366276863f0f49cef674219049a0fe9cd5a9` (`fix: enforce exact AI mutation permissions`)
+
+An Important review finding identified that the service added `analysis:read` to both mutation contracts. The service now uses a private owned-run projection helper parameterized by the operation's already-required permission bundle: start uses `analysis:create` plus `analysis:run` (and any scope-specific resource-read permission), cancel uses `analysis:cancel`, and the public `readAiRun` operation remains independently gated by `analysis:read`.
+
+### Fix RED
+
+The focused live PostgreSQL command above failed with 1 expected failure and 7 passing tests. An API key with exactly `analysis:create` and `analysis:run` received a correlated `FORBIDDEN` response from `startAiAnalysis`, proving the hidden read dependency.
+
+### Fix GREEN and verification
+
+- Focused live GraphQL suite: 1 file and 8/8 tests passed.
+- `corepack pnpm vitest run tests/integration/ai-graphql.test.ts tests/integration/ai-analysis.test.ts --no-file-parallelism` with the isolated live test database: 2 files and 34/34 tests passed.
+- `corepack pnpm codegen`: passed with no generated client changes.
+- `corepack pnpm format:check`, `corepack pnpm lint`, and `corepack pnpm typecheck`: passed.
+- `corepack pnpm test:unit`: 104 files and 893/893 tests passed.
+- `corepack pnpm build`: optimized production build passed, including TypeScript and 13/13 static pages.
+- `git diff --check`: passed.
+
+Fix concerns: none. The new regression proves exact API-key mutation permission sets while ordinary reads remain denied without `analysis:read`; the existing authenticated-user, principal-isolation, and cross-workspace tests remain green.
