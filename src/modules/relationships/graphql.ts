@@ -286,6 +286,10 @@ const UpdateRelationshipInput = builder.inputType("UpdateRelationshipInput", {
     confidence: t.float(),
     state: t.string(),
     sensitivity: t.field({ type: Sensitivity }),
+    temporalSemantics: t.field({ type: TemporalSemantics }),
+    temporalPrecision: t.field({ type: TemporalPrecision }),
+    validFrom: t.field({ type: "DateTime" }),
+    validUntil: t.field({ type: "DateTime" }),
     metadata: t.field({ type: "JSON" }),
   }),
 });

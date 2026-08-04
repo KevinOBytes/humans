@@ -601,6 +601,70 @@ export function createEvidenceService(context: ResearchServiceContext) {
         ? { resource: row, issues: [], code: null }
         : conflict(current.version);
     },
+    async archiveSource(input: {
+      id: string;
+      expectedVersion: number;
+    }): Promise<MutationOutcome<SourceRow>> {
+      const current = await requireSource(input.id);
+      const issues = versionIssue(input.expectedVersion);
+      if (issues.length) return invalid(issues);
+      const row = await withResearchWriteTransaction(context, async (tx) => {
+        const scoped = createEvidenceRepository(
+          tx as unknown as typeof context.database,
+        );
+        const lockedSource = await scoped.getSourceForUpdate({
+          workspaceId: context.workspaceId,
+          id: current.id,
+        });
+        if (!lockedSource) return null;
+        if (lockedSource.version !== input.expectedVersion) return lockedSource;
+        if (
+          await scoped.hasActiveEvidenceForSource({
+            workspaceId: context.workspaceId,
+            sourceId: lockedSource.id,
+          })
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The source still has active evidence items.",
+          );
+        }
+        const archived = await scoped.archiveSource({
+          workspaceId: context.workspaceId,
+          id: lockedSource.id,
+          expectedVersion: input.expectedVersion,
+          patch: {
+            deletedAt: new Date(),
+            deletedBy: context.actor.principalId,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          },
+        });
+        if (!archived) return null;
+        await audit.write(tx as unknown as typeof context.database, {
+          action: "source.archive",
+          resourceKind: "source",
+          resourceId: archived.id,
+          changedFields: ["deletedAt"],
+          sensitivity: archived.sensitivity,
+          metadata: { version: archived.version },
+        });
+        await applySearchIndexMaintenance(context, tx, [
+          {
+            action: "remove",
+            sourceId: archived.id,
+            sourceKind: "source",
+            sourceVersion: archived.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return archived;
+      });
+      if (row && row.deletedAt === null) return conflict(row.version);
+      return row
+        ? { resource: row, issues: [], code: null }
+        : conflict(current.version);
+    },
     async getEvidence(id: string) {
       const row = await repository.getEvidence({
         workspaceId: context.workspaceId,
@@ -720,6 +784,15 @@ export function createEvidenceService(context: ResearchServiceContext) {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
+        const lockedSource = await scoped.getSourceForUpdate({
+          workspaceId: context.workspaceId,
+          id: input.sourceId,
+        });
+        if (!lockedSource)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
         const created = await scoped.createEvidence({
           workspaceId: context.workspaceId,
           value: {
@@ -858,6 +931,60 @@ export function createEvidenceService(context: ResearchServiceContext) {
         ? { resource: row, issues: [], code: null }
         : conflict(current.version);
     },
+    async archiveEvidence(input: {
+      id: string;
+      expectedVersion: number;
+    }): Promise<MutationOutcome<EvidenceItemRow>> {
+      const current = await requireEvidence(input.id);
+      const issues = versionIssue(input.expectedVersion);
+      if (issues.length) return invalid(issues);
+      const row = await withResearchWriteTransaction(context, async (tx) => {
+        const scoped = createEvidenceRepository(
+          tx as unknown as typeof context.database,
+        );
+        const lockedEvidence = await scoped.getEvidenceForUpdate({
+          workspaceId: context.workspaceId,
+          id: current.id,
+        });
+        if (!lockedEvidence) return null;
+        if (lockedEvidence.version !== input.expectedVersion)
+          return lockedEvidence;
+        const archived = await scoped.updateEvidence({
+          workspaceId: context.workspaceId,
+          id: lockedEvidence.id,
+          expectedVersion: input.expectedVersion,
+          patch: {
+            deletedAt: new Date(),
+            deletedBy: context.actor.principalId,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          },
+        });
+        if (!archived) return null;
+        await audit.write(tx as unknown as typeof context.database, {
+          action: "evidence.archive",
+          resourceKind: "evidence",
+          resourceId: archived.id,
+          changedFields: ["deletedAt"],
+          sensitivity: archived.sensitivity,
+          metadata: { version: archived.version },
+        });
+        await applySearchIndexMaintenance(context, tx, [
+          {
+            action: "remove",
+            sourceId: archived.id,
+            sourceKind: "evidence_item",
+            sourceVersion: archived.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return archived;
+      });
+      if (row && row.deletedAt === null) return conflict(row.version);
+      return row
+        ? { resource: row, issues: [], code: null }
+        : conflict(current.version);
+    },
     async attachFile(input: {
       evidenceItemId: string;
       fileId: string;
@@ -976,6 +1103,15 @@ export function createEvidenceService(context: ResearchServiceContext) {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
+        const lockedEvidence = await scoped.getEvidenceForUpdate({
+          workspaceId: context.workspaceId,
+          id: evidence.id,
+        });
+        if (!lockedEvidence)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
         const created = await scoped.createExcerpt({
           workspaceId: context.workspaceId,
           value: {
@@ -1005,7 +1141,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
             "checksum",
             "redactionState",
           ],
-          sensitivity: evidence.sensitivity,
+          sensitivity: lockedEvidence.sensitivity,
           metadata: { evidenceItemId: evidence.id },
         });
         await applySearchIndexMaintenance(context, tx, [
@@ -1147,6 +1283,15 @@ export function createEvidenceService(context: ResearchServiceContext) {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
+        const lockedEvidence = await scoped.getEvidenceForUpdate({
+          workspaceId: context.workspaceId,
+          id: evidence.id,
+        });
+        if (!lockedEvidence)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
         const created = await scoped.createFactEvidence({
           workspaceId: context.workspaceId,
           value: {
@@ -1164,7 +1309,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
           resourceKind: "fact",
           resourceId: input.factId,
           changedFields: ["evidenceItemId", "locator", "supportStrength"],
-          sensitivity: evidence.sensitivity,
+          sensitivity: lockedEvidence.sensitivity,
           metadata: { evidenceItemId: input.evidenceItemId },
         });
         return created;
@@ -1329,6 +1474,15 @@ export function createEvidenceService(context: ResearchServiceContext) {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
+        const lockedEvidence = await scoped.getEvidenceForUpdate({
+          workspaceId: context.workspaceId,
+          id: evidence.id,
+        });
+        if (!lockedEvidence)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
         const created = await scoped.createRelationshipEvidence({
           workspaceId: context.workspaceId,
           value: {
@@ -1345,7 +1499,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
           resourceKind: "relationship",
           resourceId: input.relationshipId,
           changedFields: ["evidenceItemId", "locator", "supportStrength"],
-          sensitivity: evidence.sensitivity,
+          sensitivity: lockedEvidence.sensitivity,
           metadata: { evidenceItemId: input.evidenceItemId },
         });
         return created;
@@ -1648,6 +1802,17 @@ export function createEvidenceService(context: ResearchServiceContext) {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
+        if (subject.evidenceItemId) {
+          const lockedEvidence = await scoped.getEvidenceForUpdate({
+            workspaceId: context.workspaceId,
+            id: subject.evidenceItemId,
+          });
+          if (!lockedEvidence)
+            throw createGraphQLError(
+              "NOT_FOUND",
+              "The requested resource was not found.",
+            );
+        }
         const created = await scoped.createNote({
           workspaceId: context.workspaceId,
           value: {
