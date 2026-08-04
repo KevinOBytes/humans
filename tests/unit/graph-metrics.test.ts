@@ -34,7 +34,7 @@ describe("graph metrics", () => {
       first.every(({ value }) => Number.isFinite(value) && value >= 0),
     ).toBe(true);
     expect(first[0]?.algorithmVersion).toBe(
-      "graphology-metrics@2.4.0/pagerank/humans-v1",
+      "graphology-metrics@2.4.0/pagerank/humans-v2",
     );
   });
 

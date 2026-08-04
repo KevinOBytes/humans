@@ -18,7 +18,7 @@ export const GRAPH_ANALYSIS_CONFIGURATIONS = Object.freeze({
   }),
   PAGERANK: Object.freeze({
     alpha: 0.85,
-    maxIterations: 100,
+    maxIterations: 200,
     projection: "authorized-directed-aggregate-count-v1",
     tolerance: 1e-8,
     weight: "relationship-count",
@@ -63,9 +63,9 @@ export const GRAPH_ANALYSIS_CONTRACTS = {
     nodes: 2_000,
     edges: 10_000,
     key: "pagerank",
-    version: "graphology-metrics@2.4.0/pagerank/humans-v1",
+    version: "graphology-metrics@2.4.0/pagerank/humans-v2",
     explanation:
-      "PageRank over this authorized snapshot using relationship direction, alpha 0.85, tolerance 1e-8, and at most 100 iterations.",
+      "PageRank over this authorized snapshot using relationship direction, alpha 0.85, tolerance 1e-8, and at most 200 iterations.",
   },
   LOUVAIN_COMMUNITY: {
     nodes: 2_000,
