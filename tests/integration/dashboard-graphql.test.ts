@@ -13,6 +13,11 @@ import {
   resourceGrants,
   workspaceSettings,
 } from "@/db/schema/workspaces";
+import {
+  OperationLimiter,
+  operationLimitKeyV2,
+} from "@/graphql/operation-limiter";
+import type { RedisStore, TokenBucketInput } from "@/lib/redis";
 
 import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
@@ -980,5 +985,86 @@ liveDescribe("dashboard GraphQL summaries", () => {
       variables: { after: cursor },
     });
     expectGraphQLError(wrongPrincipal, "VALIDATION_FAILED");
+  });
+
+  it("returns a correlated stable denial without analysis read scope", async () => {
+    const owner = await fixture.createActor();
+    const key = await fixture.provisionKey(owner, {
+      workspace: ["read"],
+    });
+    const requestId = "0198f27c-d63e-726b-801c-dc751c0539b1";
+
+    const result = await fixture.execute({
+      apiKey: key.key,
+      headers: { "x-request-id": requestId },
+      query: `query { dashboardRecentAiAnalyses(first: 5) { nodes { id } } }`,
+    });
+
+    expectGraphQLError(result, "FORBIDDEN");
+    expect(result.requestId).toBe(requestId);
+    expect(result.body?.errors?.[0]).toMatchObject({
+      message: "This operation is not permitted.",
+      extensions: { code: "FORBIDDEN", requestId },
+    });
+    expect(JSON.stringify(result.body)).not.toMatch(
+      /analysis:read|api[_ -]?key|principal|workspace:read/iu,
+    );
+  });
+
+  it("charges bounded AI history admission before repository execution", async () => {
+    const calls: TokenBucketInput[] = [];
+    const store = {
+      async consumeTokenBucket(input: TokenBucketInput) {
+        calls.push(input);
+        return {
+          allowed: false,
+          remainingMicrotokens: 0,
+          retryAfterMs: 1_000,
+        };
+      },
+    } satisfies Pick<RedisStore, "consumeTokenBucket">;
+    const isolated = new ResearchFixture({
+      operationLimiter: new OperationLimiter(store, undefined, "79".repeat(32)),
+    });
+    try {
+      await isolated.reset();
+      const actor = await isolated.createActor("analyst");
+      isolated.queryCount = 0;
+      const baseline = await isolated.execute({
+        jar: actor.jar,
+        query: `query { __typename }`,
+      });
+      expect(baseline.body?.errors).toBeUndefined();
+      const contextQueryCount = isolated.queryCount;
+
+      for (const testCase of [
+        { args: "", cost: 5 },
+        { args: "(first: 10)", cost: 10 },
+      ]) {
+        calls.length = 0;
+        isolated.queryCount = 0;
+        const result = await isolated.execute({
+          jar: actor.jar,
+          query: `query { dashboardRecentAiAnalyses${testCase.args} { nodes { id } } }`,
+        });
+
+        expectGraphQLError(result, "RATE_LIMITED");
+        expect(isolated.queryCount).toBe(contextQueryCount);
+        expect(calls).toEqual([
+          expect.objectContaining({
+            cost: testCase.cost,
+            key: operationLimitKeyV2({
+              dimension: "actor",
+              hmacKey: "79".repeat(32),
+              operationClass: "ai.analysis.history",
+              subject: actor.principalId,
+              workspaceId: actor.workspaceId,
+            }),
+          }),
+        ]);
+      }
+    } finally {
+      await isolated.close();
+    }
   });
 });
