@@ -20,6 +20,9 @@ The self-hosted alpha includes:
   workspace creation/selection, workspace isolation, member administration,
   invitations, and provisioned API keys within their documented limitations;
 - the canonical GraphQL Yoga endpoint and generated browser operations;
+- a role-aware research dashboard with recent visible people and imports,
+  graph and principal-owned AI analysis history, exact authorized graph counts,
+  safe workspace defaults, and administrator activity;
 - person creation and overview correction, structured and unstructured facts,
   evidence/provenance, notes, tags, contacts, places, addresses, temporal
   relationships, and private file lifecycle controls;
