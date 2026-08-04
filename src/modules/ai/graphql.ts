@@ -2,10 +2,13 @@ import { builder } from "@/graphql/builder";
 import { requirePermission } from "@/graphql/context";
 import { createGraphQLError } from "@/graphql/errors";
 import type { OperationLimitPolicy } from "@/graphql/operation-limiter";
+import { PageInfo } from "@/modules/people/graphql";
+import type { PageInfo as PageInfoShape } from "@/modules/people/service";
 
 import {
   isAiStableErrorCode,
   type AiRun,
+  type AiRunHistoryItem,
   type AiToolSummary,
 } from "./repository-domain";
 
@@ -180,6 +183,46 @@ const AiRunType = builder.objectRef<AiRun>("AiRun").implement({
   }),
 });
 
+const AiRunHistoryItemType = builder
+  .objectRef<AiRunHistoryItem>("AiRunHistoryItem")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      state: t.field({ type: AiRunState, resolve: (run) => run.state }),
+      provider: t.field({ type: AiProvider, resolve: (run) => run.provider }),
+      model: t.exposeString("model"),
+      createdAt: t.field({
+        type: "DateTime",
+        resolve: (run) => run.createdAt.toISOString(),
+      }),
+      startedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (run) => run.startedAt?.toISOString() ?? null,
+      }),
+      completedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (run) => run.completedAt?.toISOString() ?? null,
+      }),
+    }),
+  });
+
+const AiRunHistoryConnection = builder
+  .objectRef<{ nodes: AiRunHistoryItem[]; pageInfo: PageInfoShape }>(
+    "AiRunHistoryConnection",
+  )
+  .implement({
+    fields: (t) => ({
+      nodes: t.expose("nodes", {
+        type: [AiRunHistoryItemType],
+        nullable: false,
+        complexity: { field: 0, multiplier: 1 },
+      }),
+      pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
+    }),
+  });
+
 const AiAnalysisScopeInput = builder.inputType("AiAnalysisScopeInput", {
   fields: (t) => ({
     evidenceIds: t.field({ type: ["UUID"] }),
@@ -226,6 +269,40 @@ export function registerAiGraphQL(): void {
           policy: AI_READ_POLICY,
         });
         return (await context.services.ai.readAiRun(args.id)) ?? notFound();
+      },
+    }),
+    dashboardRecentAiAnalyses: t.field({
+      type: AiRunHistoryConnection,
+      nullable: false,
+      args: { first: t.arg.int(), after: t.arg.string() },
+      complexity: (args) => ({
+        field: 2,
+        multiplier:
+          args.first == null
+            ? 5
+            : Number.isInteger(args.first) &&
+                args.first >= 1 &&
+                args.first <= 10
+              ? args.first
+              : 11,
+      }),
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "analysis", "read");
+        const cost =
+          args.first == null
+            ? 5
+            : Number.isInteger(args.first) &&
+                args.first >= 1 &&
+                args.first <= 10
+              ? args.first
+              : 11;
+        await context.operationLimiter.consume({
+          operationClass: "ai.analysis.history",
+          cost,
+          clientPolicy: AI_READ_POLICY,
+          policy: AI_READ_POLICY,
+        });
+        return context.services.ai.listOwnedRuns(args);
       },
     }),
   }));

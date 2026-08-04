@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { newId } from "@/db/id";
+import { aiMessages, aiRuns, aiThreads, aiToolCalls } from "@/db/schema/ai";
 import { analysisRuns, graphSnapshots, graphViews } from "@/db/schema/graph";
 import { people } from "@/db/schema/people";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
@@ -751,5 +752,233 @@ liveDescribe("dashboard GraphQL summaries", () => {
     expect(policy.body?.errors?.[0]?.message).toBe(
       "This operation is not permitted.",
     );
+  });
+
+  it("returns only current-principal AI metadata newest-first with stable cursors", async () => {
+    const owner = await fixture.createActor();
+    const other = await fixture.createWorkspaceMember(owner, "analyst");
+    const foreign = await fixture.createActor();
+    const tied = new Date("2026-08-04T12:00:00.000Z");
+    const older = new Date("2026-08-03T12:00:00.000Z");
+    const ids = {
+      currentHigh: "018f0000-0000-7000-8000-00000000a003",
+      currentLow: "018f0000-0000-7000-8000-00000000a002",
+      currentOlder: "018f0000-0000-7000-8000-00000000a001",
+      foreign: "018f0000-0000-7000-8000-00000000a005",
+      other: "018f0000-0000-7000-8000-00000000a004",
+    } as const;
+
+    const rows = [
+      {
+        actor: owner,
+        createdAt: older,
+        id: ids.currentOlder,
+        model: "owner-older-model",
+      },
+      {
+        actor: owner,
+        createdAt: tied,
+        id: ids.currentLow,
+        model: "owner-low-model",
+      },
+      {
+        actor: owner,
+        createdAt: tied,
+        id: ids.currentHigh,
+        model: "owner-high-model",
+      },
+      {
+        actor: other,
+        createdAt: new Date("2026-08-05T12:00:00.000Z"),
+        id: ids.other,
+        model: "same-workspace-secret-model",
+      },
+      {
+        actor: foreign,
+        createdAt: new Date("2026-08-06T12:00:00.000Z"),
+        id: ids.foreign,
+        model: "foreign-secret-model",
+      },
+    ];
+    for (const row of rows) {
+      const threadId = newId();
+      await fixture.database.insert(aiThreads).values({
+        id: threadId,
+        workspaceId: row.actor.workspaceId,
+        ownerId: row.actor.principalId,
+        title: "Private test analysis",
+        sharing: "private",
+        createdAt: row.createdAt,
+        updatedAt: row.createdAt,
+        createdBy: row.actor.principalId,
+        updatedBy: row.actor.principalId,
+      });
+      await fixture.database.insert(aiRuns).values({
+        id: row.id,
+        workspaceId: row.actor.workspaceId,
+        threadId,
+        provider: "OLLAMA",
+        baseUrlFingerprint: "71".repeat(32),
+        model: row.model,
+        promptHash: `sha256:${"72".repeat(32)}`,
+        configurationHash: `sha256:${"73".repeat(32)}`,
+        state: "completed",
+        startedAt: row.createdAt,
+        completedAt: row.createdAt,
+        errorCode: "provider_timeout",
+        createdAt: row.createdAt,
+        createdBy: row.actor.principalId,
+      });
+      if (row.id === ids.currentHigh) {
+        await fixture.database.insert(aiMessages).values({
+          id: newId(),
+          workspaceId: row.actor.workspaceId,
+          threadId,
+          role: "assistant",
+          encryptedContent: "not-a-sealed-answer",
+          contentHash: `sha256:${"74".repeat(32)}`,
+          createdAt: row.createdAt,
+          updatedAt: row.createdAt,
+          createdBy: row.actor.principalId,
+          updatedBy: row.actor.principalId,
+        });
+        await fixture.database.insert(aiToolCalls).values({
+          id: newId(),
+          workspaceId: row.actor.workspaceId,
+          aiRunId: row.id,
+          approvedToolName: "private.tool",
+          redactedArguments: { resultCount: 9876 },
+          redactedResultSummary: { resultCount: 8765 },
+          state: "completed",
+          createdAt: row.createdAt,
+        });
+      }
+    }
+
+    const pageOne = await fixture.execute<{
+      dashboardRecentAiAnalyses: {
+        nodes: Array<{
+          completedAt: string | null;
+          createdAt: string;
+          id: string;
+          model: string;
+          provider: string;
+          startedAt: string | null;
+          state: string;
+        }>;
+        pageInfo: { endCursor: string | null; hasNextPage: boolean };
+      };
+    }>({
+      jar: owner.jar,
+      query: `query { dashboardRecentAiAnalyses(first: 2) { nodes { id provider model state startedAt completedAt createdAt } pageInfo { endCursor hasNextPage } } }`,
+    });
+    expect(pageOne.body?.errors).toBeUndefined();
+    expect(pageOne.body?.data?.dashboardRecentAiAnalyses.nodes).toEqual([
+      expect.objectContaining({
+        id: ids.currentHigh,
+        model: "owner-high-model",
+      }),
+      expect.objectContaining({ id: ids.currentLow, model: "owner-low-model" }),
+    ]);
+    expect(pageOne.body?.data?.dashboardRecentAiAnalyses.pageInfo).toEqual({
+      endCursor: expect.any(String),
+      hasNextPage: true,
+    });
+
+    const pageTwo = await fixture.execute<{
+      dashboardRecentAiAnalyses: { nodes: Array<{ id: string }> };
+    }>({
+      jar: owner.jar,
+      query: `query($after: String) { dashboardRecentAiAnalyses(first: 2, after: $after) { nodes { id } } }`,
+      variables: {
+        after: pageOne.body?.data?.dashboardRecentAiAnalyses.pageInfo.endCursor,
+      },
+    });
+    expect(pageTwo.body?.data?.dashboardRecentAiAnalyses.nodes).toEqual([
+      { id: ids.currentOlder },
+    ]);
+    expect(JSON.stringify([pageOne.body, pageTwo.body])).not.toMatch(
+      /same-workspace-secret|foreign-secret|provider_timeout|9876|8765|sealed-answer|private\.tool/u,
+    );
+
+    const forbiddenProjection = await fixture.execute({
+      jar: owner.jar,
+      query: `query { dashboardRecentAiAnalyses(first: 1) { nodes { id answer errorCode citations { claimText } toolCalls { name } } } }`,
+    });
+    expect(forbiddenProjection.body?.data).toBeUndefined();
+    expect(
+      forbiddenProjection.body?.errors?.map((error) => error.message),
+    ).toEqual(
+      expect.arrayContaining([
+        'Cannot query field "answer" on type "AiRunHistoryItem".',
+        'Cannot query field "errorCode" on type "AiRunHistoryItem".',
+        'Cannot query field "citations" on type "AiRunHistoryItem".',
+        'Cannot query field "toolCalls" on type "AiRunHistoryItem".',
+      ]),
+    );
+  });
+
+  it("rejects invalid AI history bounds and cross-principal cursors", async () => {
+    const owner = await fixture.createActor();
+    const other = await fixture.createWorkspaceMember(owner, "analyst");
+    const threadId = newId();
+    const runId = "018f0000-0000-7000-8000-00000000b001";
+    await fixture.database.insert(aiThreads).values({
+      id: threadId,
+      workspaceId: owner.workspaceId,
+      ownerId: owner.principalId,
+      title: "Cursor binding",
+      sharing: "private",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(aiRuns).values({
+      id: runId,
+      workspaceId: owner.workspaceId,
+      threadId,
+      provider: "OPENAI",
+      baseUrlFingerprint: "75".repeat(32),
+      model: "cursor-model",
+      promptHash: `sha256:${"76".repeat(32)}`,
+      configurationHash: `sha256:${"77".repeat(32)}`,
+      createdBy: owner.principalId,
+    });
+    const ownerPage = await fixture.execute<{
+      dashboardRecentAiAnalyses: {
+        pageInfo: { endCursor: string | null };
+      };
+    }>({
+      jar: owner.jar,
+      query: `query { dashboardRecentAiAnalyses(first: 1) { pageInfo { endCursor } } }`,
+    });
+    const cursor =
+      ownerPage.body?.data?.dashboardRecentAiAnalyses.pageInfo.endCursor;
+    expect(cursor).toEqual(expect.any(String));
+
+    for (const first of [0, -1, 11]) {
+      const invalid = await fixture.execute({
+        jar: owner.jar,
+        query: `query($first: Int) { dashboardRecentAiAnalyses(first: $first) { nodes { id } } }`,
+        variables: { first },
+      });
+      expectGraphQLError(invalid, "VALIDATION_FAILED");
+    }
+    for (const after of [
+      "not-a-cursor",
+      `${cursor?.slice(0, -1)}${cursor?.endsWith("a") ? "b" : "a"}`,
+    ]) {
+      const invalid = await fixture.execute({
+        jar: owner.jar,
+        query: `query($after: String) { dashboardRecentAiAnalyses(first: 1, after: $after) { nodes { id } } }`,
+        variables: { after },
+      });
+      expectGraphQLError(invalid, "VALIDATION_FAILED");
+    }
+    const wrongPrincipal = await fixture.execute({
+      jar: other.jar,
+      query: `query($after: String) { dashboardRecentAiAnalyses(first: 1, after: $after) { nodes { id } } }`,
+      variables: { after: cursor },
+    });
+    expectGraphQLError(wrongPrincipal, "VALIDATION_FAILED");
   });
 });
