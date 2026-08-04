@@ -466,6 +466,153 @@ liveDescribe("authorized durable AI execution handler", () => {
     expect(await fixture.database.select().from(aiToolCalls)).toHaveLength(4);
   });
 
+  it("keeps the four-provider-turn cap across durable executor retries", async () => {
+    const actor = await fixture.createActor("owner");
+    const personId = await scopedPerson(actor, "Retried Provider Person");
+    const context = await aiContext(actor);
+    await service(context).startAiAnalysis({
+      idempotencyKey: `worker-provider-cap-${newId()}`,
+      question: "Keep provider turns bounded across retries",
+      scope: { personIds: [personId] },
+    });
+    let generation = 0;
+    const provider = fakeProvider(async () => {
+      generation += 1;
+      if (generation === 2) {
+        throw Object.assign(new Error("temporary provider outage"), {
+          code: "PROVIDER_UNAVAILABLE",
+        });
+      }
+      return {
+        type: "tool_calls",
+        toolCalls: [
+          {
+            id: `provider-cap-call-${generation}`,
+            name: "getPerson",
+            arguments: { personId },
+          },
+        ],
+      };
+    });
+    const getPerson = vi.fn(async () => ({ id: personId }));
+    const registry = createJobRegistry({
+      aiExecute: handler({ provider, getPerson }),
+      fileCleanup: async () => undefined,
+      importExecute: async () => undefined,
+    });
+    const redis = new MemoryRedis();
+
+    await expect(
+      runJobsOnce({
+        database: fixture.database,
+        encryptionKey,
+        random: () => 0,
+        redis,
+        registry,
+        workerId: newId(),
+      }),
+    ).resolves.toMatchObject({ claimed: 1, deferred: 1 });
+    await fixture.database.update(jobs).set({ scheduledAt: new Date(0) });
+    await expect(
+      runJobsOnce({
+        database: fixture.database,
+        encryptionKey,
+        redis,
+        registry,
+        workerId: newId(),
+      }),
+    ).resolves.toMatchObject({ claimed: 1, deadLettered: 1 });
+
+    expect(provider.generate).toHaveBeenCalledTimes(5);
+    expect(getPerson).toHaveBeenCalledTimes(4);
+    expect(await fixture.database.select().from(aiToolCalls)).toHaveLength(4);
+    expect((await fixture.database.select().from(aiRuns))[0]).toMatchObject({
+      state: "failed",
+      errorCode: "analysis_limit_reached",
+    });
+  });
+
+  it("keeps the four-tool-call cap across durable executor retries", async () => {
+    const actor = await fixture.createActor("owner");
+    const personId = await scopedPerson(actor, "Retried Tool Person");
+    const context = await aiContext(actor);
+    await service(context).startAiAnalysis({
+      idempotencyKey: `worker-tool-cap-${newId()}`,
+      question: "Keep tool calls bounded across retries",
+      scope: { personIds: [personId] },
+    });
+    let generation = 0;
+    const provider = fakeProvider(async () => {
+      generation += 1;
+      if (generation === 1) {
+        return {
+          type: "tool_calls",
+          toolCalls: [1, 2, 3].map((value) => ({
+            id: `tool-cap-first-${value}`,
+            name: "getPerson" as const,
+            arguments: { personId },
+          })),
+        };
+      }
+      if (generation === 2) {
+        throw Object.assign(new Error("temporary provider outage"), {
+          code: "PROVIDER_UNAVAILABLE",
+        });
+      }
+      if (generation === 3) {
+        return {
+          type: "tool_calls",
+          toolCalls: [1, 2].map((value) => ({
+            id: `tool-cap-second-${value}`,
+            name: "getPerson" as const,
+            arguments: { personId },
+          })),
+        };
+      }
+      return {
+        type: "answer",
+        answer: "This must not finalize after a fifth tool call.",
+        citations: [],
+      };
+    });
+    const getPerson = vi.fn(async () => ({ id: personId }));
+    const registry = createJobRegistry({
+      aiExecute: handler({ provider, getPerson }),
+      fileCleanup: async () => undefined,
+      importExecute: async () => undefined,
+    });
+    const redis = new MemoryRedis();
+
+    await expect(
+      runJobsOnce({
+        database: fixture.database,
+        encryptionKey,
+        random: () => 0,
+        redis,
+        registry,
+        workerId: newId(),
+      }),
+    ).resolves.toMatchObject({ claimed: 1, deferred: 1 });
+    await fixture.database.update(jobs).set({ scheduledAt: new Date(0) });
+    await expect(
+      runJobsOnce({
+        database: fixture.database,
+        encryptionKey,
+        redis,
+        registry,
+        workerId: newId(),
+      }),
+    ).resolves.toMatchObject({ claimed: 1, deadLettered: 1 });
+
+    expect(provider.generate).toHaveBeenCalledTimes(3);
+    expect(getPerson).toHaveBeenCalledTimes(3);
+    expect(await fixture.database.select().from(aiToolCalls)).toHaveLength(3);
+    expect((await fixture.database.select().from(aiRuns))[0]).toMatchObject({
+      state: "failed",
+      errorCode: "analysis_limit_reached",
+    });
+  });
+
   it("retries provider failures and records only the final stable code", async () => {
     const actor = await fixture.createActor("owner");
     const context = await aiContext(actor);

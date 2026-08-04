@@ -2,6 +2,8 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 import {
   equalAiDigest,
   mapAiFailureCode,
+  MAX_AI_PROVIDER_BOUNDARIES,
+  MAX_AI_TOOL_CALLS,
   prefixedAiPersistenceHmac,
   type AiCitation,
   type AiJobClaim,
@@ -25,9 +27,6 @@ import {
   type JobPayload,
 } from "@/modules/jobs/types";
 import type { JobHandler, JobHandlerContext } from "@/worker/registry";
-
-const MAX_PROVIDER_BOUNDARIES = 4;
-const MAX_TOOL_BOUNDARIES = 4;
 
 const TOOL_DECLARATIONS: readonly AiToolDeclaration[] = Object.freeze([
   Object.freeze({
@@ -282,6 +281,16 @@ export function createAiAnalysisHandler(
       if (authorized) return authorized;
       return persistFailure("authorization_changed", "permanent", true);
     };
+    const recordProviderBoundary = async () => {
+      await ensureLease();
+      const recorded = await repository.recordClaimedProviderBoundary(jobClaim);
+      if (!recorded) {
+        return persistFailure("authorization_changed", "permanent", true);
+      }
+      if (recorded.outcome === "limit") {
+        return persistFailure("analysis_limit_reached", "permanent", true);
+      }
+    };
 
     await ensureLease();
     const run = await repository.loadClaimedPendingRun(jobClaim);
@@ -317,10 +326,15 @@ export function createAiAnalysisHandler(
       { role: "user", content: run.question },
     ];
     const ledger: CitationLedger = new Map();
-    let toolBoundaries = 0;
 
-    for (let depth = 0; depth < MAX_PROVIDER_BOUNDARIES; depth += 1) {
-      await authorize();
+    for (let depth = 0; depth < MAX_AI_PROVIDER_BOUNDARIES; depth += 1) {
+      const providerAuthorization = await authorize();
+      if (
+        providerAuthorization.providerBoundaryCount >=
+        MAX_AI_PROVIDER_BOUNDARIES
+      ) {
+        return persistFailure("analysis_limit_reached", "permanent", true);
+      }
       let turn;
       try {
         turn = await runtime.provider.generate({
@@ -339,6 +353,7 @@ export function createAiAnalysisHandler(
           !retryable || context.job.attemptCount >= MAX_JOB_ATTEMPTS,
         );
       }
+      await recordProviderBoundary();
 
       if (turn.type === "answer") {
         await authorize();
@@ -364,9 +379,11 @@ export function createAiAnalysisHandler(
         return { resultReferences: [payload.runId] };
       }
 
+      const boundaryAuthorization = await authorize();
       if (
         !turn.toolCalls.length ||
-        toolBoundaries + turn.toolCalls.length > MAX_TOOL_BOUNDARIES
+        boundaryAuthorization.toolCallCount + turn.toolCalls.length >
+          MAX_AI_TOOL_CALLS
       ) {
         return persistFailure("analysis_limit_reached", "permanent", true);
       }
@@ -376,11 +393,13 @@ export function createAiAnalysisHandler(
         toolCalls: turn.toolCalls,
       });
       for (const toolCall of turn.toolCalls) {
-        toolBoundaries += 1;
         if (!isResearchToolName(toolCall.name)) {
           return persistFailure("provider_invalid_response", "permanent", true);
         }
         const authorized = await authorize();
+        if (authorized.toolCallCount >= MAX_AI_TOOL_CALLS) {
+          return persistFailure("analysis_limit_reached", "permanent", true);
+        }
         const tools = runtime.createTools(authorized);
         const result = await invokeResearchTool(
           tools,

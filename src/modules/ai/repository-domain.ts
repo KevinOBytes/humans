@@ -43,7 +43,8 @@ const aiFailureCodeMap: Readonly<Record<string, AiStableErrorCode>> = {
   PROVIDER_TIMEOUT: "provider_timeout",
   PROVIDER_UNAVAILABLE: "provider_unavailable",
 };
-export const MAX_AI_TOOL_CALLS = 64;
+export const MAX_AI_PROVIDER_BOUNDARIES = 4;
+export const MAX_AI_TOOL_CALLS = 4;
 export const MAX_AI_ANSWER_BYTES = 64_000;
 
 export type AiScope = Readonly<{

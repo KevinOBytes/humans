@@ -13,6 +13,7 @@ import { authorizeAiReferences } from "./repository-authority";
 import {
   AI_TOOL_NAME,
   MAX_AI_ANSWER_BYTES,
+  MAX_AI_PROVIDER_BOUNDARIES,
   MAX_AI_TOOL_CALLS,
   equalAiDigest,
   isAiStableErrorCode,
@@ -161,6 +162,34 @@ export function createAiWorkerRepository(
     });
   }
 
+  function providerBoundaryCount(profile: unknown): number | null {
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+      return null;
+    }
+    const value = (profile as Record<string, unknown>).providerBoundaryCount;
+    if (value === undefined) return 0;
+    return Number.isSafeInteger(value) && (value as number) >= 0
+      ? (value as number)
+      : null;
+  }
+
+  async function claimedToolCallCount(
+    transaction: Database,
+    input: AiJobClaim,
+  ): Promise<number> {
+    const [{ count }] = await transaction
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiToolCalls)
+      .where(
+        and(
+          eq(aiToolCalls.workspaceId, input.workspaceId),
+          eq(aiToolCalls.aiRunId, input.runId),
+          eq(aiToolCalls.state, "completed"),
+        ),
+      );
+    return count;
+  }
+
   return {
     async loadClaimedPendingRun(
       input: AiJobClaim,
@@ -216,12 +245,69 @@ export function createAiWorkerRepository(
             workspaceId: input.workspaceId,
           });
           if (!authorization) return null;
+          const providerBoundaries = providerBoundaryCount(
+            run.capabilityProfile,
+          );
+          if (providerBoundaries == null) return null;
+          const toolCallCount = await claimedToolCallCount(transaction, input);
           if (!(await lockCurrentClaim(transaction, input))) {
             throw new AiClaimLostRollback();
           }
           return Object.freeze({
             run: claimedRunValue(run, parsed),
             authority: authorization.authority,
+            providerBoundaryCount: providerBoundaries,
+            toolCallCount,
+          });
+        });
+      } catch (error) {
+        if (error instanceof AiClaimLostRollback) return null;
+        throw error;
+      }
+    },
+
+    async recordClaimedProviderBoundary(input: AiJobClaim) {
+      try {
+        return await database.transaction(async (transactionValue) => {
+          const transaction = transactionValue as unknown as Database;
+          const run = await lockClaimedRun(transaction, input);
+          if (!run) return null;
+          const parsed = await loadValidatedRunInput(transaction, run);
+          if (!parsed || !validAiProvider(run.provider)) return null;
+          const authorization = await authorizeAiReferences(transaction, {
+            principalId: run.createdBy,
+            references: scopeReferences(parsed.scope),
+            requiredPermissions: ["analysis:read", "analysis:run"],
+            scope: parsed.scope,
+            workspaceId: input.workspaceId,
+          });
+          if (!authorization) return null;
+          const consumed = providerBoundaryCount(run.capabilityProfile);
+          if (consumed == null) return null;
+          if (consumed >= MAX_AI_PROVIDER_BOUNDARIES) {
+            return Object.freeze({ outcome: "limit" as const });
+          }
+          const profile = run.capabilityProfile as Record<string, unknown>;
+          await transaction
+            .update(aiRuns)
+            .set({
+              capabilityProfile: {
+                ...profile,
+                providerBoundaryCount: consumed + 1,
+              },
+            })
+            .where(
+              and(
+                eq(aiRuns.id, input.runId),
+                eq(aiRuns.workspaceId, input.workspaceId),
+                inArray(aiRuns.state, ["pending", "running"]),
+              ),
+            );
+          if (!(await lockCurrentClaim(transaction, input))) {
+            throw new AiClaimLostRollback();
+          }
+          return Object.freeze({
+            outcome: "recorded" as const,
           });
         });
       } catch (error) {
@@ -312,15 +398,7 @@ export function createAiWorkerRepository(
             (reference) =>
               requestedReferences.has(`${reference.kind}:${reference.id}`),
           );
-          const [{ count }] = await transaction
-            .select({ count: sql<number>`count(*)::int` })
-            .from(aiToolCalls)
-            .where(
-              and(
-                eq(aiToolCalls.workspaceId, input.workspaceId),
-                eq(aiToolCalls.aiRunId, input.runId),
-              ),
-            );
+          const count = await claimedToolCallCount(transaction, input);
           if (count >= MAX_AI_TOOL_CALLS) return false;
           const now = new Date();
           await transaction.insert(aiToolCalls).values({
