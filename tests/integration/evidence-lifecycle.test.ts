@@ -3,7 +3,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { evidenceItems, sources } from "@/db/schema/evidence";
+import { evidenceExcerpts, evidenceItems, sources } from "@/db/schema/evidence";
 import { auditEvents } from "@/db/schema/operations";
 import { searchDocuments } from "@/db/schema/search";
 import { createSearchIndexMaintenance } from "@/modules/search/indexer";
@@ -12,7 +12,7 @@ import {
   disabledMetricsSink,
 } from "@/modules/search/metrics";
 
-import { expectGraphQLError } from "../support/graphql";
+import { expectGraphQLError, type OperationResult } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -38,6 +38,24 @@ const CREATE_EVIDENCE = /* GraphQL */ `
       evidenceItem {
         id
         version
+      }
+    }
+  }
+`;
+const CREATE_EXCERPT = /* GraphQL */ `
+  mutation CreateExcerpt($input: CreateEvidenceExcerptInput!) {
+    createEvidenceExcerpt(input: $input) {
+      evidenceExcerpt {
+        id
+      }
+    }
+  }
+`;
+const CREATE_NOTE = /* GraphQL */ `
+  mutation CreateNote($input: CreateNoteInput!) {
+    createNote(input: $input) {
+      note {
+        id
       }
     }
   }
@@ -88,6 +106,25 @@ const UPDATE_EVIDENCE = /* GraphQL */ `
     }
   }
 `;
+
+async function waitForEvidenceLockWaiters(
+  fixture: ResearchFixture,
+  minimum: number,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [{ blocked }] = await fixture.connection<[{ blocked: number }]>`
+      SELECT count(*)::integer AS blocked
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> pg_backend_pid()
+        AND wait_event_type = 'Lock'
+        AND query ILIKE '%evidence_items%FOR UPDATE%'
+    `;
+    if (blocked >= minimum) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Expected ${minimum} evidence row lock waiter(s)`);
+}
 
 liveDescribe("evidence lifecycle GraphQL acceptance", () => {
   let fixture: ResearchFixture;
@@ -149,6 +186,52 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
           ),
         ),
     ).toHaveLength(1);
+    const excerpt = await fixture.execute<{
+      createEvidenceExcerpt: { evidenceExcerpt: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CREATE_EXCERPT,
+      variables: {
+        input: {
+          evidenceItemId: createdEvidence.id,
+          excerpt: "Derived search excerpt",
+          checksum: `sha256:${"c".repeat(64)}`,
+        },
+      },
+    });
+    const excerptId = required(
+      excerpt.body?.data?.createEvidenceExcerpt.evidenceExcerpt?.id,
+    );
+    const note = await fixture.execute<{
+      createNote: { note: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CREATE_NOTE,
+      variables: {
+        input: {
+          subject: { evidenceItemId: createdEvidence.id },
+          content: { plainText: "Derived search note" },
+        },
+      },
+    });
+    const noteId = required(note.body?.data?.createNote.note?.id);
+    expect(
+      await fixture.database
+        .select({ resourceId: searchDocuments.resourceId })
+        .from(searchDocuments)
+        .where(
+          and(
+            eq(searchDocuments.workspaceId, owner.workspaceId),
+            eq(searchDocuments.resultId, createdEvidence.id),
+          ),
+        ),
+    ).toEqual(
+      expect.arrayContaining([
+        { resourceId: createdEvidence.id },
+        { resourceId: excerptId },
+        { resourceId: noteId },
+      ]),
+    );
 
     const foreignArchive = await fixture.execute({
       jar: foreignOwner.jar,
@@ -183,7 +266,7 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
         input: {
           id: createdEvidence.id,
           expectedVersion: createdEvidence.version,
-          reviewState: "IN_REVIEW",
+          externalLocator: "https://example.test/lifecycle-updated",
         },
       },
     });
@@ -241,8 +324,7 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
         .where(
           and(
             eq(searchDocuments.workspaceId, owner.workspaceId),
-            eq(searchDocuments.resourceKind, "evidence_item"),
-            eq(searchDocuments.resourceId, createdEvidence.id),
+            eq(searchDocuments.resultId, createdEvidence.id),
           ),
         ),
     ).toEqual([]);
@@ -472,5 +554,147 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
         expect.any(String),
       );
     }
+  });
+
+  it("reports the fresh locked evidence version after an archive race", async () => {
+    const owner = await fixture.createActor();
+    const source = await fixture.execute<{
+      createSource: { source: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CREATE_SOURCE,
+      variables: { input: { kind: "race-test", title: "Version race" } },
+    });
+    const sourceId = required(source.body?.data?.createSource.source?.id);
+    const evidence = await fixture.execute<{
+      createEvidenceItem: {
+        evidenceItem: { id: string; version: number } | null;
+      };
+    }>({
+      jar: owner.jar,
+      query: CREATE_EVIDENCE,
+      variables: {
+        input: {
+          sourceId,
+          checksum: `sha256:${"d".repeat(64)}`,
+        },
+      },
+    });
+    const createdEvidence = required(
+      evidence.body?.data?.createEvidenceItem.evidenceItem,
+    );
+    let pendingArchive: ReturnType<ResearchFixture["execute"]> | undefined;
+
+    await fixture.connection.begin(async (locker) => {
+      await locker`
+        SELECT id FROM evidence_items
+        WHERE id = ${createdEvidence.id}::uuid
+        FOR UPDATE
+      `;
+      pendingArchive = fixture.execute({
+        jar: owner.jar,
+        query: ARCHIVE_EVIDENCE,
+        variables: {
+          input: {
+            id: createdEvidence.id,
+            expectedVersion: createdEvidence.version,
+          },
+        },
+      });
+      await waitForEvidenceLockWaiters(fixture, 1);
+      await locker`
+        UPDATE evidence_items
+        SET version = version + 1, updated_at = now()
+        WHERE id = ${createdEvidence.id}::uuid
+      `;
+    });
+
+    const result = await required(pendingArchive);
+    expect(result.body?.data).toEqual({
+      archiveEvidenceItem: {
+        code: "CONFLICT",
+        currentVersion: 2,
+        evidenceItem: null,
+      },
+    });
+  });
+
+  it("queues dependent evidence writes behind archive revalidation", async () => {
+    const owner = await fixture.createActor();
+    const source = await fixture.execute<{
+      createSource: { source: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CREATE_SOURCE,
+      variables: { input: { kind: "race-test", title: "Dependent race" } },
+    });
+    const sourceId = required(source.body?.data?.createSource.source?.id);
+    const evidence = await fixture.execute<{
+      createEvidenceItem: {
+        evidenceItem: { id: string; version: number } | null;
+      };
+    }>({
+      jar: owner.jar,
+      query: CREATE_EVIDENCE,
+      variables: {
+        input: {
+          sourceId,
+          checksum: `sha256:${"e".repeat(64)}`,
+        },
+      },
+    });
+    const createdEvidence = required(
+      evidence.body?.data?.createEvidenceItem.evidenceItem,
+    );
+    let pendingArchive: Promise<OperationResult> | undefined;
+    let pendingExcerpt: Promise<OperationResult> | undefined;
+
+    await fixture.connection.begin(async (locker) => {
+      await locker`
+        SELECT id FROM evidence_items
+        WHERE id = ${createdEvidence.id}::uuid
+        FOR UPDATE
+      `;
+      pendingArchive = fixture.execute({
+        jar: owner.jar,
+        query: ARCHIVE_EVIDENCE,
+        variables: {
+          input: {
+            id: createdEvidence.id,
+            expectedVersion: createdEvidence.version,
+          },
+        },
+      });
+      await waitForEvidenceLockWaiters(fixture, 1);
+      pendingExcerpt = fixture.execute({
+        jar: owner.jar,
+        query: CREATE_EXCERPT,
+        variables: {
+          input: {
+            evidenceItemId: createdEvidence.id,
+            excerpt: "Must not commit after archive",
+            checksum: `sha256:${"f".repeat(64)}`,
+          },
+        },
+      });
+      await waitForEvidenceLockWaiters(fixture, 2);
+    });
+
+    const archiveResult = await required(pendingArchive);
+    const excerptResult = await required(pendingExcerpt);
+    expect(archiveResult.body?.data).toEqual({
+      archiveEvidenceItem: {
+        code: null,
+        currentVersion: null,
+        evidenceItem: { id: createdEvidence.id, version: 2 },
+      },
+    });
+    expectGraphQLError(excerptResult, "NOT_FOUND");
+    expect(
+      await fixture.database
+        .select({ id: evidenceExcerpts.id })
+        .from(evidenceExcerpts)
+        .where(eq(evidenceExcerpts.evidenceItemId, createdEvidence.id)),
+    ).toEqual([]);
   });
 });

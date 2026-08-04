@@ -223,6 +223,21 @@ export function createEvidenceRepository(database: Database) {
         .limit(1);
       return row ?? null;
     },
+    async getEvidenceForUpdate(input: { workspaceId: string; id: string }) {
+      const [row] = await database
+        .select()
+        .from(evidenceItems)
+        .where(
+          and(
+            eq(evidenceItems.workspaceId, input.workspaceId),
+            eq(evidenceItems.id, input.id),
+            isNull(evidenceItems.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      return row ?? null;
+    },
     async getEvidenceByIds(input: {
       workspaceId: string;
       ids: readonly string[];
