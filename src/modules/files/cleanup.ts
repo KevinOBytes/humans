@@ -405,10 +405,13 @@ export function createFileCleanupService(input: {
               eq(uploadSessions.workspaceId, job.workspaceId),
               eq(uploadSessions.id, session.id),
               isNull(uploadSessions.cleanupCompletedAt),
+              sql`${uploadSessions.uploadAttemptId} IS NOT DISTINCT FROM ${session.uploadAttemptId}`,
             ),
           )
           .returning({ id: uploadSessions.id });
-        if (!completed) return;
+        if (!completed) {
+          throw new JobExecutionError("cleanup_changed", "retryable");
+        }
         await transaction.insert(auditEvents).values({
           id: newId(),
           workspaceId: job.workspaceId,

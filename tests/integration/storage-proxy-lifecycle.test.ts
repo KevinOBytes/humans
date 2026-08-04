@@ -75,6 +75,7 @@ class MemoryRedis implements RedisStore {
 
 class LifecycleS3Client {
   readonly objects = new Map<string, Uint8Array>();
+  afterDelete?: () => Promise<void>;
   beforeDelete?: () => Promise<void>;
   beforePut?: () => Promise<void>;
 
@@ -93,6 +94,7 @@ class LifecycleS3Client {
     if (command.constructor.name === "DeleteObjectCommand") {
       await this.beforeDelete?.();
       this.objects.delete(key);
+      await this.afterDelete?.();
       return {};
     }
     if (command.constructor.name === "HeadObjectCommand") {
@@ -194,6 +196,7 @@ liveDescribe("authoritative opaque upload fencing", () => {
   beforeEach(async () => {
     await fixture.reset();
     client.objects.clear();
+    client.afterDelete = undefined;
     client.beforeDelete = undefined;
     client.beforePut = undefined;
   });
@@ -583,5 +586,110 @@ liveDescribe("authoritative opaque upload fencing", () => {
         ),
       );
     expect(completionAudits).toHaveLength(2);
+  });
+
+  it("retries cleanup when a late PUT reconciles after deletion but before completion", async () => {
+    const pending = await createPending();
+    const putEntered = deferred();
+    const releasePut = deferred();
+    client.beforePut = async () => {
+      putEntered.resolve();
+      await releasePut.promise;
+    };
+    const uploading = handlers().PUT(
+      uploadRequest(pending.grant, pending.body),
+    );
+    await putEntered.promise;
+
+    const cancelled = await cancel(pending.actor, pending.session.id);
+    expect(cancelled.body?.errors).toBeUndefined();
+    const [claimed] = await fixture.database
+      .select({ uploadAttemptId: uploadSessions.uploadAttemptId })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(claimed?.uploadAttemptId).toEqual(expect.any(String));
+    await fixture.database
+      .update(uploadSessions)
+      .set({
+        uploadAttemptExpiresAt: sql`clock_timestamp() - interval '1 second'`,
+      })
+      .where(
+        and(
+          eq(uploadSessions.id, pending.session.id),
+          eq(uploadSessions.uploadAttemptId, claimed!.uploadAttemptId!),
+        ),
+      );
+
+    const objectDeleted = deferred();
+    const releaseCleanup = deferred();
+    client.afterDelete = async () => {
+      objectDeleted.resolve();
+      await releaseCleanup.promise;
+    };
+    const cleaning = runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97107");
+    await objectDeleted.promise;
+    expect(client.objects.size).toBe(0);
+
+    releasePut.resolve();
+    expect((await uploading).status).toBe(403);
+    expect(client.objects.size).toBe(1);
+    releaseCleanup.resolve();
+    await expect(cleaning).resolves.toMatchObject({
+      claimed: 1,
+      completed: 0,
+      deferred: 1,
+    });
+
+    const [deferredSession] = await fixture.database
+      .select({
+        cleanupCompletedAt: uploadSessions.cleanupCompletedAt,
+        uploadAttemptId: uploadSessions.uploadAttemptId,
+      })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(deferredSession).toMatchObject({
+      cleanupCompletedAt: null,
+      uploadAttemptId: null,
+    });
+    const [deferredJob] = await fixture.database
+      .select({ id: jobs.id, state: jobs.state })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.workspaceId, pending.actor.workspaceId),
+          eq(jobs.kind, "file_cleanup"),
+        ),
+      );
+    expect(deferredJob?.state).toBe("queued");
+
+    client.afterDelete = undefined;
+    await fixture.database
+      .update(jobs)
+      .set({ scheduledAt: new Date(0) })
+      .where(eq(jobs.id, deferredJob!.id));
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97108"),
+    ).resolves.toMatchObject({ claimed: 1, completed: 1 });
+    expect(client.objects.size).toBe(0);
+
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97109"),
+    ).resolves.toMatchObject({ claimed: 0, completed: 0 });
+    const [completedSession] = await fixture.database
+      .select({ cleanupCompletedAt: uploadSessions.cleanupCompletedAt })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(completedSession?.cleanupCompletedAt).toBeInstanceOf(Date);
+    const completionAudits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, pending.actor.workspaceId),
+          eq(auditEvents.resourceId, pending.session.id),
+          eq(auditEvents.action, "file.cleanup_completed"),
+        ),
+      );
+    expect(completionAudits).toHaveLength(1);
   });
 });
