@@ -133,6 +133,28 @@ describe("rendered Compose configuration contract", () => {
     expect(config.services.app?.environment?.AUTH_SECURE_COOKIES).toBe("true");
   });
 
+  it("passes a configured remote AI credential to the app and worker", () => {
+    const aiApiKey = `sk-compose-${syntheticSecret("ai-api-key")}`;
+    const config = render(["docker-compose.yml"], undefined, {
+      ...syntheticEnvironment,
+      AI_PROVIDER: "openai",
+      AI_BASE_URL: "https://api.openai.com/v1",
+      AI_API_KEY: aiApiKey,
+    });
+    const expectedDigest = createHash("sha256").update(aiApiKey).digest("hex");
+
+    for (const name of ["app", "worker"]) {
+      const renderedKey = config.services[name]?.environment?.AI_API_KEY;
+
+      expect(renderedKey).toBeDefined();
+      expect(
+        createHash("sha256")
+          .update(renderedKey ?? "missing-compose-ai-api-key")
+          .digest("hex"),
+      ).toBe(expectedDigest);
+    }
+  });
+
   it("applies bounded controls without making durable service roots read-only", () => {
     const config = render(["docker-compose.yml"]);
 
