@@ -22,7 +22,11 @@ import {
 
 const firstRunScript = resolve("scripts/compose-first-run.mjs");
 
-function runFirstRun(options?: { envFile?: string; failAt?: number }) {
+function runFirstRun(options?: {
+  appUrlOverride?: string;
+  envFile?: string;
+  failAt?: number;
+}) {
   const temporaryDirectory = mkdtempSync(join(tmpdir(), "humans-first-run-"));
   const binaryDirectory = join(temporaryDirectory, "bin");
   const commandLog = join(temporaryDirectory, "docker.log");
@@ -52,6 +56,7 @@ function runFirstRun(options?: { envFile?: string; failAt?: number }) {
     encoding: "utf8",
     env: {
       ...process.env,
+      NEXT_PUBLIC_APP_URL: options?.appUrlOverride,
       PATH: `${binaryDirectory}${delimiter}${process.env.PATH ?? ""}`,
       FAKE_DOCKER_COUNT: countFile,
       FAKE_DOCKER_FAIL_AT: String(options?.failAt ?? 0),
@@ -314,6 +319,21 @@ describe("isolated Compose operations contract", () => {
     expect(result.status).not.toBe(0);
     expect(commands).toEqual([]);
     expect(result.stderr).toMatch(/\.env.*required/i);
+  });
+
+  it("refuses an inherited application URL that conflicts with .env", () => {
+    const envFileUrl = "https://env-file.example.test";
+    const inheritedUrl = "https://shell-override.example.test";
+    const { commands, result } = runFirstRun({
+      appUrlOverride: inheritedUrl,
+      envFile: `NEXT_PUBLIC_APP_URL=${envFileUrl}\n`,
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(commands).toEqual([]);
+    expect(result.stderr).toMatch(/NEXT_PUBLIC_APP_URL.*conflicts.*\.env/i);
+    expect(`${result.stdout}${result.stderr}`).not.toContain(envFileUrl);
+    expect(`${result.stdout}${result.stderr}`).not.toContain(inheritedUrl);
   });
 
   it("stops at the first failed Compose command and propagates its status", () => {

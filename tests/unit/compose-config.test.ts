@@ -106,6 +106,9 @@ describe("rendered Compose configuration contract", () => {
     expect(config.services.ollama).toBeUndefined();
     expect(config.services.app?.environment?.AI_PROVIDER).toBe("ollama");
     expect(config.services.app?.environment?.AUTH_SECURE_COOKIES).toBe("true");
+    expect(config.services.app?.environment?.NEXT_PUBLIC_APP_URL).toBe(
+      "http://localhost:3000",
+    );
     expect(config.services.app?.depends_on).toMatchObject({
       migrate: { condition: "service_completed_successfully" },
       redis: { condition: "service_healthy" },

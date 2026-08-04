@@ -11,6 +11,23 @@ if (!existsSync(environmentPath)) {
   process.exit(1);
 }
 
+function parsePublicAppUrl(value, source) {
+  try {
+    const url = new URL(value);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password
+    ) {
+      throw new Error("unsupported public URL");
+    }
+    return url.toString().replace(/\/$/u, "");
+  } catch {
+    console.error(`${source} must be a valid HTTP(S) URL.`);
+    process.exit(1);
+  }
+}
+
 function readPublicAppUrl(contents) {
   const assignment = contents
     .split(/\r?\n/u)
@@ -26,23 +43,22 @@ function readPublicAppUrl(contents) {
       ? rawValue.slice(1, -1)
       : rawValue;
 
-  try {
-    const url = new URL(value);
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      url.username ||
-      url.password
-    ) {
-      throw new Error("unsupported public URL");
-    }
-    return url.toString().replace(/\/$/u, "");
-  } catch {
-    console.error("NEXT_PUBLIC_APP_URL in .env must be a valid HTTP(S) URL.");
-    process.exit(1);
-  }
+  return parsePublicAppUrl(value, "NEXT_PUBLIC_APP_URL in .env");
 }
 
 const publicAppUrl = readPublicAppUrl(readFileSync(environmentPath, "utf8"));
+if (
+  process.env.NEXT_PUBLIC_APP_URL &&
+  parsePublicAppUrl(
+    process.env.NEXT_PUBLIC_APP_URL,
+    "Inherited NEXT_PUBLIC_APP_URL",
+  ) !== publicAppUrl
+) {
+  console.error(
+    "Inherited NEXT_PUBLIC_APP_URL conflicts with .env; unset the shell override and retry.",
+  );
+  process.exit(1);
+}
 const commands = [
   ["compose", "config", "--quiet"],
   ["compose", "up", "--build", "--detach", "--wait", "app", "worker"],
