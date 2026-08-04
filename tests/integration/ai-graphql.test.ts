@@ -324,6 +324,36 @@ liveDescribe("canonical AI analyst GraphQL API", () => {
     expectGraphQLError(await cancel(credentials, runId), "FORBIDDEN");
   });
 
+  it("does not add analysis:read to start or cancel", async () => {
+    const owner = await fixture.createSessionActor();
+    const key = await fixture.provisionKey(owner, {
+      analysis: ["create", "run"],
+    });
+    const credentials: Credentials = { apiKey: key.key, origin: null };
+    const started = await start(credentials, {
+      idempotencyKey: `graphql-exact-start-${newId()}`,
+      question: "Start with only the two mutation permissions.",
+    });
+    expect(started.body?.errors).toBeUndefined();
+    expect(runFrom(started)).toMatchObject({ state: "PENDING" });
+    expectGraphQLError(
+      await read(credentials, runFrom(started).id),
+      "FORBIDDEN",
+    );
+
+    await fixture.database
+      .update(apiKeys)
+      .set({ permissions: JSON.stringify({ analysis: ["cancel"] }) })
+      .where(eq(apiKeys.id, key.id));
+    const cancelled = await cancel(credentials, runFrom(started).id);
+    expect(cancelled.body?.errors).toBeUndefined();
+    expect(runFrom(cancelled)).toMatchObject({ state: "CANCELLED" });
+    expectGraphQLError(
+      await read(credentials, runFrom(cancelled).id),
+      "FORBIDDEN",
+    );
+  });
+
   it("returns the same non-disclosing NOT_FOUND envelope across principals and workspaces", async () => {
     const owner = await fixture.createSessionActor();
     const otherWorkspace = await fixture.createSessionActor();

@@ -302,11 +302,14 @@ export function createAiAnalysisService(
     hmacKey: runtime.hmacKey,
   };
 
-  async function readAiRun(id: string): Promise<AiRun | null> {
+  async function readOwnedAiRun(
+    id: string,
+    requiredPermissions: readonly string[],
+  ): Promise<AiRun | null> {
     const runId = validateRunId(id);
     return runResearchTransaction(
       context,
-      { requiredPermissions: ["analysis:read"] },
+      { requiredPermissions },
       async (scopedContext) => {
         const run = await createAiRepository(
           scopedContext.database,
@@ -321,13 +324,16 @@ export function createAiAnalysisService(
     );
   }
 
+  async function readAiRun(id: string): Promise<AiRun | null> {
+    return readOwnedAiRun(id, ["analysis:read"]);
+  }
+
   return {
     async startAiAnalysis(input: StartAiAnalysisInput): Promise<AiRun> {
       const normalized = normalizeStartInput(input);
       const requiredPermissions = [
         "analysis:create",
         "analysis:run",
-        "analysis:read",
         ...(normalized.scope.personIds.length ? ["person:read"] : []),
         ...(normalized.scope.evidenceIds.length ? ["evidence:read"] : []),
       ];
@@ -362,7 +368,10 @@ export function createAiAnalysisService(
           });
         },
       );
-      const run = await readAiRun(String(result.responseReference.runId));
+      const run = await readOwnedAiRun(
+        String(result.responseReference.runId),
+        requiredPermissions,
+      );
       if (!run) {
         throw createGraphQLError(
           "NOT_FOUND",
@@ -378,7 +387,7 @@ export function createAiAnalysisService(
       const runId = validateRunId(id);
       return runResearchTransaction(
         context,
-        { requiredPermissions: ["analysis:cancel", "analysis:read"] },
+        { requiredPermissions: ["analysis:cancel"] },
         async (scopedContext) => {
           const repository = createAiRepository(
             scopedContext.database,
