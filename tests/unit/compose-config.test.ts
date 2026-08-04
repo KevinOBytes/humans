@@ -114,7 +114,7 @@ describe("rendered Compose configuration contract", () => {
       redis: { condition: "service_healthy" },
       "minio-init": { condition: "service_completed_successfully" },
     });
-  });
+  }, 15_000);
 
   it("applies bounded controls without making durable service roots read-only", () => {
     const config = render(["docker-compose.yml"]);

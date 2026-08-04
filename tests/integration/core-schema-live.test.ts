@@ -916,7 +916,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
     await expect(insertGrant(first.memberId)).resolves.toBeDefined();
   });
 
-  it("matches selections to the fact namespace and field key", async () => {
+  it("HUM-FR-009 matches selections to the fact namespace and field key", async () => {
     const fixture = await seedWorkspace("selection");
     const firstDefinition = await seedDefinition(
       fixture,
@@ -985,7 +985,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
     ).resolves.toBeDefined();
   });
 
-  it("accepts every approved fact value type", async () => {
+  it("HUM-FR-012 accepts every approved fact value type", async () => {
     const fixture = await seedWorkspace("typed-positive");
 
     for (const type of factValueTypes) {
@@ -1001,7 +1001,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
     }
   });
 
-  it("rejects an invalid representation for every fact value type", async () => {
+  it("HUM-FR-012 rejects an invalid representation for every fact value type", async () => {
     const fixture = await seedWorkspace("typed-negative");
 
     for (const type of factValueTypes) {
@@ -1017,7 +1017,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
     }
   });
 
-  it("permits unit only for duration and quantity", async () => {
+  it("HUM-FR-012 permits unit only for duration and quantity", async () => {
     const fixture = await seedWorkspace("typed-unit");
 
     for (const type of factValueTypes.filter(
@@ -1047,7 +1047,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
     }
   });
 
-  it("keeps fact revisions insert-only and prevents parent hard deletion", async () => {
+  it("HUM-FR-013 keeps fact revisions insert-only and prevents parent hard deletion", async () => {
     const fixture = await seedWorkspace("revision");
     const definition = await seedDefinition(fixture, "text");
     const factId = await insertFact({
@@ -1087,7 +1087,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
     ).rejects.toMatchObject({ code: "23001" });
   });
 
-  it("rejects immediate, two-node, and three-node supersession cycles", async () => {
+  it("HUM-FR-013 rejects immediate, two-node, and three-node supersession cycles", async () => {
     const fixture = await seedWorkspace("supersession");
     const definition = await seedDefinition(fixture, "text");
     const selfId = newId();
@@ -1132,7 +1132,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
     ).rejects.toMatchObject({ code: "23514" });
   });
 
-  it("serializes concurrent opposite supersession updates", async () => {
+  it("HUM-FR-013 serializes concurrent opposite supersession updates", async () => {
     const fixture = await seedWorkspace("supersession-concurrent");
     const definition = await seedDefinition(fixture, "text");
     const firstId = await insertFact({
