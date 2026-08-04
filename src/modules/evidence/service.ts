@@ -601,6 +601,63 @@ export function createEvidenceService(context: ResearchServiceContext) {
         ? { resource: row, issues: [], code: null }
         : conflict(current.version);
     },
+    async archiveSource(input: {
+      id: string;
+      expectedVersion: number;
+    }): Promise<MutationOutcome<SourceRow>> {
+      const current = await requireSource(input.id);
+      const issues = versionIssue(input.expectedVersion);
+      if (issues.length) return invalid(issues);
+      const row = await withResearchWriteTransaction(context, async (tx) => {
+        const scoped = createEvidenceRepository(
+          tx as unknown as typeof context.database,
+        );
+        if (
+          await scoped.hasActiveEvidenceForSource({
+            workspaceId: context.workspaceId,
+            sourceId: current.id,
+          })
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The source still has active evidence items.",
+          );
+        }
+        const archived = await scoped.archiveSource({
+          workspaceId: context.workspaceId,
+          id: current.id,
+          expectedVersion: input.expectedVersion,
+          patch: {
+            deletedAt: new Date(),
+            deletedBy: context.actor.principalId,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          },
+        });
+        if (!archived) return null;
+        await audit.write(tx as unknown as typeof context.database, {
+          action: "source.archive",
+          resourceKind: "source",
+          resourceId: archived.id,
+          changedFields: ["deletedAt"],
+          sensitivity: archived.sensitivity,
+          metadata: { version: archived.version },
+        });
+        await applySearchIndexMaintenance(context, tx, [
+          {
+            action: "remove",
+            sourceId: archived.id,
+            sourceKind: "source",
+            sourceVersion: archived.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return archived;
+      });
+      return row
+        ? { resource: row, issues: [], code: null }
+        : conflict(current.version);
+    },
     async getEvidence(id: string) {
       const row = await repository.getEvidence({
         workspaceId: context.workspaceId,
@@ -853,6 +910,52 @@ export function createEvidenceService(context: ResearchServiceContext) {
           },
         ]);
         return updated;
+      });
+      return row
+        ? { resource: row, issues: [], code: null }
+        : conflict(current.version);
+    },
+    async archiveEvidence(input: {
+      id: string;
+      expectedVersion: number;
+    }): Promise<MutationOutcome<EvidenceItemRow>> {
+      const current = await requireEvidence(input.id);
+      const issues = versionIssue(input.expectedVersion);
+      if (issues.length) return invalid(issues);
+      const row = await withResearchWriteTransaction(context, async (tx) => {
+        const scoped = createEvidenceRepository(
+          tx as unknown as typeof context.database,
+        );
+        const archived = await scoped.updateEvidence({
+          workspaceId: context.workspaceId,
+          id: current.id,
+          expectedVersion: input.expectedVersion,
+          patch: {
+            deletedAt: new Date(),
+            deletedBy: context.actor.principalId,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          },
+        });
+        if (!archived) return null;
+        await audit.write(tx as unknown as typeof context.database, {
+          action: "evidence.archive",
+          resourceKind: "evidence",
+          resourceId: archived.id,
+          changedFields: ["deletedAt"],
+          sensitivity: archived.sensitivity,
+          metadata: { version: archived.version },
+        });
+        await applySearchIndexMaintenance(context, tx, [
+          {
+            action: "remove",
+            sourceId: archived.id,
+            sourceKind: "evidence_item",
+            sourceVersion: archived.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return archived;
       });
       return row
         ? { resource: row, issues: [], code: null }

@@ -146,6 +146,49 @@ export function createEvidenceRepository(database: Database) {
         .returning();
       return row ?? null;
     },
+    async hasActiveEvidenceForSource(input: {
+      workspaceId: string;
+      sourceId: string;
+    }) {
+      const [row] = await database
+        .select({ id: evidenceItems.id })
+        .from(evidenceItems)
+        .where(
+          and(
+            eq(evidenceItems.workspaceId, input.workspaceId),
+            eq(evidenceItems.sourceId, input.sourceId),
+            isNull(evidenceItems.deletedAt),
+          ),
+        )
+        .limit(1);
+      return Boolean(row);
+    },
+    async archiveSource(input: {
+      workspaceId: string;
+      id: string;
+      expectedVersion: number;
+      patch: Partial<typeof sources.$inferInsert>;
+    }) {
+      const [row] = await database
+        .update(sources)
+        .set({ ...input.patch, version: sql`${sources.version} + 1` })
+        .where(
+          and(
+            eq(sources.workspaceId, input.workspaceId),
+            eq(sources.id, input.id),
+            eq(sources.version, input.expectedVersion),
+            isNull(sources.deletedAt),
+            sql`NOT EXISTS (
+              SELECT 1 FROM ${evidenceItems}
+              WHERE ${evidenceItems.workspaceId} = ${input.workspaceId}::uuid
+                AND ${evidenceItems.sourceId} = ${sources.id}
+                AND ${evidenceItems.deletedAt} IS NULL
+            )`,
+          ),
+        )
+        .returning();
+      return row ?? null;
+    },
     async getEvidence(input: {
       workspaceId: string;
       id: string;
