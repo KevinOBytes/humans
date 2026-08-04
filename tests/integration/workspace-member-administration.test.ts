@@ -79,11 +79,17 @@ const CANCEL = /* GraphQL */ `
 
 liveDescribe("workspace member administration transactions", () => {
   let fixture: ResearchFixture;
+  let fixtureInitialized = false;
   beforeAll(() => {
     fixture = new ResearchFixture();
+    fixtureInitialized = true;
   });
   beforeEach(async () => fixture.reset());
-  afterAll(async () => fixture.close());
+  afterAll(async () => {
+    if (fixtureInitialized) {
+      await fixture.close();
+    }
+  });
 
   it("serializes concurrent normalized invitations and queues one encrypted intent", async () => {
     const owner = await fixture.createActor();
