@@ -209,6 +209,11 @@ fresh database with an integrity count, and an active claimed-job drain that
 verifies durable retry state, stale-completion fencing, heartbeat removal, and
 exit within the Compose grace period.
 
+Docker keeps the purpose-specific upload limits exercised by that application
+path: 50 MiB for evidence, 25 MiB for CSV imports, and 10 MiB for JSON imports.
+Operators deploying the opaque storage route on Vercel should expect the UI and
+upload-session API to cap every purpose at 4 MiB instead.
+
 The image verifier checks the pinned-base labels, architecture, Node version,
 direct PID-1 command, nonroot/read-only behavior, cold imports for migration,
 bootstrap, seed, and worker launchers, required assets, bounded symlinks, and the absence

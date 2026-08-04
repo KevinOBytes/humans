@@ -253,6 +253,7 @@ function createServices(input: {
         workspaceId: input.context.workspaceId,
       },
       input.fileRuntime ?? {
+        deploymentMode: "docker",
         storageBucket: "unconfigured",
         storageProvider: "s3",
       },

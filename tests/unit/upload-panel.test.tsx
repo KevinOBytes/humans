@@ -21,6 +21,22 @@ describe("UploadPanel completion state", () => {
     vi.unstubAllGlobals();
   });
 
+  it("states and enforces the configured upload ceiling before GraphQL", async () => {
+    const user = userEvent.setup();
+    const maxBytes = 4 * 1024 * 1024;
+    render(<UploadPanel purpose="EVIDENCE" maxBytes={maxBytes} />);
+
+    expect(screen.getByText(/up to 4 MiB/i)).toBeVisible();
+    const oversized = new File(["x"], "evidence.txt", {
+      type: "text/plain",
+    });
+    Object.defineProperty(oversized, "size", { value: maxBytes + 1 });
+    await user.upload(screen.getByLabelText("Choose file"), oversized);
+
+    expect(await screen.findByText(/no larger than 4 MiB/i)).toBeVisible();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("keeps a scan-error upload quarantined and does not expose it as completed", async () => {
     const user = userEvent.setup();
     const onCompleted = vi.fn();
@@ -58,7 +74,13 @@ describe("UploadPanel completion state", () => {
       .mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", upload);
 
-    render(<UploadPanel purpose="CSV_IMPORT" onCompleted={onCompleted} />);
+    render(
+      <UploadPanel
+        purpose="CSV_IMPORT"
+        maxBytes={25 * 1024 * 1024}
+        onCompleted={onCompleted}
+      />,
+    );
     await user.upload(
       screen.getByLabelText("Choose file"),
       new File(["name\nAda\n"], "people.csv", { type: "text/csv" }),

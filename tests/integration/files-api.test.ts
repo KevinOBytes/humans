@@ -145,6 +145,7 @@ async function fileServiceFor(
       workspaceId: actor.workspaceId,
     },
     {
+      deploymentMode: "docker",
       encryptionKey: "31".repeat(32),
       objectStore: store,
       storageBucket: "private",
@@ -193,6 +194,7 @@ async function apiKeyFileServiceFor(input: {
       workspaceId: input.workspaceId,
     },
     {
+      deploymentMode: "docker",
       encryptionKey: "31".repeat(32),
       objectStore: input.store,
       storageBucket: "private",
@@ -246,6 +248,7 @@ liveDescribe("file service", () => {
         workspaceId: actor.workspaceId,
       },
       {
+        deploymentMode: "docker",
         encryptionKey: "31".repeat(32),
         objectStore: store,
         storageBucket: "private",
@@ -510,6 +513,7 @@ liveDescribe("file service", () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({
       fileRuntime: {
+        deploymentMode: "docker",
         encryptionKey: "31".repeat(32),
         objectStore: graphqlStore,
         storageBucket: "private",
@@ -644,10 +648,154 @@ liveDescribe("file service", () => {
     }
   });
 
+  it("accepts exactly 4 MiB and rejects 4 MiB plus one in Vercel mode without side effects", async () => {
+    const graphqlStore = new MemoryObjectStore();
+    const graphqlFixture = new ResearchFixture({
+      fileRuntime: {
+        deploymentMode: "vercel",
+        encryptionKey: "31".repeat(32),
+        objectStore: graphqlStore,
+        storageBucket: "private",
+        storageProvider: "r2",
+      },
+    });
+    try {
+      await graphqlFixture.reset();
+      const actor = await graphqlFixture.createActor("owner");
+      const create = (byteSize: number) =>
+        graphqlFixture.execute({
+          jar: actor.jar,
+          query: /* GraphQL */ `
+            mutation CreateUpload($input: CreateUploadSessionInput!) {
+              createUploadSession(input: $input) {
+                session {
+                  id
+                  state
+                }
+                grant {
+                  method
+                  contentLength
+                }
+              }
+            }
+          `,
+          variables: {
+            input: {
+              byteSize,
+              checksumSha256: "ab".repeat(32),
+              claimedMediaType: "text/plain",
+              originalName: "hosted-evidence.txt",
+              purpose: "EVIDENCE",
+            },
+          },
+        });
+
+      const accepted = await create(4 * 1024 * 1024);
+      expect(accepted.body?.errors).toBeUndefined();
+      expect(accepted.body?.data?.createUploadSession).toMatchObject({
+        session: { state: "PENDING" },
+        grant: { method: "PUT", contentLength: 4 * 1024 * 1024 },
+      });
+
+      const sideEffects = async () => {
+        const [sessions, queuedJobs, audits] = await Promise.all([
+          graphqlFixture.database
+            .select({ id: uploadSessions.id })
+            .from(uploadSessions)
+            .where(eq(uploadSessions.workspaceId, actor.workspaceId)),
+          graphqlFixture.database
+            .select({ id: jobs.id })
+            .from(jobs)
+            .where(eq(jobs.workspaceId, actor.workspaceId)),
+          graphqlFixture.database
+            .select({ id: auditEvents.id })
+            .from(auditEvents)
+            .where(eq(auditEvents.workspaceId, actor.workspaceId)),
+        ]);
+        return {
+          auditCount: audits.length,
+          grantCount: graphqlStore.uploadCalls,
+          jobCount: queuedJobs.length,
+          sessionCount: sessions.length,
+        };
+      };
+      const before = await sideEffects();
+      const rejected = await create(4 * 1024 * 1024 + 1);
+      expect(rejected.body?.errors?.[0]).toMatchObject({
+        extensions: { code: "VALIDATION_FAILED" },
+        message: "The upload request is invalid.",
+      });
+      expect(JSON.stringify(rejected.body)).not.toMatch(
+        /vercel|provider|proxy|function body/iu,
+      );
+      await expect(sideEffects()).resolves.toEqual(before);
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
+  it("retains the larger purpose-specific upload limits in Docker mode", async () => {
+    const graphqlStore = new MemoryObjectStore();
+    const graphqlFixture = new ResearchFixture({
+      fileRuntime: {
+        deploymentMode: "docker",
+        encryptionKey: "31".repeat(32),
+        objectStore: graphqlStore,
+        storageBucket: "private",
+        storageProvider: "minio",
+      },
+    });
+    try {
+      await graphqlFixture.reset();
+      const actor = await graphqlFixture.createActor("owner");
+      for (const [purpose, byteSize, originalName, claimedMediaType] of [
+        ["EVIDENCE", 50 * 1024 * 1024, "evidence.txt", "text/plain"],
+        ["CSV_IMPORT", 25 * 1024 * 1024, "people.csv", "text/csv"],
+        ["JSON_IMPORT", 10 * 1024 * 1024, "people.json", "application/json"],
+      ] as const) {
+        const created = await graphqlFixture.execute({
+          jar: actor.jar,
+          query: /* GraphQL */ `
+            mutation CreateUpload($input: CreateUploadSessionInput!) {
+              createUploadSession(input: $input) {
+                session {
+                  id
+                  state
+                }
+                grant {
+                  method
+                  contentLength
+                }
+              }
+            }
+          `,
+          variables: {
+            input: {
+              byteSize,
+              checksumSha256: "cd".repeat(32),
+              claimedMediaType,
+              originalName,
+              purpose,
+            },
+          },
+        });
+        expect(created.body?.errors).toBeUndefined();
+        expect(created.body?.data?.createUploadSession).toMatchObject({
+          session: { state: "PENDING" },
+          grant: { method: "PUT", contentLength: byteSize },
+        });
+      }
+      expect(graphqlStore.uploadCalls).toBe(3);
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
   it("exposes owner-scoped upload recovery and archive operations through the real GraphQL context", async () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({
       fileRuntime: {
+        deploymentMode: "docker",
         encryptionKey: "31".repeat(32),
         objectStore: graphqlStore,
         storageBucket: "private",
@@ -942,6 +1090,7 @@ liveDescribe("file service", () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({
       fileRuntime: {
+        deploymentMode: "docker",
         encryptionKey: "31".repeat(32),
         objectStore: graphqlStore,
         storageBucket: "private",
@@ -1046,6 +1195,7 @@ liveDescribe("file service", () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({
       fileRuntime: {
+        deploymentMode: "docker",
         encryptionKey: "31".repeat(32),
         objectStore: graphqlStore,
         storageBucket: "private",
@@ -1138,6 +1288,7 @@ liveDescribe("file service", () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({
       fileRuntime: {
+        deploymentMode: "docker",
         encryptionKey: "31".repeat(32),
         objectStore: graphqlStore,
         storageBucket: "private",
@@ -1456,6 +1607,7 @@ liveDescribe("file service", () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({
       fileRuntime: {
+        deploymentMode: "docker",
         encryptionKey: "31".repeat(32),
         objectStore: graphqlStore,
         storageBucket: "private",

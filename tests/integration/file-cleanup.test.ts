@@ -269,6 +269,7 @@ liveDescribe("durable file cleanup", () => {
         workspaceId: actor.workspaceId,
       },
       {
+        deploymentMode: "docker",
         encryptionKey,
         objectStore: store,
         storageBucket: "private",

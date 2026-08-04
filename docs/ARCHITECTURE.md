@@ -132,6 +132,15 @@ session against completion, atomically changes only `pending` to
 durable cleanup job to the present, and writes a redacted audit event before a
 best-effort exact-key delete.
 
+The opaque route also defines the hosted upload envelope. In `vercel` mode,
+upload-session creation rejects every purpose above 4 MiB before storage
+configuration reads, rate limiting, persistence, grants, jobs, or audits. The
+response remains the stable validation error and exposes no provider or hosting
+detail. In `docker` mode, the purpose limits remain 50 MiB for evidence, 25 MiB
+for CSV imports, and 10 MiB for JSON imports. Server-rendered upload controls use
+the same deployment-aware limit function, display the active limit, and reject
+oversized local selections before hashing or GraphQL execution.
+
 Files expose only safe variant metadata through workspace- and visibility-
 scoped services. Provider, bucket, and object keys remain repository/worker
 details. Archival requires `file:delete`, revalidates live user or API-key

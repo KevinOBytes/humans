@@ -27,6 +27,8 @@ import {
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
 import { readOpaqueCursor } from "@/lib/research-pagination";
+import { getServerEnv } from "@/lib/env/server";
+import { uploadMaxBytesForDeployment } from "@/modules/files/limits";
 
 export default async function EvidencePage({
   searchParams,
@@ -39,6 +41,9 @@ export default async function EvidencePage({
   const after = readOpaqueCursor(params.after);
   const canCreate = context.viewer.permissions.includes("file:create");
   const canDelete = context.viewer.permissions.includes("file:delete");
+  const uploadMaxBytes = canCreate
+    ? uploadMaxBytesForDeployment("EVIDENCE", getServerEnv().DEPLOYMENT_MODE)
+    : null;
   const [data, pendingData] = await Promise.all([
     executeServerGraphQL(EvidenceFilesDocument, {
       first: 20,
@@ -82,7 +87,9 @@ export default async function EvidencePage({
         </p>
       </header>
 
-      {canCreate ? <UploadPanel purpose="EVIDENCE" /> : null}
+      {uploadMaxBytes ? (
+        <UploadPanel purpose="EVIDENCE" maxBytes={uploadMaxBytes} />
+      ) : null}
 
       {canCreate ? (
         <PendingUploadRecoveryList sessions={pendingUploads} />

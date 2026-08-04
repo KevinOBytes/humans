@@ -10,10 +10,8 @@ import type {
   UploadValidationInput,
   ValidatedUpload,
 } from "./types";
+import { uploadPurposeMaxBytes } from "./limits";
 
-export const EVIDENCE_MAX_BYTES = 50 * 1024 * 1024;
-export const CSV_IMPORT_MAX_BYTES = 25 * 1024 * 1024;
-export const JSON_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 export const UPLOAD_COMPLETION_CAPACITY = 50;
 const MIB = 1024 * 1024;
 
@@ -48,13 +46,6 @@ function invalid(message: string): never {
   throw new TypeError(message);
 }
 
-export function uploadPurposeMaxBytes(purpose: UploadPurpose): number {
-  if (purpose === "EVIDENCE") return EVIDENCE_MAX_BYTES;
-  if (purpose === "CSV_IMPORT") return CSV_IMPORT_MAX_BYTES;
-  if (purpose === "JSON_IMPORT") return JSON_IMPORT_MAX_BYTES;
-  return invalid("Invalid upload purpose");
-}
-
 export function normalizeUploadName(value: string): string {
   if (typeof value !== "string") return invalid("Invalid upload name");
   const normalized = value.normalize("NFKC").trim();
@@ -81,11 +72,14 @@ function extension(name: string): string {
 
 export function validateUploadRequest(
   input: UploadValidationInput,
+  options: { maxBytes?: number } = {},
 ): ValidatedUpload {
   if (!Number.isSafeInteger(input.byteSize) || input.byteSize < 1) {
     return invalid("Invalid upload size");
   }
-  if (input.byteSize > uploadPurposeMaxBytes(input.purpose)) {
+  if (
+    input.byteSize > (options.maxBytes ?? uploadPurposeMaxBytes(input.purpose))
+  ) {
     return invalid("Upload size exceeds the purpose limit");
   }
   if (!/^[0-9a-f]{64}$/u.test(input.checksumSha256)) {

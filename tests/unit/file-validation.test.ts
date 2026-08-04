@@ -7,10 +7,32 @@ import {
   validateUploadContent,
   validateUploadRequest,
 } from "@/modules/files/validation";
+import {
+  HOSTED_PROXY_UPLOAD_MAX_BYTES,
+  uploadMaxBytesForDeployment,
+} from "@/modules/files/limits";
 
 const checksum = "a".repeat(64);
 
 describe("file upload validation", () => {
+  it("caps Vercel proxy uploads at exactly 4 MiB without narrowing Docker purpose limits", () => {
+    expect(HOSTED_PROXY_UPLOAD_MAX_BYTES).toBe(4 * 1024 * 1024);
+    for (const purpose of ["EVIDENCE", "CSV_IMPORT", "JSON_IMPORT"] as const) {
+      expect(uploadMaxBytesForDeployment(purpose, "vercel")).toBe(
+        HOSTED_PROXY_UPLOAD_MAX_BYTES,
+      );
+    }
+    expect(uploadMaxBytesForDeployment("EVIDENCE", "docker")).toBe(
+      50 * 1024 * 1024,
+    );
+    expect(uploadMaxBytesForDeployment("CSV_IMPORT", "docker")).toBe(
+      25 * 1024 * 1024,
+    );
+    expect(uploadMaxBytesForDeployment("JSON_IMPORT", "docker")).toBe(
+      10 * 1024 * 1024,
+    );
+  });
+
   it("normalizes a safe display name and enforces purpose limits", () => {
     expect(
       validateUploadRequest({

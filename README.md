@@ -113,6 +113,12 @@ its `/api/graphql` endpoint, uploads through the returned opaque grant, and
 waits for the running worker to delete the primary and seeded variant while
 retaining a sibling sentinel.
 
+Because private bytes pass through that application route, Vercel deployments
+accept uploads up to 4 MiB for evidence, CSV, and JSON. The limit is enforced
+when an upload session is created and is shown beside the file picker. Docker
+deployments retain the purpose-specific limits: 50 MiB for evidence, 25 MiB for
+CSV imports, and 10 MiB for JSON imports.
+
 ## Search and reproducible graph analysis
 
 The current deterministic research slice is exposed entirely through generated GraphQL operations:

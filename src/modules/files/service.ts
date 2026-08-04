@@ -32,10 +32,10 @@ import {
   assertFileTransition,
   UPLOAD_COMPLETION_CAPACITY,
   uploadCompletionCost,
-  uploadPurposeMaxBytes,
   validateUploadRequest,
   verifyUploadStream,
 } from "./validation";
+import { uploadMaxBytesForDeployment, type FileDeploymentMode } from "./limits";
 
 const GRANT_TTL_MS = 5 * 60_000;
 const VERIFY_TIMEOUT_MS = 60_000;
@@ -47,6 +47,7 @@ export type FileServiceContext = ResearchServiceContext & {
 };
 
 export type FileServiceRuntime = {
+  deploymentMode: FileDeploymentMode;
   objectStore?: ObjectStore;
   scanner?: FileScanner;
   storageBucket: string;
@@ -250,7 +251,12 @@ export function createFilesService(
       if (!store) return providerUnavailable();
       let validated: ReturnType<typeof validateUploadRequest>;
       try {
-        validated = validateUploadRequest(input);
+        validated = validateUploadRequest(input, {
+          maxBytes: uploadMaxBytesForDeployment(
+            input.purpose,
+            runtime.deploymentMode,
+          ),
+        });
       } catch {
         throw createGraphQLError(
           "VALIDATION_FAILED",
@@ -1070,7 +1076,7 @@ export function createFilesService(
     },
 
     maxBytesForPurpose(purpose: UploadPurpose): number {
-      return uploadPurposeMaxBytes(purpose);
+      return uploadMaxBytesForDeployment(purpose, runtime.deploymentMode);
     },
   };
 }

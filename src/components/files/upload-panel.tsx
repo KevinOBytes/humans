@@ -60,9 +60,11 @@ function firstIssue(
 }
 
 export function UploadPanel({
+  maxBytes,
   onCompleted,
   purpose,
 }: {
+  maxBytes: number;
   onCompleted?(file: FileWorkspaceItemFragment): void;
   purpose: UploadPurpose;
 }) {
@@ -72,6 +74,12 @@ export function UploadPanel({
   const [status, setStatus] = useState<string | null>(null);
 
   async function uploadFile(file: File) {
+    const maxMib = maxBytes / (1024 * 1024);
+    if (file.size > maxBytes) {
+      setStatus(`Choose a file no larger than ${maxMib} MiB.`);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setBusy(true);
     setStatus("Preparing secure upload…");
     try {
@@ -149,7 +157,8 @@ export function UploadPanel({
             {purpose === "EVIDENCE" ? "Upload evidence" : "Upload import data"}
           </h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Files are checksum-verified and remain private to this workspace.
+            Files are checksum-verified, private to this workspace, and limited
+            to {maxBytes / (1024 * 1024)} MiB.
           </p>
         </div>
       </div>
@@ -169,7 +178,8 @@ export function UploadPanel({
         }}
       />
       <p className="text-muted-foreground mt-3 text-xs" aria-live="polite">
-        {status ?? "Select one supported file to begin."}
+        {status ??
+          `Select one supported file up to ${maxBytes / (1024 * 1024)} MiB.`}
       </p>
     </section>
   );
