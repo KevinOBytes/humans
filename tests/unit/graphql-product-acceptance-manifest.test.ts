@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 type MatrixDomain = {
   domain: string;
+  evidence: string[];
   generatedOperations: string[];
 };
 
@@ -31,12 +32,7 @@ const requiredDomains = [
   "ai-analysis",
 ];
 
-const expectedRemainingDomains = [
-  "contacts-and-locations",
-  "settings-members-api-keys-audit",
-  "dashboard",
-  "graph-analysis",
-];
+const expectedRemainingDomains: string[] = [];
 
 const requiredContracts = [
   "strict-scalars",
@@ -59,7 +55,7 @@ describe("whole-product GraphQL acceptance manifest", () => {
       "utf8",
     );
 
-    expect(matrix.version).toBe(1);
+    expect(matrix.version).toBe(2);
     expect(matrix.inventorySource).toBe(
       "docs/REQUIREMENTS.md HUM-FR-007 and HUM-FR-025",
     );
@@ -78,9 +74,35 @@ describe("whole-product GraphQL acceptance manifest", () => {
     expect(Object.keys(matrix.contracts)).toEqual(requiredContracts);
 
     for (const entry of matrix.domains) {
+      expect(entry.evidence.length).toBeGreaterThan(0);
       expect(entry.generatedOperations.length).toBeGreaterThan(0);
+      const evidenceSources = await Promise.all(
+        entry.evidence.map((evidence) => readFile(evidence, "utf8")),
+      );
       for (const operation of entry.generatedOperations) {
         expect(generated).toContain(`export const ${operation}Document`);
+        expect(
+          evidenceSources.some((source) => {
+            const operationThenDocument = new RegExp(
+              `operationName:\\s*["']${operation}["'][\\s\\S]{0,500}query:\\s*${operation}Document`,
+              "u",
+            );
+            const documentThenOperation = new RegExp(
+              `query:\\s*${operation}Document[\\s\\S]{0,500}operationName:\\s*["']${operation}["']`,
+              "u",
+            );
+            const wrappedRun = new RegExp(
+              `name:\\s*["']${operation}["'][\\s\\S]{0,500}query:\\s*${operation}Document`,
+              "u",
+            );
+            return (
+              operationThenDocument.test(source) ||
+              documentThenOperation.test(source) ||
+              wrappedRun.test(source)
+            );
+          }),
+          `${entry.domain}:${operation} must be executed by its evidence suite`,
+        ).toBe(true);
       }
     }
 
