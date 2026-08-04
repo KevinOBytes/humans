@@ -28,6 +28,7 @@ export function AppShell({
   viewer,
 }: AppShellProps) {
   const canCreatePerson = viewer.permissions.includes("person:create");
+  const canViewAnalyst = viewer.permissions.includes("analysis:read");
   const canViewEvidence = viewer.permissions.includes("file:read");
   const canViewImports = viewer.permissions.includes("import:read");
   const canViewSearch = viewer.permissions.includes("search:read");
@@ -53,6 +54,7 @@ export function AppShell({
           </div>
           <div className="mt-8">
             <NavigationLinks
+              canViewAnalyst={canViewAnalyst}
               canCreatePerson={canCreatePerson}
               canViewEvidence={canViewEvidence}
               canViewGraph={canViewGraph}
@@ -80,6 +82,7 @@ export function AppShell({
             <div className="flex min-w-0 items-center gap-2 lg:hidden">
               <MobileNavigation
                 activeWorkspace={activeWorkspace}
+                canViewAnalyst={canViewAnalyst}
                 canCreatePerson={canCreatePerson}
                 canViewEvidence={canViewEvidence}
                 canViewGraph={canViewGraph}
@@ -100,6 +103,7 @@ export function AppShell({
             <div className="flex items-center gap-1 sm:gap-2">
               <CommandMenu
                 canCreatePerson={canCreatePerson}
+                canViewAnalyst={canViewAnalyst}
                 canViewEvidence={canViewEvidence}
                 canViewGraph={canViewGraph}
                 canViewImports={canViewImports}
