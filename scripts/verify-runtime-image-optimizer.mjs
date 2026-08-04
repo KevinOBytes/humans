@@ -141,7 +141,8 @@ try {
     "--volume",
     `${probeDirectory}:/app/public/runtime-probes:ro`,
     image,
-    "server.js",
+    "-e",
+    'require("./server.js"); setInterval(() => {}, 2_147_483_647);',
   ]);
   started = true;
   const readinessDeadline = Date.now() + 45_000;
