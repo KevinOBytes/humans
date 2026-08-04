@@ -100,66 +100,50 @@ git add src/modules/ai src/lib/env/server-schema.ts tests/unit/ai-provider.test.
 git commit -m "feat: add secure AI provider boundary"
 ```
 
-### Task 2: Principal-attributed persistence, durable execution, and GraphQL API
+### Task 2: Principal attribution migration and AI job protocol
 
 **Files:**
 - Modify: `src/db/schema/ai.ts`
 - Modify: `src/db/schema/operations.ts`
 - Create: `drizzle/0018_task13_ai_analyst.sql`
 - Create/modify: matching `drizzle/meta` snapshot and journal entry through Drizzle generation
-- Create: `src/modules/ai/repository.ts`
-- Create: `src/modules/ai/service.ts`
-- Create: `src/modules/ai/graphql.ts`
 - Modify: `src/modules/jobs/types.ts`
 - Modify: `src/modules/jobs/service.ts`
 - Modify: `src/worker/registry.ts`
-- Create: `src/worker/handlers/ai-analysis.ts`
-- Modify: `src/worker/runtime.ts`
-- Modify: `src/graphql/context.ts`
-- Modify: `src/graphql/loaders.ts`
-- Modify: `src/graphql/schema.ts`
-- Modify: `src/graphql/server.ts`
-- Modify: `src/app/api/graphql/route.ts`
-- Test: `tests/integration/ai-analysis.test.ts`
+- Test: `tests/integration/ai-principal-migration.test.ts`
 - Test: `tests/integration/jobs-executor.test.ts`
-- Test: `tests/integration/worker-research-transactions.test.ts`
 - Test: `tests/unit/job-types.test.ts`
 
 **Interfaces:**
-- Produces: `startAiAnalysis(input)`, `readAiRun(id)`, `cancelAiRun(id)`, `createAiAnalysisHandler(runtime)`, GraphQL `startAiAnalysis`, `aiRun`, and `cancelAiAnalysis`.
-- `StartAiAnalysisInput` contains a bounded question, optional closed scope of person/evidence UUIDs, and a required client idempotency key. It never accepts provider/model/base URL/tool names from the caller.
-- `AiRun` returns state, timestamps, provider/model disclosure, validated answer, validated citations, and redacted tool summaries; it never returns prompt content, base URL, provider request, API key, or raw error.
+- Produces: workspace-principal UUID attribution columns for AI rows/jobs, `AiExecuteJobPayload`, strict `ai_execute` payload parsing/canonicalization/encryption, and an exhaustive worker-registry slot for the Task 3 handler.
+- Existing `import_execute` and `file_cleanup` job behavior remains source-compatible and migration-safe.
 
-- [ ] **Step 1: Write failing migration, repository, worker, authorization, idempotency, and GraphQL tests**
+- [ ] **Step 1: Write failing migration and closed job-protocol tests**
 
-Use live PostgreSQL fixtures and injected fake provider/Redis seams to cover:
+Use live PostgreSQL fixtures and unit seams to cover:
 
-- user and API-key principal attribution;
-- cross-workspace non-disclosure;
-- same principal/key/same request replay, same key/different request conflict, and different-principal independence;
-- atomic creation of thread, encrypted user message, pending run, encrypted `ai_execute` job, idempotency record, and redacted audit event;
-- current membership/permission and resource visibility checks at enqueue, before every tool call, and before result commit;
-- revocation or grant removal after enqueue;
-- valid cited completion, forged/foreign/hidden/unreturned citation rejection, and uncited-answer state;
-- provider retry/dead-letter mapping without secret/prompt leakage;
-- stale claim generation/lease unable to write assistant content, citations, tool calls, or final state;
-- cancellation before claim and during a tool boundary;
-- exactly-once final assistant message and citations across retry/replay;
-- GraphQL session and API-key paths, operation budgets, stable errors, and request correlation.
+- user and API-key workspace principals accepted by AI thread/message/run attribution;
+- cross-workspace principal foreign keys rejected;
+- existing user-attributed AI rows backfilled unambiguously;
+- ambiguous or missing legacy backfills fail closed rather than dropping attribution;
+- existing import/cleanup jobs preserved with legacy attribution;
+- new jobs accept exactly one workspace-principal attribution and reject conflicting attribution;
+- strict `ai_execute` payload parsing, canonicalization, encryption purpose, decode, and tamper rejection;
+- exhaustive registry dispatch without changing current import/cleanup handlers.
 
 - [ ] **Step 2: Verify focused tests fail**
 
 Run with the repository's live test PostgreSQL and Redis environment:
 
 ```bash
-corepack pnpm vitest run tests/unit/job-types.test.ts tests/integration/ai-analysis.test.ts tests/integration/jobs-executor.test.ts tests/integration/worker-research-transactions.test.ts --no-file-parallelism
+corepack pnpm vitest run tests/unit/job-types.test.ts tests/integration/ai-principal-migration.test.ts tests/integration/jobs-executor.test.ts --no-file-parallelism
 ```
 
-Expected: fail because the AI job, repository, service, handler, and GraphQL API do not exist.
+Expected: fail because principal-attributed AI columns and the closed AI job payload do not exist.
 
 - [ ] **Step 3: Migrate actor attribution to workspace principals**
 
-Replace AI thread/message/run user-ID attribution with workspace-principal UUID attribution, backfilling existing rows through `(workspace_id, user_id)` before enforcing composite foreign keys. Add a principal UUID attribution column for jobs while preserving/backfilling the legacy user attribution needed by existing imports/cleanup. Enforce that a job cannot carry conflicting user and principal attribution. The migration must be reversible for schema structure, fail closed on ambiguous backfills, and preserve existing rows.
+Replace AI thread/message/run user-ID attribution with workspace-principal UUID attribution, backfilling existing rows through `(workspace_id, user_id)` before enforcing composite foreign keys. Add a principal UUID attribution column for jobs while preserving the legacy user attribution needed by existing imports/cleanup. Enforce that a job cannot carry conflicting user and principal attribution. The migration must fail closed on ambiguous backfills and preserve existing rows.
 
 Generate migration metadata with the repository command, then review the SQL rather than accepting destructive generated output.
 
@@ -174,26 +158,14 @@ export type AiExecuteJobPayload = Readonly<{
 }>;
 ```
 
-Update parsing, canonicalization, encryption purpose, decode guards, registry exhaustiveness, runtime construction, and unit tests. Reuse the existing PostgreSQL claim fencing, Redis lease renewal, bounded retry, dead-letter, and worker drain behavior without adding a second executor.
+Update parsing, canonicalization, encryption purpose, decode guards, and registry exhaustiveness. Supply a typed placeholder handler only through test/runtime construction points that already require all registry handlers; Task 3 provides the real handler. Reuse the existing PostgreSQL claim fencing, Redis lease renewal, bounded retry, dead-letter, and worker drain behavior without adding a second executor.
 
-- [ ] **Step 5: Implement atomic service and repository operations**
-
-Start analysis in one transaction. Normalize the question and scope; HMAC-bind request material to workspace, principal, operation, and idempotency key; create or replay an idempotency row; create one private thread when needed; encrypt the user message and job payload; store HMAC digests and provider/base-URL fingerprint; enqueue one `ai_execute` job; and write a redacted audit event.
-
-The handler loads the current principal and authority, decrypts the input, executes a maximum of four provider turns/tool boundaries, records only allowlisted redacted tool summaries, validates citations against the run's returned-resource ledger and current visibility, then commits the assistant message/citations/final run state only while the job claim generation and lease remain current. Cancellation and finalization use compare-and-set transitions.
-
-- [ ] **Step 6: Register GraphQL types and operations**
-
-Add bounded Pothos inputs and outputs. Require `analysis:create` plus `analysis:run` to start, `analysis:read` to read, and `analysis:cancel` to cancel. API keys use their explicit permissions and principal ID. Return `NOT_FOUND` for foreign/invisible runs, `CONFLICT` for idempotency or terminal-state conflicts, `PROVIDER_UNAVAILABLE` only with the public message, and request IDs through the existing GraphQL error envelope.
-
-Inject `AiRuntime` into `CreateContextInput`/server options and both production app and worker construction. Tests inject a deterministic fake provider; production constructs the provider only from validated server env.
-
-- [ ] **Step 7: Pass focused database/GraphQL/worker tests and drift checks**
+- [ ] **Step 5: Pass migration/job tests and static gates**
 
 Run:
 
 ```bash
-corepack pnpm vitest run tests/unit/job-types.test.ts tests/integration/ai-analysis.test.ts tests/integration/jobs-executor.test.ts tests/integration/worker-research-transactions.test.ts --no-file-parallelism
+corepack pnpm vitest run tests/unit/job-types.test.ts tests/integration/ai-principal-migration.test.ts tests/integration/jobs-executor.test.ts --no-file-parallelism
 corepack pnpm db:check
 corepack pnpm db:drift:check
 corepack pnpm typecheck
@@ -202,14 +174,79 @@ corepack pnpm lint
 
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/db/schema drizzle src/modules/ai src/modules/jobs src/worker src/graphql src/app/api/graphql tests
+git add src/db/schema drizzle src/modules/jobs src/worker/registry.ts tests
+git commit -m "feat: add principal-attributed AI job protocol"
+```
+
+### Task 3: Atomic AI service, durable execution, and GraphQL API
+
+**Files:**
+- Create: `src/modules/ai/repository.ts`
+- Create: `src/modules/ai/service.ts`
+- Create: `src/modules/ai/graphql.ts`
+- Create: `src/worker/handlers/ai-analysis.ts`
+- Modify: `src/worker/runtime.ts`
+- Modify: `src/graphql/context.ts`
+- Modify: `src/graphql/loaders.ts`
+- Modify: `src/graphql/schema.ts`
+- Modify: `src/graphql/server.ts`
+- Modify: `src/app/api/graphql/route.ts`
+- Test: `tests/integration/ai-analysis.test.ts`
+- Test: `tests/integration/worker-research-transactions.test.ts`
+
+**Interfaces:**
+- Consumes: Task 1 `AiProvider`/research tools and Task 2 principal-attributed AI/job schema plus `AiExecuteJobPayload`.
+- Produces: `startAiAnalysis(input)`, `readAiRun(id)`, `cancelAiRun(id)`, `createAiAnalysisHandler(runtime)`, GraphQL `startAiAnalysis`, `aiRun`, and `cancelAiAnalysis`.
+- `StartAiAnalysisInput` contains a bounded question, optional closed scope of person/evidence UUIDs, and a required client idempotency key. It never accepts provider/model/base URL/tool names.
+- `AiRun` returns state, timestamps, provider/model disclosure, validated answer, validated citations, and redacted tool summaries; it never returns prompt content, base URL, provider request, API key, or raw error.
+
+- [ ] **Step 1: Write failing service, worker, authorization, idempotency, and GraphQL tests**
+
+Use live PostgreSQL fixtures and injected fake provider/Redis seams to cover user and API-key principal attribution; cross-workspace non-disclosure; principal-bound idempotency replay/conflict/independence; atomic thread/message/run/job/idempotency/audit creation; current authority at enqueue, each tool call, and result commit; revocation/grant removal after enqueue; valid/forged/foreign/hidden/unreturned citations; provider retry/dead-letter redaction; stale claim fencing; cancellation; exactly-once finalization; GraphQL session/API-key paths, budgets, stable errors, and request correlation.
+
+- [ ] **Step 2: Verify focused tests fail**
+
+```bash
+corepack pnpm vitest run tests/integration/ai-analysis.test.ts tests/integration/worker-research-transactions.test.ts --no-file-parallelism
+```
+
+Expected: fail because the AI repository, service, handler, and GraphQL API do not exist.
+
+- [ ] **Step 3: Implement atomic service and repository operations**
+
+Start analysis in one transaction. Normalize the question and scope; HMAC-bind request material to workspace, principal, operation, and idempotency key; create or replay an idempotency row; create one private thread when needed; encrypt the user message and job payload; store HMAC digests and provider/base-URL fingerprint; enqueue one `ai_execute` job; and write a redacted audit event.
+
+The handler loads current authority, decrypts input, executes at most four provider/tool boundaries, records only allowlisted redacted summaries, validates citations against the run ledger and current visibility, then commits assistant message/citations/final state only while the job claim and lease remain current. Cancellation and finalization use compare-and-set transitions.
+
+- [ ] **Step 4: Register GraphQL types and operations**
+
+Add bounded Pothos inputs/outputs. Require `analysis:create` plus `analysis:run` to start, `analysis:read` to read, and `analysis:cancel` to cancel. API keys use explicit permissions and principal ID. Return stable `NOT_FOUND`, `CONFLICT`, and `PROVIDER_UNAVAILABLE` envelopes with request correlation.
+
+Inject `AiRuntime` into context/server options and production app/worker construction. Tests inject a deterministic fake provider; production uses validated server env only.
+
+- [ ] **Step 5: Pass focused database/GraphQL/worker tests and static gates**
+
+Run:
+
+```bash
+corepack pnpm vitest run tests/integration/ai-analysis.test.ts tests/integration/worker-research-transactions.test.ts --no-file-parallelism
+corepack pnpm typecheck
+corepack pnpm lint
+```
+
+Expected: all pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/modules/ai src/worker src/graphql src/app/api/graphql tests
 git commit -m "feat: persist and execute cited AI analysis"
 ```
 
-### Task 3: Generated analyst client, accessible UI, and release evidence
+### Task 4: Generated analyst client, accessible UI, and release evidence
 
 **Files:**
 - Create: `src/graphql/operations/analyst.graphql`
@@ -286,4 +323,3 @@ Expected: all pass with the configured live-test dependencies for integration po
 git add src/graphql/operations src/graphql/generated src/components/ai src/app/'(app)'/analyst src/components/app-navigation.tsx src/components/app-shell.tsx src/components/command-menu.tsx tests README.md TODO.md docs
 git commit -m "feat: add cited analyst workspace"
 ```
-
