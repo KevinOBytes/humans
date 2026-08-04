@@ -53,7 +53,7 @@ Every incomplete MVP requirement is listed exactly once. Check an item only in t
 - [ ] `HUM-NFR-011` Complete the remaining whole-product PostgreSQL, Redis, storage, GraphQL, browser, and CI matrix beyond the Task 12 foundation and Task 18 live upgrade/concurrency/browser/Compose suite.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage.
 - [ ] `HUM-NFR-013` Complete the optional Ollama/model smoke beyond the implemented isolated production-image base-stack smoke and lifecycle drills.
-- [ ] `HUM-NFR-014` Run the locally passing committed CI quality/security workflow in the public repository, resolve every hosted hard gate, and verify the exact required checks.
+- [ ] `HUM-NFR-014` Resolve every hosted hard gate and verify the exact required checks; specifically reconcile the GitHub runner's bare Distroless optimizer-container exit, which remains advisory while exact local arm64/amd64 optimizer, hosted Compose, runtime-manifest, SBOM, and Trivy gates remain enforced.
 - [ ] `HUM-NFR-017` Configure and verify public repository protections/settings and the committed pull-request/issue contract; add CODEOWNERS only after ownership is confirmed.
 - [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence.
 - [ ] `HUM-NFR-019` Confirm excluded capabilities remain optional or out of scope.
