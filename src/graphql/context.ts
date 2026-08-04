@@ -46,6 +46,10 @@ import {
 import { createSettingsService } from "@/modules/settings/service";
 import type { WorkspaceMemberRuntime } from "@/modules/settings/workspace-members";
 import { createLocationsService } from "@/modules/locations/service";
+import {
+  createAiAnalysisService,
+  type AiAnalysisRuntime,
+} from "@/modules/ai/service";
 
 import { createGraphQLError } from "./errors";
 import {
@@ -115,6 +119,7 @@ export type CreateContextInput = {
   fileRuntime?: FileServiceRuntime;
   importRuntime?: ImportServiceRuntime;
   settingsRuntime?: WorkspaceMemberRuntime;
+  aiRuntime: AiAnalysisRuntime;
 };
 
 export function parseGraphQLOrigin(value: string): string | null {
@@ -161,6 +166,7 @@ function createServices(input: {
   fileRuntime?: FileServiceRuntime;
   importRuntime?: ImportServiceRuntime;
   settingsRuntime?: WorkspaceMemberRuntime;
+  aiRuntime: AiAnalysisRuntime;
 }): GraphQLServices {
   return {
     async loadWorkspaces(ids) {
@@ -293,6 +299,17 @@ function createServices(input: {
         encryptionKey: input.searchRuntime.encryptionKey ?? "00".repeat(32),
       },
     ),
+    ai: createAiAnalysisService(
+      {
+        actor: input.context.actor,
+        database: input.database,
+        permissions: input.context.permissions,
+        requestId: input.context.requestId,
+        searchIndexMaintenance: input.searchIndexMaintenance,
+        workspaceId: input.context.workspaceId,
+      },
+      input.aiRuntime,
+    ),
   };
 }
 
@@ -312,6 +329,7 @@ function contextWithLoaders(
   operationLimiter: OperationLimiter,
   searchIndexMaintenance: SearchIndexMaintenance,
   searchRuntime: SearchRuntime,
+  aiRuntime: AiAnalysisRuntime,
   fileRuntime?: FileServiceRuntime,
   importRuntime?: ImportServiceRuntime,
   settingsRuntime?: WorkspaceMemberRuntime,
@@ -326,10 +344,13 @@ function contextWithLoaders(
       case "graph.replay":
         return "GRAPH_SNAPSHOT" as const;
       case "graph.analysis":
+      case "ai.analysis.start":
         return "ANALYSIS_RUN" as const;
       case "graph.analysis.export":
         return "ANALYSIS_EXPORT" as const;
       case "graph.analysis.read":
+      case "ai.analysis.cancel":
+      case "ai.analysis.read":
         return "ANALYSIS_READ" as const;
       default:
         return null;
@@ -367,6 +388,7 @@ function contextWithLoaders(
     operationLimiter: requestOperationLimiter,
     searchIndexMaintenance,
     searchRuntime,
+    aiRuntime,
     fileRuntime,
     importRuntime,
     settingsRuntime,
@@ -479,6 +501,7 @@ async function createSessionContext(
     input.operationLimiter,
     input.searchIndexMaintenance,
     input.searchRuntime,
+    input.aiRuntime,
     input.fileRuntime,
     input.importRuntime,
     input.settingsRuntime,
@@ -560,6 +583,7 @@ async function createApiKeyContext(
     input.operationLimiter,
     input.searchIndexMaintenance,
     input.searchRuntime,
+    input.aiRuntime,
     input.fileRuntime,
     input.importRuntime,
     input.settingsRuntime,

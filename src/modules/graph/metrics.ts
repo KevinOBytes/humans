@@ -1,6 +1,6 @@
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
-import pagerank from "graphology-metrics/centrality/pagerank";
+import pagerank from "graphology-metrics/centrality/pagerank.js";
 
 import { toGraphologyGraph } from "./transform";
 import type { GraphResult } from "./types";

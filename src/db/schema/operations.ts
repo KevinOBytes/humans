@@ -41,6 +41,7 @@ export const jobs = pgTable(
     resultReferences: jsonb("result_references").default([]).notNull(),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),
     createdBy: text("created_by"),
+    principalId: uuid("principal_id"),
     updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
     updatedBy: text("updated_by"),
   },
@@ -73,6 +74,11 @@ export const jobs = pgTable(
         workspacePrincipals.userId,
       ],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "jobs_workspace_principal_fk",
+      columns: [table.workspaceId, table.principalId],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
     check("jobs_attempt_count_check", sql`${table.attemptCount} >= 0`),
     check("jobs_claim_generation_check", sql`${table.claimGeneration} >= 0`),
     check(
@@ -82,6 +88,10 @@ export const jobs = pgTable(
     check(
       "jobs_request_hash_check",
       sql`${table.requestHash} IS NULL OR ${table.requestHash} ~ '^sha256:[0-9a-f]{64}$'`,
+    ),
+    check(
+      "jobs_attribution_check",
+      sql`num_nonnulls(${table.createdBy}, ${table.principalId}) <= 1 AND (${table.kind} <> 'ai_execute' OR ${table.principalId} IS NOT NULL)`,
     ),
   ],
 );

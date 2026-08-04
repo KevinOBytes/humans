@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { canonicalizeHttpOrigin } from "@/lib/security/http-origin.server";
+import { canonicalizeAiBaseUrl } from "@/modules/ai/types";
 
 const documentationValuePattern =
   /(?:^|[-_.:/])(?:change[-_]?me|replace[-_]?(?:me|with)|example|sample|placeholder|dummy|fake|test[-_]?only|your[-_][a-z0-9]+)(?=$|[-_.:/])/i;
@@ -181,7 +182,7 @@ const commonServerEnv = z.object({
   RESEND_BASE_URL: z.url().optional(),
   EMAIL_FROM: z.string().regex(/^(?:[^<>]+\s+)?<[^<>\s]+@[^<>\s]+>$/),
   AI_PROVIDER: z.enum(["openai", "ollama", "compatible"]),
-  AI_BASE_URL: z.url(),
+  AI_BASE_URL: z.string().min(1),
   AI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().min(1),
 });
@@ -235,6 +236,21 @@ export const serverEnvSchema = z
         code: "custom",
         path: ["AI_API_KEY"],
         message: `AI_API_KEY is required for the ${env.AI_PROVIDER} provider`,
+      });
+    }
+
+    try {
+      env.AI_BASE_URL = canonicalizeAiBaseUrl({
+        provider: env.AI_PROVIDER,
+        baseUrl: env.AI_BASE_URL,
+        apiKey: env.AI_API_KEY,
+        nodeEnv: env.NODE_ENV,
+      });
+    } catch {
+      context.addIssue({
+        code: "custom",
+        path: ["AI_BASE_URL"],
+        message: "AI_BASE_URL is not allowed for the configured AI provider",
       });
     }
 

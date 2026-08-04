@@ -26,6 +26,7 @@ async function getProductionHandler() {
     import("@/lib/storage/s3"),
     import("@/modules/auth/auth"),
     import("@/lib/email/resend"),
+    import("@/modules/ai/provider"),
   ]).then(
     ([
       { db },
@@ -35,6 +36,7 @@ async function getProductionHandler() {
       { createObjectStore },
       { auth },
       { createEmailSender },
+      { createAiProvider },
     ]) => {
       const env = getServerEnv();
       const operationLimiter = new OperationLimiter(
@@ -44,6 +46,14 @@ async function getProductionHandler() {
       );
       const objectStore = createObjectStore(env);
       const metrics = createTask12Metrics(productionMetricsSink);
+      const aiProvider = createAiProvider({
+        provider: env.AI_PROVIDER,
+        baseUrl: env.AI_BASE_URL,
+        apiKey: env.AI_API_KEY,
+        model: env.AI_MODEL,
+        fingerprintHmacKey: env.DATA_ENCRYPTION_KEY,
+        nodeEnv: env.NODE_ENV,
+      });
       return createGraphQLHandler({
         auth,
         clientAddressConfig:
@@ -91,6 +101,11 @@ async function getProductionHandler() {
           encryptionKey: env.AUTH_ENCRYPTION_KEY,
         },
         trustedOrigins: env.AUTH_TRUSTED_ORIGINS,
+        aiRuntime: {
+          encryptionKey: env.DATA_ENCRYPTION_KEY,
+          hmacKey: env.DATA_ENCRYPTION_KEY,
+          provider: aiProvider,
+        },
       });
     },
   );

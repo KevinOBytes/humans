@@ -448,9 +448,9 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
       WHERE workspace_id = ${workspaceB} AND user_id = ${actorB}
     `;
     await db()`INSERT INTO graph_views (id, workspace_id, owner_id, name, created_by, updated_by) VALUES (${ids.graphViewB}, ${workspaceB}, 'seed-user-beta', 'Beta view', 'seed-user-beta', 'seed-user-beta')`;
-    await db()`INSERT INTO ai_threads (id, workspace_id, owner_id, title, created_by, updated_by) VALUES (${ids.aiThreadB}, ${workspaceB}, 'seed-user-beta', 'Beta thread', 'seed-user-beta', 'seed-user-beta')`;
-    await db()`INSERT INTO ai_threads (id, workspace_id, owner_id, title, created_by, updated_by) VALUES (${ids.aiThreadA1}, ${workspaceA}, ${actorA}, 'Alpha thread one', ${actorA}, ${actorA}), (${ids.aiThreadA2}, ${workspaceA}, ${actorA}, 'Alpha thread two', ${actorA}, ${actorA})`;
-    await db()`INSERT INTO ai_messages (id, workspace_id, thread_id, role, encrypted_content, content_hash, created_by, updated_by) VALUES (${ids.aiMessageA1}, ${workspaceA}, ${ids.aiThreadA1}, 'user', 'encrypted:one', 'sha256:one', ${actorA}, ${actorA}), (${ids.aiMessageA2}, ${workspaceA}, ${ids.aiThreadA2}, 'assistant', 'encrypted:two', 'sha256:two', ${actorA}, ${actorA})`;
+    await db()`INSERT INTO ai_threads (id, workspace_id, owner_id, title, created_by, updated_by) VALUES (${ids.aiThreadB}, ${workspaceB}, ${principalB}, 'Beta thread', ${principalB}, ${principalB})`;
+    await db()`INSERT INTO ai_threads (id, workspace_id, owner_id, title, created_by, updated_by) VALUES (${ids.aiThreadA1}, ${workspaceA}, ${principalA}, 'Alpha thread one', ${principalA}, ${principalA}), (${ids.aiThreadA2}, ${workspaceA}, ${principalA}, 'Alpha thread two', ${principalA}, ${principalA})`;
+    await db()`INSERT INTO ai_messages (id, workspace_id, thread_id, role, encrypted_content, content_hash, created_by, updated_by) VALUES (${ids.aiMessageA1}, ${workspaceA}, ${ids.aiThreadA1}, 'user', 'encrypted:one', 'sha256:one', ${principalA}, ${principalA}), (${ids.aiMessageA2}, ${workspaceA}, ${ids.aiThreadA2}, 'assistant', 'encrypted:two', 'sha256:two', ${principalA}, ${principalA})`;
     await db()`INSERT INTO sessions (id, expires_at, token, user_id) VALUES (${ids.sessionA}, now() + interval '1 day', 'seed-session-token-alpha', ${actorA}), (${ids.sessionB}, now() + interval '1 day', 'seed-session-token-beta', ${actorB})`;
     await db()`INSERT INTO api_keys (id, config_id, reference_id, key, created_at, updated_at, workspace_id) VALUES (${ids.apiKeyB}, 'default', 'seed-organization-beta', 'seed-api-key-value-beta', now(), now(), ${workspaceB})`;
     await db()`INSERT INTO webhooks (id, workspace_id, url, encrypted_secret, secret_fingerprint, subscribed_events, created_by, updated_by) VALUES (${ids.webhookB}, ${workspaceB}, 'https://example.test/hook', 'encrypted:test', 'sha256:test', ARRAY['person.updated'], 'seed-user-beta', 'seed-user-beta')`;
@@ -655,13 +655,13 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
       db()`INSERT INTO graph_views (id, workspace_id, owner_id, name, created_by, updated_by) VALUES (${newId()}, ${workspaceA}, ${actorB}, 'Cross graph', ${actorA}, ${actorA})`,
     );
     await expectForeignKeyViolation(
-      db()`INSERT INTO ai_threads (id, workspace_id, owner_id, title, created_by, updated_by) VALUES (${newId()}, ${workspaceA}, ${actorB}, 'Cross AI', ${actorA}, ${actorA})`,
+      db()`INSERT INTO ai_threads (id, workspace_id, owner_id, title, created_by, updated_by) VALUES (${newId()}, ${workspaceA}, ${principalB}, 'Cross AI', ${principalA}, ${principalA})`,
     );
     await expectForeignKeyViolation(
-      db()`INSERT INTO ai_messages (id, workspace_id, thread_id, role, encrypted_content, content_hash, created_by, updated_by) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadA1}, 'user', 'encrypted:bad', 'sha256:bad', ${actorB}, ${actorA})`,
+      db()`INSERT INTO ai_messages (id, workspace_id, thread_id, role, encrypted_content, content_hash, created_by, updated_by) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadA1}, 'user', 'encrypted:bad', 'sha256:bad', ${principalB}, ${principalA})`,
     );
     await expectForeignKeyViolation(
-      db()`INSERT INTO ai_runs (id, workspace_id, thread_id, provider, base_url_fingerprint, model, prompt_hash, configuration_hash, created_by) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadA1}, 'test', 'base', 'model', 'prompt', 'config', ${actorB})`,
+      db()`INSERT INTO ai_runs (id, workspace_id, thread_id, provider, base_url_fingerprint, model, prompt_hash, configuration_hash, created_by) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadA1}, 'test', 'base', 'model', 'prompt', 'config', ${principalB})`,
     );
     await expectForeignKeyViolation(
       db()`INSERT INTO jobs (id, workspace_id, kind, encrypted_payload, payload_hash, idempotency_key, created_by, updated_by) VALUES (${newId()}, ${workspaceA}, 'test', 'encrypted:test', 'sha256:test', ${newId()}, ${actorB}, ${actorA})`,
@@ -767,9 +767,9 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
 
   it("rejects cross-thread AI run inputs and citations", async () => {
     await expectForeignKeyViolation(
-      db()`INSERT INTO ai_runs (id, workspace_id, thread_id, message_id, provider, base_url_fingerprint, model, prompt_hash, configuration_hash, created_by) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadA1}, ${ids.aiMessageA2}, 'test', 'base', 'model', 'prompt', 'config', ${actorA})`,
+      db()`INSERT INTO ai_runs (id, workspace_id, thread_id, message_id, provider, base_url_fingerprint, model, prompt_hash, configuration_hash, created_by) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadA1}, ${ids.aiMessageA2}, 'test', 'base', 'model', 'prompt', 'config', ${principalA})`,
     );
-    await db()`INSERT INTO ai_runs (id, workspace_id, thread_id, message_id, provider, base_url_fingerprint, model, prompt_hash, configuration_hash, created_by) VALUES (${ids.aiRunA1}, ${workspaceA}, ${ids.aiThreadA1}, ${ids.aiMessageA1}, 'test', 'base', 'model', 'prompt', 'config', ${actorA})`;
+    await db()`INSERT INTO ai_runs (id, workspace_id, thread_id, message_id, provider, base_url_fingerprint, model, prompt_hash, configuration_hash, created_by) VALUES (${ids.aiRunA1}, ${workspaceA}, ${ids.aiThreadA1}, ${ids.aiMessageA1}, 'test', 'base', 'model', 'prompt', 'config', ${principalA})`;
     await expectForeignKeyViolation(
       db()`INSERT INTO ai_citations (id, workspace_id, thread_id, ai_run_id, message_id, resource_kind, resource_id, claim_text) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadA2}, ${ids.aiRunA1}, ${ids.aiMessageA2}, 'person', ${personA}, 'Claim')`,
     );
@@ -826,7 +826,7 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
 
   it("rejects cross-workspace AI references", async () => {
     await expectForeignKeyViolation(
-      db()`INSERT INTO ai_messages (id, workspace_id, thread_id, role, encrypted_content, content_hash, created_by, updated_by) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadB}, 'user', 'encrypted:test', 'sha256:test', ${actorA}, ${actorA})`,
+      db()`INSERT INTO ai_messages (id, workspace_id, thread_id, role, encrypted_content, content_hash, created_by, updated_by) VALUES (${newId()}, ${workspaceA}, ${ids.aiThreadB}, 'user', 'encrypted:test', 'sha256:test', ${principalA}, ${principalA})`,
     );
   });
 

@@ -47,6 +47,7 @@ export function createJobsRepository(database: Database) {
       scheduledAt?: Date;
       workspaceId: string;
       createdBy?: string | null;
+      principalId?: string | null;
     }): Promise<JobRow | null> {
       const [row] = await database
         .insert(jobs)
@@ -62,6 +63,7 @@ export function createJobsRepository(database: Database) {
           state: "queued",
           scheduledAt: input.scheduledAt,
           createdBy: input.createdBy ?? null,
+          principalId: input.principalId ?? null,
           updatedBy: input.createdBy ?? null,
         })
         .onConflictDoNothing({

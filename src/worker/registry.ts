@@ -17,12 +17,15 @@ export type JobRegistry = {
 };
 
 export function createJobRegistry(input: {
+  aiExecute: JobHandler<Extract<JobPayload, { kind: "ai_execute" }>>;
   fileCleanup: JobHandler<Extract<JobPayload, { kind: "file_cleanup" }>>;
   importExecute: JobHandler<Extract<JobPayload, { kind: "import_execute" }>>;
 }): JobRegistry {
   return {
     get(payload) {
       switch (payload.kind) {
+        case "ai_execute":
+          return input.aiExecute as JobHandler;
         case "import_execute":
           return input.importExecute as JobHandler;
         case "file_cleanup":

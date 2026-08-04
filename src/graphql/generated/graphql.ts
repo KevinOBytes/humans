@@ -10,6 +10,31 @@ export type Incremental<T> =
 import type { DocumentTypeDecoration } from "@graphql-typed-document-node/core";
 export type ActorKind = "API_KEY" | "LEGACY" | "SYSTEM" | "USER";
 
+export type AiAnalysisScopeInput = {
+  evidenceIds?: Array<string> | null | undefined;
+  personIds?: Array<string> | null | undefined;
+};
+
+export type AiFailureCode =
+  | "ANALYSIS_CANCELLED"
+  | "ANALYSIS_LIMIT_REACHED"
+  | "AUTHORIZATION_CHANGED"
+  | "EXECUTION_FAILED"
+  | "INPUT_UNAVAILABLE"
+  | "PROVIDER_INVALID_RESPONSE"
+  | "PROVIDER_RESPONSE_TOO_LARGE"
+  | "PROVIDER_TIMEOUT"
+  | "PROVIDER_UNAVAILABLE";
+
+export type AiProvider = "COMPATIBLE" | "OLLAMA" | "OPENAI";
+
+export type AiResourceKind = "EVIDENCE" | "PERSON";
+
+export type AiRunState =
+  "CANCELLED" | "COMPLETED" | "FAILED" | "PENDING" | "RUNNING";
+
+export type AiToolState = "COMPLETED" | "FAILED" | "PENDING" | "RUNNING";
+
 export type ArchiveGraphViewInput = {
   expectedVersion: number;
   id: string;
@@ -568,6 +593,12 @@ export type SelectPersonFieldInput = {
 
 export type Sensitivity = "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
+export type StartAiAnalysisInput = {
+  idempotencyKey: string;
+  question: string;
+  scope?: AiAnalysisScopeInput | null | undefined;
+};
+
 export type TagFilterInput = {
   normalizedNamePrefix?: string | null | undefined;
 };
@@ -720,6 +751,76 @@ export type WorkspaceAdministrationRole =
 export type WorkspaceInvitationActionInput = {
   actionId: string;
   idempotencyKey: string;
+};
+
+export type AnalystPublicRunFragment = {
+  id: string | null;
+  state: AiRunState | null;
+  provider: AiProvider | null;
+  model: string | null;
+  answer: string | null;
+  errorCode: AiFailureCode | null;
+  createdAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  citations: Array<{
+    claimText: string | null;
+    locator: string | null;
+    resourceId: string | null;
+    resourceKind: AiResourceKind | null;
+  }> | null;
+  toolCalls: Array<{
+    name: string | null;
+    state: AiToolState | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    inputSummary: {
+      evidenceCount: number | null;
+      filterCount: number | null;
+      personCount: number | null;
+      resourceCount: number | null;
+      resultCount: number | null;
+      truncated: boolean | null;
+    } | null;
+    resultSummary: {
+      evidenceCount: number | null;
+      filterCount: number | null;
+      personCount: number | null;
+      resourceCount: number | null;
+      resultCount: number | null;
+      truncated: boolean | null;
+    } | null;
+  }> | null;
+} & { " $fragmentName"?: "AnalystPublicRunFragment" };
+
+export type StartAiAnalysisMutationVariables = Exact<{
+  input: StartAiAnalysisInput;
+}>;
+
+export type StartAiAnalysisMutation = {
+  startAiAnalysis: {
+    " $fragmentRefs"?: { AnalystPublicRunFragment: AnalystPublicRunFragment };
+  } | null;
+};
+
+export type AiRunQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type AiRunQuery = {
+  aiRun: {
+    " $fragmentRefs"?: { AnalystPublicRunFragment: AnalystPublicRunFragment };
+  } | null;
+};
+
+export type CancelAiAnalysisMutationVariables = Exact<{
+  id: string;
+}>;
+
+export type CancelAiAnalysisMutation = {
+  cancelAiAnalysis: {
+    " $fragmentRefs"?: { AnalystPublicRunFragment: AnalystPublicRunFragment };
+  } | null;
 };
 
 export type FileWorkspaceItemFragment = {
@@ -3152,6 +3253,50 @@ export class TypedDocumentString<TResult, TVariables>
     return this.value;
   }
 }
+export const AnalystPublicRunFragmentDoc = new TypedDocumentString(
+  `
+    fragment AnalystPublicRun on AiRun {
+  id
+  state
+  provider
+  model
+  answer
+  errorCode
+  createdAt
+  startedAt
+  completedAt
+  citations {
+    claimText
+    locator
+    resourceId
+    resourceKind
+  }
+  toolCalls {
+    name
+    state
+    inputSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    resultSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    startedAt
+    completedAt
+  }
+}
+    `,
+  { fragmentName: "AnalystPublicRun" },
+) as unknown as TypedDocumentString<AnalystPublicRunFragment, unknown>;
 export const FileWorkspaceItemFragmentDoc = new TypedDocumentString(
   `
     fragment FileWorkspaceItem on File {
@@ -3380,6 +3525,162 @@ export const SearchWorkbenchSavedQueryFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "SearchWorkbenchSavedQuery" },
 ) as unknown as TypedDocumentString<SearchWorkbenchSavedQueryFragment, unknown>;
+export const StartAiAnalysisDocument = new TypedDocumentString(
+  `
+    mutation StartAiAnalysis($input: StartAiAnalysisInput!) {
+  startAiAnalysis(input: $input) {
+    ...AnalystPublicRun
+  }
+}
+    fragment AnalystPublicRun on AiRun {
+  id
+  state
+  provider
+  model
+  answer
+  errorCode
+  createdAt
+  startedAt
+  completedAt
+  citations {
+    claimText
+    locator
+    resourceId
+    resourceKind
+  }
+  toolCalls {
+    name
+    state
+    inputSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    resultSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    startedAt
+    completedAt
+  }
+}`,
+  {
+    hash: "sha256:542a7a19a6dad777ae7ea598bb3056cfa5057b4ad6aeadfd44bb1f5c6048a259",
+  },
+) as unknown as TypedDocumentString<
+  StartAiAnalysisMutation,
+  StartAiAnalysisMutationVariables
+>;
+export const AiRunDocument = new TypedDocumentString(
+  `
+    query AiRun($id: UUID!) {
+  aiRun(id: $id) {
+    ...AnalystPublicRun
+  }
+}
+    fragment AnalystPublicRun on AiRun {
+  id
+  state
+  provider
+  model
+  answer
+  errorCode
+  createdAt
+  startedAt
+  completedAt
+  citations {
+    claimText
+    locator
+    resourceId
+    resourceKind
+  }
+  toolCalls {
+    name
+    state
+    inputSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    resultSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    startedAt
+    completedAt
+  }
+}`,
+  {
+    hash: "sha256:abee8a0591e6b236cf2728ed5d6010c000818a4a219d67ca513d42e14f373ebc",
+  },
+) as unknown as TypedDocumentString<AiRunQuery, AiRunQueryVariables>;
+export const CancelAiAnalysisDocument = new TypedDocumentString(
+  `
+    mutation CancelAiAnalysis($id: UUID!) {
+  cancelAiAnalysis(id: $id) {
+    ...AnalystPublicRun
+  }
+}
+    fragment AnalystPublicRun on AiRun {
+  id
+  state
+  provider
+  model
+  answer
+  errorCode
+  createdAt
+  startedAt
+  completedAt
+  citations {
+    claimText
+    locator
+    resourceId
+    resourceKind
+  }
+  toolCalls {
+    name
+    state
+    inputSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    resultSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    startedAt
+    completedAt
+  }
+}`,
+  {
+    hash: "sha256:75f14ba03e861226227ea6a46fa3198727b637da44d605dc2aa41dc9ec9d52bd",
+  },
+) as unknown as TypedDocumentString<
+  CancelAiAnalysisMutation,
+  CancelAiAnalysisMutationVariables
+>;
 export const EvidenceFilesDocument = new TypedDocumentString(
   `
     query EvidenceFiles($first: Int, $after: String) {

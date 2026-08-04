@@ -1,0 +1,613 @@
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  AiProviderError,
+  createAiProvider,
+  type AiProviderRuntime,
+  type AiTransport,
+} from "@/modules/ai/provider";
+
+const fingerprintHmacKey = "8a".repeat(32);
+
+function response(body: unknown, status = 200) {
+  return {
+    status,
+    headers: Object.freeze({ "content-type": "application/json" }),
+    body: JSON.stringify(body),
+  };
+}
+
+function runtime(override: Partial<AiProviderRuntime> = {}): AiProviderRuntime {
+  return {
+    provider: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    apiKey: "test-provider-key-value",
+    model: "test-model",
+    fingerprintHmacKey,
+    transport: vi.fn(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              content: '{"answer":"Answer","citations":[]}',
+              role: "assistant",
+            },
+          },
+        ],
+      }),
+    ),
+    ...override,
+  };
+}
+
+const input = {
+  messages: [{ role: "user" as const, content: "Who is connected?" }],
+  tools: [],
+  toolLoopDepth: 0,
+};
+
+async function settleWithin<T>(
+  promise: Promise<T>,
+  milliseconds = 200,
+): Promise<T | "HUNG"> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve("HUNG"), milliseconds);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        resolve(error as T);
+      },
+    );
+  });
+}
+
+describe("AI provider boundary", () => {
+  it("rejects providers outside the closed selection", () => {
+    expect(() =>
+      createAiProvider(runtime({ provider: "unknown" as "openai" })),
+    ).toThrow(expect.objectContaining({ code: "CONFIGURATION_INVALID" }));
+  });
+
+  it.each([
+    ["openai", "https://api.openai.com/v1", "OPENAI"],
+    ["ollama", "http://ollama:11434/v1/", "OLLAMA"],
+    ["compatible", "https://AI.EXAMPLE.COM:443/v1/", "COMPATIBLE"],
+  ] as const)(
+    "selects and canonicalizes %s",
+    (provider, baseUrl, disclosure) => {
+      const created = createAiProvider(
+        runtime({
+          provider,
+          baseUrl,
+          apiKey: provider === "ollama" ? undefined : "test-provider-key-value",
+          resolver:
+            provider === "compatible"
+              ? async () => [{ address: "93.184.216.34", family: 4 }]
+              : undefined,
+        }),
+      );
+
+      expect(created.disclosure).toEqual({
+        model: "test-model",
+        provider: disclosure,
+      });
+      expect(created.baseUrlFingerprint).toMatch(/^[0-9a-f]{64}$/u);
+      expect(JSON.stringify(created)).not.toContain(baseUrl);
+    },
+  );
+
+  it("requires keys for OpenAI and compatible providers", () => {
+    expect(() => createAiProvider(runtime({ apiKey: undefined }))).toThrow(
+      expect.objectContaining({ code: "CONFIGURATION_INVALID" }),
+    );
+    expect(() =>
+      createAiProvider(
+        runtime({
+          provider: "compatible",
+          baseUrl: "https://ai.example.com/v1",
+          apiKey: undefined,
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "CONFIGURATION_INVALID" }));
+  });
+
+  it.each([
+    "http://api.openai.com/v1",
+    "https://other.example.com/v1",
+    "https://api.openai.com/v1?key=value",
+  ])("rejects a non-canonical OpenAI endpoint: %s", (baseUrl) => {
+    expect(() => createAiProvider(runtime({ baseUrl }))).toThrow(
+      AiProviderError,
+    );
+  });
+
+  it.each([
+    "http://ai.example.com/v1",
+    "https://user:pass@ai.example.com/v1",
+    "https://ai.example.com/v1?secret=value",
+    "https://ai.example.com/v1#fragment",
+    "https://ai.example.com/other",
+  ])("rejects an unsafe compatible endpoint: %s", (baseUrl) => {
+    expect(() =>
+      createAiProvider(runtime({ provider: "compatible", baseUrl })),
+    ).toThrow(expect.objectContaining({ code: "CONFIGURATION_INVALID" }));
+  });
+
+  it.each([
+    "127.0.0.1",
+    "10.0.0.5",
+    "169.254.169.254",
+    "172.16.1.2",
+    "192.168.1.2",
+    "224.0.0.1",
+    "192.0.2.1",
+    "198.18.0.1",
+    "198.51.100.1",
+    "203.0.113.1",
+    "::1",
+    "fe80::1",
+    "fc00::1",
+    "ff02::1",
+    "::ffff:7f00:1",
+    "2001:2::1",
+    "2001:db8::1",
+    "3fff::1",
+    "5f00::1",
+  ])("rejects compatible endpoint address %s", async (address) => {
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver: async () => [address],
+      }),
+    );
+
+    await expect(provider.generate(input)).rejects.toMatchObject({
+      code: "CONFIGURATION_INVALID",
+    });
+  });
+
+  it("revalidates DNS for every compatible request and pins the chosen address", async () => {
+    const resolver = vi.fn(async () => [
+      { address: "93.184.216.34", family: 4 as const },
+    ]);
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              content: '{"answer":"Answer","citations":[]}',
+              role: "assistant",
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+        transport,
+      }),
+    );
+
+    await provider.generate(input);
+    await provider.generate(input);
+
+    expect(resolver).toHaveBeenCalledTimes(2);
+    expect(transport.mock.calls[0]?.[0]).toMatchObject({
+      address: "93.184.216.34",
+      hostname: "ai.example.com",
+      rejectRedirects: true,
+    });
+  });
+
+  it("rejects redirects without following them", async () => {
+    const transport = vi.fn<AiTransport>(async () => response("moved", 302));
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).rejects.toMatchObject({
+      code: "PROVIDER_REDIRECTED",
+      message: "The AI provider request was rejected.",
+    });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts a timed-out transport", async () => {
+    let signal: AbortSignal | undefined;
+    const transport = vi.fn<AiTransport>(
+      (request) =>
+        new Promise((_resolve, reject) => {
+          signal = request.signal;
+          request.signal.addEventListener("abort", () =>
+            reject(new Error("raw timeout")),
+          );
+        }),
+    );
+    const provider = createAiProvider(runtime({ transport, timeoutMs: 5 }));
+
+    await expect(provider.generate(input)).rejects.toMatchObject({
+      code: "PROVIDER_TIMEOUT",
+      message: "The AI provider timed out.",
+    });
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("times out while compatible-provider DNS resolution is stalled", async () => {
+    const resolver = vi.fn(
+      () => new Promise<readonly string[]>(() => undefined),
+    );
+    const transport = vi.fn<AiTransport>();
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+        transport,
+        timeoutMs: 5,
+      }),
+    );
+
+    const outcome = await settleWithin(provider.generate(input));
+
+    expect(outcome).toMatchObject({
+      code: "PROVIDER_TIMEOUT",
+      message: "The AI provider timed out.",
+    });
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("observes caller cancellation during compatible-provider DNS resolution", async () => {
+    const controller = new AbortController();
+    const resolver = vi.fn(
+      () => new Promise<readonly string[]>(() => undefined),
+    );
+    const transport = vi.fn<AiTransport>();
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+        transport,
+      }),
+    );
+    const pending = provider.generate({ ...input, signal: controller.signal });
+    controller.abort();
+
+    const outcome = await settleWithin(pending);
+
+    expect(outcome).toMatchObject({
+      code: "PROVIDER_ABORTED",
+      message: "The AI provider request was cancelled.",
+    });
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("re-checks cancellation that occurs as DNS resolution completes", async () => {
+    const controller = new AbortController();
+    const resolver = vi.fn(async () => {
+      controller.abort();
+      return ["93.184.216.34"];
+    });
+    const transport = vi.fn<AiTransport>(
+      () => new Promise<never>(() => undefined),
+    );
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+        transport,
+      }),
+    );
+
+    const outcome = await settleWithin(
+      provider.generate({ ...input, signal: controller.signal }),
+    );
+
+    expect(outcome).toMatchObject({ code: "PROVIDER_ABORTED" });
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("rejects an already-aborted compatible request before DNS resolution", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const resolver = vi.fn(async () => ["93.184.216.34"]);
+    const provider = createAiProvider(
+      runtime({
+        provider: "compatible",
+        baseUrl: "https://ai.example.com/v1",
+        resolver,
+      }),
+    );
+
+    await expect(
+      provider.generate({ ...input, signal: controller.signal }),
+    ).rejects.toMatchObject({ code: "PROVIDER_ABORTED" });
+    expect(resolver).not.toHaveBeenCalled();
+  });
+
+  it("maps caller aborts to a stable error", async () => {
+    const controller = new AbortController();
+    const transport = vi.fn<AiTransport>(
+      (request) =>
+        new Promise((_resolve, reject) => {
+          request.signal.addEventListener("abort", () =>
+            reject(new Error("secret abort")),
+          );
+        }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+    const pending = provider.generate({ ...input, signal: controller.signal });
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({
+      code: "PROVIDER_ABORTED",
+      message: "The AI provider request was cancelled.",
+    });
+  });
+
+  it("does not retain raw upstream errors", async () => {
+    const apiKey = "test-provider-key-value";
+    const prompt = "Who is connected?";
+    const url = "https://api.openai.com/v1/chat/completions";
+    const transport = vi.fn<AiTransport>(async () => {
+      throw new Error(
+        `${apiKey} ${prompt} ${url} Authorization: Bearer secret`,
+      );
+    });
+    const provider = createAiProvider(runtime({ apiKey, transport }));
+
+    let thrown: unknown;
+    try {
+      await provider.generate(input);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({
+      code: "PROVIDER_UNAVAILABLE",
+      message: "The AI provider is unavailable.",
+    });
+    const serialized = JSON.stringify(thrown);
+    expect(serialized).not.toContain(apiKey);
+    expect(serialized).not.toContain(prompt);
+    expect(serialized).not.toContain(url);
+    expect(serialized).not.toContain("Authorization");
+    expect((thrown as Error & { cause?: unknown }).cause).toBeUndefined();
+  });
+
+  it("parses bounded final answers with candidate citations", async () => {
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: JSON.stringify({
+                answer: "Alice is connected to Bob.",
+                citations: [
+                  { resourceId: "018f0d90-1111-7111-8111-111111111111" },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).resolves.toEqual({
+      type: "answer",
+      answer: "Alice is connected to Bob.",
+      citations: [{ resourceId: "018f0d90-1111-7111-8111-111111111111" }],
+    });
+  });
+
+  it("serializes the bounded final-answer contract and parses its cited response", async () => {
+    const resourceId = "018f0d90-1111-7111-8111-111111111111";
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: JSON.stringify({
+                answer: "Alice is connected to Bob.",
+                citations: [{ resourceId, excerpt: "Connected record" }],
+              }),
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).resolves.toEqual({
+      type: "answer",
+      answer: "Alice is connected to Bob.",
+      citations: [{ resourceId, excerpt: "Connected record" }],
+    });
+
+    const serializedRequest = transport.mock.calls[0]![0].body;
+    const request = JSON.parse(serializedRequest) as {
+      messages: Array<{ content: string; role: string }>;
+    };
+    expect(request.messages[0]).toMatchObject({ role: "system" });
+    expect(request.messages[0]!.content).toContain(
+      "Return the final answer only as a JSON object",
+    );
+    expect(request.messages[0]!.content).toContain('"answer"');
+    expect(request.messages[0]!.content).toContain('"citations"');
+    expect(request.messages[0]!.content).toContain("64,000 UTF-8 bytes");
+    expect(request.messages[0]!.content).toContain("at most 20 citations");
+    expect(serializedRequest).not.toContain("test-provider-key-value");
+  });
+
+  it("rejects prose outside the required final-answer JSON contract", async () => {
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { role: "assistant", content: "Unstructured answer" },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).rejects.toMatchObject({
+      code: "PROVIDER_RESPONSE_INVALID",
+    });
+  });
+
+  it("rejects a final-answer object missing the required citations field", async () => {
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: JSON.stringify({ answer: "Missing citations array" }),
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).rejects.toMatchObject({
+      code: "PROVIDER_RESPONSE_INVALID",
+    });
+  });
+
+  it("rejects malformed structured answers instead of treating JSON as text", async () => {
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: JSON.stringify({
+                answer: "Unbounded candidate",
+                citations: [{ resourceId: "not-a-uuid" }],
+              }),
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).rejects.toMatchObject({
+      code: "PROVIDER_RESPONSE_INVALID",
+    });
+  });
+
+  it("parses typed tool calls and rejects excessive loop depth", async () => {
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "getPerson",
+                    arguments:
+                      '{"personId":"018f0d90-1111-7111-8111-111111111111"}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await expect(provider.generate(input)).resolves.toMatchObject({
+      type: "tool_calls",
+      toolCalls: [{ id: "call_1", name: "getPerson" }],
+    });
+    await expect(
+      provider.generate({ ...input, toolLoopDepth: 4 }),
+    ).rejects.toMatchObject({ code: "CAPABILITY_UNSUPPORTED" });
+  });
+
+  it("round-trips assistant tool calls into the next provider turn", async () => {
+    const transport = vi.fn<AiTransport>(async () =>
+      response({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: '{"answer":"Done","citations":[]}',
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createAiProvider(runtime({ transport }));
+
+    await provider.generate({
+      messages: [
+        { role: "user", content: "Find Alice" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_1",
+              name: "getPerson",
+              arguments: { personId: "018f0d90-1111-7111-8111-111111111111" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: '{"ok":true}',
+          name: "getPerson",
+          toolCallId: "call_1",
+        },
+      ],
+      tools: [],
+      toolLoopDepth: 1,
+    });
+
+    const body = JSON.parse(transport.mock.calls[0]![0].body) as {
+      messages: Array<Record<string, unknown>>;
+    };
+    expect(body.messages[2]).toMatchObject({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: "call_1",
+          type: "function",
+          function: {
+            name: "getPerson",
+            arguments: '{"personId":"018f0d90-1111-7111-8111-111111111111"}',
+          },
+        },
+      ],
+    });
+  });
+});

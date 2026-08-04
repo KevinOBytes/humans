@@ -11,6 +11,7 @@ import { createJobsRepository, type JobRow } from "./repository";
 import {
   canonicalJobPayload,
   equalJobHashes,
+  isJobKind,
   jobPayloadPurpose,
   parseJobPayload,
   type JobKind,
@@ -70,6 +71,7 @@ export function createJobsService(input: {
     repository,
     async enqueue(inputValue: {
       createdBy?: string | null;
+      principalId?: string | null;
       idempotencyKey: string;
       payload: JobPayload;
       priority?: number;
@@ -85,6 +87,12 @@ export function createJobsService(input: {
         throw new TypeError("Invalid durable job idempotency key");
       }
       const payload = parseJobPayload(inputValue.payload);
+      if (
+        (inputValue.createdBy != null && inputValue.principalId != null) ||
+        (payload.kind === "ai_execute" && inputValue.principalId == null)
+      ) {
+        throw new TypeError("Invalid durable job attribution");
+      }
       const encoded = encodeJobPayload({ key: input.encryptionKey, payload });
       const requestHash = inputValue.requestHash ?? encoded.payloadHash;
       if (!/^sha256:[a-f0-9]{64}$/u.test(requestHash)) {
@@ -101,6 +109,7 @@ export function createJobsService(input: {
         priority: inputValue.priority,
         scheduledAt: inputValue.scheduledAt,
         createdBy: inputValue.createdBy,
+        principalId: inputValue.principalId,
       });
       if (created) return created;
       const existing = await repository.getByIdempotency({
@@ -121,7 +130,7 @@ export function createJobsService(input: {
     decode(
       row: Pick<JobRow, "encryptedPayload" | "kind" | "payloadHash">,
     ): JobPayload {
-      if (row.kind !== "import_execute" && row.kind !== "file_cleanup") {
+      if (!isJobKind(row.kind)) {
         throw new Error("Unable to open protected data");
       }
       return decodeJobPayload({

@@ -36,6 +36,7 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => controller.abort());
   process.once("SIGINT", () => controller.abort());
   const registry = createJobRegistry({
+    aiExecute: async () => undefined,
     importExecute: async () => undefined,
     fileCleanup: async (_payload, context) => {
       await new Promise<void>((resolve) => {

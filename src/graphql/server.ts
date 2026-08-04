@@ -30,6 +30,7 @@ import type { WorkspaceMemberRuntime } from "@/modules/settings/workspace-member
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import type { Task12Metrics } from "@/modules/search/metrics";
 import type { SearchRuntime } from "@/modules/search/service";
+import type { AiAnalysisRuntime } from "@/modules/ai/service";
 
 import {
   canonicalizeTrustedOrigins,
@@ -71,6 +72,7 @@ export type CreateGraphQLHandlerOptions = {
   fileRuntime?: FileServiceRuntime;
   importRuntime?: ImportServiceRuntime;
   settingsRuntime?: WorkspaceMemberRuntime;
+  aiRuntime: AiAnalysisRuntime;
 };
 
 type NextRouteContext = {
@@ -572,6 +574,7 @@ export function createGraphQLHandler(
             fileRuntime: options.fileRuntime,
             importRuntime: options.importRuntime,
             settingsRuntime: options.settingsRuntime,
+            aiRuntime: options.aiRuntime,
           });
         } catch (error) {
           if (

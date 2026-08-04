@@ -17,7 +17,7 @@ Sigma.js and Graphology render large social networks through WebGL. React Flow s
 3. Dashboard: recent people, imports, analyses, activity, and concise graph statistics.
 4. People and profile: searchable records plus names, facts, relationships, timeline, evidence, files, notes, and activity.
 5. Graph explorer and relationship editor: search, filters, temporal range, layout, paths, selection inspection, saved views, and focused node/edge editing.
-6. Research search and AI analyst: full-text/structured/protected-exact search, saved queries, scoped questions, run progress, cited results, tool summaries, and provider disclosure. Task 12 implements search and deterministic graph analysis; Task 13 owns every model-backed analyst control.
+6. Research search and AI analyst: full-text/structured/protected-exact search, saved queries, scoped questions, run progress, cited results, count-only tool summaries, and provider disclosure. Task 12 implements search and deterministic graph analysis; Task 13 implements the permission-gated model-backed analyst workflow.
 7. Evidence and imports: upload status, quarantine/processing, mapping preview, row errors, and idempotent retry.
 8. Settings: members, invitations, API keys, workspace policy, audit trail, integrations, and deployment diagnostics.
 
@@ -96,6 +96,28 @@ fixed-shape JSON or CSV exports. New and stored metrics render in named semantic
 tables with algorithm versions, ranks, values, and explanations. Generic
 invalidation says only that current authorized data is no longer reproducible;
 the UI never enumerates changed or newly restricted records.
+
+## Cited analyst behavior
+
+`/analyst` is available only with `analysis:read`. The question form requires
+both create and run permissions, while cancellation requires its separate
+permission. A deliberate valid submit creates one fresh random idempotency key;
+the key is reused only when retrying that same failed start. Active work blocks
+duplicate submission and polls with an abort-safe bounded exponential delay
+that ends on a terminal state, workspace change, or component disposal.
+
+Queued, running, completed, failed, and cancelled states use semantic headings,
+polite announcements, visible focus, and no motion dependency. A completed run
+shows the protected answer, provider/model, and only citations that survived
+server validation. Person UUIDs can link to the existing first-party profile;
+evidence citations remain text because an evidence UUID alone cannot form a
+safe resource route. Tool activity shows only approved names, state, and fixed
+count/truncation fields—never arguments, result bodies, or upstream text.
+
+The surface does not persist a question or place it in navigation state. Stable
+client copy does not echo prompts, provider transport errors, credentials, or
+base URLs. Layouts use wrapping, fluid grids, reduced-motion-safe transitions,
+and touch-sized controls for mobile and 200% zoom reflow.
 
 ## Accessibility and responsive behavior
 

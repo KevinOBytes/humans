@@ -2,7 +2,7 @@
 
 Humans is an open-source, workspace-scoped research platform for building evidence-backed records about people and the relationships between them. The planned MVP combines structured facts, provenance, a social graph, GraphQL, file ingestion, and cited analysis through an OpenAI-compatible model.
 
-> **Project status:** usable alpha; not production-ready. The current tree includes an authenticated GraphQL application shell, tenant-safe research services, workspace member and invitation administration, an authorized search workbench, and deterministic graph analysis. [TODO.md](TODO.md) remains the authoritative requirement-linked backlog; AI analysis, API-key/policy administration, complete invitation acceptance evidence, deployment proof, and the remaining production gates are not finished.
+> **Project status:** usable alpha; not production-ready. The current tree includes an authenticated GraphQL application shell, tenant-safe research services, workspace member and invitation administration, an authorized search workbench, deterministic graph analysis, and a cited AI analyst. [TODO.md](TODO.md) remains the authoritative requirement-linked backlog; API-key/policy administration, complete invitation acceptance evidence, deployment proof, optional Ollama smoke, and the remaining production gates are not finished.
 
 ## Quick start
 
@@ -24,6 +24,10 @@ Open <http://localhost:3000>. The example environment contains documentation-onl
 The one-shot `db:migrate` and `admin:bootstrap` scripts load the ignored
 `.env.local` directly through Node's environment-file support; secret values
 are not placed in command arguments. Next.js loads the same file for `dev`.
+
+The analyst also needs the durable worker. Run `pnpm worker` in a second
+terminal, sign in with `analysis:read`, `analysis:create`, and `analysis:run`,
+then open `/analyst`. Cancellation is shown only with `analysis:cancel`.
 
 Administrator provisioning is an explicit one-shot operation. For Compose,
 start or migrate the backing services and run:
@@ -105,6 +109,38 @@ pnpm search:reindex -- --workspace <workspace-uuid> --batch-size 100
 The command accepts only one workspace UUID, an optional batch size from 1 to 500, and an optional dry run. Its output contains identifiers and counts, never indexed text. Migration `0009_task12_search_analysis` intentionally refuses to transform non-empty provisional search or analysis tables: operators must review and explicitly clear or export that provisional data, apply the migration, then reindex search documents and recreate deterministic snapshots.
 
 Task 12 production metrics are emitted as structured `humans.task12.metric.v1` events with fixed names and low-cardinality labels. They exclude workspace, actor, request, query, protected value, resource, cursor, and Redis-key material; metrics writer failures never alter product authorization or availability.
+
+## Cited AI analyst
+
+`/analyst` uses generated GraphQL operations to start, read, and cancel one
+workspace- and principal-scoped run. The client creates a fresh random
+idempotency key for each deliberate valid submission, polls with bounded
+exponential delay, and renders only the public run projection: state,
+provider/model, validated citations, and approved tool names with count-only
+summaries. Questions, provider credentials and endpoints, raw tool material,
+and upstream errors are not placed in URLs, browser storage, initial HTML,
+logs, or public error messages.
+
+Configure exactly one server-side provider in `.env.local`:
+
+- OpenAI: `AI_PROVIDER=openai`, the canonical
+  `AI_BASE_URL=https://api.openai.com/v1`, a private `AI_API_KEY`, and an
+  enabled `AI_MODEL`.
+- Another OpenAI-compatible service: `AI_PROVIDER=compatible`, an HTTPS
+  `AI_BASE_URL` without user information, query, or fragment, a private
+  `AI_API_KEY`, and `AI_MODEL`. The runtime revalidates public DNS and rejects
+  redirects and non-public destinations.
+- Ollama: `AI_PROVIDER=ollama`, `AI_BASE_URL=http://ollama:11434/v1`, and
+  `AI_MODEL`; no API key is required. The ordinary Compose stack does not start
+  or download Ollama. Use only the separate opt-in Ollama profile described in
+  the Docker operations runbook.
+
+Prompts and answers are sealed with `DATA_ENCRYPTION_KEY`; searchable request
+identity uses domain-separated HMAC material. Every tool call and final write
+rechecks current workspace authority. Local focused evidence on 2026-08-04 is
+8 passing component tests and 2 passing Chromium tests (including axe,
+reduced-motion, mobile/reflow, cancellation, and leakage checks). This is not
+external-provider smoke, deployment proof, or production-readiness evidence.
 
 ## Deployment direction
 

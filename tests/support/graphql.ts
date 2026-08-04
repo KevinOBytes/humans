@@ -36,6 +36,7 @@ import {
   type Task12Metrics,
 } from "@/modules/search/metrics";
 import type { SearchRuntime } from "@/modules/search/service";
+import type { AiAnalysisRuntime } from "@/modules/ai/service";
 
 import {
   CookieJar,
@@ -251,6 +252,7 @@ export class GraphQLFixture {
       fileRuntime?: FileServiceRuntime;
       importRuntime?: ImportServiceRuntime;
       settingsRuntime?: WorkspaceMemberRuntime;
+      aiRuntime?: AiAnalysisRuntime;
     } = {},
   ) {
     this.connection = createTestConnection(16, () => {
@@ -323,6 +325,14 @@ export class GraphQLFixture {
       schema: this.options.schema,
       trustedOrigins:
         this.options.trustedOrigins ?? testAdminEnv.AUTH_TRUSTED_ORIGINS,
+      aiRuntime: this.options.aiRuntime ?? {
+        encryptionKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+        hmacKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+        provider: {
+          baseUrlFingerprint: "46".repeat(32),
+          disclosure: { model: "graphql-test-model", provider: "OLLAMA" },
+        },
+      },
     });
   }
 
