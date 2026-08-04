@@ -29,6 +29,7 @@ import type { SessionActor } from "../support/graphql";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const encryptionKey = "31".repeat(32);
+const IMPORT_PREPARE_GATE = 8_104_202_609;
 
 function importJobIdempotencyHash(input: {
   actorId: string;
@@ -65,6 +66,34 @@ function importJobRequestHash(input: {
 
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+async function waitForActivity(
+  fixture: ResearchFixture,
+  applicationName: string,
+  expectedWaitEventType: "AdvisoryLock" | "Lock",
+): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const [activity] = await fixture.connection<
+      [{ waitEvent: string | null; waitEventType: string | null }]
+    >`
+      SELECT wait_event AS "waitEvent", wait_event_type AS "waitEventType"
+      FROM pg_stat_activity
+      WHERE application_name = ${applicationName}
+    `;
+    if (
+      expectedWaitEventType === "AdvisoryLock"
+        ? activity?.waitEvent === "advisory"
+        : activity?.waitEventType === "Lock"
+    ) {
+      return;
+    }
+    await delay(10);
+  }
+  throw new Error(
+    `Timed out waiting for ${applicationName} ${expectedWaitEventType}`,
+  );
+}
 
 class MemoryStore implements ObjectStore {
   readonly objects = new Map<string, Uint8Array>();
@@ -707,6 +736,133 @@ liveDescribe("import staging and durable start", () => {
       }
     },
   );
+
+  it("serializes role demotion behind a live-authorized prepare claim", async () => {
+    const owner = await fixture.createActor("owner");
+    const actor = await fixture.createWorkspaceMember(owner, "contributor");
+    const ownerContext = await serviceContext(fixture, owner);
+    const store = new MemoryStore();
+    const fileService = createFilesService(ownerContext, {
+      encryptionKey,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const body = new TextEncoder().encode(
+      "external_id,name\nlock-1,Committed User\n",
+    );
+    const upload = await fileService.createUploadSession({
+      originalName: "authority-lock.csv",
+      claimedMediaType: "text/csv",
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      purpose: "CSV_IMPORT",
+    });
+    store.objects.set(`${owner.workspaceId}:${upload.session.objectKey}`, body);
+    const completed = await fileService.completeUpload(upload.session.id);
+    const ownerService = createImportsService(ownerContext, {
+      encryptionKey,
+      objectStore: store,
+    });
+    const mapping = await ownerService.saveMapping({
+      name: "Authority lock mapping",
+      format: "CSV",
+      definition: {
+        version: 1,
+        recordKind: "PERSON",
+        rowKeySource: "external_id",
+        person: {
+          displayNameSource: "name",
+          primaryNameKind: "legal",
+          fields: [],
+        },
+        facts: [],
+        defaults: {},
+      },
+    });
+    const writerConnection = createTestConnection(1);
+    const revokerConnection = createTestConnection(1);
+    const gateConnection = createTestConnection(1);
+    const writerName = `task1_import_writer_${newId()}`;
+    const revokerName = `task1_import_revoker_${newId()}`;
+    const service = createImportsService(
+      {
+        ...(await serviceContext(fixture, actor)),
+        database: createTestDatabase(writerConnection),
+      },
+      { encryptionKey, objectStore: store },
+    );
+    let gateHeld = false;
+    let preparePromise: Promise<
+      Awaited<ReturnType<typeof service.prepareImport>>
+    > | null = null;
+    let removalPromise: Promise<unknown> | null = null;
+    try {
+      await fixture.connection.unsafe(`
+        CREATE OR REPLACE FUNCTION task1_import_post_authority_gate()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.state = 'staging' AND NEW.state = 'preview_ready' THEN
+            PERFORM pg_advisory_xact_lock(${IMPORT_PREPARE_GATE});
+          END IF;
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER task1_import_post_authority_gate_trigger
+        BEFORE UPDATE ON imports
+        FOR EACH ROW EXECUTE FUNCTION task1_import_post_authority_gate();
+      `);
+      await writerConnection`SELECT set_config('application_name', ${writerName}, false)`;
+      await revokerConnection`SELECT set_config('application_name', ${revokerName}, false)`;
+      await gateConnection`SELECT pg_advisory_lock(${IMPORT_PREPARE_GATE})`;
+      gateHeld = true;
+      preparePromise = service.prepareImport({
+        fileId: completed.file.id,
+        mappingId: mapping.mapping.id,
+        idempotencyKey: "prepare-authority-lock-v1",
+      });
+      await waitForActivity(fixture, writerName, "AdvisoryLock");
+      removalPromise = createTestDatabase(revokerConnection)
+        .update(members)
+        .set({ role: "viewer" })
+        .where(eq(members.id, actor.memberId))
+        .returning({ id: members.id })
+        .then(() => undefined);
+      await waitForActivity(fixture, revokerName, "Lock");
+      await gateConnection`SELECT pg_advisory_unlock(${IMPORT_PREPARE_GATE})`;
+      gateHeld = false;
+      await expect(preparePromise).resolves.toMatchObject({
+        import: { state: "preview_ready", totalRows: 1 },
+      });
+      await removalPromise;
+      expect(
+        await fixture.database
+          .select({ id: importsTable.id })
+          .from(importsTable)
+          .where(eq(importsTable.workspaceId, owner.workspaceId)),
+      ).toHaveLength(1);
+    } finally {
+      if (gateHeld) {
+        await gateConnection`
+          SELECT pg_advisory_unlock(${IMPORT_PREPARE_GATE})
+        `.catch(() => undefined);
+      }
+      await fixture.connection
+        .unsafe(
+          "DROP TRIGGER IF EXISTS task1_import_post_authority_gate_trigger ON imports; DROP FUNCTION IF EXISTS task1_import_post_authority_gate();",
+        )
+        .catch(() => undefined);
+      await Promise.allSettled(
+        [preparePromise, removalPromise].filter(
+          (promise): promise is Promise<unknown> => promise !== null,
+        ),
+      );
+      await Promise.all([
+        writerConnection.end(),
+        revokerConnection.end(),
+        gateConnection.end(),
+      ]);
+    }
+  });
 
   it("serializes the per-actor cap when a member starts imports created by a peer", async () => {
     const owner = await fixture.createActor("owner");

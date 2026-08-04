@@ -319,7 +319,7 @@ async function requireLiveResearchIdentity(
       ),
     )
     .limit(2)
-    .for("share");
+    .for("share", { of: members });
   const live = rows[0];
   if (
     rows.length !== 1 ||
