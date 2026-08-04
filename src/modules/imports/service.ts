@@ -19,7 +19,7 @@ import {
   resourceVisibilitySql,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
-import { withResearchWriteTransaction } from "@/modules/audit/transactions";
+import { runResearchTransaction } from "@/modules/audit/transactions";
 import { createJobsService } from "@/modules/jobs/service";
 import { equalJobHashes } from "@/modules/jobs/types";
 
@@ -251,6 +251,7 @@ export function createImportsService(
     const row = await repository.getImport({
       id,
       workspaceId: context.workspaceId,
+      visibility: fileVisibility,
     });
     if (!row) return notFound();
     return row;
@@ -331,14 +332,15 @@ export function createImportsService(
   }
 
   async function replay(importRow: ImportRow) {
+    const visibleImport = await requireImport(importRow.id);
     const rows = await repository.listRows({
-      importId: importRow.id,
-      stagingGeneration: importRow.stagingGeneration,
+      importId: visibleImport.id,
+      stagingGeneration: visibleImport.stagingGeneration,
       workspaceId: context.workspaceId,
       limit: PREVIEW_LIMIT,
     });
     return {
-      import: importRow,
+      import: visibleImport,
       preview: previewRows(rows),
       issues: [] as const,
     };
@@ -380,245 +382,266 @@ export function createImportsService(
         workspaceId: context.workspaceId,
       }),
     );
-    return withResearchWriteTransaction(context, async (database) => {
-      await database.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${`humans:imports:${context.workspaceId}`}, 0))`,
-      );
-      const scoped = createImportsRepository(database);
-      const scopedJobs = createJobsService({
-        database,
-        encryptionKey: runtime.encryptionKey,
-      });
-      const replayJob = await scopedJobs.repository.lockByIdempotency({
-        idempotencyKey: keyHash,
-        kind: "import_execute",
-        workspaceId: context.workspaceId,
-      });
-      const priorJob =
-        !replayJob && current.executionJobId
-          ? await scopedJobs.repository.lockById({
-              id: current.executionJobId,
-              workspaceId: context.workspaceId,
-            })
-          : null;
-      const locked = await scoped.lockImport({
-        id: current.id,
-        workspaceId: context.workspaceId,
-      });
-      if (!locked) return notFound();
-      const allowed = input.retry
-        ? ["failed", "dead_letter", "completed_with_errors"]
-        : ["preview_ready"];
-      let lockedStored: StoredImportMapping;
-      try {
-        lockedStored = mappingEnvelope(locked.mapping);
-      } catch {
-        throw createGraphQLError(
-          "PRECONDITION_FAILED",
-          "The stored import mapping must be repaired before retrying.",
+    const requiredPermissions = [
+      "import:run",
+      ...(stored.definition.recordKind === "PERSON"
+        ? [
+            "person:create",
+            ...(stored.definition.facts.length ? ["fact:create"] : []),
+          ]
+        : ["relationship:create", "person:read"]),
+    ];
+    return runResearchTransaction(
+      context,
+      { requiredPermissions },
+      async (scopedContext) => {
+        const database = scopedContext.database;
+        await database.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${`humans:imports:${context.workspaceId}`}, 0))`,
         );
-      }
-      const [[lockedFile], [lockedMapping]] = await Promise.all([
-        database
-          .select({
-            byteSize: files.byteSize,
-            checksum: files.checksum,
-            id: files.id,
-            quarantineState: files.quarantineState,
-            scanState: files.scanState,
-          })
-          .from(files)
-          .where(
-            and(
-              eq(files.workspaceId, context.workspaceId),
-              eq(files.id, locked.fileId),
-              isNull(files.deletedAt),
-            ),
-          )
-          .limit(1)
-          .for("share"),
-        database
-          .select()
-          .from(importMappings)
-          .where(
-            and(
-              eq(importMappings.workspaceId, context.workspaceId),
-              eq(importMappings.id, lockedStored.mappingId),
-              isNull(importMappings.deletedAt),
-            ),
-          )
-          .limit(1)
-          .for("share"),
-      ]);
-      let currentMappingHash = "";
-      try {
-        currentMappingHash = createHash("sha256")
-          .update(
-            canonicalJson(
-              parseImportMappingEnvelope(lockedMapping?.columnMapping),
-            ),
-          )
-          .digest("hex");
-      } catch {
-        // The same public precondition below covers invalid stored snapshots.
-      }
-      if (
-        !lockedFile ||
-        !lockedMapping ||
-        lockedStored.fileChecksum === undefined ||
-        lockedStored.fileSize === undefined ||
-        lockedFile.checksum !== lockedStored.fileChecksum ||
-        lockedFile.byteSize !== lockedStored.fileSize ||
-        lockedFile.quarantineState !== "available" ||
-        !["clean", "not_required"].includes(lockedFile.scanState) ||
-        lockedMapping.version !== lockedStored.mappingVersion ||
-        currentMappingHash !== lockedStored.mappingHash
-      ) {
-        throw createGraphQLError(
-          "PRECONDITION_FAILED",
-          publicErrorMessage("PRECONDITION_FAILED"),
-        );
-      }
-      if (lockedStored.definition.recordKind === "PERSON") {
-        requirePermission(context, "person:create");
-        if (lockedStored.definition.facts.length)
-          requirePermission(context, "fact:create");
-      } else {
-        requirePermission(context, "relationship:create");
-        requirePermission(context, "person:read");
-      }
-      await validateFixedReferences(lockedStored.definition, database);
-      const requestHash = `sha256:${hmac(
-        runtime.encryptionKey,
-        "import-job-request",
-        canonicalJson({
-          actorId: context.actor.id,
-          expectedVersion: input.expectedVersion,
-          fileChecksum: lockedFile.checksum,
-          fileId: lockedFile.id,
-          fileSize: lockedFile.byteSize,
-          importId: locked.id,
-          mappingHash: lockedStored.mappingHash,
-          mappingId: lockedStored.mappingId,
-          mappingVersion: lockedStored.mappingVersion,
-          mode: lockedStored.mode,
-          operation: input.retry ? "retry" : "start",
-          workspaceId: context.workspaceId,
-        }),
-      )}`;
-      if (replayJob) {
-        let payload;
-        try {
-          payload = scopedJobs.decode(replayJob);
-        } catch {
-          throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
-        }
-        if (
-          locked.executionJobId !== replayJob.id ||
-          !replayJob.requestHash ||
-          !equalJobHashes(replayJob.requestHash, requestHash) ||
-          payload.kind !== "import_execute" ||
-          payload.importId !== locked.id
-        ) {
-          throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
-        }
-        return { import: locked, job: replayJob, issues: [] as const };
-      }
-      if (
-        locked.version !== input.expectedVersion ||
-        !allowed.includes(locked.state) ||
-        locked.executionJobId !== current.executionJobId ||
-        (input.retry &&
-          (!priorJob ||
-            (priorJob.state !== "completed" &&
-              priorJob.state !== "dead_letter")))
-      ) {
-        throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
-      }
-      const actorCount = await scoped.countActive({
-        actorId: context.actor.id,
-        workspaceId: context.workspaceId,
-      });
-      const workspaceCount = await scoped.countActive({
-        workspaceId: context.workspaceId,
-      });
-      if (
-        actorCount >= ACTIVE_IMPORTS_ACTOR ||
-        workspaceCount >= ACTIVE_IMPORTS_WORKSPACE
-      ) {
-        throw createGraphQLError(
-          "RATE_LIMITED",
-          publicErrorMessage("RATE_LIMITED"),
-        );
-      }
-      const now = new Date();
-      let acceptedRows = locked.acceptedRows;
-      let rejectedRows = locked.rejectedRows;
-      if (input.retry) {
-        const reset = await scoped.resetExecutionRowsForRetry({
-          actorId: context.actor.id,
-          importId: locked.id,
-          includeProcessing:
-            locked.state === "failed" || locked.state === "dead_letter",
-          now,
+        const scoped = createImportsRepository(database);
+        const scopedJobs = createJobsService({
+          database,
+          encryptionKey: runtime.encryptionKey,
+        });
+        const replayJob = await scopedJobs.repository.lockByIdempotency({
+          idempotencyKey: keyHash,
+          kind: "import_execute",
           workspaceId: context.workspaceId,
         });
-        const physicalCount = [...reset.byState.values()].reduce(
-          (sum, count) => sum + count,
-          0,
-        );
+        const priorJob =
+          !replayJob && current.executionJobId
+            ? await scopedJobs.repository.lockById({
+                id: current.executionJobId,
+                workspaceId: context.workspaceId,
+              })
+            : null;
+        const locked = await scoped.lockImport({
+          id: current.id,
+          workspaceId: context.workspaceId,
+        });
+        if (!locked) return notFound();
+        const allowed = input.retry
+          ? ["failed", "dead_letter", "completed_with_errors"]
+          : ["preview_ready"];
+        let lockedStored: StoredImportMapping;
+        try {
+          lockedStored = mappingEnvelope(locked.mapping);
+        } catch {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored import mapping must be repaired before retrying.",
+          );
+        }
+        const [[lockedFile], [lockedMapping]] = await Promise.all([
+          database
+            .select({
+              byteSize: files.byteSize,
+              checksum: files.checksum,
+              id: files.id,
+              quarantineState: files.quarantineState,
+              scanState: files.scanState,
+            })
+            .from(files)
+            .where(
+              and(
+                eq(files.workspaceId, context.workspaceId),
+                eq(files.id, locked.fileId),
+                isNull(files.deletedAt),
+                fileVisibility,
+              ),
+            )
+            .limit(1)
+            .for("share"),
+          database
+            .select()
+            .from(importMappings)
+            .where(
+              and(
+                eq(importMappings.workspaceId, context.workspaceId),
+                eq(importMappings.id, lockedStored.mappingId),
+                isNull(importMappings.deletedAt),
+              ),
+            )
+            .limit(1)
+            .for("share"),
+        ]);
+        let currentMappingHash = "";
+        try {
+          currentMappingHash = createHash("sha256")
+            .update(
+              canonicalJson(
+                parseImportMappingEnvelope(lockedMapping?.columnMapping),
+              ),
+            )
+            .digest("hex");
+        } catch {
+          // The same public precondition below covers invalid stored snapshots.
+        }
         if (
-          physicalCount !== locked.totalRows ||
-          (locked.state === "completed_with_errors" && reset.resetCount === 0)
+          !lockedFile ||
+          !lockedMapping ||
+          lockedStored.fileChecksum === undefined ||
+          lockedStored.fileSize === undefined ||
+          lockedFile.checksum !== lockedStored.fileChecksum ||
+          lockedFile.byteSize !== lockedStored.fileSize ||
+          lockedFile.quarantineState !== "available" ||
+          !["clean", "not_required"].includes(lockedFile.scanState) ||
+          lockedMapping.version !== lockedStored.mappingVersion ||
+          currentMappingHash !== lockedStored.mappingHash
         ) {
           throw createGraphQLError(
             "PRECONDITION_FAILED",
             publicErrorMessage("PRECONDITION_FAILED"),
           );
         }
-        acceptedRows = reset.byState.get("succeeded") ?? 0;
-        rejectedRows = reset.byState.get("rejected") ?? 0;
-      }
-      const job = await scopedJobs.enqueue({
-        workspaceId: context.workspaceId,
-        idempotencyKey: keyHash,
-        payload: { kind: "import_execute", importId: locked.id },
-        requestHash,
-        createdBy: context.actor.id,
-      });
-      const transitioned = await scoped.transitionImport({
-        acceptedRows,
-        id: locked.id,
-        workspaceId: context.workspaceId,
-        expectedVersion: locked.version,
-        from: allowed,
-        state: "queued",
-        now,
-        actorId: context.actor.id,
-        completedAt: null,
-        executionJobId: job.id,
-        rejectedRows,
-        startedAt: null,
-      });
-      if (!transitioned)
-        throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
-      await audit.write(database, {
-        action: input.retry ? "import.retry_queued" : "import.queued",
-        changedFields: [
-          "acceptedRows",
-          "completedAt",
-          "executionJobId",
-          "rejectedRows",
-          "startedAt",
-          "state",
-          "version",
-        ],
-        resourceId: locked.id,
-        resourceKind: "import",
-        metadata: { jobId: job.id, version: transitioned.version },
-      });
-      return { import: transitioned, job, issues: [] as const };
-    });
+        if (lockedStored.definition.recordKind === "PERSON") {
+          requirePermission(context, "person:create");
+          if (lockedStored.definition.facts.length)
+            requirePermission(context, "fact:create");
+        } else {
+          requirePermission(context, "relationship:create");
+          requirePermission(context, "person:read");
+        }
+        await validateFixedReferences(lockedStored.definition, database);
+        const requestHash = `sha256:${hmac(
+          runtime.encryptionKey,
+          "import-job-request",
+          canonicalJson({
+            actorId: context.actor.id,
+            expectedVersion: input.expectedVersion,
+            fileChecksum: lockedFile.checksum,
+            fileId: lockedFile.id,
+            fileSize: lockedFile.byteSize,
+            importId: locked.id,
+            mappingHash: lockedStored.mappingHash,
+            mappingId: lockedStored.mappingId,
+            mappingVersion: lockedStored.mappingVersion,
+            mode: lockedStored.mode,
+            operation: input.retry ? "retry" : "start",
+            workspaceId: context.workspaceId,
+          }),
+        )}`;
+        if (replayJob) {
+          let payload;
+          try {
+            payload = scopedJobs.decode(replayJob);
+          } catch {
+            throw createGraphQLError(
+              "CONFLICT",
+              publicErrorMessage("CONFLICT"),
+            );
+          }
+          if (
+            locked.executionJobId !== replayJob.id ||
+            !replayJob.requestHash ||
+            !equalJobHashes(replayJob.requestHash, requestHash) ||
+            payload.kind !== "import_execute" ||
+            payload.importId !== locked.id
+          ) {
+            throw createGraphQLError(
+              "CONFLICT",
+              publicErrorMessage("CONFLICT"),
+            );
+          }
+          return { import: locked, job: replayJob, issues: [] as const };
+        }
+        if (
+          locked.version !== input.expectedVersion ||
+          !allowed.includes(locked.state) ||
+          locked.executionJobId !== current.executionJobId ||
+          (input.retry &&
+            (!priorJob ||
+              (priorJob.state !== "completed" &&
+                priorJob.state !== "dead_letter")))
+        ) {
+          throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
+        }
+        const actorCount = await scoped.countActive({
+          actorId: context.actor.id,
+          workspaceId: context.workspaceId,
+        });
+        const workspaceCount = await scoped.countActive({
+          workspaceId: context.workspaceId,
+        });
+        if (
+          actorCount >= ACTIVE_IMPORTS_ACTOR ||
+          workspaceCount >= ACTIVE_IMPORTS_WORKSPACE
+        ) {
+          throw createGraphQLError(
+            "RATE_LIMITED",
+            publicErrorMessage("RATE_LIMITED"),
+          );
+        }
+        const now = new Date();
+        let acceptedRows = locked.acceptedRows;
+        let rejectedRows = locked.rejectedRows;
+        if (input.retry) {
+          const reset = await scoped.resetExecutionRowsForRetry({
+            actorId: context.actor.id,
+            importId: locked.id,
+            includeProcessing:
+              locked.state === "failed" || locked.state === "dead_letter",
+            now,
+            workspaceId: context.workspaceId,
+          });
+          const physicalCount = [...reset.byState.values()].reduce(
+            (sum, count) => sum + count,
+            0,
+          );
+          if (
+            physicalCount !== locked.totalRows ||
+            (locked.state === "completed_with_errors" && reset.resetCount === 0)
+          ) {
+            throw createGraphQLError(
+              "PRECONDITION_FAILED",
+              publicErrorMessage("PRECONDITION_FAILED"),
+            );
+          }
+          acceptedRows = reset.byState.get("succeeded") ?? 0;
+          rejectedRows = reset.byState.get("rejected") ?? 0;
+        }
+        const job = await scopedJobs.enqueue({
+          workspaceId: context.workspaceId,
+          idempotencyKey: keyHash,
+          payload: { kind: "import_execute", importId: locked.id },
+          requestHash,
+          createdBy: context.actor.id,
+        });
+        const transitioned = await scoped.transitionImport({
+          acceptedRows,
+          id: locked.id,
+          workspaceId: context.workspaceId,
+          expectedVersion: locked.version,
+          from: allowed,
+          state: "queued",
+          now,
+          actorId: context.actor.id,
+          completedAt: null,
+          executionJobId: job.id,
+          rejectedRows,
+          startedAt: null,
+        });
+        if (!transitioned)
+          throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
+        await audit.write(database, {
+          action: input.retry ? "import.retry_queued" : "import.queued",
+          changedFields: [
+            "acceptedRows",
+            "completedAt",
+            "executionJobId",
+            "rejectedRows",
+            "startedAt",
+            "state",
+            "version",
+          ],
+          resourceId: locked.id,
+          resourceKind: "import",
+          metadata: { jobId: job.id, version: transitioned.version },
+        });
+        return { import: transitioned, job, issues: [] as const };
+      },
+    );
   }
 
   return {
@@ -656,47 +679,57 @@ export function createImportsService(
           "The import mapping is invalid.",
         );
       }
-      await validateFixedReferences(definition);
       const now = new Date();
-      return withResearchWriteTransaction(context, async (database) => {
-        const scoped = createImportsRepository(database);
-        const row = input.id
-          ? await scoped.updateMapping({
-              id: input.id,
-              workspaceId: context.workspaceId,
-              expectedVersion: input.expectedVersion ?? 0,
-              name,
-              format: input.format,
-              definition,
-              validationConfig: { mappingVersion: 1 },
-              now,
-              actorId: context.actor.id,
-            })
-          : await scoped.createMapping({
-              id: newId(),
-              workspaceId: context.workspaceId,
-              name,
-              format: input.format,
-              columnMapping: definition,
-              validationConfig: { mappingVersion: 1 },
-              createdAt: now,
-              createdBy: context.actor.id,
-              updatedAt: now,
-              updatedBy: context.actor.id,
-            });
-        if (!row)
-          throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
-        await audit.write(database, {
-          action: input.id
-            ? "import_mapping.updated"
-            : "import_mapping.created",
-          changedFields: ["name", "format", "columnMapping", "version"],
-          resourceId: row.id,
-          resourceKind: "import_mapping",
-          metadata: { format: row.format, version: row.version },
-        });
-        return { mapping: row, issues: [] as const };
-      });
+      return runResearchTransaction(
+        context,
+        {
+          requiredPermissions: [input.id ? "import:update" : "import:create"],
+        },
+        async (scopedContext) => {
+          const database = scopedContext.database;
+          await validateFixedReferences(definition, database);
+          const scoped = createImportsRepository(database);
+          const row = input.id
+            ? await scoped.updateMapping({
+                id: input.id,
+                workspaceId: context.workspaceId,
+                expectedVersion: input.expectedVersion ?? 0,
+                name,
+                format: input.format,
+                definition,
+                validationConfig: { mappingVersion: 1 },
+                now,
+                actorId: context.actor.id,
+              })
+            : await scoped.createMapping({
+                id: newId(),
+                workspaceId: context.workspaceId,
+                name,
+                format: input.format,
+                columnMapping: definition,
+                validationConfig: { mappingVersion: 1 },
+                createdAt: now,
+                createdBy: context.actor.id,
+                updatedAt: now,
+                updatedBy: context.actor.id,
+              });
+          if (!row)
+            throw createGraphQLError(
+              "CONFLICT",
+              publicErrorMessage("CONFLICT"),
+            );
+          await audit.write(database, {
+            action: input.id
+              ? "import_mapping.updated"
+              : "import_mapping.created",
+            changedFields: ["name", "format", "columnMapping", "version"],
+            resourceId: row.id,
+            resourceKind: "import_mapping",
+            metadata: { format: row.format, version: row.version },
+          });
+          return { mapping: row, issues: [] as const };
+        },
+      );
     },
 
     async prepareImport(input: {
@@ -819,30 +852,36 @@ export function createImportsService(
       const stagingOwner = newId();
       const stagingId = newId();
       const claimOnce = () =>
-        withResearchWriteTransaction(context, async (database) => {
-          const claim = await createImportsRepository(database).claimPrepare({
-            actorId: context.actor.id,
-            envelope,
-            fileId: file.file.id,
-            format,
-            id: stagingId,
-            idempotencyKey,
-            leaseMs: PREPARE_LEASE_MS,
-            owner: stagingOwner,
-            requestHash,
-            workspaceId: context.workspaceId,
-          });
-          if (claim.created) {
-            await audit.write(database, {
-              action: "import.staging_started",
-              changedFields: ["fileId", "format", "state", "mapping"],
-              resourceId: claim.import.id,
-              resourceKind: "import",
-              metadata: { format, mappingId: mappingRow.id, mode },
+        runResearchTransaction(
+          context,
+          { requiredPermissions: ["import:create"] },
+          async (scopedContext) => {
+            const database = scopedContext.database;
+            await validateFixedReferences(structural, database);
+            const claim = await createImportsRepository(database).claimPrepare({
+              actorId: context.actor.id,
+              envelope,
+              fileId: file.file.id,
+              format,
+              id: stagingId,
+              idempotencyKey,
+              leaseMs: PREPARE_LEASE_MS,
+              owner: stagingOwner,
+              requestHash,
+              workspaceId: context.workspaceId,
             });
-          }
-          return claim;
-        });
+            if (claim.created) {
+              await audit.write(database, {
+                action: "import.staging_started",
+                changedFields: ["fileId", "format", "state", "mapping"],
+                resourceId: claim.import.id,
+                resourceKind: "import",
+                metadata: { format, mappingId: mappingRow.id, mode },
+              });
+            }
+            return claim;
+          },
+        );
       let claim = await claimOnce();
       while (claim.status === "wait") {
         await new Promise((resolve) => setTimeout(resolve, PREPARE_WAIT_MS));
@@ -880,16 +919,19 @@ export function createImportsService(
         if (!batch.length) return;
         const values = batch;
         batch = [];
-        const inserted = await createImportsRepository(
-          context.database,
-        ).insertPrepareRows({
-          generation: stagingGeneration,
-          importId: stagedImport.id,
-          leaseMs: PREPARE_LEASE_MS,
-          owner: stagingOwner,
-          values,
-          workspaceId: context.workspaceId,
-        });
+        const inserted = await runResearchTransaction(
+          context,
+          { requiredPermissions: ["import:create"] },
+          async (scopedContext) =>
+            createImportsRepository(scopedContext.database).insertPrepareRows({
+              generation: stagingGeneration,
+              importId: stagedImport.id,
+              leaseMs: PREPARE_LEASE_MS,
+              owner: stagingOwner,
+              values,
+              workspaceId: context.workspaceId,
+            }),
+        );
         if (!inserted) {
           throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
         }
@@ -901,11 +943,12 @@ export function createImportsService(
           stream: object.body,
           onRow: async (row) => {
             let normalizedPayload: unknown = {};
-            let validationErrors: Array<{ code: string; message: string }> =
-              row.warnings.map((code) => ({
-                code,
-                message: "A value may be interpreted as a spreadsheet formula.",
-              }));
+            const warningErrors = row.warnings.map((code) => ({
+              code,
+              message: "A value may be interpreted as a spreadsheet formula.",
+            }));
+            let rejectionDiagnostic:
+              { code: string; message: string } | undefined;
             let state = "pending";
             try {
               const projected = projectImportRow(structural, row.values);
@@ -917,13 +960,19 @@ export function createImportsService(
             } catch {
               state = "rejected";
               rejectedRows += 1;
-              validationErrors.push({
+              rejectionDiagnostic = {
                 code: "ROW_VALIDATION_FAILED",
                 message: "The row does not satisfy the selected mapping.",
-              });
+              };
             }
-            validationErrors = validationErrors.slice(0, remainingIssueBudget);
-            remainingIssueBudget -= validationErrors.length;
+            const validationErrors = [
+              ...warningErrors.slice(0, remainingIssueBudget),
+              ...(rejectionDiagnostic ? [rejectionDiagnostic] : []),
+            ];
+            remainingIssueBudget -= Math.min(
+              warningErrors.length,
+              remainingIssueBudget,
+            );
             const sourceHash = hmac(
               runtime.encryptionKey,
               "import-row-source",
@@ -950,13 +999,18 @@ export function createImportsService(
         await flush();
         parseImportMapping(structural, parsed.columns);
       } catch (error) {
-        const failed = await repository.failPrepare({
-          actorId: context.actor.id,
-          generation: stagingGeneration,
-          importId: stagedImport.id,
-          owner: stagingOwner,
-          workspaceId: context.workspaceId,
-        });
+        const failed = await runResearchTransaction(
+          context,
+          { requiredPermissions: ["import:create"] },
+          async (scopedContext) =>
+            createImportsRepository(scopedContext.database).failPrepare({
+              actorId: context.actor.id,
+              generation: stagingGeneration,
+              importId: stagedImport.id,
+              owner: stagingOwner,
+              workspaceId: context.workspaceId,
+            }),
+        );
         if (error && typeof error === "object" && "extensions" in error)
           throw error;
         if (!failed) {
@@ -967,9 +1021,11 @@ export function createImportsService(
           "The import could not be prepared.",
         );
       }
-      const prepared = await withResearchWriteTransaction(
+      const prepared = await runResearchTransaction(
         context,
-        async (database) => {
+        { requiredPermissions: ["import:create"] },
+        async (scopedContext) => {
+          const database = scopedContext.database;
           const scoped = createImportsRepository(database);
           const row = await scoped.finishPrepare({
             actorId: context.actor.id,
@@ -1029,6 +1085,7 @@ export function createImportsService(
       const rows = await repository.getImportsByIds({
         ids,
         workspaceId: context.workspaceId,
+        visibility: fileVisibility,
       });
       const byId = new Map(rows.map((row) => [row.id, row]));
       return ids.map((id) => byId.get(id) ?? null);
@@ -1100,6 +1157,7 @@ export function createImportsService(
         limit: first + 1,
         cursor: parsePageCursor(input.after),
         state,
+        visibility: fileVisibility,
       });
       const nodes = rows.slice(0, first);
       return {
