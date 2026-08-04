@@ -133,14 +133,54 @@ const UpdateWorkspaceMemberRoleInput = builder.inputType(
   },
 );
 
+const CreateOrganizationApiKeyInput = builder.inputType(
+  "CreateOrganizationApiKeyInput",
+  {
+    fields: (t) => ({
+      name: t.string({ required: true }),
+      scopes: t.field({ type: ["String"], required: true }),
+      expiresInSeconds: t.int(),
+    }),
+  },
+);
+
+const RotateOrganizationApiKeyInput = builder.inputType(
+  "RotateOrganizationApiKeyInput",
+  {
+    fields: (t) => ({
+      actionId: t.string({ required: true }),
+      name: t.string({ required: true }),
+      scopes: t.field({ type: ["String"], required: true }),
+      expiresInSeconds: t.int(),
+    }),
+  },
+);
+
+const RevokeOrganizationApiKeyInput = builder.inputType(
+  "RevokeOrganizationApiKeyInput",
+  {
+    fields: (t) => ({ actionId: t.string({ required: true }) }),
+  },
+);
+
 type AccessPolicy = PolicySettingsReadModel["accessPolicies"][number];
 type RetentionPolicy = PolicySettingsReadModel["retentionPolicies"][number];
 type WorkspaceDefaults = PolicySettingsReadModel["workspace"];
+type ApiKeySettingsPage = SafeSettingsPage<SafeApiKeySettings> & {
+  allowedScopes: readonly string[];
+};
+type ApiKeyLifecycleMutationResult = {
+  actionId: string | null;
+  code: "APPLIED" | "INVALID";
+  requestId: string;
+  secret?: string;
+};
 
 const SettingsApiKey = builder
   .objectRef<SafeApiKeySettings>("SettingsApiKey")
   .implement({
     fields: (t) => ({
+      actionId: t.exposeString("actionId", { nullable: false }),
       name: t.exposeString("name", { nullable: false }),
       fingerprint: t.exposeString("fingerprint", { nullable: false }),
       state: t.exposeString("state", { nullable: false }),
@@ -155,7 +195,7 @@ const SettingsApiKey = builder
   });
 
 const SettingsApiKeyPage = builder
-  .objectRef<SafeSettingsPage<SafeApiKeySettings>>("SettingsApiKeyPage")
+  .objectRef<ApiKeySettingsPage>("SettingsApiKeyPage")
   .implement({
     fields: (t) => ({
       nodes: t.expose("nodes", {
@@ -168,6 +208,27 @@ const SettingsApiKeyPage = builder
       total: t.exposeInt("total", { nullable: false }),
       hasPrevious: t.exposeBoolean("hasPrevious", { nullable: false }),
       hasMore: t.exposeBoolean("hasMore", { nullable: false }),
+      allowedScopes: t.exposeStringList("allowedScopes", {
+        nullable: { list: false, items: false },
+      }),
+    }),
+  });
+
+const SettingsApiKeyLifecycleMutationPayload = builder
+  .objectRef<ApiKeyLifecycleMutationResult>(
+    "SettingsApiKeyLifecycleMutationPayload",
+  )
+  .implement({
+    fields: (t) => ({
+      actionId: t.exposeString("actionId", { nullable: true }),
+      code: t.exposeString("code", { nullable: false }),
+      requestId: t.exposeString("requestId", { nullable: false }),
+      // The plaintext is populated only for one successful create/rotate
+      // response. No query type can select it.
+      secret: t.string({
+        nullable: true,
+        resolve: (result) => result.secret ?? null,
+      }),
     }),
   });
 
@@ -363,6 +424,41 @@ export function registerSettingsGraphQL(): void {
           context.services.settings.removeMember(
             args.input.actionId,
             args.input.idempotencyKey,
+          ),
+        ),
+    }),
+    createOrganizationApiKey: t.field({
+      type: SettingsApiKeyLifecycleMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: CreateOrganizationApiKeyInput, required: true }),
+      },
+      resolve: (_root, args, context) =>
+        requireSessionAdministration(context.actor.type, () =>
+          context.services.settings.createOrganizationApiKey(args.input),
+        ),
+    }),
+    rotateOrganizationApiKey: t.field({
+      type: SettingsApiKeyLifecycleMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: RotateOrganizationApiKeyInput, required: true }),
+      },
+      resolve: (_root, args, context) =>
+        requireSessionAdministration(context.actor.type, () =>
+          context.services.settings.rotateOrganizationApiKey(args.input),
+        ),
+    }),
+    revokeOrganizationApiKey: t.field({
+      type: SettingsApiKeyLifecycleMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: RevokeOrganizationApiKeyInput, required: true }),
+      },
+      resolve: (_root, args, context) =>
+        requireSessionAdministration(context.actor.type, () =>
+          context.services.settings.revokeOrganizationApiKey(
+            args.input.actionId,
           ),
         ),
     }),

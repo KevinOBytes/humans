@@ -1,6 +1,18 @@
-import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 
+import { newId } from "@/db/id";
 import { apiKeys, members } from "@/db/schema/auth";
+import { auditEvents } from "@/db/schema/operations";
 import {
   accessPolicies,
   retentionPolicies,
@@ -31,8 +43,74 @@ export type PolicySettingsReadModel = {
   }[];
 };
 
+type TransactionDatabase = Parameters<
+  Parameters<Database["transaction"]>[0]
+>[0];
+
+async function lockAndRevalidateAdministrativeActor(input: {
+  actor: { id: string; memberId: string };
+  lockRows?: boolean;
+  transaction: TransactionDatabase;
+  workspaceId: string;
+}): Promise<"admin" | "owner" | null> {
+  await input.transaction.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${input.workspaceId}, 0))`,
+  );
+  const query = input.transaction
+    .select({ id: members.id, role: members.role })
+    .from(workspaces)
+    .innerJoin(
+      members,
+      and(
+        eq(members.workspaceId, workspaces.id),
+        eq(members.organizationId, workspaces.organizationId),
+      ),
+    )
+    .where(
+      and(
+        eq(workspaces.id, input.workspaceId),
+        eq(workspaces.state, "active"),
+        isNull(workspaces.deletedAt),
+        eq(members.id, input.actor.memberId),
+        eq(members.userId, input.actor.id),
+        inArray(members.role, ["owner", "admin"]),
+      ),
+    )
+    .limit(2);
+  const rows =
+    input.lockRows === false ? await query : await query.for("update");
+  const row = rows[0];
+  return rows.length === 1 &&
+    row &&
+    (row.role === "owner" || row.role === "admin")
+    ? row.role
+    : null;
+}
+
 export function createSettingsRepository(database: Database) {
   return {
+    async withAdministrativeApiKeyLifecycle<T>(input: {
+      actor: { id: string; memberId: string };
+      run: (
+        transaction: TransactionDatabase,
+        role: "admin" | "owner",
+      ) => Promise<T>;
+      workspaceId: string;
+    }): Promise<{ status: "APPLIED"; value: T } | { status: "FORBIDDEN" }> {
+      return database.transaction(async (transaction) => {
+        const role = await lockAndRevalidateAdministrativeActor({
+          actor: input.actor,
+          lockRows: false,
+          transaction,
+          workspaceId: input.workspaceId,
+        });
+        if (!role) return { status: "FORBIDDEN" } as const;
+        return {
+          status: "APPLIED",
+          value: await input.run(transaction, role),
+        } as const;
+      });
+    },
     async hasAdministrativeMembership(input: {
       memberId: string;
       userId: string;
@@ -52,6 +130,29 @@ export function createSettingsRepository(database: Database) {
         .limit(2);
       return active.length === 1;
     },
+    async readAdministrativeMembership(input: {
+      memberId: string;
+      userId: string;
+      workspaceId: string;
+    }): Promise<{ role: "admin" | "owner" } | null> {
+      const active = await database
+        .select({ role: members.role })
+        .from(members)
+        .where(
+          and(
+            eq(members.id, input.memberId),
+            eq(members.userId, input.userId),
+            eq(members.workspaceId, input.workspaceId),
+            inArray(members.role, ["owner", "admin"]),
+          ),
+        )
+        .limit(2);
+      const row = active[0];
+      return active.length === 1 &&
+        (row?.role === "owner" || row?.role === "admin")
+        ? { role: row.role }
+        : null;
+    },
     async listOrganizationApiKeys(input: {
       workspaceId: string;
       limit: number;
@@ -64,6 +165,7 @@ export function createSettingsRepository(database: Database) {
       const [rows, totals] = await Promise.all([
         database
           .select({
+            id: apiKeys.id,
             name: apiKeys.name,
             prefix: apiKeys.prefix,
             start: apiKeys.start,
@@ -82,6 +184,138 @@ export function createSettingsRepository(database: Database) {
         database.select({ value: count() }).from(apiKeys).where(where),
       ]);
       return { rows, total: totals[0]?.value ?? 0 };
+    },
+    async findOrganizationApiKeyCandidates(workspaceId: string) {
+      return database
+        .select({
+          id: apiKeys.id,
+          enabled: apiKeys.enabled,
+          expiresAt: apiKeys.expiresAt,
+        })
+        .from(apiKeys)
+        .where(
+          and(
+            eq(apiKeys.workspaceId, workspaceId),
+            eq(apiKeys.configId, "organization"),
+          ),
+        );
+    },
+    async disableOrganizationApiKey(input: {
+      apiKeyId: string;
+      workspaceId: string;
+    }): Promise<boolean> {
+      const updated = await database
+        .update(apiKeys)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(apiKeys.id, input.apiKeyId),
+            eq(apiKeys.workspaceId, input.workspaceId),
+            eq(apiKeys.configId, "organization"),
+            eq(apiKeys.enabled, true),
+          ),
+        )
+        .returning({ id: apiKeys.id });
+      return updated.length === 1;
+    },
+    async disableCreatedOrganizationApiKey(input: {
+      apiKeyId: string;
+      workspaceId: string;
+    }): Promise<void> {
+      await database
+        .update(apiKeys)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(apiKeys.id, input.apiKeyId),
+            eq(apiKeys.workspaceId, input.workspaceId),
+            eq(apiKeys.configId, "organization"),
+          ),
+        );
+    },
+    async activateCreatedOrganizationApiKey(input: {
+      apiKeyId: string;
+      transaction: TransactionDatabase;
+      workspaceId: string;
+    }): Promise<boolean> {
+      const updated = await input.transaction
+        .update(apiKeys)
+        .set({ enabled: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(apiKeys.id, input.apiKeyId),
+            eq(apiKeys.workspaceId, input.workspaceId),
+            eq(apiKeys.configId, "organization"),
+            eq(apiKeys.enabled, false),
+          ),
+        )
+        .returning({ id: apiKeys.id });
+      return updated.length === 1;
+    },
+    async disableOrganizationApiKeyWithAudit(input: {
+      action: "settings.api_key.revoke" | "settings.api_key.rotate";
+      apiKeyId: string;
+      actor: { id: string; memberId: string; sessionId: string };
+      changedFields: readonly string[];
+      requestId: string;
+      workspaceId: string;
+    }): Promise<"APPLIED" | "FORBIDDEN" | "INVALID"> {
+      return database.transaction(async (transaction) => {
+        const role = await lockAndRevalidateAdministrativeActor({
+          actor: input.actor,
+          transaction,
+          workspaceId: input.workspaceId,
+        });
+        if (!role) return "FORBIDDEN";
+        const updated = await transaction
+          .update(apiKeys)
+          .set({ enabled: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(apiKeys.id, input.apiKeyId),
+              eq(apiKeys.workspaceId, input.workspaceId),
+              eq(apiKeys.configId, "organization"),
+              eq(apiKeys.enabled, true),
+              or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date())),
+            ),
+          )
+          .returning({ id: apiKeys.id });
+        if (updated.length !== 1) return "INVALID";
+        await transaction.insert(auditEvents).values({
+          id: newId(),
+          workspaceId: input.workspaceId,
+          actorUserId: input.actor.id,
+          sessionId: input.actor.sessionId,
+          action: input.action,
+          resourceKind: "api_key",
+          resourceId: null,
+          requestId: input.requestId,
+          redactedDiff: { changedFields: [...input.changedFields] },
+          outcome: "success",
+        });
+        return "APPLIED";
+      });
+    },
+    async recordApiKeyLifecycleAudit(input: {
+      action: "settings.api_key.create";
+      actor: { id: string; sessionId: string };
+      changedFields: readonly string[];
+      requestId: string;
+      transaction?: TransactionDatabase;
+      workspaceId: string;
+    }): Promise<void> {
+      await (input.transaction ?? database).insert(auditEvents).values({
+        id: newId(),
+        workspaceId: input.workspaceId,
+        actorUserId: input.actor.id,
+        sessionId: input.actor.sessionId,
+        action: input.action,
+        resourceKind: "api_key",
+        resourceId: null,
+        requestId: input.requestId,
+        redactedDiff: { changedFields: [...input.changedFields] },
+        outcome: "success",
+      });
     },
     async readPolicySettings(
       workspaceId: string,

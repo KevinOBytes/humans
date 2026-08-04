@@ -1,12 +1,11 @@
 import Link from "next/link";
 
 import { getAdministrativeSettingsContext } from "@/app/(app)/settings/settings-context";
+import { ApiKeyAdministration } from "@/components/settings/api-key-administration";
 import {
-  ReadOnlyAdministrationNotice,
   SettingsCard,
   SettingsHeader,
 } from "@/components/settings/settings-surface";
-import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { SettingsOrganizationApiKeysDocument } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
@@ -28,57 +27,16 @@ export default async function ApiKeysSettingsPage({
       <SettingsHeader
         eyebrow="Workspace settings"
         title="API keys"
-        description="Redacted organization-key metadata from a generated, live-authorized, workspace-scoped safe projection that paginates beyond Better Auth 1.6.23's 100-row cap. Stored keys and hashes are never selected."
+        description="Create least-privilege workspace API keys, save the one-time secret, and rotate or revoke keys from a redacted, workspace-scoped settings surface."
       />
-      <ReadOnlyAdministrationNotice />
-      <SettingsCard title="Organization keys">
-        <ul className="grid gap-3">
-          {apiKeyPage.nodes.map((apiKey) => (
-            <li
-              key={`${apiKey.fingerprint}:${apiKey.createdAt}`}
-              className="border-border rounded-xl border p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium">{apiKey.name}</p>
-                  <p className="text-muted-foreground mt-1 font-mono text-xs">
-                    {apiKey.fingerprint}
-                  </p>
-                </div>
-                <Badge>{apiKey.state}</Badge>
-              </div>
-              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                <div>
-                  <dt className="text-muted-foreground">Scopes</dt>
-                  <dd className="mt-1 break-words">
-                    {apiKey.scopes.join(", ") || "None"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Expires</dt>
-                  <dd className="mt-1">
-                    {apiKey.expiresAt
-                      ? new Date(apiKey.expiresAt).toLocaleString()
-                      : "No expiry recorded"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Last used</dt>
-                  <dd className="mt-1">
-                    {apiKey.lastUsedAt
-                      ? new Date(apiKey.lastUsedAt).toLocaleString()
-                      : "Never"}
-                  </dd>
-                </div>
-              </dl>
-            </li>
-          ))}
-          {apiKeyPage.nodes.length === 0 ? (
-            <li className="text-muted-foreground py-5 text-sm">
-              No organization API keys are recorded.
-            </li>
-          ) : null}
-        </ul>
+      <SettingsCard
+        title="Organization keys"
+        description="Stored keys, hashes, and organization identifiers never appear here."
+      >
+        <ApiKeyAdministration
+          apiKeys={apiKeyPage.nodes}
+          allowedScopes={apiKeyPage.allowedScopes}
+        />
         <nav
           aria-label="API key pages"
           className="mt-4 flex flex-wrap items-center justify-between gap-3"

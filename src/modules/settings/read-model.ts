@@ -28,6 +28,7 @@ export type SafeInvitationSettings = {
 };
 
 export type SafeApiKeySettings = {
+  actionId: string;
   name: string;
   fingerprint: string;
   state: "active" | "disabled" | "expired";
@@ -113,6 +114,7 @@ export function mapSafeInvitation(
 }
 
 type ApiKeySource = {
+  actionId: string;
   name?: string | null;
   prefix?: string | null;
   start?: string | null;
@@ -141,6 +143,7 @@ export function mapSafeApiKey(
     .sort();
   const fingerprint = `${source.prefix ?? ""}${source.start ?? ""}`;
   return {
+    actionId: source.actionId,
     name: source.name?.trim() || "Unnamed key",
     fingerprint: fingerprint || "Redacted",
     state: expired

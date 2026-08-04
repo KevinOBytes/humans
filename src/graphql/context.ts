@@ -158,6 +158,7 @@ function assertTrustedOrigin(
 }
 
 function createServices(input: {
+  auth: BetterAuthRuntime;
   database: Database;
   operationLimiter: RequestOperationLimiter;
   searchIndexMaintenance: SearchIndexMaintenance;
@@ -279,7 +280,9 @@ function createServices(input: {
     ),
     settings: createSettingsService({
       actor: input.context.actor,
+      auth: input.auth,
       database: input.database,
+      organizationId: input.context.workspace.organizationId,
       requestId: input.context.requestId,
       runtime: input.settingsRuntime,
       workspaceId: input.context.workspaceId,
@@ -325,6 +328,7 @@ export function requirePermission<R extends PermissionResource>(
 
 function contextWithLoaders(
   base: Omit<GraphQLContext, "loaders" | "operationLimiter" | "services">,
+  auth: BetterAuthRuntime,
   database: Database,
   operationLimiter: OperationLimiter,
   searchIndexMaintenance: SearchIndexMaintenance,
@@ -383,6 +387,7 @@ function contextWithLoaders(
     },
   });
   const services = createServices({
+    auth,
     database,
     context: base,
     operationLimiter: requestOperationLimiter,
@@ -497,6 +502,7 @@ async function createSessionContext(
       workspace,
       workspaceId: workspace.id,
     },
+    input.auth,
     input.database,
     input.operationLimiter,
     input.searchIndexMaintenance,
@@ -579,6 +585,7 @@ async function createApiKeyContext(
       workspace,
       workspaceId: workspace.id,
     },
+    input.auth,
     input.database,
     input.operationLimiter,
     input.searchIndexMaintenance,
