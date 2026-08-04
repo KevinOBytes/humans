@@ -397,7 +397,7 @@ liveDescribe("research API", () => {
     expect(persisted.map((row) => row.displayName)).toEqual(["Audited Person"]);
   });
 
-  it("retains contradictory facts and appends immutable revisions with one concurrency winner", async () => {
+  it("HUM-FR-009/011/012/013 governs contradictory typed facts and immutable revisions", async () => {
     const owner = await fixture.createActor();
     const personResult = await fixture.createPerson(owner, {
       displayName: "Contradictory Subject",
@@ -1135,7 +1135,7 @@ liveDescribe("research API", () => {
     });
   });
 
-  it("creates evidence citations, sanitized notes, normalized tags, and safe audit browsing", async () => {
+  it("HUM-FR-013 creates evidence citations, sanitized notes, normalized tags, and safe audit browsing", async () => {
     const owner = await fixture.createActor();
     const person = await fixture.createPerson(owner, {
       displayName: "Evidence Subject",
@@ -1472,7 +1472,7 @@ liveDescribe("research API", () => {
     expect(JSON.stringify(audit.body)).not.toContain("Cited evidence excerpt");
   });
 
-  it("enforces field-selection identity and optimistic replacement versions", async () => {
+  it("HUM-FR-009 enforces field-selection identity and optimistic replacement versions", async () => {
     const owner = await fixture.createActor();
     const person = await fixture.createPerson(owner, {
       displayName: "Selected subject",
