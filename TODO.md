@@ -22,6 +22,7 @@ Every incomplete MVP requirement is listed exactly once. Check an item only in t
 - [ ] `HUM-FR-019` Complete optional embedding support and final release/Compose proof beyond the implemented Task 12 transactional PostgreSQL full-text, structured, and protected-exact search slice.
 - [ ] `HUM-FR-020` Complete the full saved-query/view release matrix beyond the implemented closed saved-search AST, ownership/sharing, current-authority runs, graph views, and immutable snapshot manifests.
 - [ ] `HUM-FR-021` Record full-matrix runtime evidence for the implemented bounded Degree, PageRank, and Louvain analyses, reproducibility replay, typed results/person metrics, and safe JSON/CSV exports.
+- [ ] `HUM-FR-023` Restrict AI tools and require authorized cited answers.
 - [ ] `HUM-FR-024` Implement durable jobs, audit, idempotency, and webhooks.
 - [ ] `HUM-FR-025` Complete the whole-MVP GraphQL operation and production-introspection matrix beyond the generated Task 12 search, saved-query, snapshot/replay, deterministic analysis, and export operations.
 - [ ] `HUM-FR-027` Build workspace setup and dashboard surfaces.

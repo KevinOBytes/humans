@@ -247,6 +247,77 @@ describe("Analyst", () => {
     expect(read).toHaveBeenCalledTimes(calls);
   });
 
+  it("resumes polling after cancellation cannot be confirmed without accepting the aborted read", async () => {
+    let resolveAbortedRead!: (value: AnalystRun) => void;
+    let resolveResumedRead!: (value: AnalystRun) => void;
+    const read = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<AnalystRun>((resolve) => {
+            resolveAbortedRead = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<AnalystRun>((resolve) => {
+            resolveResumedRead = resolve;
+          }),
+      );
+    const cancel = vi.fn().mockRejectedValue(
+      Object.assign(new Error("private upstream cancellation detail"), {
+        code: "NETWORK_ERROR",
+      }),
+    );
+    const user = userEvent.setup();
+    render(analyst(adapter({ cancel, read })));
+    await user.type(
+      screen.getByLabelText("Question"),
+      "Keep watching this run",
+    );
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    const abortedSignal = read.mock.calls[0]?.[1].signal as AbortSignal;
+
+    await user.click(screen.getByRole("button", { name: "Cancel analysis" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Analysis is temporarily unavailable",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent(
+      /private|upstream/u,
+    );
+    expect(abortedSignal.aborted).toBe(true);
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveAbortedRead(
+        run({
+          answer: "This stale result must not render.",
+          completedAt: "2026-08-04T12:00:03.000Z",
+          state: "completed",
+        }),
+      );
+    });
+    expect(screen.queryByText("This stale result must not render.")).toBeNull();
+
+    await act(async () => {
+      resolveResumedRead(
+        run({
+          answer: "The resumed poll returned this result.",
+          completedAt: "2026-08-04T12:00:04.000Z",
+          state: "completed",
+        }),
+      );
+    });
+    expect(
+      await screen.findByText("The resumed poll returned this result."),
+    ).toBeVisible();
+    const calls = read.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(read).toHaveBeenCalledTimes(calls);
+  });
+
   it("reuses a failed start key only for an explicit retry and never renders private errors", async () => {
     const user = userEvent.setup();
     const randomUUID = vi

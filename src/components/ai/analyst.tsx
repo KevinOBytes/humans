@@ -197,6 +197,7 @@ function AnalystState({
   const [pendingAction, setPendingAction] = useState<"cancel" | "start" | null>(
     null,
   );
+  const [pollRevision, setPollRevision] = useState(0);
   const [retrySubmission, setRetrySubmission] =
     useState<RetrySubmission | null>(null);
   const [message, setMessage] = useState(
@@ -305,7 +306,7 @@ function AnalystState({
       pollControllerRef.current?.abort();
       pollControllerRef.current = null;
     };
-  }, [adapter, pollDelayMs, run]);
+  }, [adapter, pollDelayMs, pollRevision, run]);
 
   useEffect(() => {
     if (run && terminalStates.has(run.state)) {
@@ -385,6 +386,7 @@ function AnalystState({
       if (!request.signal.aborted) {
         setFormError(requestFailure(error));
         setMessage("Cancellation could not be confirmed.");
+        setPollRevision((value) => value + 1);
       }
     } finally {
       release(request);
