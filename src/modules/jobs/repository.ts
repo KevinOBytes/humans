@@ -485,5 +485,28 @@ export function createJobsRepository(database: Database) {
         return row;
       });
     },
+
+    async scheduleQueuedEarlier(input: {
+      id: string;
+      scheduledAt: Date;
+      workspaceId: string;
+    }): Promise<JobRow | null> {
+      const [row] = await database
+        .update(jobs)
+        .set({
+          scheduledAt: sql<Date>`least(${jobs.scheduledAt}, ${input.scheduledAt.toISOString()}::timestamptz)`,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(
+          and(
+            eq(jobs.id, input.id),
+            eq(jobs.workspaceId, input.workspaceId),
+            eq(jobs.kind, "file_cleanup"),
+            eq(jobs.state, "queued"),
+          ),
+        )
+        .returning();
+      return row ?? null;
+    },
   };
 }

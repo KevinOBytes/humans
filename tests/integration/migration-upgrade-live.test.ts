@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -35,6 +35,12 @@ const task12PrerequisiteMigrationFiles = [
   "drizzle/0006_task11_import_job_lifecycle.sql",
   "drizzle/0007_task11_review_repairs.sql",
 ] as const;
+
+const throughTask13MigrationFiles = readdirSync("drizzle")
+  .filter((name) => /^\d{4}_.+\.sql$/u.test(name))
+  .filter((name) => Number(name.slice(0, 4)) <= 18)
+  .sort()
+  .map((name) => `drizzle/${name}`);
 
 const withDatabase = (url: string, database: string) => {
   const parsed = new URL(url);
@@ -551,6 +557,144 @@ liveDescribe(
     }, 120_000);
   },
 );
+
+liveDescribe("0018 to 0019 to file ownership forward migration", () => {
+  const temporaryDatabase = `humans_file_ownership_upgrade_${newId().replaceAll("-", "")}`;
+  let admin: Sql | undefined;
+  let upgrade: Sql | undefined;
+
+  beforeAll(async () => {
+    if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
+    const parsed = new URL(databaseUrl);
+    assertTestDatabaseResetAllowed({
+      allowReset: resetAllowed,
+      currentDatabase: parsed.pathname.slice(1),
+      databaseUrl,
+    });
+    admin = postgres(withDatabase(databaseUrl, "postgres"), {
+      max: 1,
+      onnotice: () => undefined,
+      prepare: false,
+    });
+    await admin.unsafe(`CREATE DATABASE "${temporaryDatabase}"`);
+    upgrade = postgres(withDatabase(databaseUrl, temporaryDatabase), {
+      max: 1,
+      onnotice: () => undefined,
+      prepare: false,
+    });
+    for (const path of throughTask13MigrationFiles) {
+      await applyMigrationFile(upgrade, path);
+    }
+  }, 120_000);
+
+  afterAll(
+    () =>
+      cleanupTemporaryDatabase({
+        admin,
+        database: temporaryDatabase,
+        upgrade,
+      }),
+    30_000,
+  );
+
+  it("detects legacy cross-table collisions before installing serialized guards", async () => {
+    if (!upgrade) throw new Error("upgrade connection was not initialized");
+    await expect(
+      applyMigrationFile(upgrade, "drizzle/0019_file_lifecycle.sql"),
+    ).resolves.toBeUndefined();
+
+    const userId = `ownership-user-${newId()}`;
+    const organizationId = `ownership-org-${newId()}`;
+    const memberId = `ownership-member-${newId()}`;
+    const workspaceId = newId();
+    const activeFileId = newId();
+    const variantParentId = newId();
+    const uploadSessionId = newId();
+    const sharedKey = `uploads/${uploadSessionId}/${newId()}`;
+    await upgrade`
+      INSERT INTO users (id, name, email, email_verified, created_at, updated_at)
+      VALUES (${userId}, 'Ownership User', ${`${newId()}@example.test`}, true, now(), now())
+    `;
+    await upgrade`
+      INSERT INTO organizations (id, name, slug, created_at)
+      VALUES (${organizationId}, 'Ownership Org', ${`ownership-${newId()}`}, now())
+    `;
+    await upgrade`
+      INSERT INTO workspaces (id, organization_id, name, created_by, updated_by)
+      VALUES (${workspaceId}, ${organizationId}, 'Ownership', ${userId}, ${userId})
+    `;
+    await upgrade`
+      INSERT INTO members (id, organization_id, user_id, role, created_at, workspace_id)
+      VALUES (${memberId}, ${organizationId}, ${userId}, 'owner', now(), ${workspaceId})
+    `;
+    await upgrade`
+      INSERT INTO workspace_principals (
+        id, workspace_id, principal_type, user_id, member_id_snapshot
+      ) VALUES (${newId()}, ${workspaceId}, 'user', ${userId}, ${memberId})
+    `;
+    await upgrade`
+      INSERT INTO files (
+        id, workspace_id, storage_provider, storage_bucket, storage_key,
+        original_name, byte_size, checksum, uploaded_by, created_by, updated_by
+      ) VALUES
+        (${activeFileId}, ${workspaceId}, 'minio', 'private', ${sharedKey},
+         'active.txt', 1, 'sha256:active', ${userId}, ${userId}, ${userId}),
+        (${variantParentId}, ${workspaceId}, 'minio', 'private', ${`uploads/${variantParentId}/${newId()}`},
+         'parent.txt', 1, 'sha256:parent', ${userId}, ${userId}, ${userId})
+    `;
+    await upgrade`
+      INSERT INTO upload_sessions (
+        id, workspace_id, actor_id, intended_purpose, original_name, max_bytes,
+        expected_checksum, expected_media_type, object_key, state, expires_at,
+        completed_at, file_id, created_by, updated_by
+      ) VALUES (
+        ${uploadSessionId}, ${workspaceId}, ${userId}, 'EVIDENCE', 'active.txt', 1,
+        ${"aa".repeat(32)}, 'text/plain', ${sharedKey}, 'completed',
+        now() + interval '1 hour', now(), ${activeFileId}, ${userId}, ${userId}
+      )
+    `;
+    const corruptVariantId = newId();
+    await upgrade`
+      INSERT INTO file_variants (
+        id, workspace_id, parent_file_id, kind, storage_provider,
+        storage_bucket, storage_key, checksum, created_by
+      ) VALUES (
+        ${corruptVariantId}, ${workspaceId}, ${variantParentId}, 'legacy',
+        'minio', 'private', ${sharedKey}, 'sha256:legacy', ${userId}
+      )
+    `;
+
+    await expect(
+      applyMigrationFile(upgrade, "drizzle/0020_file_coordinate_ownership.sql"),
+    ).rejects.toMatchObject({ code: "23505" });
+
+    await upgrade`DELETE FROM file_variants WHERE id = ${corruptVariantId}`;
+    await expect(
+      applyMigrationFile(upgrade, "drizzle/0020_file_coordinate_ownership.sql"),
+    ).resolves.toBeUndefined();
+
+    const [column] = await upgrade<[{ is_nullable: string }]>`
+      SELECT is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'files'
+        AND column_name = 'cleanup_completed_at'
+    `;
+    expect(column).toEqual({ is_nullable: "YES" });
+    const triggers = await upgrade<{ tgname: string }[]>`
+      SELECT tgname
+      FROM pg_trigger
+      WHERE NOT tgisinternal
+        AND tgrelid IN ('files'::regclass, 'file_variants'::regclass)
+        AND tgname LIKE '%object_coordinate_guard%'
+      ORDER BY tgname
+    `;
+    expect(triggers.map(({ tgname }) => tgname)).toEqual([
+      "file_variants_object_coordinate_guard_trigger",
+      "files_object_coordinate_guard_trigger",
+    ]);
+  }, 120_000);
+});
 
 liveDescribe(
   "Task 12 protected-value forward migration on PostgreSQL 18",

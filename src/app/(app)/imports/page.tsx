@@ -24,6 +24,8 @@ import {
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
 import { readOpaqueCursor } from "@/lib/research-pagination";
+import { getServerEnv } from "@/lib/env/server";
+import { uploadMaxBytesForDeployment } from "@/modules/files/limits";
 
 const retryableStates = new Set([
   "COMPLETED_WITH_ERRORS",
@@ -80,6 +82,18 @@ export default async function ImportsPage({
   ].every((permission) => permissions.includes(permission));
   const canRetry = permissions.includes("import:run");
   const pageInfo = data.imports?.pageInfo;
+  const uploadMaxBytesByFormat = canCreate
+    ? {
+        CSV: uploadMaxBytesForDeployment(
+          "CSV_IMPORT",
+          getServerEnv().DEPLOYMENT_MODE,
+        ),
+        JSON: uploadMaxBytesForDeployment(
+          "JSON_IMPORT",
+          getServerEnv().DEPLOYMENT_MODE,
+        ),
+      }
+    : null;
 
   return (
     <div className="space-y-8">
@@ -92,7 +106,12 @@ export default async function ImportsPage({
         </p>
       </header>
 
-      {canCreate ? <ImportWizard initialMappings={mappings} /> : null}
+      {uploadMaxBytesByFormat ? (
+        <ImportWizard
+          initialMappings={mappings}
+          uploadMaxBytesByFormat={uploadMaxBytesByFormat}
+        />
+      ) : null}
 
       <section aria-labelledby="import-history-heading">
         <div className="mb-4">

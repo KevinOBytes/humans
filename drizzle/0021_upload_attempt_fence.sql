@@ -1,0 +1,4 @@
+ALTER TABLE "upload_sessions" ADD COLUMN "upload_attempt_id" uuid;--> statement-breakpoint
+ALTER TABLE "upload_sessions" ADD COLUMN "upload_attempt_expires_at" timestamp (3) with time zone;--> statement-breakpoint
+CREATE INDEX "upload_sessions_attempt_cleanup_idx" ON "upload_sessions" USING btree ("state","upload_attempt_expires_at","expires_at","id");--> statement-breakpoint
+ALTER TABLE "upload_sessions" ADD CONSTRAINT "upload_sessions_attempt_pair_check" CHECK (("upload_sessions"."upload_attempt_id" IS NULL AND "upload_sessions"."upload_attempt_expires_at" IS NULL) OR ("upload_sessions"."upload_attempt_id" IS NOT NULL AND "upload_sessions"."upload_attempt_expires_at" IS NOT NULL));

@@ -26,9 +26,11 @@ const MAX_PROXY_BYTES = 50 * 1024 * 1024;
 const PROXY_TIMEOUT_MS = 60_000;
 
 type UploadGrant = {
-  version: 1;
+  version: 2;
   operation: "upload";
+  actorId: string;
   workspaceId: string;
+  uploadSessionId: string;
   key: string;
   expiresAt: number;
   contentType: string;
@@ -48,6 +50,17 @@ type DownloadGrant = {
 };
 
 type StorageGrant = UploadGrant | DownloadGrant;
+
+export type ProxyUploadAuthorization = Readonly<{
+  actorId: string;
+  bytes: number;
+  checksumSha256: string;
+  contentType: string;
+  expiresAt: Date;
+  key: string;
+  uploadSessionId: string;
+  workspaceId: string;
+}>;
 
 class ProxyRequestError extends Error {
   constructor(readonly status: number) {
@@ -93,6 +106,15 @@ export function validateUpload(input: UploadRequest): UploadRequest {
   validateWorkspaceId(input.workspaceId);
   validateKey(input.key);
   if (
+    typeof input.actorId !== "string" ||
+    input.actorId.length < 1 ||
+    input.actorId.length > 255 ||
+    /[\u0000-\u001f\u007f]/u.test(input.actorId) ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+      input.uploadSessionId,
+    ) ||
+    !(input.sessionExpiresAt instanceof Date) ||
+    !Number.isFinite(input.sessionExpiresAt.getTime()) ||
     !Number.isSafeInteger(input.bytes) ||
     input.bytes < 1 ||
     input.bytes > MAX_PROXY_BYTES ||
@@ -124,6 +146,7 @@ function parseGrant(value: string): StorageGrant {
   const expectedKeys =
     candidate.operation === "upload"
       ? [
+          "actorId",
           "bytes",
           "checksumSha256",
           "contentType",
@@ -131,6 +154,7 @@ function parseGrant(value: string): StorageGrant {
           "key",
           "nonce",
           "operation",
+          "uploadSessionId",
           "version",
           "workspaceId",
         ]
@@ -146,7 +170,9 @@ function parseGrant(value: string): StorageGrant {
   if (
     Object.keys(candidate).sort().join("\0") !==
       expectedKeys.sort().join("\0") ||
-    candidate.version !== 1 ||
+    (candidate.operation === "upload"
+      ? candidate.version !== 2
+      : candidate.version !== 1) ||
     (candidate.operation !== "upload" && candidate.operation !== "download") ||
     typeof candidate.workspaceId !== "string" ||
     typeof candidate.key !== "string" ||
@@ -161,7 +187,22 @@ function parseGrant(value: string): StorageGrant {
     validateWorkspaceId(candidate.workspaceId);
     validateKey(candidate.key);
     if (candidate.operation === "upload") {
-      validateUpload(candidate as unknown as UploadGrant);
+      if (
+        typeof candidate.actorId !== "string" ||
+        typeof candidate.uploadSessionId !== "string"
+      ) {
+        throw new TypeError("Invalid upload authority");
+      }
+      validateUpload({
+        actorId: candidate.actorId,
+        bytes: candidate.bytes as number,
+        checksumSha256: candidate.checksumSha256 as string,
+        contentType: candidate.contentType as string,
+        key: candidate.key,
+        sessionExpiresAt: new Date(candidate.expiresAt),
+        uploadSessionId: candidate.uploadSessionId,
+        workspaceId: candidate.workspaceId,
+      });
     } else if (typeof candidate.fileName !== "string") {
       throw new TypeError("Invalid file name");
     } else {
@@ -255,6 +296,10 @@ export interface StorageProxyOptions {
   bucket: string;
   secret: string;
   now?: () => number;
+  executeAuthorizedUpload(
+    grant: ProxyUploadAuthorization,
+    upload: () => Promise<void>,
+  ): Promise<boolean>;
 }
 
 export function createStorageProxyHandlers(options: StorageProxyOptions): {
@@ -319,20 +364,36 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
         const body = Readable.from(
           request.body as unknown as AsyncIterable<Uint8Array>,
         ).pipe(verify);
-        await options.client.send(
-          new PutObjectCommand({
-            Bucket: options.bucket,
-            Key: storageObjectKey(grant.workspaceId, grant.key),
-            Body: body,
-            ContentLength: grant.bytes,
-            ContentType: grant.contentType,
-            ChecksumSHA256: Buffer.from(grant.checksumSha256, "hex").toString(
-              "base64",
-            ),
-            Metadata: { "workspace-id": grant.workspaceId },
-          }),
-          { abortSignal: controller.signal },
+        const authorized = await options.executeAuthorizedUpload(
+          {
+            actorId: grant.actorId,
+            bytes: grant.bytes,
+            checksumSha256: grant.checksumSha256,
+            contentType: grant.contentType,
+            expiresAt: new Date(grant.expiresAt),
+            key: grant.key,
+            uploadSessionId: grant.uploadSessionId,
+            workspaceId: grant.workspaceId,
+          },
+          async () => {
+            await options.client.send(
+              new PutObjectCommand({
+                Bucket: options.bucket,
+                Key: storageObjectKey(grant.workspaceId, grant.key),
+                Body: body,
+                ContentLength: grant.bytes,
+                ContentType: grant.contentType,
+                ChecksumSHA256: Buffer.from(
+                  grant.checksumSha256,
+                  "hex",
+                ).toString("base64"),
+                Metadata: { "workspace-id": grant.workspaceId },
+              }),
+              { abortSignal: controller.signal },
+            );
+          },
         );
+        if (!authorized) return failure(403);
         return new Response(null, {
           status: 204,
           headers: { "cache-control": "private, no-store" },
@@ -405,11 +466,22 @@ export class ApplicationProxyObjectStore implements ObjectStore {
 
   async createUpload(input: UploadRequest): Promise<SignedObjectRequest> {
     validateUpload(input);
-    const expiresAt = new Date(this.now() + this.uploadTtlSeconds * 1_000);
+    const now = this.now();
+    const expiresAt = new Date(
+      Math.min(
+        now + this.uploadTtlSeconds * 1_000,
+        input.sessionExpiresAt.getTime(),
+      ),
+    );
+    if (expiresAt.getTime() <= now) {
+      throw new TypeError("Upload session has expired");
+    }
     const grant: UploadGrant = {
-      version: 1,
+      version: 2,
       operation: "upload",
+      actorId: input.actorId,
       workspaceId: input.workspaceId,
+      uploadSessionId: input.uploadSessionId,
       key: input.key,
       expiresAt: expiresAt.getTime(),
       contentType: input.contentType,

@@ -91,6 +91,42 @@ pushes and deletion are blocked, and merged branches are deleted automatically.
 See [Repository governance](docs/REPOSITORY_GOVERNANCE.md) and
 [Dependency policy](docs/DEPENDENCY_POLICY.md).
 
+## Private file lifecycle
+
+The evidence workspace creates checksum-bound private upload sessions for
+session users, verifies the stored bytes before a file becomes available, and
+shows only the current user's pending uploads. A user can resume a pending
+upload only by reselecting a local file with the same name, byte length, and
+SHA-256 digest, or cancel it into immediate durable cleanup. Available files
+can be downloaded, and authorized users or API keys with `file:delete` can
+archive a visible file with optimistic version confirmation.
+
+GraphQL exposes file and variant metadata but never provider, bucket, endpoint,
+or object-key coordinates. Upload and download grants for MinIO, R2, and generic
+S3 use the same opaque application storage route; only the application decrypts
+the short-lived grant and reaches the configured provider. Each upload grant is
+bound to its pending database session, and the proxy holds that session lock
+only while it claims or reconciles a durable attempt; no database connection is
+held while the provider PUT streams. The PUT is bounded to 60 seconds, and each
+claim reserves a further 60-second quiescence window before cleanup or a
+replacement claim may proceed. A provider commit followed by a timeout/error
+advances the durable mutation generation and restarts that window, so cleanup
+cannot certify a delete made before an ambiguous publication. Archive cleanup
+reads storage coordinates only inside the worker,
+requires exclusive coordinate ownership, deletes the exact primary and variant
+objects, and records completion once. `pnpm test:db` includes the
+real-context file API and durable cleanup suites. The required Compose lifecycle
+also signs in through the built application, creates/completes/archives through
+its `/api/graphql` endpoint, uploads through the returned opaque grant, and
+waits for the running worker to delete the primary and seeded variant while
+retaining a sibling sentinel.
+
+Because private bytes pass through that application route, Vercel deployments
+accept uploads up to 4 MiB for evidence, CSV, and JSON. The limit is enforced
+when an upload session is created and is shown beside the file picker. Docker
+deployments retain the purpose-specific limits: 50 MiB for evidence, 25 MiB for
+CSV imports, and 10 MiB for JSON imports.
+
 ## Search and reproducible graph analysis
 
 The current deterministic research slice is exposed entirely through generated GraphQL operations:

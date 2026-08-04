@@ -40,7 +40,15 @@ describe("ImportWizard mapping controls", () => {
 
   it("submits the expanded person fields and typed fact mapping", async () => {
     const user = userEvent.setup();
-    render(<ImportWizard initialMappings={[]} />);
+    render(
+      <ImportWizard
+        initialMappings={[]}
+        uploadMaxBytesByFormat={{
+          CSV: 25 * 1024 * 1024,
+          JSON: 10 * 1024 * 1024,
+        }}
+      />,
+    );
 
     await user.type(screen.getByLabelText(/Biography source/), "biography");
     await user.type(
@@ -92,7 +100,15 @@ describe("ImportWizard mapping controls", () => {
 
   it("submits relationship endpoints including a prior-import external key", async () => {
     const user = userEvent.setup();
-    render(<ImportWizard initialMappings={[]} />);
+    render(
+      <ImportWizard
+        initialMappings={[]}
+        uploadMaxBytesByFormat={{
+          CSV: 25 * 1024 * 1024,
+          JSON: 10 * 1024 * 1024,
+        }}
+      />,
+    );
 
     await user.selectOptions(
       screen.getByLabelText("Record kind"),

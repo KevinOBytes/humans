@@ -428,7 +428,7 @@ liveDescribe("core schema on PostgreSQL 18", () => {
       FROM drizzle.__drizzle_migrations
     `;
 
-    expect(result.count).toBe("19");
+    expect(result.count).toBe("24");
   });
 
   it("installs the Task 12 result lifecycle and restrictive ownership constraints", async () => {
@@ -715,6 +715,71 @@ liveDescribe("core schema on PostgreSQL 18", () => {
         `,
       ).rejects.toMatchObject({ code: "23514" });
     }
+  });
+
+  it("rejects cross-table object-coordinate collisions on insert and update in both directions", async () => {
+    async function insertVariant(
+      fixture: WorkspaceFixture,
+      storageKey: string,
+    ): Promise<string> {
+      const variantId = newId();
+      await db()`
+        INSERT INTO file_variants (
+          id, workspace_id, parent_file_id, kind, storage_provider,
+          storage_bucket, storage_key, checksum, created_by
+        ) VALUES (
+          ${variantId}, ${fixture.workspaceId}, ${fixture.fileId},
+          ${`variant-${variantId}`}, 'test', 'test', ${storageKey},
+          ${`sha256:${variantId}`}, ${fixture.userId}
+        )
+      `;
+      return variantId;
+    }
+
+    const variantInsert = await seedWorkspace("coordinate-variant-insert");
+    await expect(
+      insertVariant(variantInsert, `fixtures/${variantInsert.fileId}`),
+    ).rejects.toMatchObject({ code: "23505" });
+
+    const fileInsert = await seedWorkspace("coordinate-file-insert");
+    const fileInsertKey = `variants/${newId()}`;
+    await insertVariant(fileInsert, fileInsertKey);
+    await expect(
+      db()`
+        INSERT INTO files (
+          id, workspace_id, storage_provider, storage_bucket, storage_key,
+          original_name, byte_size, checksum, uploaded_by, created_by, updated_by
+        ) VALUES (
+          ${newId()}, ${fileInsert.workspaceId}, 'test', 'test', ${fileInsertKey},
+          'collision.txt', 1, ${`sha256:${newId()}`}, ${fileInsert.userId},
+          ${fileInsert.userId}, ${fileInsert.userId}
+        )
+      `,
+    ).rejects.toMatchObject({ code: "23505" });
+
+    const variantUpdate = await seedWorkspace("coordinate-variant-update");
+    const variantUpdateId = await insertVariant(
+      variantUpdate,
+      `variants/${newId()}`,
+    );
+    await expect(
+      db()`
+        UPDATE file_variants
+        SET storage_key = ${`fixtures/${variantUpdate.fileId}`}
+        WHERE id = ${variantUpdateId}
+      `,
+    ).rejects.toMatchObject({ code: "23505" });
+
+    const fileUpdate = await seedWorkspace("coordinate-file-update");
+    const fileUpdateKey = `variants/${newId()}`;
+    await insertVariant(fileUpdate, fileUpdateKey);
+    await expect(
+      db()`
+        UPDATE files
+        SET storage_key = ${fileUpdateKey}
+        WHERE id = ${fileUpdate.fileId}
+      `,
+    ).rejects.toMatchObject({ code: "23505" });
   });
 
   it("runs Better Auth's server API and adapter against every configured auth model", async () => {

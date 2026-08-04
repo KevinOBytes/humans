@@ -50,6 +50,7 @@ export const files = pgTable(
     updatedBy: text("updated_by").notNull(),
     deletedAt: domainTimestamp("deleted_at"),
     deletedBy: text("deleted_by"),
+    cleanupCompletedAt: domainTimestamp("cleanup_completed_at"),
   },
   (table) => [
     unique("files_workspace_id_unique").on(table.workspaceId, table.id),
@@ -75,6 +76,22 @@ export const files = pgTable(
     }).onDelete("restrict"),
     check("files_byte_size_check", sql`${table.byteSize} >= 0`),
     check("files_version_check", sql`${table.version} > 0`),
+    check(
+      "files_quarantine_state_check",
+      sql`${table.quarantineState} IN ('pending', 'quarantined', 'available', 'rejected')`,
+    ),
+    check(
+      "files_scan_state_check",
+      sql`${table.scanState} IN ('pending', 'clean', 'not_required', 'infected', 'error')`,
+    ),
+    check(
+      "files_ocr_state_check",
+      sql`${table.ocrState} IN ('pending', 'processing', 'completed', 'not_requested', 'error')`,
+    ),
+    check(
+      "files_extraction_state_check",
+      sql`${table.extractionState} IN ('pending', 'processing', 'completed', 'not_requested', 'error')`,
+    ),
   ],
 );
 
@@ -103,6 +120,12 @@ export const fileVariants = pgTable(
       table.workspaceId,
       table.parentFileId,
       table.kind,
+    ),
+    unique("file_variants_workspace_storage_key_unique").on(
+      table.workspaceId,
+      table.storageProvider,
+      table.storageBucket,
+      table.storageKey,
     ),
     foreignKey({
       name: "file_variants_workspace_parent_file_fk",
@@ -137,6 +160,12 @@ export const uploadSessions = pgTable(
     fileId: uuid("file_id"),
     failureCode: text("failure_code"),
     cleanupCompletedAt: domainTimestamp("cleanup_completed_at"),
+    uploadAttemptId: uuid("upload_attempt_id"),
+    uploadAttemptExpiresAt: domainTimestamp("upload_attempt_expires_at"),
+    storageMutationSettlesAt: domainTimestamp("storage_mutation_settles_at"),
+    storageMutationGeneration: integer("storage_mutation_generation")
+      .default(0)
+      .notNull(),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),
     createdBy: text("created_by").notNull(),
     updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
@@ -173,6 +202,29 @@ export const uploadSessions = pgTable(
       table.state,
       table.expiresAt,
       table.id,
+    ),
+    index("upload_sessions_attempt_cleanup_idx").on(
+      table.state,
+      table.uploadAttemptExpiresAt,
+      table.storageMutationSettlesAt,
+      table.expiresAt,
+      table.id,
+    ),
+    check(
+      "upload_sessions_state_check",
+      sql`${table.state} IN ('pending', 'verifying', 'completed', 'rejected', 'expired', 'cleanup_pending')`,
+    ),
+    check(
+      "upload_sessions_completion_columns_check",
+      sql`(${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.failureCode} IS NULL) OR (${table.state} <> 'completed' AND ${table.completedAt} IS NULL)`,
+    ),
+    check(
+      "upload_sessions_attempt_pair_check",
+      sql`(${table.uploadAttemptId} IS NULL AND ${table.uploadAttemptExpiresAt} IS NULL) OR (${table.uploadAttemptId} IS NOT NULL AND ${table.uploadAttemptExpiresAt} IS NOT NULL)`,
+    ),
+    check(
+      "upload_sessions_storage_mutation_generation_check",
+      sql`${table.storageMutationGeneration} >= 0`,
     ),
   ],
 );

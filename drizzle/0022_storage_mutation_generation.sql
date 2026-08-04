@@ -1,0 +1,2 @@
+ALTER TABLE "upload_sessions" ADD COLUMN "storage_mutation_generation" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "upload_sessions" ADD CONSTRAINT "upload_sessions_storage_mutation_generation_check" CHECK ("upload_sessions"."storage_mutation_generation" >= 0);

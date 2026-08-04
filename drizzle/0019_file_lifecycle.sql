@@ -1,0 +1,7 @@
+ALTER TABLE "file_variants" ADD CONSTRAINT "file_variants_workspace_storage_key_unique" UNIQUE("workspace_id","storage_provider","storage_bucket","storage_key");--> statement-breakpoint
+ALTER TABLE "files" ADD CONSTRAINT "files_quarantine_state_check" CHECK ("files"."quarantine_state" IN ('pending', 'quarantined', 'available', 'rejected'));--> statement-breakpoint
+ALTER TABLE "files" ADD CONSTRAINT "files_scan_state_check" CHECK ("files"."scan_state" IN ('pending', 'clean', 'not_required', 'infected', 'error'));--> statement-breakpoint
+ALTER TABLE "files" ADD CONSTRAINT "files_ocr_state_check" CHECK ("files"."ocr_state" IN ('pending', 'processing', 'completed', 'not_requested', 'error'));--> statement-breakpoint
+ALTER TABLE "files" ADD CONSTRAINT "files_extraction_state_check" CHECK ("files"."extraction_state" IN ('pending', 'processing', 'completed', 'not_requested', 'error'));--> statement-breakpoint
+ALTER TABLE "upload_sessions" ADD CONSTRAINT "upload_sessions_state_check" CHECK ("upload_sessions"."state" IN ('pending', 'verifying', 'completed', 'rejected', 'expired', 'cleanup_pending'));--> statement-breakpoint
+ALTER TABLE "upload_sessions" ADD CONSTRAINT "upload_sessions_completion_columns_check" CHECK (("upload_sessions"."state" = 'completed' AND "upload_sessions"."completed_at" IS NOT NULL AND "upload_sessions"."failure_code" IS NULL) OR ("upload_sessions"."state" <> 'completed' AND "upload_sessions"."completed_at" IS NULL));

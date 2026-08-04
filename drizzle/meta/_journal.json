@@ -134,6 +134,41 @@
       "when": 1785818659060,
       "tag": "0018_task13_ai_analyst",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785850529876,
+      "tag": "0019_file_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785858947496,
+      "tag": "0020_file_coordinate_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785861638947,
+      "tag": "0021_upload_attempt_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785864412190,
+      "tag": "0022_storage_mutation_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785866494822,
+      "tag": "0023_storage_mutation_quiescence",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { parseServerEnv } from "@/lib/env/server-schema";
 import { createObjectStore } from "@/lib/storage/s3";
+import { seedStorageUploadSession } from "../support/storage-upload-session";
 
 const runSmoke = process.env.RUN_STORAGE_BROWSER_MINIO_SMOKE === "true";
 if (runSmoke) process.loadEnvFile(".env.test.local");
@@ -18,12 +19,24 @@ test.describe("browser storage grants", () => {
     const store = createObjectStore(env);
     const body = `browser upload ${randomUUID()}`;
     const key = `browser/${randomUUID()}.txt`;
+    const digest = createHash("sha256").update(body).digest("hex");
+    const session = await seedStorageUploadSession({
+      bytes: Buffer.byteLength(body),
+      checksumSha256: digest,
+      contentType: "text/plain",
+      databaseUrl: env.DATABASE_URL,
+      key,
+      originalName: "browser-smoke.txt",
+    });
     const upload = await store.createUpload({
-      workspaceId: "browser-smoke",
+      actorId: session.actorId,
+      uploadSessionId: session.uploadSessionId,
+      sessionExpiresAt: session.sessionExpiresAt,
+      workspaceId: session.workspaceId,
       key,
       contentType: "text/plain",
       bytes: Buffer.byteLength(body),
-      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      checksumSha256: digest,
     });
 
     expect(upload.headers).not.toHaveProperty("content-length");
@@ -61,7 +74,7 @@ test.describe("browser storage grants", () => {
     expect(changedSizeStatus).toBe(400);
 
     const download = await store.createDownload({
-      workspaceId: "browser-smoke",
+      workspaceId: session.workspaceId,
       key,
       fileName: "browser-smoke.txt",
     });
@@ -74,5 +87,7 @@ test.describe("browser storage grants", () => {
     }, download);
 
     expect(downloaded).toEqual({ status: 200, body });
+    await store.delete({ workspaceId: session.workspaceId, key });
+    await session.cleanup();
   });
 });

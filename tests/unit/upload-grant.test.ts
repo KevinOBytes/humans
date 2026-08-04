@@ -26,10 +26,13 @@ describe("local opaque storage grants", () => {
       () => 1_000,
     );
     const grant = await store.createUpload({
+      actorId: "actor-a",
       bytes: 4,
       checksumSha256: "a".repeat(64),
       contentType: "text/plain",
       key: "uploads/01900000-0000-7000-8000-000000000001/opaque",
+      uploadSessionId: "01900000-0000-7000-8000-000000000001",
+      sessionExpiresAt: new Date(601_000),
       workspaceId: "01900000-0000-7000-8000-000000000002",
     });
     expect(grant.url).toBe("https://humans.example/api/storage/objects");

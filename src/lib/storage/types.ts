@@ -1,5 +1,8 @@
 export interface UploadRequest {
+  actorId: string;
   workspaceId: string;
+  uploadSessionId: string;
+  sessionExpiresAt: Date;
   key: string;
   contentType: string;
   bytes: number;

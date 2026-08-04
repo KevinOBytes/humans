@@ -764,7 +764,12 @@ export type UpdateWorkspaceMemberRoleInput = {
 export type UploadPurpose = "CSV_IMPORT" | "EVIDENCE" | "JSON_IMPORT";
 
 export type UploadSessionState =
-  "COMPLETED" | "EXPIRED" | "PENDING" | "REJECTED" | "VERIFYING";
+  | "CLEANUP_PENDING"
+  | "COMPLETED"
+  | "EXPIRED"
+  | "PENDING"
+  | "REJECTED"
+  | "VERIFYING";
 
 export type WorkspaceAdministrationRole =
   "ADMIN" | "ANALYST" | "CONTRIBUTOR" | "VIEWER";
@@ -856,6 +861,15 @@ export type FileWorkspaceItemFragment = {
   version: number | null;
   createdAt: string | null;
   updatedAt: string | null;
+  variants: Array<{
+    id: string | null;
+    kind: string | null;
+    mediaType: string | null;
+    byteSize: number | null;
+    checksum: string | null;
+    generatorVersion: string | null;
+    createdAt: string | null;
+  }> | null;
 } & { " $fragmentName"?: "FileWorkspaceItemFragment" };
 
 export type ImportWorkspaceItemFragment = {
@@ -885,6 +899,24 @@ export type EvidenceFilesQuery = {
       " $fragmentRefs"?: {
         FileWorkspaceItemFragment: FileWorkspaceItemFragment;
       };
+    }> | null;
+    pageInfo: { hasNextPage: boolean; endCursor: string | null } | null;
+  } | null;
+};
+
+export type PendingWorkspaceUploadsQueryVariables = Exact<{
+  [key: string]: never;
+}>;
+
+export type PendingWorkspaceUploadsQuery = {
+  uploadSessions: {
+    nodes: Array<{
+      id: string | null;
+      originalName: string | null;
+      byteSize: number | null;
+      checksumSha256: string | null;
+      state: UploadSessionState | null;
+      expiresAt: string | null;
     }> | null;
     pageInfo: { hasNextPage: boolean; endCursor: string | null } | null;
   } | null;
@@ -985,6 +1017,63 @@ export type CompleteWorkspaceUploadMutation = {
       " $fragmentRefs"?: {
         FileWorkspaceItemFragment: FileWorkspaceItemFragment;
       };
+    } | null;
+    issues: Array<{
+      code: string;
+      message: string;
+      path: Array<string>;
+    }> | null;
+  } | null;
+};
+
+export type RegrantWorkspaceUploadMutationVariables = Exact<{
+  id: string;
+}>;
+
+export type RegrantWorkspaceUploadMutation = {
+  regrantUploadSession: {
+    session: { id: string | null; state: UploadSessionState | null } | null;
+    grant: {
+      method: FileGrantMethod | null;
+      url: string | null;
+      expiresAt: string | null;
+      headers: unknown;
+      contentLength: number | null;
+    } | null;
+    issues: Array<{
+      code: string;
+      message: string;
+      path: Array<string>;
+    }> | null;
+  } | null;
+};
+
+export type CancelWorkspaceUploadMutationVariables = Exact<{
+  id: string;
+}>;
+
+export type CancelWorkspaceUploadMutation = {
+  cancelUploadSession: {
+    session: { id: string | null; state: UploadSessionState | null } | null;
+    issues: Array<{
+      code: string;
+      message: string;
+      path: Array<string>;
+    }> | null;
+  } | null;
+};
+
+export type ArchiveWorkspaceFileMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+}>;
+
+export type ArchiveWorkspaceFileMutation = {
+  archiveFile: {
+    file: {
+      id: string | null;
+      version: number | null;
+      archivedAt: string | null;
     } | null;
     issues: Array<{
       code: string;
@@ -3372,6 +3461,15 @@ export const FileWorkspaceItemFragmentDoc = new TypedDocumentString(
   version
   createdAt
   updatedAt
+  variants {
+    id
+    kind
+    mediaType
+    byteSize
+    checksum
+    generatorVersion
+    createdAt
+  }
 }
     `,
   { fragmentName: "FileWorkspaceItem" },
@@ -3767,13 +3865,48 @@ export const EvidenceFilesDocument = new TypedDocumentString(
   version
   createdAt
   updatedAt
+  variants {
+    id
+    kind
+    mediaType
+    byteSize
+    checksum
+    generatorVersion
+    createdAt
+  }
 }`,
   {
-    hash: "sha256:ab14177e010ab0c4f1a1f484b86d1c8c05b6ab4ae4711a1185efb4b2edd1e581",
+    hash: "sha256:07c89ac5aacbc0687e6499958f51b0e7b93e034e501503e69dcb8a105ad5e838",
   },
 ) as unknown as TypedDocumentString<
   EvidenceFilesQuery,
   EvidenceFilesQueryVariables
+>;
+export const PendingWorkspaceUploadsDocument = new TypedDocumentString(
+  `
+    query PendingWorkspaceUploads {
+  uploadSessions(first: 20, states: [PENDING]) {
+    nodes {
+      id
+      originalName
+      byteSize
+      checksumSha256
+      state
+      expiresAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:692feee1175f52e938d04f0b79b2c696e14fe41e9f3db3b536b656d1950f36d4",
+  },
+) as unknown as TypedDocumentString<
+  PendingWorkspaceUploadsQuery,
+  PendingWorkspaceUploadsQueryVariables
 >;
 export const ImportHistoryDocument = new TypedDocumentString(
   `
@@ -3927,13 +4060,99 @@ export const CompleteWorkspaceUploadDocument = new TypedDocumentString(
   version
   createdAt
   updatedAt
+  variants {
+    id
+    kind
+    mediaType
+    byteSize
+    checksum
+    generatorVersion
+    createdAt
+  }
 }`,
   {
-    hash: "sha256:8646c6c21a93f72763f11d21f85b16ad9eb3d01f9d2fefb526ad86bb575a6603",
+    hash: "sha256:03557546ff1ba05ced4bdb6a265a7cad7700588814919840291bd44812c39f99",
   },
 ) as unknown as TypedDocumentString<
   CompleteWorkspaceUploadMutation,
   CompleteWorkspaceUploadMutationVariables
+>;
+export const RegrantWorkspaceUploadDocument = new TypedDocumentString(
+  `
+    mutation RegrantWorkspaceUpload($id: UUID!) {
+  regrantUploadSession(uploadSessionId: $id) {
+    session {
+      id
+      state
+    }
+    grant {
+      method
+      url
+      expiresAt
+      headers
+      contentLength
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:e487d3a419d1bfdc637ebcc6264cecb39a6722283f430195c02def29f7156630",
+  },
+) as unknown as TypedDocumentString<
+  RegrantWorkspaceUploadMutation,
+  RegrantWorkspaceUploadMutationVariables
+>;
+export const CancelWorkspaceUploadDocument = new TypedDocumentString(
+  `
+    mutation CancelWorkspaceUpload($id: UUID!) {
+  cancelUploadSession(uploadSessionId: $id) {
+    session {
+      id
+      state
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:6ebc2be31595ab976bcfe77cad295be8fe6beb6e04e11ca132157bb1cae67fec",
+  },
+) as unknown as TypedDocumentString<
+  CancelWorkspaceUploadMutation,
+  CancelWorkspaceUploadMutationVariables
+>;
+export const ArchiveWorkspaceFileDocument = new TypedDocumentString(
+  `
+    mutation ArchiveWorkspaceFile($id: UUID!, $expectedVersion: Int!) {
+  archiveFile(fileId: $id, expectedVersion: $expectedVersion) {
+    file {
+      id
+      version
+      archivedAt
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:0b7424d3ccd0dc98c800e0ead4cfcde5b25f5857abad0f08b050135026af29a2",
+  },
+) as unknown as TypedDocumentString<
+  ArchiveWorkspaceFileMutation,
+  ArchiveWorkspaceFileMutationVariables
 >;
 export const CreateWorkspaceFileDownloadDocument = new TypedDocumentString(
   `

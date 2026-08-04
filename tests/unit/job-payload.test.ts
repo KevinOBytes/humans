@@ -10,6 +10,7 @@ import {
 
 const key = "42".repeat(32);
 const importId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf3";
+const fileId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf4";
 
 describe("durable job payloads", () => {
   it("seals only canonical UUID payloads for their exact registered kind", () => {
@@ -53,5 +54,34 @@ describe("durable job payloads", () => {
         } as never,
       }),
     ).toThrow("Invalid job payload");
+  });
+
+  it("accepts exactly one cleanup target and seals its exact canonical shape", () => {
+    for (const payload of [
+      { kind: "file_cleanup" as const, fileId },
+      { kind: "file_cleanup" as const, uploadSessionId: fileId },
+    ]) {
+      const encoded = encodeJobPayload({ key, payload });
+      expect(
+        decodeJobPayload({
+          encryptedPayload: encoded.encryptedPayload,
+          key,
+          kind: "file_cleanup",
+          payloadHash: encoded.payloadHash,
+        }),
+      ).toEqual(payload);
+    }
+  });
+
+  it.each([
+    { kind: "file_cleanup" },
+    { kind: "file_cleanup", fileId, uploadSessionId: fileId },
+    { kind: "file_cleanup", fileId: "not-a-uuid" },
+    { kind: "file_cleanup", uploadSessionId: "not-a-uuid" },
+    { kind: "file_cleanup", fileId, extra: true },
+  ])("rejects invalid cleanup target shapes: %j", (payload) => {
+    expect(() => encodeJobPayload({ key, payload: payload as never })).toThrow(
+      "Invalid job payload",
+    );
   });
 });

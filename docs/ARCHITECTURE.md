@@ -116,6 +116,85 @@ code regeneration atomically replaces prior unused codes.
 5. Mutations use optimistic versions and idempotency keys where retries can occur, then write a redacted audit event.
 6. Files remain quarantined until checksum, size, type, and configured scan policy checks succeed.
 
+### Private file lifecycle
+
+Upload-session ownership is bound to a session user, not merely a workspace.
+Creation persists a server-generated controlled key and schedules expiration
+cleanup before returning a short-lived checksum-bound upload grant. Every
+supported provider (MinIO, R2, and generic S3) returns the same opaque
+application storage route; GraphQL-visible URLs never contain provider
+endpoints, buckets, workspaces, or object keys. Listing,
+regrant, and cancellation require `file:create`; API keys cannot invoke these
+user-bound recovery operations. Regrant locks and revalidates the same pending,
+unexpired session before signing its existing key. Cancellation locks the
+session against completion, atomically changes only `pending` to
+`cleanup_pending`, clears prior cleanup completion, advances the existing
+durable cleanup job to the present, and writes a redacted audit event before a
+best-effort exact-key delete.
+
+Upload tokens encrypt and bind the exact session and session owner as well as
+the workspace, controlled key, expected bytes, media type, checksum, and an
+expiry no later than the session expiry. The proxy validates request headers
+before claiming the pending session in a short row-locking transaction under
+the current deployment limit. The claim records a fresh upload-attempt UUID and
+a database-clock lease ending no later than the session expiry or 60 seconds
+after the claim, plus a 60-second post-attempt quiescence deadline. The
+transaction and its pooled connection are released before
+the bounded upstream PUT streams any object bytes. A second short transaction
+advances the session's monotonic storage-mutation generation after every
+successful upstream PUT, clears a matching attempt, and reports success only
+while that attempt, its session, and its pending state remain live. Stale
+attempts still advance the generation so their object publication cannot be
+mistaken for an unchanged cleanup target.
+
+An SDK error or timeout is treated as an ambiguous storage mutation, not proof
+that the provider rejected the PUT. It advances the generation before clearing
+the matching attempt and restarts the 60-second quiescence window. Cleanup and
+replacement claims require both the attempt lease and that window to expire.
+Thus a request lost after its claim retains a database fence for at most 120
+seconds from claim (60 seconds of bounded PUT plus 60 seconds of quiescence),
+after which cleanup performs the final exact-key delete. This protocol assumes
+the configured S3-compatible provider finishes or abandons publication within
+that explicit 60-second post-abort bound.
+
+Cancellation can therefore commit while the PUT is in progress. Cleanup
+returns a retryable not-ready result while the matching attempt lease is live;
+after reconciliation or bounded lease expiry it deletes the exact key and
+records completion only if the attempt tombstone and storage-mutation generation
+captured before deletion remain unchanged; a concurrent publication instead
+defers the job for another delete. A cancellation that wins makes the late PUT
+fail authorization and leaves its cleanup durably queued, while an expired
+orphaned attempt can be reclaimed or cleaned after process termination without
+holding a database connection during object streaming.
+
+The opaque route also defines the hosted upload envelope. In `vercel` mode,
+upload-session creation rejects every purpose above 4 MiB before storage
+configuration reads, rate limiting, persistence, grants, jobs, or audits. The
+response remains the stable validation error and exposes no provider or hosting
+detail. In `docker` mode, the purpose limits remain 50 MiB for evidence, 25 MiB
+for CSV imports, and 10 MiB for JSON imports. Server-rendered upload controls use
+the same deployment-aware limit function, display the active limit, and reject
+oversized local selections before hashing or GraphQL execution.
+
+Files expose only safe variant metadata through workspace- and visibility-
+scoped services. Provider, bucket, and object keys remain repository/worker
+details. Archival requires `file:delete`, revalidates live user or API-key
+authority inside the write transaction, locks the visible file, applies its
+expected version, primes the archived mutation result, and enqueues a durable
+file-target cleanup. The worker locks the persisted primary and variant
+locations, takes the same per-coordinate advisory locks used by the database's
+cross-table file/variant ownership guards, and fails closed if another active
+owner exists. It rejects runtime/provider location drift, deletes only those
+exact keys, revalidates the location set, and atomically records a durable
+completion marker with its one redacted audit event.
+
+The required production-like acceptance signs in to the built Compose
+application, drives create/complete/archive through `/api/graphql`, uploads
+through the exact returned application grant, and observes the continuously
+running worker complete primary-and-variant cleanup while a sibling sentinel
+survives. Direct PostgreSQL and MinIO access in that harness is limited to
+fixture arrangement and outcome assertions.
+
 Protected exact values use purpose-separated envelope encryption for display
 material and a different, workspace-bound HMAC key for equality lookup. The
 v1 blind indexes are not reversible search text, and legacy version-null rows
