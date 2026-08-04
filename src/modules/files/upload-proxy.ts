@@ -130,15 +130,22 @@ export function createUploadSessionProxyExecutor(input: {
         .for("update");
       if (!session) return false;
       if (session.uploadAttemptId !== attemptId) {
-        if (
-          requiresObjectCleanup(session.state) &&
-          session.cleanupCompletedAt
-        ) {
-          await rearmCompletedCleanup(
-            transaction as unknown as Database,
-            grant,
+        await transaction
+          .update(uploadSessions)
+          .set({
+            storageMutationGeneration: sql`${uploadSessions.storageMutationGeneration} + 1`,
+            ...(requiresObjectCleanup(session.state) &&
+            session.cleanupCompletedAt
+              ? { cleanupCompletedAt: null }
+              : {}),
+            updatedAt: sql`clock_timestamp()`,
+          })
+          .where(
+            and(
+              eq(uploadSessions.workspaceId, grant.workspaceId),
+              eq(uploadSessions.id, grant.uploadSessionId),
+            ),
           );
-        }
         return false;
       }
       const authorized =
@@ -148,6 +155,7 @@ export function createUploadSessionProxyExecutor(input: {
       await transaction
         .update(uploadSessions)
         .set({
+          storageMutationGeneration: sql`${uploadSessions.storageMutationGeneration} + 1`,
           uploadAttemptId: null,
           uploadAttemptExpiresAt: null,
           ...(!authorized &&

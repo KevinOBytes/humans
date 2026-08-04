@@ -406,6 +406,10 @@ export function createFileCleanupService(input: {
               eq(uploadSessions.id, session.id),
               isNull(uploadSessions.cleanupCompletedAt),
               sql`${uploadSessions.uploadAttemptId} IS NOT DISTINCT FROM ${session.uploadAttemptId}`,
+              eq(
+                uploadSessions.storageMutationGeneration,
+                session.storageMutationGeneration,
+              ),
             ),
           )
           .returning({ id: uploadSessions.id });

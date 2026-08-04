@@ -162,6 +162,9 @@ export const uploadSessions = pgTable(
     cleanupCompletedAt: domainTimestamp("cleanup_completed_at"),
     uploadAttemptId: uuid("upload_attempt_id"),
     uploadAttemptExpiresAt: domainTimestamp("upload_attempt_expires_at"),
+    storageMutationGeneration: integer("storage_mutation_generation")
+      .default(0)
+      .notNull(),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),
     createdBy: text("created_by").notNull(),
     updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
@@ -216,6 +219,10 @@ export const uploadSessions = pgTable(
     check(
       "upload_sessions_attempt_pair_check",
       sql`(${table.uploadAttemptId} IS NULL AND ${table.uploadAttemptExpiresAt} IS NULL) OR (${table.uploadAttemptId} IS NOT NULL AND ${table.uploadAttemptExpiresAt} IS NOT NULL)`,
+    ),
+    check(
+      "upload_sessions_storage_mutation_generation_check",
+      sql`${table.storageMutationGeneration} >= 0`,
     ),
   ],
 );

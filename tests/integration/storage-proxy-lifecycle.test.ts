@@ -692,4 +692,108 @@ liveDescribe("authoritative opaque upload fencing", () => {
       );
     expect(completionAudits).toHaveLength(1);
   });
+
+  it("retries cleanup when a late PUT publishes after its tombstone was removed", async () => {
+    const pending = await createPending();
+    const putEntered = deferred();
+    const releasePut = deferred();
+    client.beforePut = async () => {
+      putEntered.resolve();
+      await releasePut.promise;
+    };
+    const uploading = handlers().PUT(
+      uploadRequest(pending.grant, pending.body),
+    );
+    await putEntered.promise;
+
+    const cancelled = await cancel(pending.actor, pending.session.id);
+    expect(cancelled.body?.errors).toBeUndefined();
+    await fixture.database
+      .update(uploadSessions)
+      .set({ uploadAttemptExpiresAt: null, uploadAttemptId: null })
+      .where(eq(uploadSessions.id, pending.session.id));
+    const [beforeCleanup] = await fixture.database
+      .select({
+        storageMutationGeneration: uploadSessions.storageMutationGeneration,
+        uploadAttemptId: uploadSessions.uploadAttemptId,
+      })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(beforeCleanup).toMatchObject({
+      storageMutationGeneration: 0,
+      uploadAttemptId: null,
+    });
+
+    const objectDeleted = deferred();
+    const releaseCleanup = deferred();
+    client.afterDelete = async () => {
+      objectDeleted.resolve();
+      await releaseCleanup.promise;
+    };
+    const cleaning = runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97110");
+    await objectDeleted.promise;
+    expect(client.objects.size).toBe(0);
+
+    releasePut.resolve();
+    expect((await uploading).status).toBe(403);
+    expect(client.objects.size).toBe(1);
+    releaseCleanup.resolve();
+    await expect(cleaning).resolves.toMatchObject({
+      claimed: 1,
+      completed: 0,
+      deferred: 1,
+    });
+
+    const [deferredSession] = await fixture.database
+      .select({
+        cleanupCompletedAt: uploadSessions.cleanupCompletedAt,
+        storageMutationGeneration: uploadSessions.storageMutationGeneration,
+      })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(deferredSession).toMatchObject({
+      cleanupCompletedAt: null,
+      storageMutationGeneration: 1,
+    });
+    const [deferredJob] = await fixture.database
+      .select({ id: jobs.id, state: jobs.state })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.workspaceId, pending.actor.workspaceId),
+          eq(jobs.kind, "file_cleanup"),
+        ),
+      );
+    expect(deferredJob?.state).toBe("queued");
+
+    client.afterDelete = undefined;
+    await fixture.database
+      .update(jobs)
+      .set({ scheduledAt: new Date(0) })
+      .where(eq(jobs.id, deferredJob!.id));
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97111"),
+    ).resolves.toMatchObject({ claimed: 1, completed: 1 });
+    expect(client.objects.size).toBe(0);
+
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97112"),
+    ).resolves.toMatchObject({ claimed: 0, completed: 0 });
+    const [completedSession] = await fixture.database
+      .select({ cleanupCompletedAt: uploadSessions.cleanupCompletedAt })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(completedSession?.cleanupCompletedAt).toBeInstanceOf(Date);
+    const completionAudits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, pending.actor.workspaceId),
+          eq(auditEvents.resourceId, pending.session.id),
+          eq(auditEvents.action, "file.cleanup_completed"),
+        ),
+      );
+    expect(completionAudits).toHaveLength(1);
+  });
 });
