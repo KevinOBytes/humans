@@ -68,10 +68,13 @@ export function normalizeTracePath(candidate) {
 
 const reviewedTraceWarningMessage =
   "Failed to resolve dependency \"@opentelemetry/api\":\nCannot find module '@opentelemetry/api' loaded from <repository-root>/node_modules/.pnpm/@better-auth+core@1.6.23_@better-auth+utils@0.4.2_@better-fetch+fetch@1.3.1_better-call_b5812785fc15f4bc539c8dafa0413617/node_modules/@better-auth/core/dist/instrumentation/api.mjs";
+const reviewedCurrentTraceWarningMessage =
+  "Failed to resolve dependency \"@opentelemetry/api\":\nCannot find module '@opentelemetry/api' loaded from <repository-root>/node_modules/.pnpm/@better-auth+core@1.6.25_@better-auth+utils@0.4.2_@better-fetch+fetch@1.3.1_better-call_0ad9aaa550a4edc3398fbe9a7678d25c/node_modules/@better-auth/core/dist/instrumentation/api.mjs";
 const reviewedAwsTraceWarningMessage =
   "Failed to resolve dependency os from <repository-root>/node_modules/.pnpm/@aws-sdk+credential-provider-ini/index.js because of a dynamic homedir lookup";
 const reviewedTraceWarningFingerprints = new Set([
   createHash("sha256").update(reviewedTraceWarningMessage).digest("hex"),
+  createHash("sha256").update(reviewedCurrentTraceWarningMessage).digest("hex"),
   createHash("sha256").update(reviewedAwsTraceWarningMessage).digest("hex"),
 ]);
 

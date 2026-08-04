@@ -18,6 +18,8 @@ const securityHeaders = {
     "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=()",
 };
 
+const loopbackHostnames = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
 function applySecurityHeaders(request: NextRequest, response: NextResponse) {
   if (!request.nextUrl.pathname.startsWith("/api/")) {
     response.headers.set("cache-control", "no-store");
@@ -25,6 +27,7 @@ function applySecurityHeaders(request: NextRequest, response: NextResponse) {
   for (const [name, value] of Object.entries(securityHeaders)) {
     if (
       request.nextUrl.protocol === "http:" &&
+      loopbackHostnames.has(request.nextUrl.hostname) &&
       (name === "strict-transport-security" ||
         name === "content-security-policy")
     ) {

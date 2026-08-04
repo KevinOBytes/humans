@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-const deploymentUrl = process.env.VERCEL_SMOKE_URL ?? process.env.VERCEL_URL;
+const explicitDeploymentUrl = process.env.VERCEL_SMOKE_URL;
+const systemDeploymentUrl = process.env.VERCEL_URL;
+const deploymentUrl = explicitDeploymentUrl ?? systemDeploymentUrl;
 
 if (!deploymentUrl) {
   process.stdout.write(
@@ -11,7 +13,12 @@ if (!deploymentUrl) {
 
 let base;
 try {
-  base = new URL(deploymentUrl);
+  const normalizedDeploymentUrl = explicitDeploymentUrl
+    ? explicitDeploymentUrl
+    : /^[a-z][a-z\d+.-]*:\/\//iu.test(deploymentUrl)
+      ? deploymentUrl
+      : `https://${deploymentUrl}`;
+  base = new URL(normalizedDeploymentUrl);
   if (!["http:", "https:"].includes(base.protocol)) {
     throw new Error("protocol must be http or https");
   }
@@ -24,6 +31,15 @@ try {
 }
 
 const cronSecret = process.env.VERCEL_SMOKE_CRON_SECRET ?? "";
+const isLoopback = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(
+  base.hostname,
+);
+if (cronSecret && base.protocol !== "https:" && !isLoopback) {
+  console.error(
+    "VERCEL_SMOKE_CRON_SECRET requires an HTTPS deployment URL outside loopback.",
+  );
+  process.exit(1);
+}
 const timeoutMs = Number.parseInt(
   process.env.VERCEL_SMOKE_TIMEOUT_MS ?? "15000",
   10,
@@ -118,10 +134,14 @@ async function assertJobsRoute() {
   if (authorized.status === 405) {
     throw new Error("/api/jobs/run returned POST-only error on GET");
   }
-  if (!authorized.ok && authorized.status !== 503) {
+  if (authorized.status !== 200) {
     throw new Error(
       `/api/jobs/run with provided secret returned ${authorized.status}`,
     );
+  }
+  const body = await authorized.json();
+  if (body?.success !== true) {
+    throw new Error("/api/jobs/run did not return a successful result");
   }
 }
 

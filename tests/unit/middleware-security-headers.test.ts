@@ -50,4 +50,17 @@ describe("middleware security envelope", () => {
     );
     expect(response.headers.get("x-frame-options")).toBe("DENY");
   });
+
+  it("does not weaken transport headers for non-loopback HTTP hosts", () => {
+    const response = proxy(
+      new NextRequest("http://humans.example.test/dashboard"),
+    );
+
+    expect(response.headers.get("strict-transport-security")).toContain(
+      "max-age=31536000",
+    );
+    expect(response.headers.get("content-security-policy")).toContain(
+      "upgrade-insecure-requests",
+    );
+  });
 });

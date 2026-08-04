@@ -7,35 +7,47 @@ const workflowPath = ".github/workflows/ci.yml";
 const officialActions = new Map([
   [
     "actions/checkout",
-    { sha: "d23441a48e516b6c34aea4fa41551a30e30af803", tag: "v6.1.0" },
+    { sha: "3d3c42e5aac5ba805825da76410c181273ba90b1", tag: "v7.0.1" },
   ],
   [
     "actions/setup-node",
-    { sha: "249970729cb0ef3589644e2896645e5dc5ba9c38", tag: "v6.5.0" },
+    { sha: "820762786026740c76f36085b0efc47a31fe5020", tag: "v7.0.0" },
   ],
   [
     "pnpm/action-setup",
-    { sha: "fc06bc1257f339d1d5d8b3a19a8cae5388b55320", tag: "v4.4.0" },
+    { sha: "0ebf47130e4866e96fce0953f49152a61190b271", tag: "v6.0.9" },
   ],
   [
     "actions/upload-artifact",
-    { sha: "b7c566a772e6b6bfb58ed0dc250532a479d7789f", tag: "v6.0.0" },
+    {
+      sha: "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+      tag: "v7.0.1",
+    },
   ],
   [
     "actions/dependency-review-action",
-    { sha: "2031cfc080254a8a887f58cffee85186f0e49e48", tag: "v4.9.0" },
+    {
+      sha: "a1d282b36b6f3519aa1f3fc636f609c47dddb294",
+      tag: "v5.0.0",
+    },
   ],
   [
     "gitleaks/gitleaks-action",
-    { sha: "ff98106e4c7b2bc287b24eaf42907196329070c7", tag: "v2.3.9" },
+    { sha: "e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e", tag: "v3.0.0" },
   ],
   [
     "docker/setup-buildx-action",
-    { sha: "8d2750c68a42422c14e847fe6c8ac0403b4cbd6f", tag: "v3.12.0" },
+    {
+      sha: "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
+      tag: "v4.2.0",
+    },
   ],
   [
     "docker/build-push-action",
-    { sha: "10e90e3645eae34f1e60eeb005ba3a3d33f178e8", tag: "v6.19.2" },
+    {
+      sha: "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
+      tag: "v7.3.0",
+    },
   ],
   [
     "aquasecurity/trivy-action",
