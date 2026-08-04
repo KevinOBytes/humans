@@ -253,6 +253,9 @@ export async function reconcileFileCleanupJobs(input: {
         uploadSessionId: session.id,
         expiresAt: session.expiresAt,
         createdBy: session.actorId,
+        ...(session.state === "cleanup_pending"
+          ? { scheduledAt: new Date(0) }
+          : {}),
       });
     }
     return candidates.length;
@@ -365,26 +368,6 @@ export function createFileCleanupService(input: {
               ),
             );
         }
-        if (row.uploadAttemptId) {
-          await transaction
-            .update(uploadSessions)
-            .set({
-              uploadAttemptId: null,
-              uploadAttemptExpiresAt: null,
-              updatedAt: sql`clock_timestamp()`,
-            })
-            .where(
-              and(
-                eq(uploadSessions.workspaceId, job.workspaceId),
-                eq(uploadSessions.id, row.id),
-                eq(uploadSessions.uploadAttemptId, row.uploadAttemptId),
-                lte(
-                  uploadSessions.uploadAttemptExpiresAt,
-                  sql`clock_timestamp()`,
-                ),
-              ),
-            );
-        }
         return { ...row, cleanCompletion };
       });
       if (job.signal.aborted) {
@@ -415,8 +398,6 @@ export function createFileCleanupService(input: {
           .update(uploadSessions)
           .set({
             cleanupCompletedAt: sql`clock_timestamp()`,
-            uploadAttemptId: null,
-            uploadAttemptExpiresAt: null,
             updatedAt: sql`clock_timestamp()`,
           })
           .where(

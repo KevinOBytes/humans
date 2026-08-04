@@ -3,12 +3,14 @@
 import { createHash } from "node:crypto";
 
 import type { S3Client } from "@aws-sdk/client-s3";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { newId } from "@/db/id";
 import { uploadSessions } from "@/db/schema/files";
+import { auditEvents, jobs } from "@/db/schema/operations";
 import { parseServerEnv } from "@/lib/env/server-schema";
+import type { RedisStore } from "@/lib/redis";
 import {
   createStorageProxyHandlers,
   storageObjectKey,
@@ -17,6 +19,9 @@ import { createObjectStore } from "@/lib/storage/s3";
 import type { ObjectStore, SignedObjectRequest } from "@/lib/storage/types";
 import { createFileCleanupService } from "@/modules/files/cleanup";
 import { createUploadSessionProxyExecutor } from "@/modules/files/upload-proxy";
+import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
+import { runJobsOnce } from "@/worker/run-once";
+import { createRuntimeJobRegistry } from "@/worker/runtime";
 
 import { ResearchFixture } from "../support/research-fixture";
 
@@ -29,6 +34,43 @@ function deferred() {
     resolve = accept;
   });
   return { promise, resolve };
+}
+
+class MemoryRedis implements RedisStore {
+  private readonly leases = new Map<string, string>();
+
+  get() {
+    return Promise.resolve(null);
+  }
+  set() {
+    return Promise.resolve();
+  }
+  delete() {
+    return Promise.resolve();
+  }
+  increment() {
+    return Promise.resolve(1);
+  }
+  consumeTokenBucket() {
+    return Promise.resolve({
+      allowed: true,
+      remainingMicrotokens: 1,
+      retryAfterMs: 0,
+    });
+  }
+  acquireLease(key: string, token: string) {
+    if (this.leases.has(key)) return Promise.resolve(false);
+    this.leases.set(key, token);
+    return Promise.resolve(true);
+  }
+  extendLease(key: string, token: string) {
+    return Promise.resolve(this.leases.get(key) === token);
+  }
+  releaseLease(key: string, token: string) {
+    if (this.leases.get(key) !== token) return Promise.resolve(false);
+    this.leases.delete(key);
+    return Promise.resolve(true);
+  }
 }
 
 class LifecycleS3Client {
@@ -208,6 +250,24 @@ liveDescribe("authoritative opaque upload fencing", () => {
         database: fixture.database,
         deploymentMode: "docker",
       }),
+    });
+  }
+
+  function runCleanup(workerId: string) {
+    return runJobsOnce({
+      database: fixture.database,
+      encryptionKey,
+      random: () => 0,
+      redis: new MemoryRedis(),
+      registry: createRuntimeJobRegistry({
+        database: fixture.database,
+        encryptionKey,
+        objectStore,
+        searchIndexMaintenance: disabledSearchIndexMaintenance,
+        storageBucket: "private",
+        storageProvider: "minio",
+      }),
+      workerId,
     });
   }
 
@@ -421,10 +481,107 @@ liveDescribe("authoritative opaque upload fencing", () => {
       })
       .from(uploadSessions)
       .where(eq(uploadSessions.id, pending.session.id));
-    expect(recovered).toMatchObject({
-      uploadAttemptExpiresAt: null,
-      uploadAttemptId: null,
-    });
+    expect(recovered?.uploadAttemptId).toBe(attemptId);
+    expect(recovered?.uploadAttemptExpiresAt?.getTime()).toBeLessThan(
+      Date.now(),
+    );
     expect(recovered?.cleanupCompletedAt).toBeInstanceOf(Date);
+  });
+
+  it("rearms durable cleanup when an expired blocked PUT publishes after cleanup completed", async () => {
+    const pending = await createPending();
+    const putEntered = deferred();
+    const releasePut = deferred();
+    client.beforePut = async () => {
+      putEntered.resolve();
+      await releasePut.promise;
+    };
+    const uploading = handlers().PUT(
+      uploadRequest(pending.grant, pending.body),
+    );
+    await putEntered.promise;
+
+    const cancelled = await cancel(pending.actor, pending.session.id);
+    expect(cancelled.body?.errors).toBeUndefined();
+    const [claimed] = await fixture.database
+      .select({ uploadAttemptId: uploadSessions.uploadAttemptId })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(claimed?.uploadAttemptId).toEqual(expect.any(String));
+    await fixture.database
+      .update(uploadSessions)
+      .set({
+        uploadAttemptExpiresAt: sql`clock_timestamp() - interval '1 second'`,
+      })
+      .where(
+        and(
+          eq(uploadSessions.id, pending.session.id),
+          eq(uploadSessions.uploadAttemptId, claimed!.uploadAttemptId!),
+        ),
+      );
+
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97104"),
+    ).resolves.toMatchObject({ claimed: 1, completed: 1 });
+    expect(client.objects.size).toBe(0);
+    const [prematureCompletion] = await fixture.database
+      .select({
+        cleanupCompletedAt: uploadSessions.cleanupCompletedAt,
+        uploadAttemptId: uploadSessions.uploadAttemptId,
+      })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(prematureCompletion?.cleanupCompletedAt).toBeInstanceOf(Date);
+    expect(prematureCompletion?.uploadAttemptId).toBe(claimed?.uploadAttemptId);
+
+    // Exercise recovery from a cleanup completion written by the prior
+    // implementation, which also discarded the attempt tombstone.
+    await fixture.database
+      .update(uploadSessions)
+      .set({ uploadAttemptExpiresAt: null, uploadAttemptId: null })
+      .where(eq(uploadSessions.id, pending.session.id));
+
+    releasePut.resolve();
+    expect((await uploading).status).toBe(403);
+
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97105"),
+    ).resolves.toMatchObject({ claimed: 1, completed: 1 });
+    expect(client.objects.size).toBe(0);
+    const [recovered] = await fixture.database
+      .select({
+        cleanupCompletedAt: uploadSessions.cleanupCompletedAt,
+        uploadAttemptId: uploadSessions.uploadAttemptId,
+      })
+      .from(uploadSessions)
+      .where(eq(uploadSessions.id, pending.session.id));
+    expect(recovered?.cleanupCompletedAt).toBeInstanceOf(Date);
+    expect(recovered?.uploadAttemptId).toBeNull();
+
+    await expect(
+      runCleanup("019cc7c4-6ed2-7e0a-aed8-e5d451c97106"),
+    ).resolves.toMatchObject({ claimed: 0, completed: 0 });
+    const cleanupJobs = await fixture.database
+      .select({ id: jobs.id, state: jobs.state })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.workspaceId, pending.actor.workspaceId),
+          eq(jobs.kind, "file_cleanup"),
+        ),
+      );
+    expect(cleanupJobs).toHaveLength(1);
+    expect(cleanupJobs[0]?.state).toBe("completed");
+    const completionAudits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, pending.actor.workspaceId),
+          eq(auditEvents.resourceId, pending.session.id),
+          eq(auditEvents.action, "file.cleanup_completed"),
+        ),
+      );
+    expect(completionAudits).toHaveLength(2);
   });
 });

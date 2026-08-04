@@ -1,4 +1,4 @@
-import { and, eq, lte, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { uploadSessions } from "@/db/schema/files";
@@ -13,6 +13,15 @@ const uploadPurposes = new Set<UploadPurpose>([
   "CSV_IMPORT",
   "JSON_IMPORT",
 ]);
+const cleanupAttemptTerminalStates = [
+  "rejected",
+  "expired",
+  "cleanup_pending",
+] as const;
+
+function requiresObjectCleanup(state: string): boolean {
+  return cleanupAttemptTerminalStates.some((candidate) => candidate === state);
+}
 
 export function createUploadSessionProxyExecutor(input: {
   database: Database;
@@ -108,18 +117,30 @@ export function createUploadSessionProxyExecutor(input: {
           cleanupCompletedAt: uploadSessions.cleanupCompletedAt,
           sessionNotExpired: sql<boolean>`${uploadSessions.expiresAt} > clock_timestamp()`,
           state: uploadSessions.state,
+          uploadAttemptId: uploadSessions.uploadAttemptId,
         })
         .from(uploadSessions)
         .where(
           and(
             eq(uploadSessions.workspaceId, grant.workspaceId),
             eq(uploadSessions.id, grant.uploadSessionId),
-            eq(uploadSessions.uploadAttemptId, attemptId),
           ),
         )
         .limit(1)
         .for("update");
       if (!session) return false;
+      if (session.uploadAttemptId !== attemptId) {
+        if (
+          requiresObjectCleanup(session.state) &&
+          session.cleanupCompletedAt
+        ) {
+          await rearmCompletedCleanup(
+            transaction as unknown as Database,
+            grant,
+          );
+        }
+        return false;
+      }
       const authorized =
         session.state === "pending" &&
         session.sessionNotExpired &&
@@ -129,7 +150,9 @@ export function createUploadSessionProxyExecutor(input: {
         .set({
           uploadAttemptId: null,
           uploadAttemptExpiresAt: null,
-          ...(!authorized && session.cleanupCompletedAt
+          ...(!authorized &&
+          requiresObjectCleanup(session.state) &&
+          session.cleanupCompletedAt
             ? { cleanupCompletedAt: null }
             : {}),
           updatedAt: sql`clock_timestamp()`,
@@ -151,9 +174,10 @@ async function clearMatchingAttempt(
   grant: ProxyUploadAuthorization,
   attemptId: string,
 ): Promise<void> {
-  await database
+  const [cleared] = await database
     .update(uploadSessions)
     .set({
+      cleanupCompletedAt: sql`CASE WHEN ${uploadSessions.state} IN ('rejected', 'expired', 'cleanup_pending') THEN NULL ELSE ${uploadSessions.cleanupCompletedAt} END`,
       uploadAttemptId: null,
       uploadAttemptExpiresAt: null,
       updatedAt: sql`clock_timestamp()`,
@@ -163,6 +187,28 @@ async function clearMatchingAttempt(
         eq(uploadSessions.workspaceId, grant.workspaceId),
         eq(uploadSessions.id, grant.uploadSessionId),
         eq(uploadSessions.uploadAttemptId, attemptId),
+      ),
+    )
+    .returning({ id: uploadSessions.id });
+  if (!cleared) await rearmCompletedCleanup(database, grant);
+}
+
+async function rearmCompletedCleanup(
+  database: Database,
+  grant: ProxyUploadAuthorization,
+): Promise<void> {
+  await database
+    .update(uploadSessions)
+    .set({
+      cleanupCompletedAt: null,
+      updatedAt: sql`clock_timestamp()`,
+    })
+    .where(
+      and(
+        eq(uploadSessions.workspaceId, grant.workspaceId),
+        eq(uploadSessions.id, grant.uploadSessionId),
+        inArray(uploadSessions.state, cleanupAttemptTerminalStates),
+        isNotNull(uploadSessions.cleanupCompletedAt),
       ),
     );
 }
