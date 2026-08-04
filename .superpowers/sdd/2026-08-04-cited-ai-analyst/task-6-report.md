@@ -71,3 +71,30 @@ All commands ran through Node 24 from `/Users/kevo/Projects/humans/.worktrees/mv
 - The repository remains a usable alpha and is not production-ready. Broader incomplete requirements remain in `TODO.md` and `docs/REQUIREMENTS.md`.
 
 Concerns: none within the Task 6 UI slice. The one moderate production dependency audit finding is recorded truthfully and did not meet the repository's high-severity blocking threshold.
+
+## Fix round 1: cancellation recovery and truthful retention status
+
+Fix commit: `d821747f3d880e7124a23cb22ee397219ff5a668` (`fix: resume polling after failed cancellation`)
+
+Two Important review findings were corrected without adding retention functionality:
+
+- A cancellation attempt still aborts and generation-fences the active read. If cancellation cannot be confirmed and the run remains active, a narrow poll revision now restarts bounded polling; the aborted read cannot overwrite the resumed result.
+- `HUM-FR-023` is again `Incomplete`, and its exact TODO entry is restored. The read-only tool, authorization, citation, provider/model, and protected error evidence remains recorded, while workspace-policy-controlled omission or retention of restricted prompt content is explicitly unimplemented.
+
+### Fix RED
+
+```text
+mise exec node@24 -- corepack pnpm vitest run tests/unit/analyst.test.tsx -t 'resumes polling after cancellation cannot be confirmed'
+exit 1: expected the resumed read to be called twice, but polling remained at one call after cancellation failed
+```
+
+### Fix GREEN and verification
+
+- The same focused cancellation-recovery test passed: 1/1.
+- `corepack pnpm vitest run tests/unit/analyst.test.tsx tests/unit/repository-contract.test.ts`: 2 files and 19/19 tests passed.
+- Focused Chromium analyst coverage with isolated PostgreSQL/Redis: 2/2 passed.
+- `corepack pnpm ci:validate`: exit 0; format, lint, typecheck, 105 unit files and 902/902 tests, Drizzle checks, Better Auth schema, GraphQL codegen, 433-package production license review, high-severity audit gate, and the optimized production build all passed. The audit continued to report one moderate vulnerability.
+- The build retained the dynamic `/analyst` route and generated 13/13 static pages.
+- `git diff --check` and the unchanged `tsconfig.json` check passed before the fix commit.
+
+Fix limitations are unchanged: no retention-policy feature was implemented, and no external provider smoke test, deployment, hosted check, or production-readiness claim was made.
