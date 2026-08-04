@@ -181,31 +181,25 @@ git add src/db/schema drizzle src/modules/jobs src/worker/registry.ts tests
 git commit -m "feat: add principal-attributed AI job protocol"
 ```
 
-### Task 3: Atomic AI service, durable execution, and GraphQL API
+### Task 3: Atomic AI service and durable execution
 
 **Files:**
 - Create: `src/modules/ai/repository.ts`
 - Create: `src/modules/ai/service.ts`
-- Create: `src/modules/ai/graphql.ts`
 - Create: `src/worker/handlers/ai-analysis.ts`
 - Modify: `src/worker/runtime.ts`
-- Modify: `src/graphql/context.ts`
-- Modify: `src/graphql/loaders.ts`
-- Modify: `src/graphql/schema.ts`
-- Modify: `src/graphql/server.ts`
-- Modify: `src/app/api/graphql/route.ts`
 - Test: `tests/integration/ai-analysis.test.ts`
 - Test: `tests/integration/worker-research-transactions.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1 `AiProvider`/research tools and Task 2 principal-attributed AI/job schema plus `AiExecuteJobPayload`.
-- Produces: `startAiAnalysis(input)`, `readAiRun(id)`, `cancelAiRun(id)`, `createAiAnalysisHandler(runtime)`, GraphQL `startAiAnalysis`, `aiRun`, and `cancelAiAnalysis`.
+- Produces: `startAiAnalysis(input)`, `readAiRun(id)`, `cancelAiRun(id)`, and `createAiAnalysisHandler(runtime)` for Task 4's GraphQL registration.
 - `StartAiAnalysisInput` contains a bounded question, optional closed scope of person/evidence UUIDs, and a required client idempotency key. It never accepts provider/model/base URL/tool names.
 - `AiRun` returns state, timestamps, provider/model disclosure, validated answer, validated citations, and redacted tool summaries; it never returns prompt content, base URL, provider request, API key, or raw error.
 
-- [ ] **Step 1: Write failing service, worker, authorization, idempotency, and GraphQL tests**
+- [ ] **Step 1: Write failing service, worker, authorization, and idempotency tests**
 
-Use live PostgreSQL fixtures and injected fake provider/Redis seams to cover user and API-key principal attribution; cross-workspace non-disclosure; principal-bound idempotency replay/conflict/independence; atomic thread/message/run/job/idempotency/audit creation; current authority at enqueue, each tool call, and result commit; revocation/grant removal after enqueue; valid/forged/foreign/hidden/unreturned citations; provider retry/dead-letter redaction; stale claim fencing; cancellation; exactly-once finalization; GraphQL session/API-key paths, budgets, stable errors, and request correlation.
+Use live PostgreSQL fixtures and injected fake provider/Redis seams to cover user and API-key principal attribution; cross-workspace non-disclosure; principal-bound idempotency replay/conflict/independence; atomic thread/message/run/job/idempotency/audit creation; current authority at enqueue, each tool call, and result commit; revocation/grant removal after enqueue; valid/forged/foreign/hidden/unreturned citations; provider retry/dead-letter redaction; stale claim fencing; cancellation; and exactly-once finalization.
 
 - [ ] **Step 2: Verify focused tests fail**
 
@@ -213,7 +207,7 @@ Use live PostgreSQL fixtures and injected fake provider/Redis seams to cover use
 corepack pnpm vitest run tests/integration/ai-analysis.test.ts tests/integration/worker-research-transactions.test.ts --no-file-parallelism
 ```
 
-Expected: fail because the AI repository, service, handler, and GraphQL API do not exist.
+Expected: fail because the AI repository, service, and real handler do not exist.
 
 - [ ] **Step 3: Implement atomic service and repository operations**
 
@@ -221,13 +215,7 @@ Start analysis in one transaction. Normalize the question and scope; HMAC-bind r
 
 The handler loads current authority, decrypts input, executes at most four provider/tool boundaries, records only allowlisted redacted summaries, validates citations against the run ledger and current visibility, then commits assistant message/citations/final state only while the job claim and lease remain current. Cancellation and finalization use compare-and-set transitions.
 
-- [ ] **Step 4: Register GraphQL types and operations**
-
-Add bounded Pothos inputs/outputs. Require `analysis:create` plus `analysis:run` to start, `analysis:read` to read, and `analysis:cancel` to cancel. API keys use explicit permissions and principal ID. Return stable `NOT_FOUND`, `CONFLICT`, and `PROVIDER_UNAVAILABLE` envelopes with request correlation.
-
-Inject `AiRuntime` into context/server options and production app/worker construction. Tests inject a deterministic fake provider; production uses validated server env only.
-
-- [ ] **Step 5: Pass focused database/GraphQL/worker tests and static gates**
+- [ ] **Step 4: Pass focused database/worker tests and static gates**
 
 Run:
 
@@ -239,14 +227,65 @@ corepack pnpm lint
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/modules/ai src/worker src/graphql src/app/api/graphql tests
+git add src/modules/ai src/worker tests/integration/ai-analysis.test.ts tests/integration/worker-research-transactions.test.ts
 git commit -m "feat: persist and execute cited AI analysis"
 ```
 
-### Task 4: Generated analyst client, accessible UI, and release evidence
+### Task 4: Canonical GraphQL analyst API
+
+**Files:**
+- Create: `src/modules/ai/graphql.ts`
+- Modify: `src/graphql/context.ts`
+- Modify: `src/graphql/loaders.ts`
+- Modify: `src/graphql/schema.ts`
+- Modify: `src/graphql/server.ts`
+- Modify: `src/app/api/graphql/route.ts`
+- Test: `tests/integration/ai-graphql.test.ts`
+
+**Interfaces:**
+- Consumes: Task 3 `startAiAnalysis`, `readAiRun`, and `cancelAiRun` service operations.
+- Produces: GraphQL `startAiAnalysis`, `aiRun`, and `cancelAiAnalysis` with bounded typed inputs and public-safe projections.
+
+- [ ] **Step 1: Write failing real-context GraphQL tests**
+
+Cover user and API-key start/read/cancel paths; required `analysis:create`/`analysis:run`/`analysis:read`/`analysis:cancel` permissions; cross-workspace non-disclosure; principal-bound idempotency replay/conflict; operation budgets; stable expected errors; request correlation; provider/model disclosure; validated citations; redacted tool summaries; and absence of prompt, base URL, provider request, API key, or raw provider error fields from the schema and responses.
+
+- [ ] **Step 2: Verify GraphQL tests fail**
+
+```bash
+corepack pnpm vitest run tests/integration/ai-graphql.test.ts --no-file-parallelism
+```
+
+Expected: fail because the AI Pothos registration and context wiring do not exist.
+
+- [ ] **Step 3: Register GraphQL types and runtime injection**
+
+Add bounded Pothos inputs/outputs. Require `analysis:create` plus `analysis:run` to start, `analysis:read` to read, and `analysis:cancel` to cancel. API keys use explicit permissions and principal ID. Return stable `NOT_FOUND`, `CONFLICT`, and `PROVIDER_UNAVAILABLE` envelopes with request correlation.
+
+Inject `AiRuntime` into context/server options and production app construction. Tests inject a deterministic fake provider; production uses validated server env only.
+
+- [ ] **Step 4: Pass focused GraphQL, schema-generation, and static gates**
+
+```bash
+corepack pnpm vitest run tests/integration/ai-graphql.test.ts --no-file-parallelism
+corepack pnpm codegen
+corepack pnpm typecheck
+corepack pnpm lint
+```
+
+Expected: all pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/modules/ai/graphql.ts src/graphql src/app/api/graphql tests/integration/ai-graphql.test.ts
+git commit -m "feat: expose cited AI analysis through GraphQL"
+```
+
+### Task 5: Generated analyst client, accessible UI, and release evidence
 
 **Files:**
 - Create: `src/graphql/operations/analyst.graphql`
