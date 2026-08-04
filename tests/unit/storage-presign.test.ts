@@ -21,6 +21,9 @@ describe("direct S3 upload presigning", () => {
     const checksumSha256 = createHash("sha256").update(body).digest("hex");
 
     const result = await store.createUpload({
+      actorId: "actor-a",
+      uploadSessionId: "019cc7c4-6ed2-7e0a-aed8-e5d451c97005",
+      sessionExpiresAt: new Date(Date.now() + 10 * 60_000),
       workspaceId: "workspace-a",
       key: "evidence/file.txt",
       contentType: "text/plain",

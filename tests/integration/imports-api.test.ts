@@ -356,6 +356,7 @@ liveDescribe("import staging and durable start", () => {
     const context = await serviceContext(fixture, actor);
     const store = new MemoryStore();
     const fileService = createFilesService(context, {
+      deploymentMode: "docker",
       encryptionKey,
       objectStore: store,
       storageBucket: "private",
@@ -489,6 +490,7 @@ liveDescribe("import staging and durable start", () => {
     const context = await serviceContext(fixture, actor);
     const store = new MemoryStore();
     const fileService = createFilesService(context, {
+      deploymentMode: "docker",
       encryptionKey,
       objectStore: store,
       storageBucket: "private",
@@ -606,6 +608,7 @@ liveDescribe("import staging and durable start", () => {
       workspaceId: actor.workspaceId,
     };
     const files = createFilesService(context, {
+      deploymentMode: "docker",
       encryptionKey,
       objectStore: store,
       storageBucket: "private",
@@ -781,6 +784,7 @@ liveDescribe("import staging and durable start", () => {
     const context = await serviceContext(fixture, actor);
     const store = new MemoryStore();
     const fileService = createFilesService(context, {
+      deploymentMode: "docker",
       encryptionKey,
       objectStore: store,
       storageBucket: "private",
@@ -927,6 +931,7 @@ liveDescribe("import staging and durable start", () => {
       };
       const store = new MemoryStore();
       const fileService = createFilesService(ownerContext, {
+        deploymentMode: "docker",
         encryptionKey,
         objectStore: store,
         storageBucket: "private",
@@ -1051,6 +1056,7 @@ liveDescribe("import staging and durable start", () => {
       const ownerContext = await serviceContext(fixture, owner);
       const store = new MemoryStore();
       const fileService = createFilesService(ownerContext, {
+        deploymentMode: "docker",
         encryptionKey,
         objectStore: store,
         storageBucket: "private",
@@ -1201,6 +1207,7 @@ liveDescribe("import staging and durable start", () => {
     const memberContext = await serviceContext(fixture, member);
     const store = new MemoryStore();
     const files = createFilesService(ownerContext, {
+      deploymentMode: "docker",
       encryptionKey,
       objectStore: store,
       storageBucket: "private",
@@ -1412,6 +1419,7 @@ liveDescribe("import staging and durable start", () => {
 
     const store = new MemoryStore();
     const files = createFilesService(context, {
+      deploymentMode: "docker",
       encryptionKey,
       objectStore: store,
       storageBucket: "private",

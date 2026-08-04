@@ -85,6 +85,7 @@ async function getProductionHandler() {
           protectedLookupHmacKey: env.PROTECTED_LOOKUP_HMAC_KEY,
         },
         fileRuntime: {
+          deploymentMode: env.DEPLOYMENT_MODE,
           objectStore,
           storageBucket: env.STORAGE_BUCKET,
           storageProvider: env.STORAGE_PROVIDER,

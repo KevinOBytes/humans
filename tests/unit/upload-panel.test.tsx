@@ -2,7 +2,10 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { UploadPanel } from "@/components/files/upload-panel";
+import {
+  UploadPanel,
+  UploadRecoveryControl,
+} from "@/components/files/upload-panel";
 
 const execute = vi.fn();
 
@@ -16,6 +19,22 @@ describe("UploadPanel completion state", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("states and enforces the configured upload ceiling before GraphQL", async () => {
+    const user = userEvent.setup();
+    const maxBytes = 4 * 1024 * 1024;
+    render(<UploadPanel purpose="EVIDENCE" maxBytes={maxBytes} />);
+
+    expect(screen.getByText(/up to 4 MiB/i)).toBeVisible();
+    const oversized = new File(["x"], "evidence.txt", {
+      type: "text/plain",
+    });
+    Object.defineProperty(oversized, "size", { value: maxBytes + 1 });
+    await user.upload(screen.getByLabelText("Choose file"), oversized);
+
+    expect(await screen.findByText(/no larger than 4 MiB/i)).toBeVisible();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("keeps a scan-error upload quarantined and does not expose it as completed", async () => {
@@ -55,7 +74,13 @@ describe("UploadPanel completion state", () => {
       .mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", upload);
 
-    render(<UploadPanel purpose="CSV_IMPORT" onCompleted={onCompleted} />);
+    render(
+      <UploadPanel
+        purpose="CSV_IMPORT"
+        maxBytes={25 * 1024 * 1024}
+        onCompleted={onCompleted}
+      />,
+    );
     await user.upload(
       screen.getByLabelText("Choose file"),
       new File(["name\nAda\n"], "people.csv", { type: "text/csv" }),
@@ -68,5 +93,66 @@ describe("UploadPanel completion state", () => {
     ).toBeInTheDocument();
     expect(upload).toHaveBeenCalledOnce();
     expect(onCompleted).not.toHaveBeenCalled();
+  });
+
+  it("regrants only after the exact abandoned local file is selected", async () => {
+    const user = userEvent.setup();
+    const onCompleted = vi.fn();
+    execute
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          regrantUploadSession: {
+            issues: [],
+            session: { id: "018f0000-0000-7000-8000-000000000403" },
+            grant: {
+              method: "PUT",
+              url: "https://storage.example.test/regrant",
+              headers: {},
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          completeUpload: {
+            issues: [],
+            file: {
+              id: "018f0000-0000-7000-8000-000000000404",
+              originalName: "abandoned.txt",
+              availability: "AVAILABLE",
+              scanState: "NOT_REQUIRED",
+            },
+          },
+        },
+      });
+    const upload = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", upload);
+
+    render(
+      <UploadRecoveryControl
+        session={{
+          id: "018f0000-0000-7000-8000-000000000403",
+          originalName: "abandoned.txt",
+          byteSize: 9,
+          checksumSha256:
+            "sha256:4967117e0ea125c324ca3d05a15ee769b1c3b590d647647387a5af7b04cc3aef",
+        }}
+        onCompleted={onCompleted}
+      />,
+    );
+    await user.upload(
+      screen.getByLabelText("Resume abandoned.txt"),
+      new File(["different"], "abandoned.txt", { type: "text/plain" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /does not match the pending upload/i,
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
   });
 });

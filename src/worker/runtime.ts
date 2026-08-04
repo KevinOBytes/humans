@@ -40,6 +40,8 @@ export function createRuntimeJobRegistry(input: {
   encryptionKey: string;
   objectStore: ObjectStore;
   searchIndexMaintenance: SearchIndexMaintenance;
+  storageBucket?: string;
+  storageProvider?: string;
 }) {
   const unavailableProvider = Object.freeze({
     disclosure: Object.freeze({
@@ -79,6 +81,8 @@ export function createRuntimeJobRegistry(input: {
       createFileCleanupService({
         database: input.database,
         objectStore: input.objectStore,
+        storageBucket: input.storageBucket,
+        storageProvider: input.storageProvider,
       }),
     ),
   });
@@ -147,6 +151,8 @@ export function createRuntimeJobRunner(input: {
     encryptionKey: input.env.DATA_ENCRYPTION_KEY,
     objectStore: createObjectStore(input.env),
     searchIndexMaintenance,
+    storageBucket: input.env.STORAGE_BUCKET,
+    storageProvider: input.env.STORAGE_PROVIDER,
   });
   const emailSender = createEmailSender(input.env);
   return async (options: { signal?: AbortSignal } = {}) => {

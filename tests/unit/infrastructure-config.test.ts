@@ -140,6 +140,9 @@ describe("objectStoreConfig", () => {
 
     await expect(
       store.createUpload({
+        actorId: "actor-a",
+        uploadSessionId: "019cc7c4-6ed2-7e0a-aed8-e5d451c97004",
+        sessionExpiresAt: new Date(Date.now() + 60_000),
         workspaceId: "workspace-a",
         key: "file.txt",
         contentType: "text/plain",

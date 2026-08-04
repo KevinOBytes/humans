@@ -17,7 +17,6 @@ const accessKeyId = process.env.TEST_STORAGE_ACCESS_KEY_ID;
 const secretAccessKey = process.env.TEST_STORAGE_SECRET_ACCESS_KEY;
 const liveDescribe =
   endpoint && accessKeyId && secretAccessKey ? describe : describe.skip;
-
 liveDescribe("real MinIO upload and download", () => {
   const client = new S3Client({
     ...s3ClientConfig({ endpoint: endpoint!, provider: "minio" }),
@@ -47,6 +46,9 @@ liveDescribe("real MinIO upload and download", () => {
     const checksum = createHash("sha256").update(body).digest("hex");
 
     const upload = await store.createUpload({
+      actorId: "minio-smoke-actor",
+      uploadSessionId: randomUUID(),
+      sessionExpiresAt: new Date(Date.now() + 10 * 60_000),
       workspaceId,
       key,
       contentType: "text/csv",

@@ -5,6 +5,10 @@ import {
   FileDownloadButton,
   UploadPanel,
 } from "@/components/files/upload-panel";
+import {
+  ArchiveFileControl,
+  PendingUploadRecoveryList,
+} from "@/components/files/file-lifecycle-controls";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -19,9 +23,12 @@ import { useFragment as readFragment } from "@/graphql/generated/fragment-maskin
 import {
   EvidenceFilesDocument,
   FileWorkspaceItemFragmentDoc,
+  PendingWorkspaceUploadsDocument,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
 import { readOpaqueCursor } from "@/lib/research-pagination";
+import { getServerEnv } from "@/lib/env/server";
+import { uploadMaxBytesForDeployment } from "@/modules/files/limits";
 
 export default async function EvidencePage({
   searchParams,
@@ -32,14 +39,40 @@ export default async function EvidencePage({
   if (!context.viewer) return null;
   const params = await searchParams;
   const after = readOpaqueCursor(params.after);
-  const data = await executeServerGraphQL(EvidenceFilesDocument, {
-    first: 20,
-    after,
-  });
+  const canCreate = context.viewer.permissions.includes("file:create");
+  const canDelete = context.viewer.permissions.includes("file:delete");
+  const uploadMaxBytes = canCreate
+    ? uploadMaxBytesForDeployment("EVIDENCE", getServerEnv().DEPLOYMENT_MODE)
+    : null;
+  const [data, pendingData] = await Promise.all([
+    executeServerGraphQL(EvidenceFilesDocument, {
+      first: 20,
+      after,
+    }),
+    canCreate
+      ? executeServerGraphQL(PendingWorkspaceUploadsDocument, {})
+      : Promise.resolve(null),
+  ]);
   const files =
     readFragment(FileWorkspaceItemFragmentDoc, data.files?.nodes) ?? [];
   const pageInfo = data.files?.pageInfo;
-  const canCreate = context.viewer.permissions.includes("file:create");
+  const pendingUploads = (pendingData?.uploadSessions?.nodes ?? []).flatMap(
+    (session) =>
+      session.id &&
+      session.originalName &&
+      session.byteSize != null &&
+      session.expiresAt
+        ? [
+            {
+              id: session.id,
+              originalName: session.originalName,
+              byteSize: session.byteSize,
+              checksumSha256: session.checksumSha256,
+              expiresAt: session.expiresAt,
+            },
+          ]
+        : [],
+  );
 
   return (
     <div className="space-y-7">
@@ -54,11 +87,21 @@ export default async function EvidencePage({
         </p>
       </header>
 
-      {canCreate ? <UploadPanel purpose="EVIDENCE" /> : null}
+      {uploadMaxBytes ? (
+        <UploadPanel purpose="EVIDENCE" maxBytes={uploadMaxBytes} />
+      ) : null}
+
+      {canCreate ? (
+        <PendingUploadRecoveryList sessions={pendingUploads} />
+      ) : null}
 
       <section aria-labelledby="workspace-files-heading">
         <div className="mb-4">
-          <h2 id="workspace-files-heading" className="text-xl font-semibold">
+          <h2
+            id="workspace-files-heading"
+            className="text-xl font-semibold"
+            tabIndex={-1}
+          >
             Workspace files
           </h2>
           <p className="text-muted-foreground mt-1 text-sm">
@@ -105,16 +148,27 @@ export default async function EvidencePage({
                             : "—"}
                         </TableCell>
                         <TableCell>
-                          {file.availability === "AVAILABLE" ? (
-                            <FileDownloadButton
-                              fileId={file.id}
-                              fileName={file.originalName}
-                            />
-                          ) : (
-                            <span className="text-muted-foreground text-xs">
-                              Not available
-                            </span>
-                          )}
+                          <div className="flex flex-wrap items-start gap-1">
+                            {file.availability === "AVAILABLE" &&
+                            (file.scanState === "CLEAN" ||
+                              file.scanState === "NOT_REQUIRED") ? (
+                              <FileDownloadButton
+                                fileId={file.id}
+                                fileName={file.originalName}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground px-3 py-2 text-xs">
+                                Not available
+                              </span>
+                            )}
+                            {canDelete && file.version ? (
+                              <ArchiveFileControl
+                                fileId={file.id}
+                                fileName={file.originalName}
+                                version={file.version}
+                              />
+                            ) : null}
+                          </div>
                         </TableCell>
                       </TableRow>,
                     ]

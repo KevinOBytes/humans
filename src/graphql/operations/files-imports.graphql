@@ -10,6 +10,15 @@ fragment FileWorkspaceItem on File {
   version
   createdAt
   updatedAt
+  variants {
+    id
+    kind
+    mediaType
+    byteSize
+    checksum
+    generatorVersion
+    createdAt
+  }
 }
 
 fragment ImportWorkspaceItem on Import {
@@ -32,6 +41,23 @@ query EvidenceFiles($first: Int, $after: String) {
   files(first: $first, after: $after) {
     nodes {
       ...FileWorkspaceItem
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+query PendingWorkspaceUploads {
+  uploadSessions(first: 20, states: [PENDING]) {
+    nodes {
+      id
+      originalName
+      byteSize
+      checksumSha256
+      state
+      expiresAt
     }
     pageInfo {
       hasNextPage
@@ -120,6 +146,56 @@ mutation CompleteWorkspaceUpload($uploadSessionId: UUID!) {
     }
     file {
       ...FileWorkspaceItem
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation RegrantWorkspaceUpload($id: UUID!) {
+  regrantUploadSession(uploadSessionId: $id) {
+    session {
+      id
+      state
+    }
+    grant {
+      method
+      url
+      expiresAt
+      headers
+      contentLength
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation CancelWorkspaceUpload($id: UUID!) {
+  cancelUploadSession(uploadSessionId: $id) {
+    session {
+      id
+      state
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation ArchiveWorkspaceFile($id: UUID!, $expectedVersion: Int!) {
+  archiveFile(fileId: $id, expectedVersion: $expectedVersion) {
+    file {
+      id
+      version
+      archivedAt
     }
     issues {
       code

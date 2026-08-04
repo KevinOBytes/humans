@@ -7,6 +7,7 @@ import {
   jobPayloadPurpose,
   parseJobPayload,
   type AiExecuteJobPayload,
+  type FileCleanupJobPayload,
 } from "@/modules/jobs/types";
 import { decodeJobPayload, encodeJobPayload } from "@/modules/jobs/service";
 import { createJobRegistry } from "@/worker/registry";
@@ -23,6 +24,25 @@ describe("AI durable job protocol", () => {
       `{"kind":"ai_execute","runId":"${runId}"}`,
     );
     expect(jobPayloadPurpose(payload.kind)).toBe("job-ai-execute");
+  });
+
+  it("dispatches file-target cleanup jobs through the existing cleanup slot", () => {
+    const payload: FileCleanupJobPayload = {
+      kind: "file_cleanup",
+      fileId: runId,
+    };
+    const fileCleanup = vi.fn(async () => undefined);
+    const registry = createJobRegistry({
+      aiExecute: vi.fn(async () => undefined),
+      fileCleanup,
+      importExecute: vi.fn(async () => undefined),
+    });
+
+    expect(parseJobPayload(payload)).toEqual(payload);
+    expect(canonicalJobPayload(payload)).toBe(
+      `{"kind":"file_cleanup","fileId":"${runId}"}`,
+    );
+    expect(registry.get(payload)).toBe(fileCleanup);
   });
 
   it.each([

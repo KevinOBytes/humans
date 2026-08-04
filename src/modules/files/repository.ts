@@ -4,6 +4,7 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
   isNull,
   lt,
   or,
@@ -11,7 +12,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 
-import { files, uploadSessions } from "@/db/schema/files";
+import { fileVariants, files, uploadSessions } from "@/db/schema/files";
 import { newId } from "@/db/id";
 import { workspaceSettings, workspaceUsage } from "@/db/schema/workspaces";
 import type { Database } from "@/modules/auth/bootstrap-admin";
@@ -20,6 +21,14 @@ export type FileRow = typeof files.$inferSelect;
 export type NewFileRow = typeof files.$inferInsert;
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;
 export type NewUploadSessionRow = typeof uploadSessions.$inferInsert;
+export type FileVariantRow = typeof fileVariants.$inferSelect;
+export type FileObjectLocation = {
+  ownerId: string;
+  ownerKind: "file" | "variant";
+  storageBucket: string;
+  storageKey: string;
+  storageProvider: string;
+};
 
 export function createFilesRepository(database: Database) {
   return {
@@ -85,9 +94,40 @@ export function createFilesRepository(database: Database) {
       return row ?? null;
     },
 
+    async listUploadSessions(input: {
+      actorId: string;
+      workspaceId: string;
+      limit: number;
+      states: readonly string[];
+      cursor?: { createdAt: Date; id: string } | null;
+    }): Promise<UploadSessionRow[]> {
+      return database
+        .select()
+        .from(uploadSessions)
+        .where(
+          and(
+            eq(uploadSessions.workspaceId, input.workspaceId),
+            eq(uploadSessions.actorId, input.actorId),
+            inArray(uploadSessions.state, [...input.states]),
+            input.cursor
+              ? or(
+                  lt(uploadSessions.createdAt, input.cursor.createdAt),
+                  and(
+                    eq(uploadSessions.createdAt, input.cursor.createdAt),
+                    lt(uploadSessions.id, input.cursor.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(uploadSessions.createdAt), desc(uploadSessions.id))
+        .limit(input.limit);
+    },
+
     async lockSession(input: {
       id: string;
       workspaceId: string;
+      actorId?: string;
     }): Promise<UploadSessionRow | null> {
       const [row] = await database
         .select()
@@ -96,6 +136,9 @@ export function createFilesRepository(database: Database) {
           and(
             eq(uploadSessions.workspaceId, input.workspaceId),
             eq(uploadSessions.id, input.id),
+            input.actorId
+              ? eq(uploadSessions.actorId, input.actorId)
+              : undefined,
           ),
         )
         .limit(1)
@@ -113,6 +156,7 @@ export function createFilesRepository(database: Database) {
       completedAt?: Date | null;
       updatedAt: Date;
       updatedBy: string;
+      cleanupCompletedAt?: Date | null;
     }): Promise<UploadSessionRow | null> {
       const [row] = await database
         .update(uploadSessions)
@@ -123,6 +167,7 @@ export function createFilesRepository(database: Database) {
           completedAt: input.completedAt,
           updatedAt: input.updatedAt,
           updatedBy: input.updatedBy,
+          cleanupCompletedAt: input.cleanupCompletedAt,
         })
         .where(
           and(
@@ -139,6 +184,127 @@ export function createFilesRepository(database: Database) {
       const [row] = await database.insert(files).values(input).returning();
       if (!row) throw new Error("File insert did not return a row");
       return row;
+    },
+
+    async lockFileForArchive(input: {
+      id: string;
+      workspaceId: string;
+      visibility: SQL;
+    }): Promise<FileRow | null> {
+      const [row] = await database
+        .select()
+        .from(files)
+        .where(
+          and(
+            eq(files.workspaceId, input.workspaceId),
+            eq(files.id, input.id),
+            isNull(files.deletedAt),
+            input.visibility,
+          ),
+        )
+        .limit(1)
+        .for("update");
+      return row ?? null;
+    },
+
+    async archiveFile(input: {
+      id: string;
+      workspaceId: string;
+      expectedVersion: number;
+      deletedAt: Date;
+      deletedBy: string;
+    }): Promise<FileRow | null> {
+      const [row] = await database
+        .update(files)
+        .set({
+          deletedAt: input.deletedAt,
+          deletedBy: input.deletedBy,
+          updatedAt: input.deletedAt,
+          updatedBy: input.deletedBy,
+          version: sql`${files.version} + 1`,
+        })
+        .where(
+          and(
+            eq(files.workspaceId, input.workspaceId),
+            eq(files.id, input.id),
+            isNull(files.deletedAt),
+            eq(files.version, input.expectedVersion),
+          ),
+        )
+        .returning();
+      return row ?? null;
+    },
+
+    async lockArchivedFileCleanupTarget(input: {
+      id: string;
+      workspaceId: string;
+    }): Promise<{
+      cleanupCompletedAt: Date | null;
+      locations: readonly FileObjectLocation[];
+    } | null> {
+      const [file] = await database
+        .select({
+          cleanupCompletedAt: files.cleanupCompletedAt,
+          ownerId: files.id,
+          storageBucket: files.storageBucket,
+          storageKey: files.storageKey,
+          storageProvider: files.storageProvider,
+        })
+        .from(files)
+        .where(
+          and(
+            eq(files.workspaceId, input.workspaceId),
+            eq(files.id, input.id),
+            isNotNull(files.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!file) return null;
+      const variants = await database
+        .select({
+          ownerId: fileVariants.id,
+          storageBucket: fileVariants.storageBucket,
+          storageKey: fileVariants.storageKey,
+          storageProvider: fileVariants.storageProvider,
+        })
+        .from(fileVariants)
+        .where(
+          and(
+            eq(fileVariants.workspaceId, input.workspaceId),
+            eq(fileVariants.parentFileId, input.id),
+          ),
+        )
+        .orderBy(fileVariants.id)
+        .for("update");
+      return {
+        cleanupCompletedAt: file.cleanupCompletedAt,
+        locations: [
+          { ...file, ownerKind: "file" as const },
+          ...variants.map((variant) => ({
+            ...variant,
+            ownerKind: "variant" as const,
+          })),
+        ],
+      };
+    },
+
+    async getCompletedSessionForFile(input: {
+      fileId: string;
+      workspaceId: string;
+    }): Promise<UploadSessionRow | null> {
+      const [row] = await database
+        .select()
+        .from(uploadSessions)
+        .where(
+          and(
+            eq(uploadSessions.workspaceId, input.workspaceId),
+            eq(uploadSessions.fileId, input.fileId),
+            eq(uploadSessions.state, "completed"),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
     },
 
     async updateScan(input: {
@@ -207,6 +373,22 @@ export function createFilesRepository(database: Database) {
             input.visibility,
           ),
         );
+    },
+
+    async listFileVariants(input: {
+      fileId: string;
+      workspaceId: string;
+    }): Promise<FileVariantRow[]> {
+      return database
+        .select()
+        .from(fileVariants)
+        .where(
+          and(
+            eq(fileVariants.workspaceId, input.workspaceId),
+            eq(fileVariants.parentFileId, input.fileId),
+          ),
+        )
+        .orderBy(fileVariants.kind, fileVariants.id);
     },
 
     async listFiles(input: {

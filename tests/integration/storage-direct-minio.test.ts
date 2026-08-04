@@ -17,6 +17,9 @@ describe.runIf(runSmoke)("direct MinIO presign constraints", () => {
     const store = new S3ObjectStore(createS3Client(env), env.STORAGE_BUCKET, 1);
     const body = `direct-${randomUUID()}`;
     const input = {
+      actorId: "direct-smoke-actor",
+      uploadSessionId: randomUUID(),
+      sessionExpiresAt: new Date(Date.now() + 10 * 60_000),
       workspaceId: "direct-smoke",
       key: `${randomUUID()}.txt`,
       contentType: "text/plain",

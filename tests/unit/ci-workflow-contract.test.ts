@@ -156,6 +156,33 @@ describe("CI workflow contract", () => {
     }
   });
 
+  it("keeps GraphQL-to-MinIO archival in the required Compose lifecycle", () => {
+    const workflow = readWorkflow();
+    const compose = jobBlock(workflow, "compose-lifecycle");
+    const lifecycle = readFileSync("scripts/compose-lifecycle.mjs", "utf8");
+    const minioAdapter = readFileSync(
+      "tests/integration/minio-upload.test.ts",
+      "utf8",
+    );
+
+    expect(compose).toContain("corepack pnpm test:compose:lifecycle");
+    expect(lifecycle).toContain("runFileLifecycleAcceptance()");
+    expect(lifecycle).toContain('"/api/auth/sign-in/email"');
+    expect(lifecycle).toContain('"/api/graphql"');
+    expect(lifecycle).toContain("createUploadSession");
+    expect(lifecycle).toContain("completeUpload");
+    expect(lifecycle).toContain("archiveFile");
+    expect(lifecycle).toContain("opaque application upload grant");
+    expect(lifecycle).toContain("running Compose worker");
+    expect(lifecycle).not.toContain("RUN_FILE_LIFECYCLE_MINIO");
+    expect(lifecycle).not.toContain("TEST_DATABASE_URL");
+    expect(lifecycle).not.toContain("tests/integration/minio-upload.test.ts");
+    expect(lifecycle).not.toContain("vitest");
+    expect(minioAdapter).not.toContain("ResearchFixture");
+    expect(minioAdapter).not.toContain("runJobsOnce");
+    expect(minioAdapter).not.toContain("MemoryRedis");
+  });
+
   it("keeps dependency review PR-only and supply-chain artifacts bounded", () => {
     const workflow = readWorkflow();
     const dependency = jobBlock(workflow, "dependency-policy");

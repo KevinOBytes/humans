@@ -60,8 +60,10 @@ function randomKey(prefix: string): string {
 
 export function ImportWizard({
   initialMappings,
+  uploadMaxBytesByFormat,
 }: {
   initialMappings: readonly MappingOption[];
+  uploadMaxBytesByFormat: Readonly<Record<ImportFormat, number>>;
 }) {
   const router = useRouter();
   const [format, setFormat] = useState<ImportFormat>("CSV");
@@ -338,6 +340,7 @@ export function ImportWizard({
           </div>
           <UploadPanel
             key={format}
+            maxBytes={uploadMaxBytesByFormat[format]}
             purpose={format === "CSV" ? "CSV_IMPORT" : "JSON_IMPORT"}
             onCompleted={(uploaded) => {
               setFile(uploaded);

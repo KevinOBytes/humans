@@ -20,10 +20,9 @@ export type ImportExecuteJobPayload = {
   importId: string;
 };
 
-export type FileCleanupJobPayload = {
-  kind: "file_cleanup";
-  uploadSessionId: string;
-};
+export type FileCleanupJobPayload =
+  | { kind: "file_cleanup"; fileId: string; uploadSessionId?: never }
+  | { kind: "file_cleanup"; uploadSessionId: string; fileId?: never };
 
 export type AiExecuteJobPayload = Readonly<{
   kind: "ai_execute";
@@ -82,16 +81,21 @@ export function parseJobPayload(value: unknown, kind?: JobKind): JobPayload {
       runId: record.runId.toLowerCase(),
     };
   }
-  if (
-    Object.keys(record).length !== 2 ||
-    !UUID.test(String(record.uploadSessionId ?? ""))
-  ) {
+  if (Object.keys(record).length !== 2)
     throw new TypeError("Invalid job payload");
+  if (typeof record.fileId === "string" && UUID.test(record.fileId)) {
+    return { kind: record.kind, fileId: record.fileId.toLowerCase() };
   }
-  return {
-    kind: record.kind,
-    uploadSessionId: String(record.uploadSessionId).toLowerCase(),
-  };
+  if (
+    typeof record.uploadSessionId === "string" &&
+    UUID.test(record.uploadSessionId)
+  ) {
+    return {
+      kind: record.kind,
+      uploadSessionId: record.uploadSessionId.toLowerCase(),
+    };
+  }
+  throw new TypeError("Invalid job payload");
 }
 
 export function canonicalJobPayload(payload: JobPayload): string {
@@ -100,10 +104,12 @@ export function canonicalJobPayload(payload: JobPayload): string {
     case "import_execute":
       return JSON.stringify({ importId: parsed.importId, kind: parsed.kind });
     case "file_cleanup":
-      return JSON.stringify({
-        kind: parsed.kind,
-        uploadSessionId: parsed.uploadSessionId,
-      });
+      return "fileId" in parsed
+        ? JSON.stringify({ kind: parsed.kind, fileId: parsed.fileId })
+        : JSON.stringify({
+            kind: parsed.kind,
+            uploadSessionId: parsed.uploadSessionId,
+          });
     case "ai_execute":
       return JSON.stringify({ kind: parsed.kind, runId: parsed.runId });
   }
