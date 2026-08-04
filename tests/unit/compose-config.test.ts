@@ -88,7 +88,9 @@ describe("rendered Compose configuration contract", () => {
     const config = render(["docker-compose.yml"]);
 
     expect(config.services.postgres?.image).toMatch(/^postgres:18\./u);
-    expect(config.services.redis?.image).toBe("redis:8.6.1");
+    expect(config.services.redis?.image).toBe(
+      "redis:8.6.1@sha256:315270d166080f537bbdf1b489b603aaaa213cb55a544acfa51feb7481abb1c0",
+    );
     expect(config.services.redis?.command?.join(" ")).toContain(
       "--appendonly yes --requirepass",
     );

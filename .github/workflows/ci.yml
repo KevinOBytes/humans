@@ -204,6 +204,9 @@ jobs:
       - name: Check Compose contracts
         timeout-minutes: 5
         run: corepack pnpm test:compose:config
+      - name: Verify Compose image indexes
+        timeout-minutes: 5
+        run: corepack pnpm compose:images:verify
       - name: Validate Compose model
         timeout-minutes: 5
         run: docker compose --profile smoke config --quiet

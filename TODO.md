@@ -31,7 +31,6 @@ recovery.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search and graph envelopes.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, and bounded signal drain.
-- [ ] `HUM-FR-034` Pin and verify the remaining Compose service manifest-list digests beyond the implemented digest-pinned Distroless application image and private, authenticated, persistent, health-gated lifecycle.
 - [ ] `HUM-FR-035` Build and verify the parity Vercel deployment path.
 - [ ] `HUM-FR-036` Complete cross-mode worker-contract and Redis lease-concurrency runtime evidence for the implemented shared durable executor, continuous Docker worker, and bounded scheduled route.
 - [ ] `HUM-FR-037` Add opt-in Ollama service and model initialization.
