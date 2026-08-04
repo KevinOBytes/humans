@@ -73,6 +73,11 @@ const REVOKE = /* GraphQL */ `
 liveDescribe("HUM-FR-006 API-key lifecycle", () => {
   let fixture: ResearchFixture;
   let beforeApiKeyLifecycleWrite: (() => Promise<void> | void) | undefined;
+  let afterApiKeyLifecycleStep:
+    | ((
+        step: "created" | "staged" | "before_audit" | "before_rotation_disable",
+      ) => Promise<void> | void)
+    | undefined;
 
   beforeAll(async () => {
     fixture = new ResearchFixture({
@@ -80,6 +85,7 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
         appUrl: testAdminEnv.NEXT_PUBLIC_APP_URL,
         authSecret: testAdminEnv.AUTH_SECRET,
         beforeApiKeyLifecycleWrite: () => beforeApiKeyLifecycleWrite?.(),
+        afterApiKeyLifecycleStep: (step) => afterApiKeyLifecycleStep?.(step),
         emailSender: new TestEmailSender(),
         encryptionKey: testAdminEnv.AUTH_ENCRYPTION_KEY,
       },
@@ -88,6 +94,7 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
   });
   beforeEach(async () => {
     beforeApiKeyLifecycleWrite = undefined;
+    afterApiKeyLifecycleStep = undefined;
     await fixture.reset();
   });
   afterAll(async () => fixture.close());
@@ -366,6 +373,126 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
         })
       ).body?.data?.viewer?.actorType,
     ).toBe("API_KEY");
+  });
+
+  it.each(["demotion", "removal"] as const)(
+    "does not create a key after an admin %s before the locked write",
+    async (change) => {
+      const owner = await fixture.createActor();
+      const admin = await fixture.createWorkspaceMember(owner, "admin");
+      beforeApiKeyLifecycleWrite = async () => {
+        if (change === "demotion") {
+          await fixture.database
+            .update(members)
+            .set({ role: "viewer" })
+            .where(eq(members.id, admin.memberId));
+          return;
+        }
+        await fixture.database
+          .delete(members)
+          .where(eq(members.id, admin.memberId));
+      };
+
+      const denied = await fixture.execute<{
+        createOrganizationApiKey?: {
+          actionId?: string | null;
+          code?: string;
+          secret?: string | null;
+        };
+      }>({
+        jar: admin.jar,
+        query: CREATE,
+        variables: {
+          input: { name: "Denied", scopes: ["person:read"] },
+        },
+      });
+      expect(denied.body?.data?.createOrganizationApiKey).toEqual(
+        expect.objectContaining({
+          actionId: null,
+          code: "INVALID",
+          secret: null,
+        }),
+      );
+      expect(
+        await fixture.database
+          .select({ id: apiKeys.id })
+          .from(apiKeys)
+          .where(eq(apiKeys.workspaceId, owner.workspaceId)),
+      ).toHaveLength(0);
+    },
+  );
+
+  it.each(["staged", "before_audit"] as const)(
+    "keeps a created key disabled when %s finalization fails",
+    async (failedStep) => {
+      const owner = await fixture.createActor();
+      afterApiKeyLifecycleStep = (step) => {
+        if (step === failedStep)
+          throw new Error("injected finalization failure");
+      };
+      const failed = await fixture.execute({
+        jar: owner.jar,
+        query: CREATE,
+        variables: {
+          input: { name: "Failed create", scopes: ["person:read"] },
+        },
+      });
+      expect(failed.body?.errors).toBeDefined();
+      const rows = await fixture.database
+        .select({ enabled: apiKeys.enabled })
+        .from(apiKeys)
+        .where(eq(apiKeys.workspaceId, owner.workspaceId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.enabled).toBe(false);
+      expect(
+        await fixture.database
+          .select({ id: auditEvents.id })
+          .from(auditEvents)
+          .where(
+            and(
+              eq(auditEvents.workspaceId, owner.workspaceId),
+              eq(auditEvents.action, "settings.api_key.create"),
+            ),
+          ),
+      ).toHaveLength(0);
+    },
+  );
+
+  it("disables the direct replacement ID when rotation final-disable fails", async () => {
+    const owner = await fixture.createActor();
+    const existing = await fixture.provisionKey(owner, { person: ["read"] });
+    const listed = await fixture.execute<{
+      settingsOrganizationApiKeys?: { nodes?: Array<{ actionId: string }> };
+    }>({ jar: owner.jar, query: LIST });
+    afterApiKeyLifecycleStep = (step) => {
+      if (step === "before_rotation_disable") {
+        throw new Error("injected final-disable failure");
+      }
+    };
+    const failed = await fixture.execute({
+      jar: owner.jar,
+      query: ROTATE,
+      variables: {
+        input: {
+          actionId:
+            listed.body?.data?.settingsOrganizationApiKeys?.nodes?.[0]
+              ?.actionId,
+          name: "Failed replacement",
+          scopes: ["person:read"],
+        },
+      },
+    });
+    expect(failed.body?.errors).toBeDefined();
+    const rows = await fixture.database
+      .select({ enabled: apiKeys.enabled, name: apiKeys.name })
+      .from(apiKeys)
+      .where(eq(apiKeys.workspaceId, owner.workspaceId));
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ enabled: true, name: existing.name }),
+        expect.objectContaining({ enabled: false, name: "Failed replacement" }),
+      ]),
+    );
   });
 
   it.each(["demotion", "removal"] as const)(

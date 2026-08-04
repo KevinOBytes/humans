@@ -30,6 +30,10 @@ export type WorkspaceMemberRuntime = {
   authSecret: string;
   /** Test-fixture seam for lifecycle authorization-to-write regressions. */
   beforeApiKeyLifecycleWrite?: () => Promise<void> | void;
+  /** Test-fixture seam for bounded API-key finalization failure coverage. */
+  afterApiKeyLifecycleStep?: (
+    step: "created" | "staged" | "before_audit" | "before_rotation_disable",
+  ) => Promise<void> | void;
   emailSender: EmailSender;
   encryptionKey: string;
 };

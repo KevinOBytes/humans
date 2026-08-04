@@ -51,12 +51,12 @@ async function lockAndRevalidateAdministrativeActor(input: {
   actor: { id: string; memberId: string };
   transaction: TransactionDatabase;
   workspaceId: string;
-}): Promise<boolean> {
+}): Promise<"admin" | "owner" | null> {
   await input.transaction.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${input.workspaceId}, 0))`,
   );
   const rows = await input.transaction
-    .select({ id: members.id })
+    .select({ id: members.id, role: members.role })
     .from(workspaces)
     .innerJoin(
       members,
@@ -77,11 +77,37 @@ async function lockAndRevalidateAdministrativeActor(input: {
     )
     .limit(2)
     .for("update");
-  return rows.length === 1;
+  const row = rows[0];
+  return rows.length === 1 &&
+    row &&
+    (row.role === "owner" || row.role === "admin")
+    ? row.role
+    : null;
 }
 
 export function createSettingsRepository(database: Database) {
   return {
+    async withAdministrativeApiKeyLifecycle<T>(input: {
+      actor: { id: string; memberId: string };
+      run: (
+        transaction: TransactionDatabase,
+        role: "admin" | "owner",
+      ) => Promise<T>;
+      workspaceId: string;
+    }): Promise<{ status: "APPLIED"; value: T } | { status: "FORBIDDEN" }> {
+      return database.transaction(async (transaction) => {
+        const role = await lockAndRevalidateAdministrativeActor({
+          actor: input.actor,
+          transaction,
+          workspaceId: input.workspaceId,
+        });
+        if (!role) return { status: "FORBIDDEN" } as const;
+        return {
+          status: "APPLIED",
+          value: await input.run(transaction, role),
+        } as const;
+      });
+    },
     async hasAdministrativeMembership(input: {
       memberId: string;
       userId: string;
@@ -189,6 +215,40 @@ export function createSettingsRepository(database: Database) {
         .returning({ id: apiKeys.id });
       return updated.length === 1;
     },
+    async disableCreatedOrganizationApiKey(input: {
+      apiKeyId: string;
+      workspaceId: string;
+    }): Promise<void> {
+      await database
+        .update(apiKeys)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(apiKeys.id, input.apiKeyId),
+            eq(apiKeys.workspaceId, input.workspaceId),
+            eq(apiKeys.configId, "organization"),
+          ),
+        );
+    },
+    async activateCreatedOrganizationApiKey(input: {
+      apiKeyId: string;
+      transaction: TransactionDatabase;
+      workspaceId: string;
+    }): Promise<boolean> {
+      const updated = await input.transaction
+        .update(apiKeys)
+        .set({ enabled: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(apiKeys.id, input.apiKeyId),
+            eq(apiKeys.workspaceId, input.workspaceId),
+            eq(apiKeys.configId, "organization"),
+            eq(apiKeys.enabled, false),
+          ),
+        )
+        .returning({ id: apiKeys.id });
+      return updated.length === 1;
+    },
     async disableOrganizationApiKeyWithAudit(input: {
       action: "settings.api_key.revoke" | "settings.api_key.rotate";
       apiKeyId: string;
@@ -198,12 +258,12 @@ export function createSettingsRepository(database: Database) {
       workspaceId: string;
     }): Promise<"APPLIED" | "FORBIDDEN" | "INVALID"> {
       return database.transaction(async (transaction) => {
-        const authorized = await lockAndRevalidateAdministrativeActor({
+        const role = await lockAndRevalidateAdministrativeActor({
           actor: input.actor,
           transaction,
           workspaceId: input.workspaceId,
         });
-        if (!authorized) return "FORBIDDEN";
+        if (!role) return "FORBIDDEN";
         const updated = await transaction
           .update(apiKeys)
           .set({ enabled: false, updatedAt: new Date() })
@@ -238,9 +298,10 @@ export function createSettingsRepository(database: Database) {
       actor: { id: string; sessionId: string };
       changedFields: readonly string[];
       requestId: string;
+      transaction?: TransactionDatabase;
       workspaceId: string;
     }): Promise<void> {
-      await database.insert(auditEvents).values({
+      await (input.transaction ?? database).insert(auditEvents).values({
         id: newId(),
         workspaceId: input.workspaceId,
         actorUserId: input.actor.id,

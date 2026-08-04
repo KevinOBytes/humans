@@ -168,58 +168,93 @@ export function createSettingsService(input: {
     },
     options: { recordCreateAudit?: boolean } = {},
   ) {
-    const role = await authorizeAdministrator();
     const actor = input.actor;
     if (actor.type !== "user") lifecycleUnavailable();
-    if (!input.auth || !input.runtime || !input.organizationId) {
+    const auth = input.auth;
+    const runtime = input.runtime;
+    const organizationId = input.organizationId;
+    if (!auth || !runtime || !organizationId) {
       lifecycleUnavailable();
     }
     const validated = lifecycleInput(inputValue);
-    if (!validated || !permittedPermissions(role, validated.permissions)) {
-      return { actionId: null, code: "INVALID", requestId } as const;
+    if (!validated) {
+      return {
+        _createdApiKeyId: null,
+        actionId: null,
+        code: "INVALID",
+        requestId,
+      } as const;
     }
 
     let created:
       Awaited<ReturnType<BetterAuthRuntime["api"]["createApiKey"]>> | undefined;
     try {
-      created = await input.auth.api.createApiKey({
-        body: {
-          configId: "organization",
-          name: validated.name,
-          organizationId: input.organizationId,
-          permissions: validated.permissions,
-          userId: actor.id,
-          ...(validated.expiresIn === undefined
-            ? {}
-            : { expiresIn: validated.expiresIn }),
+      await runtime.beforeApiKeyLifecycleWrite?.();
+      const finalized = await repository.withAdministrativeApiKeyLifecycle({
+        actor,
+        workspaceId: input.workspaceId,
+        run: async (transaction, role) => {
+          if (!permittedPermissions(role, validated.permissions)) return null;
+          created = await auth.api.createApiKey({
+            body: {
+              configId: "organization",
+              name: validated.name,
+              organizationId,
+              permissions: validated.permissions,
+              userId: actor.id,
+              ...(validated.expiresIn === undefined
+                ? {}
+                : { expiresIn: validated.expiresIn }),
+            },
+          });
+          await runtime.afterApiKeyLifecycleStep?.("created");
+          await repository.disableCreatedOrganizationApiKey({
+            apiKeyId: created.id,
+            workspaceId: input.workspaceId,
+          });
+          await runtime.afterApiKeyLifecycleStep?.("staged");
+          const activated = await repository.activateCreatedOrganizationApiKey({
+            apiKeyId: created.id,
+            transaction,
+            workspaceId: input.workspaceId,
+          });
+          if (!activated)
+            throw new Error("Created API key could not be activated");
+          await ensureApiKeyPrincipal(transaction as unknown as Database, {
+            apiKeyId: created.id,
+            workspaceId: input.workspaceId,
+          });
+          if (options.recordCreateAudit !== false) {
+            await runtime.afterApiKeyLifecycleStep?.("before_audit");
+            await repository.recordApiKeyLifecycleAudit({
+              action: "settings.api_key.create",
+              actor,
+              changedFields: ["created", "permissions", "expiry"],
+              requestId,
+              transaction,
+              workspaceId: input.workspaceId,
+            });
+          }
+          return created;
         },
       });
-      await ensureApiKeyPrincipal(input.database, {
-        apiKeyId: created.id,
-        workspaceId: input.workspaceId,
-      });
-      if (options.recordCreateAudit !== false) {
-        await repository.recordApiKeyLifecycleAudit({
-          action: "settings.api_key.create",
-          actor,
-          changedFields: ["created", "permissions", "expiry"],
+      if (finalized.status !== "APPLIED" || !finalized.value) {
+        return {
+          _createdApiKeyId: null,
+          actionId: null,
+          code: "INVALID",
           requestId,
-          workspaceId: input.workspaceId,
-        });
+        } as const;
       }
     } catch {
       if (created) {
-        await repository
-          .disableOrganizationApiKey({
-            apiKeyId: created.id,
-            workspaceId: input.workspaceId,
-          })
-          .catch(() => undefined);
+        await cleanupCreatedApiKey(created.id);
       }
       throw createGraphQLError("INTERNAL", "The API key could not be created.");
     }
     if (!created) lifecycleUnavailable();
     return {
+      _createdApiKeyId: created.id,
       actionId: apiKeyActionId({
         apiKeyId: created.id,
         secret: actionSecret,
@@ -294,15 +329,20 @@ export function createSettingsService(input: {
       const replacement = await createApiKey(inputValue, {
         recordCreateAudit: false,
       });
-      if (replacement.code !== "APPLIED" || !replacement.actionId) {
+      if (
+        replacement.code !== "APPLIED" ||
+        !replacement.actionId ||
+        !replacement._createdApiKeyId
+      ) {
         return replacement;
       }
       const actor = input.actor;
       if (actor.type !== "user") lifecycleUnavailable();
-      let replacementKey: string | null = null;
       try {
-        replacementKey = await apiKeyIdForAction(replacement.actionId);
         await input.runtime?.beforeApiKeyLifecycleWrite?.();
+        await input.runtime?.afterApiKeyLifecycleStep?.(
+          "before_rotation_disable",
+        );
         const rotated = await repository.disableOrganizationApiKeyWithAudit({
           action: "settings.api_key.rotate",
           apiKeyId: current.id,
@@ -312,23 +352,11 @@ export function createSettingsService(input: {
           workspaceId: input.workspaceId,
         });
         if (rotated !== "APPLIED") {
-          await repository
-            .disableOrganizationApiKey({
-              apiKeyId: replacementKey,
-              workspaceId: input.workspaceId,
-            })
-            .catch(() => undefined);
+          await cleanupCreatedApiKey(replacement._createdApiKeyId);
           return { actionId: null, code: "INVALID", requestId } as const;
         }
       } catch {
-        if (replacementKey) {
-          await repository
-            .disableOrganizationApiKey({
-              apiKeyId: replacementKey,
-              workspaceId: input.workspaceId,
-            })
-            .catch(() => undefined);
-        }
+        await cleanupCreatedApiKey(replacement._createdApiKeyId);
         throw createGraphQLError(
           "INTERNAL",
           "The API key could not be rotated.",
@@ -368,20 +396,20 @@ export function createSettingsService(input: {
     },
   };
 
-  async function apiKeyIdForAction(actionId: string): Promise<string> {
-    const candidates = await repository.findOrganizationApiKeyCandidates(
-      input.workspaceId,
-    );
-    const candidate = candidates.find((row) =>
-      matchesApiKeyActionId({
-        actionId,
-        apiKeyId: row.id,
-        secret: actionSecret,
-        workspaceId: input.workspaceId,
-      }),
-    );
-    if (!candidate) throw new Error("Replacement API key is unavailable");
-    return candidate.id;
+  async function cleanupCreatedApiKey(apiKeyId: string): Promise<void> {
+    let failure: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await repository.disableCreatedOrganizationApiKey({
+          apiKeyId,
+          workspaceId: input.workspaceId,
+        });
+        return;
+      } catch (error) {
+        failure = error;
+      }
+    }
+    throw failure;
   }
 }
 
