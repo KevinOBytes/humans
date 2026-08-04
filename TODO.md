@@ -19,7 +19,6 @@ recovery.
 - [ ] `HUM-FR-004` Complete the recipient acceptance, administrator-role, resend/removal, responsive/RTL/zoom, provider-failure, and cancel/acceptance race matrix for the implemented workspace invitation and member-management boundary.
 - [ ] `HUM-FR-005` Complete policy mutation, grants, holds, deletion, and consent beyond the Task 14A typed read-only workspace/access/retention posture.
 - [ ] `HUM-FR-006` Replace the Better Auth enabled-insert/application staging gap with a fully atomic activation protocol; the current locked lifecycle withholds secrets and performs bounded known-ID cleanup on finalization failure but cannot prove disablement if the first staging write irrecoverably fails.
-- [ ] `HUM-FR-007` Complete the representative whole-product operation and production-introspection acceptance matrix for the implemented canonical GraphQL Yoga API and generated operations.
 - [ ] `HUM-FR-008` Complete explicit full-contract acceptance for the implemented stable person records and presentation selections, including merge-target and accepted name/photo behavior.
 - [ ] `HUM-FR-010` Complete identity support and reversible merge workflows beyond the Task 12A protected-identifier normalization and exact-lookup foundation.
 - [ ] `HUM-FR-018` Implement extraction-run execution beyond the implemented access-controlled, idempotent CSV/JSON import preparation, execution, diagnostics, and retry boundary.
@@ -27,7 +26,6 @@ recovery.
 - [ ] `HUM-FR-020` Complete the full saved-query/view release matrix beyond the implemented closed saved-search AST, ownership/sharing, current-authority runs, graph views, and immutable snapshot manifests.
 - [ ] `HUM-FR-023` Implement workspace-policy-controlled restricted-prompt omission/retention beyond the implemented read-only tool allowlist, authorization checks, citation validation, and provider/model disclosure.
 - [ ] `HUM-FR-024` Implement webhook lifecycle, signed delivery, retry execution, and acceptance coverage beyond the implemented durable jobs, immutable audit events, and idempotency records.
-- [ ] `HUM-FR-025` Complete the whole-MVP GraphQL operation and production-introspection matrix beyond the generated Task 12 search, saved-query, snapshot/replay, deterministic analysis, and export operations.
 - [ ] `HUM-FR-028` Complete names/reconciliation, timeline, person-file, and contradictory-fact profile workflows plus full accessibility acceptance beyond the implemented people search/create, overview edit, facts, relationships, evidence, notes, contacts, and activity surfaces.
 - [ ] `HUM-FR-029` Complete graph editing and performance acceptance beyond the existing explorer, accessible table fallback, and Task 12 snapshot/analysis/result/export controls.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes.

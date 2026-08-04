@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "domains": [
+    {
+      "domain": "people",
+      "generatedOperations": ["CreatePerson", "PeopleList"]
+    },
+    {
+      "domain": "facts",
+      "generatedOperations": [
+        "CreateFactDefinition",
+        "CreateFact",
+        "PersonFacts"
+      ]
+    },
+    {
+      "domain": "relationships",
+      "generatedOperations": [
+        "CreateRelationshipType",
+        "CreateRelationship",
+        "PersonRelationships"
+      ]
+    },
+    {
+      "domain": "evidence",
+      "generatedOperations": [
+        "CreateSource",
+        "CreateEvidenceItem",
+        "LinkFactEvidence",
+        "FactEvidence"
+      ]
+    },
+    {
+      "domain": "files",
+      "generatedOperations": ["EvidenceFiles"]
+    },
+    {
+      "domain": "imports",
+      "generatedOperations": ["ImportHistory"]
+    },
+    {
+      "domain": "search",
+      "generatedOperations": [
+        "SearchWorkbenchSearch",
+        "SearchWorkbenchSavedQueries"
+      ]
+    },
+    {
+      "domain": "graph-and-saved-views",
+      "generatedOperations": [
+        "GraphPage",
+        "CreateGraphView",
+        "GraphWorkspaceControls"
+      ]
+    },
+    {
+      "domain": "ai-analysis",
+      "generatedOperations": ["StartAiAnalysis", "AiRun"]
+    }
+  ],
+  "contracts": {
+    "strict-scalars": {
+      "evidence": [
+        "codegen.ts",
+        "tests/integration/graphql-product-acceptance.test.ts"
+      ]
+    },
+    "tagged-input-unions": {
+      "evidence": [
+        "tests/integration/graphql-product-acceptance.test.ts",
+        "tests/integration/graphql-search.test.ts"
+      ]
+    },
+    "cursor-and-page-bounds": {
+      "evidence": [
+        "tests/integration/graphql-product-acceptance.test.ts",
+        "tests/integration/research-api.test.ts"
+      ]
+    },
+    "batching": {
+      "evidence": [
+        "tests/integration/graphql-product-acceptance.test.ts",
+        "tests/integration/graphql-limits.test.ts",
+        "tests/integration/research-authorization.test.ts"
+      ]
+    },
+    "typed-issues-and-stable-codes": {
+      "evidence": [
+        "tests/integration/graphql-product-acceptance.test.ts",
+        "src/graphql/errors.ts"
+      ]
+    },
+    "production-introspection": {
+      "evidence": [
+        "tests/integration/graphql-product-acceptance.test.ts",
+        "tests/integration/graphql-limits.test.ts",
+        "src/graphql/server.ts"
+      ]
+    }
+  }
+}
