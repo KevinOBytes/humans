@@ -30,6 +30,9 @@ describe("AI durable job protocol", () => {
     {},
     { kind: "ai_execute" },
     { kind: "ai_execute", runId: "not-a-uuid" },
+    { kind: "ai_execute", runId: [runId] },
+    { kind: "ai_execute", runId: new String(runId) },
+    { kind: "ai_execute", runId: { toString: (): string => runId } },
     { kind: "ai_execute", runId, unexpected: true },
     { kind: "import_execute", runId },
   ])("rejects invalid or open AI payloads", (value) => {

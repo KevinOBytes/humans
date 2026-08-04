@@ -72,13 +72,14 @@ export function parseJobPayload(value: unknown, kind?: JobKind): JobPayload {
   if (record.kind === "ai_execute") {
     if (
       Object.keys(record).length !== 2 ||
-      !UUID.test(String(record.runId ?? ""))
+      typeof record.runId !== "string" ||
+      !UUID.test(record.runId)
     ) {
       throw new TypeError("Invalid job payload");
     }
     return {
       kind: record.kind,
-      runId: String(record.runId).toLowerCase(),
+      runId: record.runId.toLowerCase(),
     };
   }
   if (
