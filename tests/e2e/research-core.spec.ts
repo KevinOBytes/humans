@@ -304,6 +304,24 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await expect(page).toHaveURL(/\/people\/[0-9a-f-]+(?:\?view=facts)?$/u);
   const personUrl = page.url().split("?")[0]!;
 
+  await page.setViewportSize({ width: 390, height: 844 });
+  const editOverview = page.getByRole("button", { name: "Edit overview" });
+  await editOverview.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("form", { name: "Person form" })).toBeVisible();
+  await page.getByLabel("Display name").fill("Ada Lovelace");
+  await page.getByLabel("Preferred name").fill("Countess");
+  await page.getByLabel("Status").selectOption("MISSING");
+  const saveOverview = page.getByRole("button", { name: "Save overview" });
+  await saveOverview.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Ada Lovelace" }),
+  ).toBeVisible();
+  await expect(page.getByText("Preferred name: Countess")).toBeVisible();
+  await expect(page.getByText("missing", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 900 });
+
   await page.getByRole("link", { name: "More fact fields" }).click();
   await expect(page).toHaveURL(/catalogAfter=/u);
   await expect(page.getByLabel("Field", { exact: true })).toHaveValue(
@@ -427,7 +445,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
     relationshipRegion.getByText("Known by", { exact: true }),
   ).toBeVisible();
   await expect(
-    relationshipRegion.getByRole("link", { name: "Ada Researcher" }),
+    relationshipRegion.getByRole("link", { name: "Ada Lovelace" }),
   ).toBeVisible();
   await page.goto(`${personUrl}?view=evidence`);
 
@@ -534,9 +552,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await page.goto("/people");
   await expect(page.getByText(/no people have been added/i)).toBeVisible();
   await expectAxeClean(page);
-  await expect(page.getByText("Ada Researcher", { exact: true })).toHaveCount(
-    0,
-  );
+  await expect(page.getByText("Ada Lovelace", { exact: true })).toHaveCount(0);
   expect(
     await page.evaluate(() =>
       Object.keys(localStorage).filter((key) => key !== "theme"),
@@ -556,6 +572,9 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   ).toHaveCount(0);
   await expect(
     viewerPage.getByRole("button", { name: "Select for presentation" }),
+  ).toHaveCount(0);
+  await expect(
+    viewerPage.getByRole("button", { name: "Edit overview" }),
   ).toHaveCount(0);
   const denied = await fixture.createPerson(viewer, {
     displayName: "Forbidden write",

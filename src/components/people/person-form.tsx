@@ -34,10 +34,13 @@ export type PersonFormResult = {
 };
 
 export type PersonFormProps = {
+  cancelLabel?: string;
   initial?: Partial<PersonFormInput>;
+  onCancel?: () => void;
   onReload?: () => void;
   onSaved?: (personId: string) => void;
   submit: (input: PersonFormInput) => Promise<PersonFormResult>;
+  submitLabel?: string;
 };
 
 type FieldId =
@@ -53,10 +56,13 @@ function valueFrom(form: FormData, key: FieldId) {
 }
 
 export function PersonForm({
+  cancelLabel = "Cancel",
   initial,
+  onCancel,
   onReload,
   onSaved,
   submit,
+  submitLabel = "Create person",
 }: PersonFormProps) {
   const [feedback, setFeedback] = useState<MutationFeedbackView | null>(null);
   const [pending, setPending] = useState(false);
@@ -228,9 +234,14 @@ export function PersonForm({
           className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/25 w-full rounded-xl border px-3.5 py-3 text-[16px] outline-none focus-visible:ring-2 sm:text-sm"
         />
       </FormField>
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-3">
+        {onCancel ? (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+        ) : null}
         <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Create person"}
+          {pending ? "Saving…" : submitLabel}
         </Button>
       </div>
     </form>
