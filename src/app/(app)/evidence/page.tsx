@@ -37,19 +37,21 @@ export default async function EvidencePage({
   if (!context.viewer) return null;
   const params = await searchParams;
   const after = readOpaqueCursor(params.after);
+  const canCreate = context.viewer.permissions.includes("file:create");
+  const canDelete = context.viewer.permissions.includes("file:delete");
   const [data, pendingData] = await Promise.all([
     executeServerGraphQL(EvidenceFilesDocument, {
       first: 20,
       after,
     }),
-    executeServerGraphQL(PendingWorkspaceUploadsDocument, {}),
+    canCreate
+      ? executeServerGraphQL(PendingWorkspaceUploadsDocument, {})
+      : Promise.resolve(null),
   ]);
   const files =
     readFragment(FileWorkspaceItemFragmentDoc, data.files?.nodes) ?? [];
   const pageInfo = data.files?.pageInfo;
-  const canCreate = context.viewer.permissions.includes("file:create");
-  const canDelete = context.viewer.permissions.includes("file:delete");
-  const pendingUploads = (pendingData.uploadSessions?.nodes ?? []).flatMap(
+  const pendingUploads = (pendingData?.uploadSessions?.nodes ?? []).flatMap(
     (session) =>
       session.id &&
       session.originalName &&
@@ -88,7 +90,11 @@ export default async function EvidencePage({
 
       <section aria-labelledby="workspace-files-heading">
         <div className="mb-4">
-          <h2 id="workspace-files-heading" className="text-xl font-semibold">
+          <h2
+            id="workspace-files-heading"
+            className="text-xl font-semibold"
+            tabIndex={-1}
+          >
             Workspace files
           </h2>
           <p className="text-muted-foreground mt-1 text-sm">

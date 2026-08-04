@@ -195,7 +195,14 @@ pnpm runtime:image:optimizer -- humans:local
 
 The smoke builds without cache, starts the health-gated stack, reuses the Task
 12 authenticated session/API-key path, and scans service logs plus image
-metadata/history for its runtime secrets. The lifecycle drill also proves
+metadata/history for its runtime secrets. Before the persistence drill, the
+lifecycle runner signs in through the built application, calls its
+`/api/graphql` create/complete/archive mutations, uploads through the returned
+opaque `/api/storage/objects` grant, and waits for the already-running worker to
+delete the exact primary and seeded variant while preserving a sibling
+sentinel. PostgreSQL and MinIO are used directly only to arrange the variant and
+assert storage/job outcomes; they are not published to the host. The lifecycle
+drill also proves
 PostgreSQL and object bytes across restarts, Redis AOF continuity followed by
 safe empty-Redis recovery, a custom-format PostgreSQL backup restored into a
 fresh database with an integrity count, and an active claimed-job drain that

@@ -289,9 +289,12 @@ export function createFileCleanupService(input: {
             and(
               eq(uploadSessions.workspaceId, job.workspaceId),
               eq(uploadSessions.id, uploadSessionId),
-              lte(
-                uploadSessions.expiresAt,
-                sql`clock_timestamp() - interval '1 hour'`,
+              or(
+                eq(uploadSessions.state, "cleanup_pending"),
+                lte(
+                  uploadSessions.expiresAt,
+                  sql`clock_timestamp() - interval '1 hour'`,
+                ),
               ),
             ),
           )

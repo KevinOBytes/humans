@@ -37,21 +37,37 @@ describe("file lifecycle controls", () => {
         },
       },
     });
-    render(
-      <CancelUploadControl
-        sessionId="018f0000-0000-7000-8000-000000000410"
-        fileName="abandoned.txt"
-      />,
+    const view = render(
+      <>
+        <h2 id="workspace-files-heading" tabIndex={-1}>
+          Workspace files
+        </h2>
+        <CancelUploadControl
+          sessionId="018f0000-0000-7000-8000-000000000410"
+          fileName="abandoned.txt"
+        />
+      </>,
     );
 
-    const button = screen.getByRole("button", { name: "Cancel upload" });
+    const button = screen.getByRole("button", {
+      name: "Cancel upload abandoned.txt",
+    });
     button.focus();
     await user.click(button);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Upload cancelled.",
     );
-    expect(button).toHaveFocus();
+    const durableHeading = screen.getByRole("heading", {
+      name: "Workspace files",
+    });
+    expect(durableHeading).toHaveFocus();
+    view.rerender(
+      <h2 id="workspace-files-heading" tabIndex={-1}>
+        Workspace files
+      </h2>,
+    );
+    expect(durableHeading).toHaveFocus();
     expect(document.body.textContent).not.toMatch(/uploads\/|minio|provider/iu);
   });
 
@@ -70,25 +86,43 @@ describe("file lifecycle controls", () => {
         },
       },
     });
-    render(
-      <ArchiveFileControl
-        fileId="018f0000-0000-7000-8000-000000000411"
-        fileName="evidence.txt"
-        version={1}
-      />,
+    const view = render(
+      <>
+        <h2 id="workspace-files-heading" tabIndex={-1}>
+          Workspace files
+        </h2>
+        <ArchiveFileControl
+          fileId="018f0000-0000-7000-8000-000000000411"
+          fileName="evidence.txt"
+          version={1}
+        />
+      </>,
     );
 
-    const archive = screen.getByRole("button", { name: "Archive" });
+    const archive = screen.getByRole("button", {
+      name: "Archive evidence.txt",
+    });
     await user.click(archive);
     expect(
       screen.getByText(/archive evidence\.txt\? this cannot be undone/i),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Confirm archive" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirm archive evidence.txt" }),
+    );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "File archived.",
     );
-    expect(archive).toHaveFocus();
+    const durableHeading = screen.getByRole("heading", {
+      name: "Workspace files",
+    });
+    expect(durableHeading).toHaveFocus();
+    view.rerender(
+      <h2 id="workspace-files-heading" tabIndex={-1}>
+        Workspace files
+      </h2>,
+    );
+    expect(durableHeading).toHaveFocus();
     expect(refresh).toHaveBeenCalledOnce();
     expect(document.body.textContent).not.toMatch(
       /storageKey|provider failure/iu,

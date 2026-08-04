@@ -10,12 +10,14 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { newId } from "@/db/id";
+import { sessions } from "@/db/schema/auth";
 import { fileVariants, files, uploadSessions } from "@/db/schema/files";
 import { auditEvents, jobs } from "@/db/schema/operations";
 import type { RedisStore } from "@/lib/redis";
 import type { ObjectStore } from "@/lib/storage/types";
 import { storageObjectKey } from "@/lib/storage/proxy";
 import { S3ObjectStore } from "@/lib/storage/s3";
+import { createFilesService } from "@/modules/files/service";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { createRuntimeJobRegistry } from "@/worker/runtime";
 import { runJobsOnce } from "@/worker/run-once";
@@ -213,6 +215,78 @@ liveDescribe("durable file cleanup", () => {
       .from(uploadSessions)
       .where(eq(uploadSessions.id, seeded.id));
     expect(session?.cleanupCompletedAt).toBeInstanceOf(Date);
+  });
+
+  it("runs an unexpired cancelled upload immediately after best-effort deletion fails", async () => {
+    const actor = await fixture.createActor("owner");
+    const [authSession] = await fixture.database
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(eq(sessions.userId, actor.userId))
+      .limit(1);
+    if (!authSession) throw new Error("fixture session is missing");
+    const uploadSessionId = newId();
+    const objectKey = `uploads/${uploadSessionId}/${newId()}`;
+    await fixture.database.insert(uploadSessions).values({
+      id: uploadSessionId,
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      intendedPurpose: "EVIDENCE",
+      originalName: "cancel-now.txt",
+      maxBytes: 1,
+      expectedChecksum: `sha256:${"12".repeat(32)}`,
+      expectedMediaType: "text/plain",
+      objectKey,
+      state: "pending",
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+    });
+    const target = `${actor.workspaceId}:${objectKey}`;
+    store.objects.add(target);
+    store.failDeletes = 1;
+    const service = createFilesService(
+      {
+        actor: {
+          type: "user",
+          id: actor.userId,
+          memberId: actor.memberId,
+          principalId: actor.principalId,
+          role: "owner",
+          sessionId: authSession.id,
+        },
+        database: fixture.database,
+        operationLimiter: {
+          consume: async () => ({
+            allowed: true,
+            remainingMicrotokens: 1,
+            retryAfterMs: 0,
+          }),
+        },
+        permissions: new Set(["file:create"]),
+        requestId: newId(),
+        searchIndexMaintenance: disabledSearchIndexMaintenance,
+        workspaceId: actor.workspaceId,
+      },
+      {
+        encryptionKey,
+        objectStore: store,
+        storageBucket: "private",
+        storageProvider: "minio",
+      },
+    );
+
+    await expect(
+      service.cancelUploadSession(uploadSessionId),
+    ).resolves.toMatchObject({
+      session: { state: "cleanup_pending" },
+    });
+    expect(store.objects.has(target)).toBe(true);
+    await expect(run(newId())).resolves.toMatchObject({
+      claimed: 1,
+      completed: 1,
+    });
+    expect(store.objects.has(target)).toBe(false);
   });
 
   it("retries transient deletion and revives a terminal cleanup job", async () => {

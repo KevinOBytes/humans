@@ -43,12 +43,14 @@ async function availablePort() {
 }
 
 const appPort = await availablePort();
-const postgresTestPort = await availablePort();
-const minioTestPort = await availablePort();
+const appBaseUrl = `http://127.0.0.1:${appPort}`;
 
 const environment = {
   ...process.env,
   APP_PORT: String(appPort),
+  NEXT_PUBLIC_APP_URL: appBaseUrl,
+  AUTH_TRUSTED_ORIGINS: appBaseUrl,
+  MINIO_CORS_ALLOW_ORIGIN: appBaseUrl,
   HUMANS_IMAGE: image,
   POSTGRES_DB: "humans",
   POSTGRES_USER: "humans",
@@ -69,26 +71,7 @@ const environment = {
   ADMIN_PASSWORD: `A!${secret(16)}`,
   RESEND_API_KEY: `re_test_${secret(16)}`,
   WORKER_DRAIN_IDEMPOTENCY_KEY: `task15b-active-drain-${suffix}`,
-  POSTGRES_TEST_PORT: String(postgresTestPort),
-  MINIO_TEST_PORT: String(minioTestPort),
 };
-Object.assign(environment, {
-  ALLOW_TEST_DATABASE_RESET: "true",
-  RUN_FILE_LIFECYCLE_MINIO: "true",
-  TEST_DATABASE_URL: `postgresql://${environment.POSTGRES_USER}:${environment.POSTGRES_PASSWORD}@127.0.0.1:${postgresTestPort}/humans_lifecycle_test`,
-  TEST_STORAGE_ENDPOINT: `http://127.0.0.1:${minioTestPort}`,
-  TEST_STORAGE_REGION: "us-east-1",
-  TEST_STORAGE_BUCKET: environment.STORAGE_BUCKET,
-  TEST_STORAGE_ACCESS_KEY_ID: environment.MINIO_ROOT_USER,
-  TEST_STORAGE_SECRET_ACCESS_KEY: environment.MINIO_ROOT_PASSWORD,
-});
-
-const composeOverridePath = join(temporaryDirectory, "test-ports.yml");
-await writeFile(
-  composeOverridePath,
-  `services:\n  postgres:\n    networks:\n      - backend\n      - edge\n    ports:\n      - "127.0.0.1:${postgresTestPort}:5432"\n  minio:\n    networks:\n      - backend\n      - edge\n    ports:\n      - "127.0.0.1:${minioTestPort}:9000"\n`,
-  { mode: 0o600 },
-);
 
 const composePrefix = [
   "compose",
@@ -96,8 +79,6 @@ const composePrefix = [
   project,
   "--file",
   "docker-compose.yml",
-  "--file",
-  composeOverridePath,
   "--profile",
   "smoke",
 ];
@@ -110,6 +91,80 @@ const { execute } = commandRunner;
 
 function compose(arguments_, options) {
   return execute("docker", [...composePrefix, ...arguments_], options);
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function sqlLiteral(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+class CookieJar {
+  cookies = new Map();
+
+  apply(headers) {
+    const cookie = [...this.cookies]
+      .map(([name, value]) => `${name}=${value}`)
+      .join("; ");
+    if (cookie) headers.set("cookie", cookie);
+  }
+
+  capture(response) {
+    for (const value of response.headers.getSetCookie()) {
+      const [pair] = value.split(";", 1);
+      const separator = pair.indexOf("=");
+      if (separator < 1) continue;
+      const name = pair.slice(0, separator);
+      const cookieValue = pair.slice(separator + 1);
+      if (cookieValue) this.cookies.set(name, cookieValue);
+      else this.cookies.delete(name);
+    }
+  }
+}
+
+async function appRequest(path, { body, jar, method = "POST" } = {}) {
+  const headers = new Headers({
+    origin: appBaseUrl,
+    "sec-fetch-site": "same-origin",
+  });
+  if (body !== undefined) headers.set("content-type", "application/json");
+  jar?.apply(headers);
+  const response = await fetch(new URL(path, appBaseUrl), {
+    method,
+    headers,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  jar?.capture(response);
+  return response;
+}
+
+async function graphqlRequest(query, variables, jar) {
+  const requestId = randomUUID();
+  const headers = new Headers({
+    "content-type": "application/json",
+    origin: appBaseUrl,
+    "sec-fetch-site": "same-origin",
+    "x-request-id": requestId,
+  });
+  jar.apply(headers);
+  const response = await fetch(new URL("/api/graphql", appBaseUrl), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ query, variables }),
+  });
+  const result = await response.json();
+  assert(response.ok, `Built app GraphQL returned HTTP ${response.status}`);
+  assert(
+    response.headers.get("x-request-id") === requestId,
+    "Built app GraphQL request ID did not round trip",
+  );
+  assert(
+    !result.errors?.length,
+    `Built app GraphQL returned errors: ${JSON.stringify(result.errors)}`,
+  );
+  return result.data;
 }
 
 async function databaseCounts(database = "humans") {
@@ -171,7 +226,7 @@ async function waitForDatabaseValue(command, expected, timeoutMs = 20_000) {
   throw new Error(`Database state did not reach ${expected}`);
 }
 
-async function minio(command, input) {
+async function minio(command, input, options = {}) {
   return compose(
     [
       "run",
@@ -183,8 +238,17 @@ async function minio(command, input) {
       "-c",
       `mc alias set humans "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && ${command}`,
     ],
-    { capture: true, input },
+    { capture: true, input, ...options },
   );
+}
+
+async function minioObjectExists(objectPath) {
+  const result = await minio(
+    `mc stat ${sqlLiteral(objectPath)} >/dev/null`,
+    undefined,
+    { allowFailure: true },
+  );
+  return result.code === 0;
 }
 
 async function assertRuntimeState() {
@@ -293,43 +357,227 @@ async function runSmoke() {
 }
 
 async function runFileLifecycleAcceptance() {
-  await compose([
-    "exec",
-    "--no-TTY",
-    "postgres",
-    "createdb",
-    "--username",
-    environment.POSTGRES_USER,
-    "humans_lifecycle_test",
-  ]);
-  try {
-    await execute(
-      "corepack",
-      [
-        "pnpm",
-        "vitest",
-        "run",
-        "tests/integration/minio-upload.test.ts",
-        "--no-file-parallelism",
-      ],
-      { capture: false },
-    );
-  } finally {
-    await compose(
-      [
-        "exec",
-        "--no-TTY",
-        "postgres",
-        "dropdb",
-        "--force",
-        "--if-exists",
-        "--username",
-        environment.POSTGRES_USER,
-        "humans_lifecycle_test",
-      ],
-      { capture: true },
+  const jar = new CookieJar();
+  const signIn = await appRequest("/api/auth/sign-in/email", {
+    body: {
+      email: environment.ADMIN_EMAIL,
+      password: environment.ADMIN_PASSWORD,
+    },
+    jar,
+  });
+  assert(
+    signIn.ok,
+    `Built app administrator sign-in failed (${signIn.status})`,
+  );
+
+  const userId = await databaseValue(
+    `select id from users where email = ${sqlLiteral(environment.ADMIN_EMAIL)}`,
+  );
+  assert(
+    /^[0-9a-f-]{36}$/iu.test(userId),
+    "Bootstrapped administrator ID is invalid",
+  );
+  const organizationId = randomUUID();
+  const workspaceId = randomUUID();
+  const memberId = randomUUID();
+  const principalId = randomUUID();
+  const settingsId = randomUUID();
+  const workspaceName = `Lifecycle Acceptance ${suffix}`;
+  const workspaceSlug = `lifecycle-${suffix}`;
+  await databaseValue(`
+    begin;
+    insert into organizations (id, name, slug, created_at)
+      values (${sqlLiteral(organizationId)}, ${sqlLiteral(workspaceName)}, ${sqlLiteral(workspaceSlug)}, clock_timestamp());
+    insert into workspaces (id, organization_id, name, created_by, updated_by)
+      values (${sqlLiteral(workspaceId)}, ${sqlLiteral(organizationId)}, ${sqlLiteral(workspaceName)}, ${sqlLiteral(userId)}, ${sqlLiteral(userId)});
+    insert into members (id, organization_id, user_id, role, created_at, workspace_id)
+      values (${sqlLiteral(memberId)}, ${sqlLiteral(organizationId)}, ${sqlLiteral(userId)}, 'owner', clock_timestamp(), ${sqlLiteral(workspaceId)});
+    insert into workspace_principals (id, workspace_id, principal_type, user_id, member_id_snapshot)
+      values (${sqlLiteral(principalId)}, ${sqlLiteral(workspaceId)}, 'user', ${sqlLiteral(userId)}, ${sqlLiteral(memberId)});
+    insert into workspace_settings (id, workspace_id, created_by, updated_by)
+      values (${sqlLiteral(settingsId)}, ${sqlLiteral(workspaceId)}, ${sqlLiteral(userId)}, ${sqlLiteral(userId)});
+    commit;
+  `);
+  const activeWorkspace = await appRequest(
+    "/api/auth/organization/set-active",
+    { body: { organizationId }, jar },
+  );
+  assert(
+    activeWorkspace.ok,
+    `Built app active-workspace selection failed (${activeWorkspace.status})`,
+  );
+
+  const body = Buffer.from(`built GraphQL lifecycle ${suffix}\n`, "utf8");
+  const checksum = createHash("sha256").update(body).digest("hex");
+  const created = await graphqlRequest(
+    `mutation CreateUpload($input: CreateUploadSessionInput!) {
+      createUploadSession(input: $input) {
+        session { id state }
+        grant { method url headers contentLength }
+        issues { code message path }
+      }
+    }`,
+    {
+      input: {
+        originalName: "compose-lifecycle.txt",
+        claimedMediaType: "text/plain",
+        byteSize: body.byteLength,
+        checksumSha256: checksum,
+        purpose: "EVIDENCE",
+      },
+    },
+    jar,
+  );
+  const upload = created?.createUploadSession;
+  assert(
+    upload?.issues?.length === 0,
+    "Upload-session creation returned issues",
+  );
+  assert(upload?.session?.state === "PENDING", "Upload session is not pending");
+  assert(upload?.grant?.method === "PUT", "Upload grant method is invalid");
+  assert(
+    upload.grant.url === new URL("/api/storage/objects", appBaseUrl).toString(),
+    "GraphQL did not return an opaque application upload grant",
+  );
+  assert(
+    upload.grant.contentLength === body.byteLength,
+    "Upload grant content length is invalid",
+  );
+  const serializedGrant = JSON.stringify(upload.grant);
+  for (const privateLocation of [
+    workspaceId,
+    environment.STORAGE_BUCKET,
+    "minio:9000",
+    "amazonaws.com",
+    "r2.cloudflarestorage.com",
+  ]) {
+    assert(
+      !serializedGrant.includes(privateLocation),
+      "GraphQL upload grant exposed a private storage location",
     );
   }
+  assert(
+    /^StorageGrant [A-Za-z0-9_.-]+$/u.test(
+      upload.grant.headers?.authorization ?? "",
+    ),
+    "Upload grant authorization is invalid",
+  );
+  const uploadHeaders = new Headers(upload.grant.headers);
+  uploadHeaders.set("content-length", String(upload.grant.contentLength));
+  const uploaded = await fetch(upload.grant.url, {
+    method: upload.grant.method,
+    headers: uploadHeaders,
+    body,
+  });
+  assert(uploaded.status === 204, `Opaque upload failed (${uploaded.status})`);
+
+  const completed = await graphqlRequest(
+    `mutation CompleteUpload($id: UUID!) {
+      completeUpload(uploadSessionId: $id) {
+        session { id state completedAt }
+        file { id version availability scanState }
+        issues { code message path }
+      }
+    }`,
+    { id: upload.session.id },
+    jar,
+  );
+  const completion = completed?.completeUpload;
+  assert(completion?.issues?.length === 0, "Upload completion returned issues");
+  assert(
+    completion?.session?.state === "COMPLETED",
+    "Upload session did not complete",
+  );
+  assert(
+    completion?.file?.availability === "AVAILABLE",
+    "Completed file is not available",
+  );
+  const fileId = completion.file.id;
+  const primaryKey = await databaseValue(
+    `select storage_key from files where id = ${sqlLiteral(fileId)} and workspace_id = ${sqlLiteral(workspaceId)}`,
+  );
+  assert(primaryKey.startsWith("uploads/"), "Primary storage key is invalid");
+
+  const variantId = randomUUID();
+  const variantKey = `variants/${fileId}/${randomUUID()}`;
+  const variantBody = Buffer.from("delete lifecycle variant", "utf8");
+  const variantChecksum = createHash("sha256")
+    .update(variantBody)
+    .digest("hex");
+  const sentinelKey = `variants/${fileId}/${randomUUID()}`;
+  const sentinelBody = Buffer.from("retain lifecycle sibling", "utf8");
+  const objectPrefix = `humans/${environment.STORAGE_BUCKET}/workspaces/${workspaceId}`;
+  await minio(
+    `mc pipe ${sqlLiteral(`${objectPrefix}/${variantKey}`)}`,
+    variantBody,
+  );
+  await minio(
+    `mc pipe ${sqlLiteral(`${objectPrefix}/${sentinelKey}`)}`,
+    sentinelBody,
+  );
+  await databaseValue(`
+    insert into file_variants
+      (id, workspace_id, parent_file_id, kind, storage_provider, storage_bucket,
+       storage_key, media_type, byte_size, checksum, generator_version, created_by)
+    values
+      (${sqlLiteral(variantId)}, ${sqlLiteral(workspaceId)}, ${sqlLiteral(fileId)},
+       'thumbnail', 'minio', ${sqlLiteral(environment.STORAGE_BUCKET)},
+       ${sqlLiteral(variantKey)}, 'text/plain', ${variantBody.byteLength},
+       ${sqlLiteral(`sha256:${variantChecksum}`)}, 'compose-lifecycle-v1',
+       ${sqlLiteral(userId)})
+  `);
+
+  const archived = await graphqlRequest(
+    `mutation ArchiveFile($id: UUID!, $expectedVersion: Int!) {
+      archiveFile(fileId: $id, expectedVersion: $expectedVersion) {
+        file {
+          id
+          version
+          archivedAt
+          variants { id kind checksum generatorVersion }
+        }
+        issues { code message path }
+      }
+    }`,
+    { id: fileId, expectedVersion: completion.file.version },
+    jar,
+  );
+  const archive = archived?.archiveFile;
+  assert(archive?.issues?.length === 0, "File archival returned issues");
+  assert(archive?.file?.archivedAt, "File was not archived");
+  assert(
+    archive.file.variants?.some((variant) => variant.id === variantId),
+    "Archive mutation did not resolve the archived file variants",
+  );
+
+  try {
+    await waitForDatabaseValue(
+      `select count(*) from jobs where kind = 'file_cleanup' and state = 'completed' and result_references @> ${sqlLiteral(JSON.stringify([fileId]))}::jsonb`,
+      "1",
+      30_000,
+    );
+    assert(
+      !(await minioObjectExists(`${objectPrefix}/${primaryKey}`)),
+      "Running Compose worker retained the archived primary object",
+    );
+    assert(
+      !(await minioObjectExists(`${objectPrefix}/${variantKey}`)),
+      "Running Compose worker retained the archived variant object",
+    );
+    assert(
+      await minioObjectExists(`${objectPrefix}/${sentinelKey}`),
+      "Running Compose worker deleted a sibling sentinel object",
+    );
+  } finally {
+    await minio(
+      `mc rm --force ${sqlLiteral(`${objectPrefix}/${sentinelKey}`)}`,
+      undefined,
+      { allowFailure: true },
+    );
+  }
+  process.stdout.write(
+    `Built app /api/graphql file lifecycle passed through an opaque application upload grant and running Compose worker for ${project}.\n`,
+  );
 }
 
 async function runPersistenceAndRestore() {

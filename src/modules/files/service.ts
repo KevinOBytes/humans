@@ -755,25 +755,30 @@ export function createFilesService(
             }
             return { state: "conflict" as const };
           }
-          return { state: "pending" as const, session };
+          try {
+            const grant = await store.createUpload({
+              workspaceId: context.workspaceId,
+              key: session.objectKey,
+              bytes: session.maxBytes,
+              contentType: session.expectedMediaType!,
+              checksumSha256: session.expectedChecksum!,
+            });
+            return { state: "pending" as const, session, grant };
+          } catch {
+            return { state: "provider_error" as const };
+          }
         },
       );
       if (result.state === "not_found") return notFound();
       if (result.state === "conflict") {
         throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
       }
-      try {
-        const grant = await store.createUpload({
-          workspaceId: context.workspaceId,
-          key: result.session.objectKey,
-          bytes: result.session.maxBytes,
-          contentType: result.session.expectedMediaType!,
-          checksumSha256: result.session.expectedChecksum!,
-        });
-        return { session: result.session, grant, issues: [] as const };
-      } catch {
-        return providerUnavailable();
-      }
+      if (result.state === "provider_error") return providerUnavailable();
+      return {
+        session: result.session,
+        grant: result.grant,
+        issues: [] as const,
+      };
     },
 
     async cancelUploadSession(uploadSessionId: string) {
@@ -879,6 +884,20 @@ export function createFilesService(
           if (locked.version !== expectedVersion) {
             return { state: "conflict" as const };
           }
+          if (
+            !(await canAccessResource(
+              transactionContext.database,
+              transactionContext,
+              {
+                id: locked.id,
+                lockGrants: true,
+                resourceKind: "file",
+                sensitivity: locked.sensitivity,
+              },
+            ))
+          ) {
+            return { state: "not_found" as const };
+          }
           const file = await txRepository.archiveFile({
             id: fileId,
             workspaceId: context.workspaceId,
@@ -911,16 +930,21 @@ export function createFilesService(
       return { file: archived.file, issues: [] as const };
     },
 
-    async listVariants(fileId: string): Promise<readonly FileVariantRow[]> {
-      requirePermission(context, "file:read");
-      const file = await repository.getFile({
-        id: fileId,
-        workspaceId: context.workspaceId,
-        visibility,
-      });
-      if (!file) return notFound();
+    async listVariants(file: FileRow): Promise<readonly FileVariantRow[]> {
+      if (file.workspaceId !== context.workspaceId) return notFound();
+      if (file.deletedAt) {
+        requirePermission(context, "file:delete");
+      } else {
+        requirePermission(context, "file:read");
+        const visibleFile = await repository.getFile({
+          id: file.id,
+          workspaceId: context.workspaceId,
+          visibility,
+        });
+        if (!visibleFile) return notFound();
+      }
       return repository.listFileVariants({
-        fileId,
+        fileId: file.id,
         workspaceId: context.workspaceId,
       });
     },

@@ -11,7 +11,11 @@ import { newId } from "@/db/id";
 import { fileVariants, files, uploadSessions } from "@/db/schema/files";
 import { auditEvents, jobs } from "@/db/schema/operations";
 import { workspacePrincipals } from "@/db/schema/principals";
-import { workspaceUsage } from "@/db/schema/workspaces";
+import {
+  accessPolicies,
+  resourceGrants,
+  workspaceUsage,
+} from "@/db/schema/workspaces";
 import type { ObjectStore } from "@/lib/storage/types";
 import { archivedFileCleanupIdempotencyKey } from "@/modules/files/cleanup";
 import { createFilesService } from "@/modules/files/service";
@@ -23,10 +27,41 @@ import type { SessionActor } from "../support/graphql";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+async function waitForDatabaseLock(
+  fixture: ResearchFixture,
+  queryFragment: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [{ blocked }] = await fixture.connection<[{ blocked: boolean }]>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND wait_event_type = 'Lock'
+          AND query ILIKE ${`%${queryFragment}%`}
+      ) AS blocked
+    `;
+    if (blocked) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Expected a database lock waiter for ${queryFragment}`);
+}
+
 class MemoryObjectStore implements ObjectStore {
   readonly objects = new Map<string, Uint8Array>();
   readonly uploadInputs: Array<{ workspaceId: string; key: string }> = [];
   uploadCalls = 0;
+  beforeCreateUpload?: () => Promise<void>;
+  beforeDelete?: () => Promise<void>;
 
   async createUpload(input: {
     workspaceId: string;
@@ -37,6 +72,7 @@ class MemoryObjectStore implements ObjectStore {
   }) {
     this.uploadCalls += 1;
     this.uploadInputs.push({ workspaceId: input.workspaceId, key: input.key });
+    await this.beforeCreateUpload?.();
     return {
       method: "PUT" as const,
       url: "https://storage.example/upload",
@@ -68,6 +104,7 @@ class MemoryObjectStore implements ObjectStore {
     return this.objects.has(`${input.workspaceId}:${input.key}`);
   }
   async delete(input: { workspaceId: string; key: string }) {
+    await this.beforeDelete?.();
     this.objects.delete(`${input.workspaceId}:${input.key}`);
   }
 }
@@ -76,6 +113,7 @@ async function fileServiceFor(
   fixture: ResearchFixture,
   actor: SessionActor,
   store: MemoryObjectStore,
+  role: "admin" | "analyst" | "contributor" | "owner" | "viewer" = "owner",
 ) {
   const [session] = await fixture.database
     .select({ id: sessions.id })
@@ -90,7 +128,7 @@ async function fileServiceFor(
         id: actor.userId,
         memberId: actor.memberId,
         principalId: actor.principalId,
-        role: "owner",
+        role,
         sessionId: session.id,
       },
       database: fixture.database,
@@ -773,6 +811,133 @@ liveDescribe("file service", () => {
     }
   });
 
+  it("paginates owned upload sessions stably without disclosing peer or foreign sessions", async () => {
+    const graphqlFixture = new ResearchFixture();
+    try {
+      await graphqlFixture.reset();
+      const owner = await graphqlFixture.createActor("owner");
+      const peer = await graphqlFixture.createWorkspaceMember(
+        owner,
+        "contributor",
+      );
+      const foreign = await graphqlFixture.createActor("owner");
+      const newest = new Date("2026-08-04T13:00:00.000Z");
+      const ownerRows = [
+        { id: newId(), createdAt: newest },
+        { id: newId(), createdAt: newest },
+        { id: newId(), createdAt: new Date(newest.getTime() - 1_000) },
+        { id: newId(), createdAt: new Date(newest.getTime() - 2_000) },
+      ].sort(
+        (left, right) =>
+          right.createdAt.getTime() - left.createdAt.getTime() ||
+          right.id.localeCompare(left.id),
+      );
+      const peerId = newId();
+      const foreignId = newId();
+      await graphqlFixture.database.insert(uploadSessions).values(
+        [
+          ...ownerRows.map((row) => ({
+            ...row,
+            workspaceId: owner.workspaceId,
+            actorId: owner.userId,
+            originalName: `${row.id}.txt`,
+            objectKey: `uploads/${row.id}/${newId()}`,
+            updatedAt: row.createdAt,
+            createdBy: owner.userId,
+            updatedBy: owner.userId,
+          })),
+          {
+            id: peerId,
+            workspaceId: owner.workspaceId,
+            actorId: peer.userId,
+            originalName: "peer.txt",
+            objectKey: `uploads/${peerId}/${newId()}`,
+            createdAt: new Date(newest.getTime() + 1_000),
+            updatedAt: new Date(newest.getTime() + 1_000),
+            createdBy: peer.userId,
+            updatedBy: peer.userId,
+          },
+          {
+            id: foreignId,
+            workspaceId: foreign.workspaceId,
+            actorId: foreign.userId,
+            originalName: "foreign.txt",
+            objectKey: `uploads/${foreignId}/${newId()}`,
+            createdAt: new Date(newest.getTime() + 2_000),
+            updatedAt: new Date(newest.getTime() + 2_000),
+            createdBy: foreign.userId,
+            updatedBy: foreign.userId,
+          },
+        ].map((row) => ({
+          intendedPurpose: "EVIDENCE",
+          maxBytes: 1,
+          expectedChecksum: `sha256:${"35".repeat(32)}`,
+          expectedMediaType: "text/plain",
+          state: "pending",
+          expiresAt: new Date(newest.getTime() + 60_000),
+          ...row,
+        })),
+      );
+      const query = /* GraphQL */ `
+        query UploadPages($first: Int!, $after: String) {
+          uploadSessions(first: $first, after: $after, states: [PENDING]) {
+            nodes {
+              id
+            }
+            pageInfo {
+              endCursor
+              hasNextPage
+            }
+          }
+        }
+      `;
+      const first = await graphqlFixture.execute<{
+        uploadSessions: {
+          nodes: Array<{ id: string }>;
+          pageInfo: { endCursor: string; hasNextPage: boolean };
+        };
+      }>({ jar: owner.jar, query, variables: { first: 2 } });
+      const second = await graphqlFixture.execute<{
+        uploadSessions: {
+          nodes: Array<{ id: string }>;
+          pageInfo: { endCursor: string | null; hasNextPage: boolean };
+        };
+      }>({
+        jar: owner.jar,
+        query,
+        variables: {
+          first: 2,
+          after: first.body?.data?.uploadSessions.pageInfo.endCursor,
+        },
+      });
+      expect(first.body?.errors).toBeUndefined();
+      expect(second.body?.errors).toBeUndefined();
+      expect([
+        ...(first.body?.data?.uploadSessions.nodes ?? []),
+        ...(second.body?.data?.uploadSessions.nodes ?? []),
+      ]).toEqual(ownerRows.map((row) => ({ id: row.id })));
+      expect(first.body?.data?.uploadSessions.pageInfo.hasNextPage).toBe(true);
+      expect(second.body?.data?.uploadSessions.pageInfo.hasNextPage).toBe(
+        false,
+      );
+
+      for (const [jar, visibleId] of [
+        [peer.jar, peerId],
+        [foreign.jar, foreignId],
+      ] as const) {
+        const isolated = await graphqlFixture.execute<{
+          uploadSessions: { nodes: Array<{ id: string }> };
+        }>({ jar, query, variables: { first: 20 } });
+        expect(isolated.body?.errors).toBeUndefined();
+        expect(isolated.body?.data?.uploadSessions.nodes).toEqual([
+          { id: visibleId },
+        ]);
+      }
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
   it("rejects regrant for expired, rejected, and completed sessions without disclosing storage coordinates", async () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({
@@ -1040,6 +1205,253 @@ liveDescribe("file service", () => {
     }
   });
 
+  it("serializes regrant signing with cancellation in both commit orders", async () => {
+    const actor = await fixture.createActor("owner");
+    const service = await fileServiceFor(fixture, actor, store);
+    const createPending = () =>
+      service.createUploadSession({
+        originalName: "regrant-race.txt",
+        claimedMediaType: "text/plain",
+        byteSize: 4,
+        checksumSha256: createHash("sha256").update("safe").digest("hex"),
+        purpose: "EVIDENCE",
+      });
+
+    const grantFirst = await createPending();
+    const signingEntered = deferred();
+    const releaseSigning = deferred();
+    store.beforeCreateUpload = async () => {
+      signingEntered.resolve();
+      await releaseSigning.promise;
+    };
+    const regrant = service.regrantUploadSession(grantFirst.session.id);
+    await signingEntered.promise;
+    let cancelSettled = false;
+    const cancelAfterGrant = service
+      .cancelUploadSession(grantFirst.session.id)
+      .finally(() => {
+        cancelSettled = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    expect(cancelSettled).toBe(false);
+    releaseSigning.resolve();
+    await expect(regrant).resolves.toMatchObject({
+      session: { state: "pending" },
+      grant: { method: "PUT" },
+    });
+    await expect(cancelAfterGrant).resolves.toMatchObject({
+      session: { state: "cleanup_pending" },
+    });
+
+    store.beforeCreateUpload = undefined;
+    const cancelFirst = await createPending();
+    const deleteEntered = deferred();
+    const releaseDelete = deferred();
+    store.beforeDelete = async () => {
+      deleteEntered.resolve();
+      await releaseDelete.promise;
+    };
+    const cancellation = service.cancelUploadSession(cancelFirst.session.id);
+    await deleteEntered.promise;
+    await expect(
+      service.regrantUploadSession(cancelFirst.session.id),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+    releaseDelete.resolve();
+    await expect(cancellation).resolves.toMatchObject({
+      session: { state: "cleanup_pending" },
+    });
+  });
+
+  it("serializes regrant signing with live permission revocation in both commit orders", async () => {
+    const owner = await fixture.createActor("owner");
+    const contributor = await fixture.createWorkspaceMember(
+      owner,
+      "contributor",
+    );
+    const service = await fileServiceFor(
+      fixture,
+      contributor,
+      store,
+      "contributor",
+    );
+    const createPending = () =>
+      service.createUploadSession({
+        originalName: "authority-race.txt",
+        claimedMediaType: "text/plain",
+        byteSize: 4,
+        checksumSha256: createHash("sha256").update("safe").digest("hex"),
+        purpose: "EVIDENCE",
+      });
+
+    const grantFirst = await createPending();
+    const signingEntered = deferred();
+    const releaseSigning = deferred();
+    store.beforeCreateUpload = async () => {
+      signingEntered.resolve();
+      await releaseSigning.promise;
+    };
+    const regrant = service.regrantUploadSession(grantFirst.session.id);
+    await signingEntered.promise;
+    let revocationSettled = false;
+    const revocation = fixture.connection
+      .begin(async (transaction) => {
+        await transaction`update members set role = 'viewer' where id = ${contributor.memberId}`;
+      })
+      .finally(() => {
+        revocationSettled = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    expect(revocationSettled).toBe(false);
+    releaseSigning.resolve();
+    await expect(regrant).resolves.toMatchObject({ grant: { method: "PUT" } });
+    await revocation;
+
+    const contributorTwo = await fixture.createWorkspaceMember(
+      owner,
+      "contributor",
+    );
+    const serviceTwo = await fileServiceFor(
+      fixture,
+      contributorTwo,
+      store,
+      "contributor",
+    );
+    store.beforeCreateUpload = undefined;
+    const revokeFirst = await serviceTwo.createUploadSession({
+      originalName: "revoked-first.txt",
+      claimedMediaType: "text/plain",
+      byteSize: 4,
+      checksumSha256: createHash("sha256").update("safe").digest("hex"),
+      purpose: "EVIDENCE",
+    });
+    const callsBefore = store.uploadCalls;
+    let pendingRegrant:
+      ReturnType<typeof serviceTwo.regrantUploadSession> | undefined;
+    await fixture.connection.begin(async (transaction) => {
+      await transaction`select id from members where id = ${contributorTwo.memberId} for update`;
+      pendingRegrant = serviceTwo.regrantUploadSession(revokeFirst.session.id);
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      await transaction`update members set role = 'viewer' where id = ${contributorTwo.memberId}`;
+    });
+    if (!pendingRegrant) throw new Error("Regrant request did not start");
+    await expect(pendingRegrant).rejects.toMatchObject({
+      extensions: { code: "FORBIDDEN" },
+    });
+    expect(store.uploadCalls).toBe(callsBefore);
+  });
+
+  it.each(["grant", "policy"] as const)(
+    "rechecks and locks restricted-file %s authority across both archive/revocation orders",
+    async (revocationTarget) => {
+      async function seedAuthorizedArchive(name: string) {
+        const actor = await fixture.createActor("owner");
+        const service = await fileServiceFor(fixture, actor, store);
+        const fileId = newId();
+        const policyId = newId();
+        const grantId = newId();
+        await fixture.database.insert(files).values({
+          id: fileId,
+          workspaceId: actor.workspaceId,
+          storageProvider: "minio",
+          storageBucket: "private",
+          storageKey: `uploads/${fileId}/${newId()}`,
+          originalName: name,
+          byteSize: 1,
+          checksum: `sha256:${"47".repeat(32)}`,
+          sensitivity: "restricted",
+          uploadedBy: actor.userId,
+          createdBy: actor.userId,
+          updatedBy: actor.userId,
+        });
+        await fixture.database.insert(accessPolicies).values({
+          id: policyId,
+          workspaceId: actor.workspaceId,
+          name: `${name}-${policyId}`,
+          sensitivityCeiling: "restricted",
+          resourceKinds: ["file"],
+          state: "active",
+          createdBy: actor.principalId,
+          updatedBy: actor.principalId,
+        });
+        await fixture.database.insert(resourceGrants).values({
+          id: grantId,
+          workspaceId: actor.workspaceId,
+          policyId,
+          memberId: actor.memberId,
+          resourceId: fileId,
+          resourceKind: "file",
+          state: "active",
+          createdBy: actor.principalId,
+          updatedBy: actor.principalId,
+        });
+        return { actor, fileId, grantId, policyId, service };
+      }
+
+      const revokeFirst = await seedAuthorizedArchive(
+        `${revocationTarget}-revoke-first.txt`,
+      );
+      let deniedArchive:
+        ReturnType<typeof revokeFirst.service.archiveFile> | undefined;
+      await fixture.connection.begin(async (transaction) => {
+        if (revocationTarget === "grant") {
+          await transaction`select id from resource_grants where id = ${revokeFirst.grantId}::uuid for update`;
+        } else {
+          await transaction`select id from access_policies where id = ${revokeFirst.policyId}::uuid for update`;
+        }
+        deniedArchive = revokeFirst.service.archiveFile(revokeFirst.fileId, 1);
+        await new Promise((resolve) => setTimeout(resolve, 75));
+        if (revocationTarget === "grant") {
+          await transaction`update resource_grants set state = 'inactive' where id = ${revokeFirst.grantId}::uuid`;
+        } else {
+          await transaction`update access_policies set state = 'disabled' where id = ${revokeFirst.policyId}::uuid`;
+        }
+      });
+      if (!deniedArchive) throw new Error("Archive request did not start");
+      await expect(deniedArchive).rejects.toMatchObject({
+        extensions: { code: "NOT_FOUND" },
+      });
+
+      const archiveFirst = await seedAuthorizedArchive(
+        `${revocationTarget}-archive-first.txt`,
+      );
+      let acceptedArchive:
+        ReturnType<typeof archiveFirst.service.archiveFile> | undefined;
+      let revocation: Promise<unknown> | undefined;
+      await fixture.connection.begin(async (auditLocker) => {
+        await auditLocker`lock table audit_events in access exclusive mode`;
+        acceptedArchive = archiveFirst.service.archiveFile(
+          archiveFirst.fileId,
+          1,
+        );
+        await waitForDatabaseLock(fixture, "audit_events");
+        let revocationSettled = false;
+        revocation = fixture.connection
+          .begin(async (transaction) => {
+            if (revocationTarget === "grant") {
+              await transaction`update resource_grants set state = 'inactive' where id = ${archiveFirst.grantId}::uuid`;
+            } else {
+              await transaction`update access_policies set state = 'disabled' where id = ${archiveFirst.policyId}::uuid`;
+            }
+          })
+          .finally(() => {
+            revocationSettled = true;
+          });
+        await waitForDatabaseLock(
+          fixture,
+          revocationTarget === "grant" ? "resource_grants" : "access_policies",
+        );
+        expect(revocationSettled).toBe(false);
+      });
+      if (!acceptedArchive || !revocation) {
+        throw new Error("Archive-first race did not start");
+      }
+      await expect(acceptedArchive).resolves.toMatchObject({
+        file: { id: archiveFirst.fileId, deletedAt: expect.any(Date) },
+      });
+      await revocation;
+    },
+  );
+
   it("exposes safe variants, archives through user and API-key GraphQL, and denies archived downloads", async () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({
@@ -1141,6 +1553,11 @@ liveDescribe("file service", () => {
                 id
                 version
                 archivedAt
+                variants {
+                  id
+                  kind
+                  checksum
+                }
               }
             }
           }
@@ -1150,7 +1567,18 @@ liveDescribe("file service", () => {
       expect(archived.body?.errors).toBeUndefined();
       expect(archived.body?.data).toMatchObject({
         archiveFile: {
-          file: { id: userFileId, version: 2, archivedAt: expect.any(String) },
+          file: {
+            id: userFileId,
+            version: 2,
+            archivedAt: expect.any(String),
+            variants: [
+              {
+                id: variantId,
+                kind: "thumbnail",
+                checksum: `sha256:${"43".repeat(32)}`,
+              },
+            ],
+          },
         },
       });
       const deniedDownload = await graphqlFixture.execute({

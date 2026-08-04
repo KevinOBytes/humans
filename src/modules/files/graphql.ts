@@ -108,7 +108,7 @@ export const File = builder.objectRef<FileRow>("File").implement({
     variants: t.field({
       type: [FileVariant],
       resolve: (row, _args, context) =>
-        context.services.files.listVariants(row.id),
+        context.services.files.listVariants(row),
     }),
   }),
 });

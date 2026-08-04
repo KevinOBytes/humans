@@ -39,6 +39,11 @@ its name, byte length, and SHA-256 digest before asking the server for a new
 grant; a mismatch never uploads bytes or calls completion. Status changes use
 assistive-technology alerts, provider/object details are replaced by bounded
 public messages, and the initiating control retains or regains visible focus.
+Cancel and archive controls include the affected filename in their accessible
+names. After a successful removal, focus moves to the durable workspace-files
+heading before refresh so it does not depend on a control that was removed.
+Read-only viewers load only visible file metadata and do not request the
+permission-gated pending-upload connection.
 
 Only clean, available files offer download. Archival uses the file version
 rendered with the row, requires explicit confirmation, announces the outcome,

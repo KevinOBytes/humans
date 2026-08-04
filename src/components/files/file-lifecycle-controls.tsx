@@ -2,7 +2,7 @@
 
 import { Archive, Ban } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { UploadRecoveryControl } from "@/components/files/upload-panel";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 
 export function CancelUploadControl({
   sessionId,
+  fileName,
 }: {
   sessionId: string;
   fileName: string;
@@ -31,6 +32,7 @@ export function CancelUploadControl({
         size="sm"
         variant="outline"
         disabled={busy}
+        aria-label={`Cancel upload ${fileName}`}
         onClick={async () => {
           setBusy(true);
           setStatus(null);
@@ -48,7 +50,7 @@ export function CancelUploadControl({
               throw new Error("cancel_failed");
             }
             setStatus("Upload cancelled.");
-            buttonRef.current?.focus();
+            document.getElementById("workspace-files-heading")?.focus();
             router.refresh();
           } catch {
             setStatus("The upload could not be cancelled. Please try again.");
@@ -85,10 +87,6 @@ export function ArchiveFileControl({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!confirming && status) archiveRef.current?.focus();
-  }, [confirming, status]);
-
   return (
     <div>
       <Button
@@ -97,6 +95,7 @@ export function ArchiveFileControl({
         size="sm"
         variant="ghost"
         disabled={busy}
+        aria-label={`Archive ${fileName}`}
         onClick={() => {
           setStatus(null);
           setConfirming(true);
@@ -114,6 +113,7 @@ export function ArchiveFileControl({
               size="sm"
               variant="destructive"
               disabled={busy}
+              aria-label={`Confirm archive ${fileName}`}
               onClick={async () => {
                 setBusy(true);
                 try {
@@ -130,7 +130,7 @@ export function ArchiveFileControl({
                   }
                   setConfirming(false);
                   setStatus("File archived.");
-                  archiveRef.current?.focus();
+                  document.getElementById("workspace-files-heading")?.focus();
                   router.refresh();
                 } catch {
                   setStatus(
@@ -149,6 +149,7 @@ export function ArchiveFileControl({
               size="sm"
               variant="outline"
               disabled={busy}
+              aria-label={`Keep ${fileName}`}
               onClick={() => {
                 setConfirming(false);
                 archiveRef.current?.focus();

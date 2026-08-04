@@ -8,7 +8,8 @@ vi.mock("server-only", () => ({}));
 
 import { createStorageProxyHandlers } from "@/app/api/storage/objects/[...path]/route";
 import { parseServerEnv } from "@/lib/env/server-schema";
-import { createObjectStore, S3ObjectStore } from "@/lib/storage/s3";
+import { createObjectStore } from "@/lib/storage/s3";
+import { ApplicationProxyObjectStore } from "@/lib/storage/proxy";
 import type { SignedObjectRequest } from "@/lib/storage/types";
 
 const baseEnv = parseServerEnv({
@@ -286,18 +287,53 @@ describe("local storage proxy", () => {
     ).toBe(401);
   });
 
-  it("keeps managed S3 deployments on direct presigning", () => {
-    const store = createObjectStore({
-      ...baseEnv,
-      DEPLOYMENT_MODE: "vercel",
-      STORAGE_PROVIDER: "r2",
-      STORAGE_ENDPOINT: "https://account.r2.cloudflarestorage.com",
-      STORAGE_REGION: "auto",
-      STORAGE_FORCE_PATH_STYLE: false,
-    });
+  it.each([
+    ["minio", "docker", "http://minio.internal:9000"],
+    ["r2", "vercel", "https://account.r2.cloudflarestorage.com"],
+    ["s3", "docker", "https://s3.us-east-1.amazonaws.com"],
+  ] as const)(
+    "keeps %s GraphQL grants behind one opaque bounded application token",
+    async (provider, deploymentMode, endpoint) => {
+      const now = Date.UTC(2026, 7, 4, 12);
+      const workspaceId = "workspace-secret-019f";
+      const objectKey = "uploads/secret-session/secret-object";
+      const bucket = "secret-private-bucket";
+      const store = createObjectStore(
+        {
+          ...baseEnv,
+          DEPLOYMENT_MODE: deploymentMode,
+          NEXT_PUBLIC_APP_URL: "https://humans.example.test",
+          STORAGE_PROVIDER: provider,
+          STORAGE_ENDPOINT: endpoint,
+          STORAGE_BUCKET: bucket,
+          STORAGE_REGION: provider === "r2" ? "auto" : "us-east-1",
+          STORAGE_FORCE_PATH_STYLE: provider === "minio",
+        },
+        { now: () => now },
+      );
 
-    expect(store).toBeInstanceOf(S3ObjectStore);
-  });
+      expect(store).toBeInstanceOf(ApplicationProxyObjectStore);
+      const grant = await store.createUpload({
+        workspaceId,
+        key: objectKey,
+        contentType: "text/plain",
+        bytes: 4,
+        checksumSha256: checksum("safe"),
+      });
+      const visibleGrant = JSON.stringify(grant);
+
+      expect(grant.url).toBe("https://humans.example.test/api/storage/objects");
+      expect(grant.method).toBe("PUT");
+      expect(grant.headers.authorization).toMatch(
+        /^StorageGrant [A-Za-z0-9_.-]+$/u,
+      );
+      expect(grant.expiresAt.getTime() - now).toBe(300_000);
+      for (const secret of [workspaceId, objectKey, bucket, endpoint]) {
+        expect(visibleGrant).not.toContain(secret);
+      }
+      expect(grant.url).not.toContain(provider);
+    },
+  );
 
   it("returns fixed 404 for an explicit missing key", async () => {
     const error = Object.assign(new Error("secret object detail"), {

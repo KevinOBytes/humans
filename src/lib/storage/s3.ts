@@ -238,13 +238,10 @@ export function createObjectStore(
     options.client ?? createS3Client(env),
     env.STORAGE_BUCKET,
   );
-  if (env.DEPLOYMENT_MODE === "docker" && providerFor(env) === "minio") {
-    return new ApplicationProxyObjectStore(
-      directStore,
-      env.NEXT_PUBLIC_APP_URL,
-      env.DATA_ENCRYPTION_KEY,
-      options.now,
-    );
-  }
-  return directStore;
+  return new ApplicationProxyObjectStore(
+    directStore,
+    env.NEXT_PUBLIC_APP_URL,
+    env.DATA_ENCRYPTION_KEY,
+    options.now,
+  );
 }

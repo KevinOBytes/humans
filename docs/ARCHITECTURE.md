@@ -120,7 +120,10 @@ code regeneration atomically replaces prior unused codes.
 
 Upload-session ownership is bound to a session user, not merely a workspace.
 Creation persists a server-generated controlled key and schedules expiration
-cleanup before returning a short-lived checksum-bound upload grant. Listing,
+cleanup before returning a short-lived checksum-bound upload grant. Every
+supported provider (MinIO, R2, and generic S3) returns the same opaque
+application storage route; GraphQL-visible URLs never contain provider
+endpoints, buckets, workspaces, or object keys. Listing,
 regrant, and cancellation require `file:create`; API keys cannot invoke these
 user-bound recovery operations. Regrant locks and revalidates the same pending,
 unexpired session before signing its existing key. Cancellation locks the
@@ -137,6 +140,13 @@ expected version, primes the archived mutation result, and enqueues a durable
 file-target cleanup. The worker locks the persisted primary and variant
 locations, rejects runtime/provider location drift, deletes only those exact
 keys, revalidates the location set, and then records redacted completion.
+
+The required production-like acceptance signs in to the built Compose
+application, drives create/complete/archive through `/api/graphql`, uploads
+through the exact returned application grant, and observes the continuously
+running worker complete primary-and-variant cleanup while a sibling sentinel
+survives. Direct PostgreSQL and MinIO access in that harness is limited to
+fixture arrangement and outcome assertions.
 
 Protected exact values use purpose-separated envelope encryption for display
 material and a different, workspace-bound HMAC key for equality lookup. The
