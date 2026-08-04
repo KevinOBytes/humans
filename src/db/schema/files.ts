@@ -50,6 +50,7 @@ export const files = pgTable(
     updatedBy: text("updated_by").notNull(),
     deletedAt: domainTimestamp("deleted_at"),
     deletedBy: text("deleted_by"),
+    cleanupCompletedAt: domainTimestamp("cleanup_completed_at"),
   },
   (table) => [
     unique("files_workspace_id_unique").on(table.workspaceId, table.id),

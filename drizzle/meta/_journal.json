@@ -141,6 +141,13 @@
       "when": 1785850529876,
       "tag": "0019_file_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785858947496,
+      "tag": "0020_file_coordinate_ownership",
+      "breakpoints": true
     }
   ]
 }

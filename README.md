@@ -104,9 +104,12 @@ archive a visible file with optimistic version confirmation.
 GraphQL exposes file and variant metadata but never provider, bucket, endpoint,
 or object-key coordinates. Upload and download grants for MinIO, R2, and generic
 S3 use the same opaque application storage route; only the application decrypts
-the short-lived grant and reaches the configured provider. Archive cleanup reads
-storage coordinates only inside the worker, deletes the exact primary and
-variant objects, and preserves unrelated siblings. `pnpm test:db` includes the
+the short-lived grant and reaches the configured provider. Each upload grant is
+bound to its pending database session, and the proxy holds that session lock
+during the bounded provider PUT so cancellation and upload have one authoritative
+ordering. Archive cleanup reads storage coordinates only inside the worker,
+requires exclusive coordinate ownership, deletes the exact primary and variant
+objects, and records completion once. `pnpm test:db` includes the
 real-context file API and durable cleanup suites. The required Compose lifecycle
 also signs in through the built application, creates/completes/archives through
 its `/api/graphql` endpoint, uploads through the returned opaque grant, and

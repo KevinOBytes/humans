@@ -363,7 +363,10 @@ export function createFilesService(
       );
       try {
         const grant = await store.createUpload({
+          actorId: session.actorId,
           workspaceId: context.workspaceId,
+          uploadSessionId: session.id,
+          sessionExpiresAt: session.expiresAt,
           key: session.objectKey,
           bytes: session.maxBytes,
           contentType: session.expectedMediaType!,
@@ -761,9 +764,24 @@ export function createFilesService(
             }
             return { state: "conflict" as const };
           }
+          let currentMaxBytes: number;
+          try {
+            currentMaxBytes = uploadMaxBytesForDeployment(
+              session.intendedPurpose as UploadPurpose,
+              runtime.deploymentMode,
+            );
+          } catch {
+            return { state: "conflict" as const };
+          }
+          if (session.maxBytes > currentMaxBytes) {
+            return { state: "conflict" as const };
+          }
           try {
             const grant = await store.createUpload({
+              actorId: session.actorId,
               workspaceId: context.workspaceId,
+              uploadSessionId: session.id,
+              sessionExpiresAt: session.expiresAt,
               key: session.objectKey,
               bytes: session.maxBytes,
               contentType: session.expectedMediaType!,

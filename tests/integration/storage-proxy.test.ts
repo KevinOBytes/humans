@@ -118,6 +118,14 @@ function grantRequest(grant: SignedObjectRequest): Request {
   });
 }
 
+const allowUpload = async (
+  _grant: unknown,
+  upload: () => Promise<void>,
+): Promise<boolean> => {
+  await upload();
+  return true;
+};
+
 describe("local storage proxy", () => {
   it("uploads and downloads through an app URL scoped to workspace and key", async () => {
     let now = Date.UTC(2026, 6, 10);
@@ -128,11 +136,15 @@ describe("local storage proxy", () => {
       bucket: baseEnv.STORAGE_BUCKET,
       secret: baseEnv.DATA_ENCRYPTION_KEY,
       now: () => now,
+      executeAuthorizedUpload: allowUpload,
     });
     const body = "evidence from a host browser";
     const digest = checksum(body);
 
     const upload = await store.createUpload({
+      uploadSessionId: "019cc7c4-6ed2-7e0a-aed8-e5d451c97001",
+      actorId: "actor-a",
+      sessionExpiresAt: new Date(now + 10 * 60_000),
       workspaceId: "workspace-a",
       key: "evidence/file.txt",
       contentType: "text/plain",
@@ -185,10 +197,14 @@ describe("local storage proxy", () => {
       bucket: baseEnv.STORAGE_BUCKET,
       secret: baseEnv.DATA_ENCRYPTION_KEY,
       now: () => now,
+      executeAuthorizedUpload: allowUpload,
     });
     const body = "safe";
     const digest = checksum(body);
     const upload = await store.createUpload({
+      uploadSessionId: "019cc7c4-6ed2-7e0a-aed8-e5d451c97002",
+      actorId: "actor-a",
+      sessionExpiresAt: new Date(now + 10 * 60_000),
       workspaceId: "workspace-a",
       key: "safe.txt",
       contentType: "text/plain",
@@ -314,6 +330,9 @@ describe("local storage proxy", () => {
 
       expect(store).toBeInstanceOf(ApplicationProxyObjectStore);
       const grant = await store.createUpload({
+        uploadSessionId: "019cc7c4-6ed2-7e0a-aed8-e5d451c97003",
+        actorId: "actor-secret-019f",
+        sessionExpiresAt: new Date(now + 60_000),
         workspaceId,
         key: objectKey,
         contentType: "text/plain",
@@ -327,8 +346,15 @@ describe("local storage proxy", () => {
       expect(grant.headers.authorization).toMatch(
         /^StorageGrant [A-Za-z0-9_.-]+$/u,
       );
-      expect(grant.expiresAt.getTime() - now).toBe(300_000);
-      for (const secret of [workspaceId, objectKey, bucket, endpoint]) {
+      expect(grant.expiresAt.getTime() - now).toBe(60_000);
+      for (const secret of [
+        workspaceId,
+        objectKey,
+        bucket,
+        endpoint,
+        "019cc7c4-6ed2-7e0a-aed8-e5d451c97003",
+        "actor-secret-019f",
+      ]) {
         expect(visibleGrant).not.toContain(secret);
       }
       expect(grant.url).not.toContain(provider);
@@ -346,6 +372,7 @@ describe("local storage proxy", () => {
       client: client as unknown as S3Client,
       bucket: baseEnv.STORAGE_BUCKET,
       secret: baseEnv.DATA_ENCRYPTION_KEY,
+      executeAuthorizedUpload: allowUpload,
     });
     const download = await store.createDownload({
       workspaceId: "workspace-a",
@@ -371,6 +398,7 @@ describe("local storage proxy", () => {
       client: client as unknown as S3Client,
       bucket: baseEnv.STORAGE_BUCKET,
       secret: baseEnv.DATA_ENCRYPTION_KEY,
+      executeAuthorizedUpload: allowUpload,
     });
     const download = await store.createDownload({
       workspaceId: "workspace-a",
@@ -396,6 +424,7 @@ describe("local storage proxy", () => {
       client: client as unknown as S3Client,
       bucket: baseEnv.STORAGE_BUCKET,
       secret: baseEnv.DATA_ENCRYPTION_KEY,
+      executeAuthorizedUpload: allowUpload,
     });
     const download = await store.createDownload({
       workspaceId: "workspace-a",
@@ -430,6 +459,7 @@ describe("local storage proxy", () => {
       client: client as unknown as S3Client,
       bucket: baseEnv.STORAGE_BUCKET,
       secret: baseEnv.DATA_ENCRYPTION_KEY,
+      executeAuthorizedUpload: allowUpload,
     });
     const download = await store.createDownload({
       workspaceId: "workspace-a",

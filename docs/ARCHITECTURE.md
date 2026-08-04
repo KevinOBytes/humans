@@ -132,6 +132,15 @@ session against completion, atomically changes only `pending` to
 durable cleanup job to the present, and writes a redacted audit event before a
 best-effort exact-key delete.
 
+Upload tokens encrypt and bind the exact session and session owner as well as
+the workspace, controlled key, expected bytes, media type, checksum, and an
+expiry no later than the session expiry. The proxy validates request headers
+before opening a database transaction, then locks and revalidates the pending
+session under the current deployment limit while it performs the bounded
+upstream PUT. Cancellation takes the same row lock. A PUT that wins completes
+before cancellation deletes it; cancellation that wins makes every earlier
+grant unusable, including after cleanup has completed.
+
 The opaque route also defines the hosted upload envelope. In `vercel` mode,
 upload-session creation rejects every purpose above 4 MiB before storage
 configuration reads, rate limiting, persistence, grants, jobs, or audits. The
@@ -147,8 +156,11 @@ details. Archival requires `file:delete`, revalidates live user or API-key
 authority inside the write transaction, locks the visible file, applies its
 expected version, primes the archived mutation result, and enqueues a durable
 file-target cleanup. The worker locks the persisted primary and variant
-locations, rejects runtime/provider location drift, deletes only those exact
-keys, revalidates the location set, and then records redacted completion.
+locations, takes the same per-coordinate advisory locks used by the database's
+cross-table file/variant ownership guards, and fails closed if another active
+owner exists. It rejects runtime/provider location drift, deletes only those
+exact keys, revalidates the location set, and atomically records a durable
+completion marker with its one redacted audit event.
 
 The required production-like acceptance signs in to the built Compose
 application, drives create/complete/archive through `/api/graphql`, uploads

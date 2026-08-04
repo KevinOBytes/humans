@@ -23,6 +23,8 @@ export type UploadSessionRow = typeof uploadSessions.$inferSelect;
 export type NewUploadSessionRow = typeof uploadSessions.$inferInsert;
 export type FileVariantRow = typeof fileVariants.$inferSelect;
 export type FileObjectLocation = {
+  ownerId: string;
+  ownerKind: "file" | "variant";
   storageBucket: string;
   storageKey: string;
   storageProvider: string;
@@ -233,12 +235,17 @@ export function createFilesRepository(database: Database) {
       return row ?? null;
     },
 
-    async lockArchivedFileObjectKeys(input: {
+    async lockArchivedFileCleanupTarget(input: {
       id: string;
       workspaceId: string;
-    }): Promise<readonly FileObjectLocation[] | null> {
+    }): Promise<{
+      cleanupCompletedAt: Date | null;
+      locations: readonly FileObjectLocation[];
+    } | null> {
       const [file] = await database
         .select({
+          cleanupCompletedAt: files.cleanupCompletedAt,
+          ownerId: files.id,
           storageBucket: files.storageBucket,
           storageKey: files.storageKey,
           storageProvider: files.storageProvider,
@@ -256,6 +263,7 @@ export function createFilesRepository(database: Database) {
       if (!file) return null;
       const variants = await database
         .select({
+          ownerId: fileVariants.id,
           storageBucket: fileVariants.storageBucket,
           storageKey: fileVariants.storageKey,
           storageProvider: fileVariants.storageProvider,
@@ -269,7 +277,16 @@ export function createFilesRepository(database: Database) {
         )
         .orderBy(fileVariants.id)
         .for("update");
-      return [file, ...variants];
+      return {
+        cleanupCompletedAt: file.cleanupCompletedAt,
+        locations: [
+          { ...file, ownerKind: "file" as const },
+          ...variants.map((variant) => ({
+            ...variant,
+            ownerKind: "variant" as const,
+          })),
+        ],
+      };
     },
 
     async getCompletedSessionForFile(input: {

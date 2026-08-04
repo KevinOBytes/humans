@@ -1,8 +1,19 @@
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { createHmac } from "node:crypto";
 
 import { newId } from "@/db/id";
-import { files, uploadSessions } from "@/db/schema/files";
+import { fileVariants, files, uploadSessions } from "@/db/schema/files";
 import { auditEvents } from "@/db/schema/operations";
 import type { ObjectStore } from "@/lib/storage/types";
 import type { Database } from "@/modules/auth/bootstrap-admin";
@@ -434,13 +445,25 @@ async function executeArchivedFileCleanupJob(
     const repository = createFilesRepository(
       transaction as unknown as Database,
     );
-    const locations = await repository.lockArchivedFileObjectKeys({
+    const target = await repository.lockArchivedFileCleanupTarget({
       id: job.fileId,
       workspaceId: job.workspaceId,
     });
-    if (!locations)
+    if (!target)
       throw new JobExecutionError("archived_file_not_found", "permanent");
+    if (target.cleanupCompletedAt) {
+      return { resultReferences: [job.fileId] };
+    }
+    const locations = target.locations;
     assertRuntimeStorageLocation(input, locations);
+    await lockAndAssertExclusiveObjectOwnership(
+      transaction as unknown as Database,
+      {
+        fileId: job.fileId,
+        locations,
+        workspaceId: job.workspaceId,
+      },
+    );
     for (const location of locations) {
       if (job.signal.aborted) {
         throw job.signal.reason instanceof Error
@@ -459,14 +482,33 @@ async function executeArchivedFileCleanupJob(
         throw new JobExecutionError("storage_unavailable", "retryable");
       }
     }
-    const currentLocations = await repository.lockArchivedFileObjectKeys({
+    const currentTarget = await repository.lockArchivedFileCleanupTarget({
       id: job.fileId,
       workspaceId: job.workspaceId,
     });
     if (
-      !currentLocations ||
-      !sameObjectLocations(locations, currentLocations)
+      !currentTarget ||
+      currentTarget.cleanupCompletedAt ||
+      !sameObjectLocations(locations, currentTarget.locations)
     ) {
+      throw new JobExecutionError("archived_file_changed", "retryable");
+    }
+    const [completed] = await transaction
+      .update(files)
+      .set({
+        cleanupCompletedAt: sql`clock_timestamp()`,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(files.workspaceId, job.workspaceId),
+          eq(files.id, job.fileId),
+          isNotNull(files.deletedAt),
+          isNull(files.cleanupCompletedAt),
+        ),
+      )
+      .returning({ id: files.id });
+    if (!completed) {
       throw new JobExecutionError("archived_file_changed", "retryable");
     }
     await transaction.insert(auditEvents).values({
@@ -484,6 +526,94 @@ async function executeArchivedFileCleanupJob(
     });
     return { resultReferences: [job.fileId] };
   });
+}
+
+async function lockAndAssertExclusiveObjectOwnership(
+  database: Database,
+  input: {
+    fileId: string;
+    locations: readonly FileObjectLocation[];
+    workspaceId: string;
+  },
+): Promise<void> {
+  const sorted = [...input.locations].sort((left, right) =>
+    [left.storageProvider, left.storageBucket, left.storageKey]
+      .join("\0")
+      .localeCompare(
+        [right.storageProvider, right.storageBucket, right.storageKey].join(
+          "\0",
+        ),
+      ),
+  );
+  const seen = new Set<string>();
+  for (const location of sorted) {
+    const coordinate = [
+      location.storageProvider,
+      location.storageBucket,
+      location.storageKey,
+    ].join("\0");
+    if (seen.has(coordinate)) {
+      throw new JobExecutionError("cleanup_coordinate_conflict", "permanent");
+    }
+    seen.add(coordinate);
+    await database.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(
+          concat_ws(
+            E'\\x1f',
+            ${input.workspaceId}::text,
+            ${location.storageProvider}::text,
+            ${location.storageBucket}::text,
+            ${location.storageKey}::text
+          ),
+          20260804
+        )
+      )
+    `);
+  }
+
+  for (const location of sorted) {
+    const conflictingFiles = await database
+      .select({ id: files.id })
+      .from(files)
+      .where(
+        and(
+          eq(files.workspaceId, input.workspaceId),
+          ne(files.id, input.fileId),
+          isNull(files.deletedAt),
+          eq(files.storageProvider, location.storageProvider),
+          eq(files.storageBucket, location.storageBucket),
+          eq(files.storageKey, location.storageKey),
+        ),
+      )
+      .limit(1)
+      .for("share");
+    const conflictingVariants = await database
+      .select({ id: fileVariants.id })
+      .from(fileVariants)
+      .innerJoin(
+        files,
+        and(
+          eq(files.workspaceId, fileVariants.workspaceId),
+          eq(files.id, fileVariants.parentFileId),
+          isNull(files.deletedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(fileVariants.workspaceId, input.workspaceId),
+          ne(fileVariants.parentFileId, input.fileId),
+          eq(fileVariants.storageProvider, location.storageProvider),
+          eq(fileVariants.storageBucket, location.storageBucket),
+          eq(fileVariants.storageKey, location.storageKey),
+        ),
+      )
+      .limit(1)
+      .for("share", { of: [fileVariants, files] });
+    if (conflictingFiles.length || conflictingVariants.length) {
+      throw new JobExecutionError("cleanup_coordinate_conflict", "permanent");
+    }
+  }
 }
 
 function assertRuntimeStorageLocation(

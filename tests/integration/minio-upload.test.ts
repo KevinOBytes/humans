@@ -46,6 +46,9 @@ liveDescribe("real MinIO upload and download", () => {
     const checksum = createHash("sha256").update(body).digest("hex");
 
     const upload = await store.createUpload({
+      actorId: "minio-smoke-actor",
+      uploadSessionId: randomUUID(),
+      sessionExpiresAt: new Date(Date.now() + 10 * 60_000),
       workspaceId,
       key,
       contentType: "text/csv",

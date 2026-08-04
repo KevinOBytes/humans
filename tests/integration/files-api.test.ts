@@ -1191,6 +1191,66 @@ liveDescribe("file service", () => {
     }
   });
 
+  it("rejects a Docker-sized pending session when regranted in Vercel mode without signing", async () => {
+    const graphqlStore = new MemoryObjectStore();
+    const graphqlFixture = new ResearchFixture({
+      fileRuntime: {
+        deploymentMode: "vercel",
+        encryptionKey: "31".repeat(32),
+        objectStore: graphqlStore,
+        storageBucket: "private",
+        storageProvider: "r2",
+      },
+    });
+    try {
+      await graphqlFixture.reset();
+      const owner = await graphqlFixture.createActor("owner");
+      const uploadSessionId = newId();
+      await graphqlFixture.database.insert(uploadSessions).values({
+        id: uploadSessionId,
+        workspaceId: owner.workspaceId,
+        actorId: owner.userId,
+        intendedPurpose: "EVIDENCE",
+        originalName: "legacy-docker-sized.txt",
+        maxBytes: 5 * 1024 * 1024,
+        expectedChecksum: "31".repeat(32),
+        expectedMediaType: "text/plain",
+        objectKey: `uploads/${uploadSessionId}/${newId()}`,
+        state: "pending",
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      });
+      const callsBefore = graphqlStore.uploadCalls;
+
+      const result = await graphqlFixture.execute({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation Regrant($id: UUID!) {
+            regrantUploadSession(uploadSessionId: $id) {
+              session {
+                id
+                state
+              }
+              grant {
+                method
+                url
+                headers
+              }
+            }
+          }
+        `,
+        variables: { id: uploadSessionId },
+      });
+
+      expect(result.body?.errors?.[0]?.extensions?.code).toBe("CONFLICT");
+      expect(graphqlStore.uploadCalls).toBe(callsBefore);
+      expect(JSON.stringify(result.body)).not.toMatch(/vercel|r2|private/iu);
+    } finally {
+      await graphqlFixture.close();
+    }
+  });
+
   it("serializes cancellation against completion", async () => {
     const graphqlStore = new MemoryObjectStore();
     const graphqlFixture = new ResearchFixture({

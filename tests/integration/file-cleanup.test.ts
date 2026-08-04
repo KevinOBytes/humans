@@ -17,6 +17,7 @@ import type { RedisStore } from "@/lib/redis";
 import type { ObjectStore } from "@/lib/storage/types";
 import { storageObjectKey } from "@/lib/storage/proxy";
 import { S3ObjectStore } from "@/lib/storage/s3";
+import { createFileCleanupService } from "@/modules/files/cleanup";
 import { createFilesService } from "@/modules/files/service";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { createRuntimeJobRegistry } from "@/worker/runtime";
@@ -68,6 +69,7 @@ class CleanupStore implements ObjectStore {
   failDeletes = 0;
   failOnDelete: number | null = null;
   deleteCalls = 0;
+  beforeDelete?: () => Promise<void>;
   createUpload(): Promise<never> {
     return Promise.reject(new Error("not used"));
   }
@@ -88,17 +90,17 @@ class CleanupStore implements ObjectStore {
       this.objects.has(`${input.workspaceId}:${input.key}`),
     );
   }
-  delete(input: { workspaceId: string; key: string }) {
+  async delete(input: { workspaceId: string; key: string }) {
     this.deleteCalls += 1;
     if (this.failOnDelete === this.deleteCalls) {
-      return Promise.reject(new Error("temporary storage outage"));
+      throw new Error("temporary storage outage");
     }
     if (this.failDeletes > 0) {
       this.failDeletes -= 1;
-      return Promise.reject(new Error("temporary storage outage"));
+      throw new Error("temporary storage outage");
     }
+    await this.beforeDelete?.();
     this.objects.delete(`${input.workspaceId}:${input.key}`);
-    return Promise.resolve();
   }
 }
 
@@ -458,6 +460,268 @@ liveDescribe("durable file cleanup", () => {
       );
     expect(completionAudits).toHaveLength(1);
   });
+
+  it("records archived cleanup completion and its audit exactly once across handler retry", async () => {
+    const actor = await fixture.createActor("owner");
+    const fileId = newId();
+    const storageKey = `uploads/${fileId}/${newId()}`;
+    await fixture.database.insert(files).values({
+      id: fileId,
+      workspaceId: actor.workspaceId,
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey,
+      originalName: "idempotent-cleanup.txt",
+      byteSize: 1,
+      checksum: `sha256:${"71".repeat(32)}`,
+      uploadedBy: actor.userId,
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+      deletedAt: new Date(),
+      deletedBy: actor.userId,
+    });
+    store.objects.add(`${actor.workspaceId}:${storageKey}`);
+    const cleanup = createFileCleanupService({
+      database: fixture.database,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const execute = (jobId: string) =>
+      cleanup.executeFileCleanupJob({
+        fileId,
+        jobId,
+        renewLease: async () => true,
+        signal: new AbortController().signal,
+        workspaceId: actor.workspaceId,
+      });
+
+    await expect(execute(newId())).resolves.toEqual({
+      resultReferences: [fileId],
+    });
+    await expect(execute(newId())).resolves.toEqual({
+      resultReferences: [fileId],
+    });
+
+    expect(store.deleteCalls).toBe(1);
+    const [file] = await fixture.database
+      .select({ cleanupCompletedAt: files.cleanupCompletedAt })
+      .from(files)
+      .where(eq(files.id, fileId));
+    expect(file?.cleanupCompletedAt).toBeInstanceOf(Date);
+    const audits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, fileId),
+          eq(auditEvents.action, "file.cleanup_completed"),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+  });
+
+  it("fails closed before deleting when a corrupt legacy variant shares an active file coordinate", async () => {
+    const actor = await fixture.createActor("owner");
+    const activeFileId = newId();
+    const archivedFileId = newId();
+    const sharedKey = `uploads/${activeFileId}/${newId()}`;
+    const archivedKey = `uploads/${archivedFileId}/${newId()}`;
+    await fixture.database.insert(files).values([
+      {
+        id: activeFileId,
+        workspaceId: actor.workspaceId,
+        storageProvider: "minio",
+        storageBucket: "private",
+        storageKey: sharedKey,
+        originalName: "active.txt",
+        byteSize: 1,
+        checksum: `sha256:${"72".repeat(32)}`,
+        quarantineState: "available",
+        scanState: "clean",
+        uploadedBy: actor.userId,
+        createdBy: actor.userId,
+        updatedBy: actor.userId,
+      },
+      {
+        id: archivedFileId,
+        workspaceId: actor.workspaceId,
+        storageProvider: "minio",
+        storageBucket: "private",
+        storageKey: archivedKey,
+        originalName: "archived.txt",
+        byteSize: 1,
+        checksum: `sha256:${"73".repeat(32)}`,
+        uploadedBy: actor.userId,
+        createdBy: actor.userId,
+        updatedBy: actor.userId,
+        deletedAt: new Date(),
+        deletedBy: actor.userId,
+      },
+    ]);
+    await fixture.connection`ALTER TABLE file_variants DISABLE TRIGGER USER`;
+    try {
+      await fixture.database.insert(fileVariants).values({
+        id: newId(),
+        workspaceId: actor.workspaceId,
+        parentFileId: archivedFileId,
+        kind: "corrupt",
+        storageProvider: "minio",
+        storageBucket: "private",
+        storageKey: sharedKey,
+        checksum: `sha256:${"74".repeat(32)}`,
+        createdBy: actor.userId,
+      });
+    } finally {
+      await fixture.connection`ALTER TABLE file_variants ENABLE TRIGGER USER`;
+    }
+    store.objects.add(`${actor.workspaceId}:${archivedKey}`);
+    store.objects.add(`${actor.workspaceId}:${sharedKey}`);
+
+    const cleanup = createFileCleanupService({
+      database: fixture.database,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    await expect(
+      cleanup.executeFileCleanupJob({
+        fileId: archivedFileId,
+        jobId: newId(),
+        renewLease: async () => true,
+        signal: new AbortController().signal,
+        workspaceId: actor.workspaceId,
+      }),
+    ).rejects.toMatchObject({
+      code: "cleanup_coordinate_conflict",
+      failureKind: "permanent",
+    });
+    expect(store.deleteCalls).toBe(0);
+    expect(store.objects.has(`${actor.workspaceId}:${archivedKey}`)).toBe(true);
+    expect(store.objects.has(`${actor.workspaceId}:${sharedKey}`)).toBe(true);
+  });
+
+  it("holds cleanup target row locks across object deletion", async () => {
+    const actor = await fixture.createActor("owner");
+    const fileId = newId();
+    const variantId = newId();
+    const primaryKey = `uploads/${fileId}/${newId()}`;
+    const variantKey = `variants/${fileId}/${newId()}`;
+    await fixture.database.insert(files).values({
+      id: fileId,
+      workspaceId: actor.workspaceId,
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey: primaryKey,
+      originalName: "locked-cleanup.txt",
+      byteSize: 1,
+      checksum: `sha256:${"75".repeat(32)}`,
+      uploadedBy: actor.userId,
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+      deletedAt: new Date(),
+      deletedBy: actor.userId,
+    });
+    await fixture.database.insert(fileVariants).values({
+      id: variantId,
+      workspaceId: actor.workspaceId,
+      parentFileId: fileId,
+      kind: "locked",
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey: variantKey,
+      checksum: `sha256:${"76".repeat(32)}`,
+      createdBy: actor.userId,
+    });
+    store.objects.add(`${actor.workspaceId}:${primaryKey}`);
+    store.objects.add(`${actor.workspaceId}:${variantKey}`);
+    const deleteEntered = (() => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((accept) => {
+        resolve = accept;
+      });
+      return { promise, resolve };
+    })();
+    const releaseDelete = (() => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((accept) => {
+        resolve = accept;
+      });
+      return { promise, resolve };
+    })();
+    store.beforeDelete = async () => {
+      deleteEntered.resolve();
+      await releaseDelete.promise;
+    };
+    const cleanup = createFileCleanupService({
+      database: fixture.database,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    }).executeFileCleanupJob({
+      fileId,
+      jobId: newId(),
+      renewLease: async () => true,
+      signal: new AbortController().signal,
+      workspaceId: actor.workspaceId,
+    });
+    await Promise.race([
+      deleteEntered.promise,
+      cleanup.then(
+        () => {
+          throw new Error("Cleanup finished before reaching object deletion");
+        },
+        (error: unknown) => {
+          throw error;
+        },
+      ),
+    ]);
+
+    let mutationSettled = false;
+    const nextKey = `variants/${fileId}/${newId()}`;
+    const mutation = fixture.connection
+      .begin(async (transaction) => {
+        await transaction`
+          UPDATE file_variants
+          SET storage_key = ${nextKey}
+          WHERE id = ${variantId}
+        `;
+      })
+      .finally(() => {
+        mutationSettled = true;
+      });
+    let observedLockWait = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const [{ blocked }] = await fixture.connection<[{ blocked: boolean }]>`
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND pid <> pg_backend_pid()
+            AND wait_event_type = 'Lock'
+            AND query ILIKE '%UPDATE file_variants%'
+        ) AS blocked
+      `;
+      if (blocked) {
+        observedLockWait = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    try {
+      expect(observedLockWait).toBe(true);
+      expect(mutationSettled).toBe(false);
+    } finally {
+      releaseDelete.resolve();
+    }
+    await expect(cleanup).resolves.toEqual({ resultReferences: [fileId] });
+    await mutation;
+    const [variant] = await fixture.database
+      .select({ storageKey: fileVariants.storageKey })
+      .from(fileVariants)
+      .where(eq(fileVariants.id, variantId));
+    expect(variant?.storageKey).toBe(nextKey);
+  }, 15_000);
 
   it("refuses an archived object whose persisted storage location differs from the runtime", async () => {
     const actor = await fixture.createActor("owner");

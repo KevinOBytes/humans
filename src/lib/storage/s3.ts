@@ -89,7 +89,15 @@ export class S3ObjectStore implements ObjectStore {
 
   async createUpload(input: UploadRequest): Promise<SignedObjectRequest> {
     validateUpload(input);
-    const expiresAt = new Date(Date.now() + this.uploadTtlSeconds * 1_000);
+    const now = Date.now();
+    const expiresAt = new Date(
+      Math.min(
+        now + this.uploadTtlSeconds * 1_000,
+        input.sessionExpiresAt.getTime(),
+      ),
+    );
+    const expiresIn = Math.floor((expiresAt.getTime() - now) / 1_000);
+    if (expiresIn < 1) throw new TypeError("Upload session has expired");
     const checksumSha256 = Buffer.from(input.checksumSha256, "hex").toString(
       "base64",
     );
@@ -105,7 +113,7 @@ export class S3ObjectStore implements ObjectStore {
     return {
       method: "PUT",
       url: await getSignedUrl(this.client, command, {
-        expiresIn: this.uploadTtlSeconds,
+        expiresIn,
         signableHeaders: new Set(["content-type"]),
         unhoistableHeaders: new Set(["x-amz-checksum-sha256"]),
       }),
