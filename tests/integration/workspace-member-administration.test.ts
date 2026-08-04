@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
 import { invitations, members, sessions } from "@/db/schema/auth";
@@ -78,7 +78,10 @@ const CANCEL = /* GraphQL */ `
 `;
 
 liveDescribe("workspace member administration transactions", () => {
-  const fixture = new ResearchFixture();
+  let fixture: ResearchFixture;
+  beforeAll(() => {
+    fixture = new ResearchFixture();
+  });
   beforeEach(async () => fixture.reset());
   afterAll(async () => fixture.close());
 
