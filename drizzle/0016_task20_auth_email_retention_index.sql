@@ -1,0 +1,1 @@
+CREATE INDEX "auth_email_outbox_retention_idx" ON "auth_email_outbox" USING btree ("state","updated_at","id");

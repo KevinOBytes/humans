@@ -1,0 +1,57 @@
+query GraphPage($filter: GraphFilterInput!) {
+  graph(filter: $filter) {
+    fingerprint
+    generatedAt
+    normalizedFilter {
+      mode
+      rootPersonIds
+      depth
+      relationshipTypeIds
+      relationshipStates
+      sensitivities
+      minimumConfidence
+      at
+      from
+      until
+      nodeLimit
+      edgeLimit
+      includeIsolates
+    }
+    limits {
+      requestedNodeLimit
+      requestedEdgeLimit
+      returnedNodeCount
+      returnedEdgeCount
+      nodesTruncated
+      edgesTruncated
+      reasons
+    }
+    nodes {
+      id
+      displayName
+      sortName
+      status
+      sensitivity
+      version
+    }
+    edges {
+      id
+      relationshipId
+      source
+      target
+      relationshipTypeId
+      forwardLabel
+      inverseLabel
+      directed
+      state
+      sensitivity
+      confidence
+      strength
+      temporalSemantics
+      temporalPrecision
+      validFrom
+      validUntil
+      version
+    }
+  }
+}

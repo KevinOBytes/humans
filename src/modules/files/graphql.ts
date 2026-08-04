@@ -1,0 +1,258 @@
+import { builder } from "@/graphql/builder";
+import { requirePermission } from "@/graphql/context";
+import type { SignedObjectRequest } from "@/lib/storage/types";
+import { ActorAttribution } from "@/modules/audit/attribution-graphql";
+import {
+  PageInfo,
+  Sensitivity,
+  ValidationIssue,
+} from "@/modules/people/graphql";
+import type { PageInfo as PageInfoShape } from "@/modules/people/service";
+
+import type { FileRow, UploadSessionRow } from "./repository";
+
+const UploadPurpose = builder.enumType("UploadPurpose", {
+  values: ["EVIDENCE", "CSV_IMPORT", "JSON_IMPORT"] as const,
+});
+const UploadSessionState = builder.enumType("UploadSessionState", {
+  values: {
+    PENDING: { value: "pending" },
+    VERIFYING: { value: "verifying" },
+    COMPLETED: { value: "completed" },
+    REJECTED: { value: "rejected" },
+    EXPIRED: { value: "expired" },
+  } as const,
+});
+const FileAvailability = builder.enumType("FileAvailability", {
+  values: {
+    QUARANTINED: { value: "quarantined" },
+    AVAILABLE: { value: "available" },
+    REJECTED: { value: "rejected" },
+  } as const,
+});
+const FileScanState = builder.enumType("FileScanState", {
+  values: {
+    PENDING: { value: "pending" },
+    CLEAN: { value: "clean" },
+    NOT_REQUIRED: { value: "not_required" },
+    INFECTED: { value: "infected" },
+    ERROR: { value: "error" },
+  } as const,
+});
+const GrantMethod = builder.enumType("FileGrantMethod", {
+  values: ["GET", "PUT"] as const,
+});
+
+export const File = builder.objectRef<FileRow>("File").implement({
+  fields: (t) => ({
+    id: t.expose("id", { type: "UUID" }),
+    originalName: t.exposeString("originalName"),
+    mediaType: t.exposeString("mediaType", { nullable: true }),
+    detectedType: t.exposeString("detectedType", { nullable: true }),
+    byteSize: t.float({ resolve: (row) => row.byteSize }),
+    availability: t.field({
+      type: FileAvailability,
+      resolve: (row) =>
+        row.quarantineState as "available" | "quarantined" | "rejected",
+    }),
+    scanState: t.field({
+      type: FileScanState,
+      resolve: (row) =>
+        row.scanState as
+          "pending" | "clean" | "not_required" | "infected" | "error",
+    }),
+    sensitivity: t.field({
+      type: Sensitivity,
+      resolve: (row) => row.sensitivity,
+    }),
+    version: t.exposeInt("version"),
+    createdAt: t.field({
+      type: "DateTime",
+      resolve: (row) => row.createdAt.toISOString(),
+    }),
+    updatedAt: t.field({
+      type: "DateTime",
+      resolve: (row) => row.updatedAt.toISOString(),
+    }),
+    uploadedBy: t.field({
+      type: ActorAttribution,
+      resolve: (row, _args, context) =>
+        context.loaders.actorAttribution.load(`u:${row.uploadedBy}`),
+    }),
+  }),
+});
+
+const UploadSession = builder
+  .objectRef<UploadSessionRow>("UploadSession")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      state: t.field({
+        type: UploadSessionState,
+        resolve: (row) =>
+          row.state as
+            "pending" | "verifying" | "completed" | "rejected" | "expired",
+      }),
+      expiresAt: t.field({
+        type: "DateTime",
+        resolve: (row) => row.expiresAt.toISOString(),
+      }),
+      completedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.completedAt?.toISOString() ?? null,
+      }),
+      file: t.field({
+        type: File,
+        nullable: true,
+        resolve: (row, _args, context) =>
+          row.fileId ? context.loaders.file.load(row.fileId) : null,
+      }),
+    }),
+  });
+
+const FileGrant = builder
+  .objectRef<SignedObjectRequest>("FileGrant")
+  .implement({
+    fields: (t) => ({
+      method: t.field({ type: GrantMethod, resolve: (grant) => grant.method }),
+      url: t.exposeString("url"),
+      expiresAt: t.field({
+        type: "DateTime",
+        resolve: (grant) => grant.expiresAt.toISOString(),
+      }),
+      headers: t.field({ type: "JSON", resolve: (grant) => grant.headers }),
+      contentLength: t.int({
+        nullable: true,
+        resolve: (grant) => grant.contentLength ?? null,
+      }),
+    }),
+  });
+
+const CreateUploadSessionInput = builder.inputType("CreateUploadSessionInput", {
+  fields: (t) => ({
+    originalName: t.string({ required: true }),
+    claimedMediaType: t.string({ required: true }),
+    byteSize: t.int({ required: true }),
+    checksumSha256: t.string({ required: true }),
+    purpose: t.field({ type: UploadPurpose, required: true }),
+    sensitivity: t.field({ type: Sensitivity }),
+  }),
+});
+
+const FileFilterInput = builder.inputType("FileFilterInput", {
+  fields: (t) => ({ availability: t.field({ type: FileAvailability }) }),
+});
+
+const FileConnection = builder
+  .objectRef<{ nodes: FileRow[]; pageInfo: PageInfoShape }>("FileConnection")
+  .implement({
+    fields: (t) => ({
+      nodes: t.expose("nodes", {
+        type: [File],
+        complexity: { field: 0, multiplier: 1 },
+      }),
+      pageInfo: t.expose("pageInfo", { type: PageInfo }),
+    }),
+  });
+
+type FileIssues = readonly { code: string; message: string; path: string[] }[];
+const UploadPayload = builder
+  .objectRef<{
+    session: UploadSessionRow;
+    file?: FileRow;
+    grant?: SignedObjectRequest;
+    issues: FileIssues;
+  }>("UploadPayload")
+  .implement({
+    fields: (t) => ({
+      session: t.expose("session", { type: UploadSession }),
+      file: t.expose("file", { type: File, nullable: true }),
+      grant: t.expose("grant", { type: FileGrant, nullable: true }),
+      issues: t.field({
+        type: [ValidationIssue],
+        resolve: (payload) => [...payload.issues],
+      }),
+    }),
+  });
+const FileDownloadPayload = builder
+  .objectRef<{ file: FileRow; grant: SignedObjectRequest; issues: FileIssues }>(
+    "FileDownloadPayload",
+  )
+  .implement({
+    fields: (t) => ({
+      file: t.expose("file", { type: File }),
+      grant: t.expose("grant", { type: FileGrant }),
+      issues: t.field({
+        type: [ValidationIssue],
+        resolve: (payload) => [...payload.issues],
+      }),
+    }),
+  });
+
+export function registerFilesGraphQL(): void {
+  builder.queryFields((t) => ({
+    files: t.field({
+      type: FileConnection,
+      args: {
+        first: t.arg.int(),
+        after: t.arg.string(),
+        filter: t.arg({ type: FileFilterInput }),
+      },
+      complexity: (args) => ({ field: 2, multiplier: args.first ?? 25 }),
+      resolve: (_root, args, context) => {
+        requirePermission(context, "file", "read");
+        return context.services.files.list({
+          first: args.first,
+          after: args.after,
+          availability: args.filter?.availability,
+        });
+      },
+    }),
+    file: t.field({
+      type: File,
+      nullable: true,
+      args: { id: t.arg({ type: "UUID", required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "file", "read");
+        return context.loaders.file.load(args.id);
+      },
+    }),
+  }));
+
+  builder.mutationFields((t) => ({
+    createUploadSession: t.field({
+      type: UploadPayload,
+      args: {
+        input: t.arg({ type: CreateUploadSessionInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "file", "create");
+        return context.services.files.createUploadSession({
+          ...args.input,
+          sensitivity: args.input.sensitivity,
+        });
+      },
+    }),
+    completeUpload: t.field({
+      type: UploadPayload,
+      args: { uploadSessionId: t.arg({ type: "UUID", required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "file", "create");
+        const result = await context.services.files.completeUpload(
+          args.uploadSessionId,
+        );
+        context.loaders.file.prime(result.file.id, result.file);
+        return result;
+      },
+    }),
+    createFileDownload: t.field({
+      type: FileDownloadPayload,
+      args: { fileId: t.arg({ type: "UUID", required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "file", "read");
+        return context.services.files.createDownload(args.fileId);
+      },
+    }),
+  }));
+}

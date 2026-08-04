@@ -1,0 +1,785 @@
+fragment PersonSummary on Person {
+  id
+  displayName
+  sortName
+  preferredName
+  biography
+  status
+  sensitivity
+  confidence
+  confidenceExplanation
+  version
+  createdAt
+  updatedAt
+}
+
+fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}
+
+fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}
+
+fragment FactSummary on Fact {
+  id
+  personId
+  definitionId
+  namespace
+  fieldKey
+  label
+  valueType
+  value {
+    text
+    decimal
+    boolean
+    dateStart
+    dateEnd
+    timestamp
+    json
+    referencedPersonId
+    placeId
+    fileId
+    unit
+  }
+  state
+  reviewState
+  sensitivity
+  confidence
+  temporalSemantics
+  temporalPrecision
+  validEarliestAt
+  validLatestAt
+  assertedAt
+  version
+  createdAt
+  updatedAt
+}
+
+query ResearchViewer {
+  viewer {
+    id
+    principalId
+    actorType
+    role
+    permissions
+    workspace {
+      id
+      organizationId
+      name
+    }
+  }
+}
+
+query DashboardPeople($first: Int) {
+  people(first: $first) {
+    nodes {
+      ...PersonSummary
+    }
+    pageInfo {
+      ...PageDetails
+    }
+  }
+}
+
+query PeopleList($first: Int, $after: String, $filter: PersonFilterInput) {
+  people(first: $first, after: $after, filter: $filter) {
+    nodes {
+      ...PersonSummary
+    }
+    pageInfo {
+      ...PageDetails
+    }
+  }
+}
+
+query PersonHeader($id: UUID!) {
+  person(id: $id) {
+    ...PersonSummary
+  }
+}
+
+query PersonFacts($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    facts(first: $first, after: $after) {
+      nodes {
+        ...FactSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PersonFieldSelections($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    fieldSelections(first: $first, after: $after) {
+      nodes {
+        id
+        personId
+        namespace
+        fieldKey
+        factId
+        selectionReason
+        version
+        selectedBy {
+          kind
+          label
+        }
+        updatedAt
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query FactDetail(
+  $id: UUID!
+  $revisionFirst: Int
+  $revisionAfter: String
+  $evidenceFirst: Int
+  $evidenceAfter: String
+) {
+  fact(id: $id) {
+    id
+    revisions(first: $revisionFirst, after: $revisionAfter) {
+      nodes {
+        id
+        revision
+        changeReason
+        createdAt
+        createdBy {
+          kind
+          label
+        }
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+    evidence(first: $evidenceFirst, after: $evidenceAfter) {
+      nodes {
+        id
+        excerpt
+        locator
+        supportStrength
+        evidenceItem {
+          id
+          checksum
+          reviewState
+          sensitivity
+          externalLocator
+          source {
+            id
+            title
+            citation
+            canonicalUrl
+          }
+        }
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query FactCatalog($first: Int, $after: String) {
+  factDefinitions(first: $first, after: $after, filter: { state: ACTIVE }) {
+    nodes {
+      id
+      namespace
+      fieldKey
+      label
+      description
+      allowedValueType
+      cardinality
+      defaultSensitivity
+      version
+    }
+    pageInfo {
+      ...PageDetails
+    }
+  }
+}
+
+query PersonRelationships($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    relationships(first: $first, after: $after) {
+      nodes {
+        id
+        relationshipTypeId
+        sourcePersonId
+        targetPersonId
+        labelOverride
+        state
+        sensitivity
+        confidence
+        strength
+        temporalSemantics
+        temporalPrecision
+        validFrom
+        validUntil
+        version
+        createdAt
+        updatedAt
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query RelationshipTypeDetail($id: UUID!) {
+  relationshipType(id: $id) {
+    id
+    key
+    forwardLabel
+    inverseLabel
+    directed
+  }
+}
+
+query PersonIdentity($id: UUID!) {
+  person(id: $id) {
+    id
+    displayName
+  }
+}
+
+query PersonEvidenceFacts($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    facts(first: $first, after: $after) {
+      nodes {
+        id
+        label
+        value {
+          text
+          dateStart
+          dateEnd
+        }
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query FactEvidence($id: UUID!, $first: Int, $after: String) {
+  fact(id: $id) {
+    id
+    evidence(first: $first, after: $after) {
+      nodes {
+        id
+        excerpt
+        locator
+        supportStrength
+        evidenceItem {
+          id
+          checksum
+          reviewState
+          sensitivity
+          externalLocator
+          source {
+            id
+            kind
+            title
+            author
+            publisher
+            citation
+            canonicalUrl
+            reliability
+          }
+        }
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PersonNotes($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    notes(first: $first, after: $after) {
+      nodes {
+        id
+        personId
+        plainText
+        sanitizedMarkdown
+        sensitivity
+        version
+        createdAt
+        updatedAt
+        createdBy {
+          kind
+          label
+        }
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PersonTags($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    tags(first: $first, after: $after) {
+      nodes {
+        id
+        name
+        normalizedName
+        color
+        description
+        version
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PersonActivity($id: UUID!, $first: Int, $after: String) {
+  auditEvents(first: $first, after: $after, filter: { resourceId: $id }) {
+    nodes {
+      id
+      action
+      outcome
+      resourceKind
+      resourceId
+      requestId
+      occurredAt
+      actor {
+        kind
+        label
+      }
+    }
+    pageInfo {
+      ...PageDetails
+    }
+  }
+}
+
+query RelationshipTypeOptions($first: Int, $after: String) {
+  relationshipTypes(first: $first, after: $after, filter: { state: ACTIVE }) {
+    nodes {
+      id
+      key
+      forwardLabel
+      inverseLabel
+      directed
+    }
+    pageInfo {
+      ...PageDetails
+    }
+  }
+}
+
+query PeopleOptions($first: Int, $after: String, $filter: PersonFilterInput) {
+  people(first: $first, after: $after, filter: $filter) {
+    nodes {
+      id
+      displayName
+    }
+    pageInfo {
+      ...PageDetails
+    }
+  }
+}
+
+query WorkspaceTags($first: Int, $after: String, $filter: TagFilterInput) {
+  tags(first: $first, after: $after, filter: $filter) {
+    nodes {
+      id
+      name
+      normalizedName
+      color
+      description
+      version
+    }
+    pageInfo {
+      ...PageDetails
+    }
+  }
+}
+
+mutation CreatePerson($input: CreatePersonInput!) {
+  createPerson(input: $input) {
+    person {
+      ...PersonSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdatePerson($input: UpdatePersonInput!) {
+  updatePerson(input: $input) {
+    person {
+      ...PersonSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchivePerson($input: ArchivePersonInput!) {
+  archivePerson(input: $input) {
+    person {
+      id
+      status
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateFactDefinition($input: CreateFactDefinitionInput!) {
+  createFactDefinition(input: $input) {
+    factDefinition {
+      id
+      namespace
+      fieldKey
+      label
+      allowedValueType
+      cardinality
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateFact($input: CreateFactInput!) {
+  createFact(input: $input) {
+    fact {
+      ...FactSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ReviseFact($input: ReviseFactInput!) {
+  reviseFact(input: $input) {
+    fact {
+      ...FactSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation SelectPersonField($input: SelectPersonFieldInput!) {
+  selectPersonField(input: $input) {
+    selection {
+      id
+      personId
+      namespace
+      fieldKey
+      factId
+      selectionReason
+      version
+      updatedAt
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateRelationshipType($input: CreateRelationshipTypeInput!) {
+  createRelationshipType(input: $input) {
+    relationshipType {
+      id
+      key
+      namespace
+      forwardLabel
+      inverseLabel
+      directed
+      allowsSelf
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateRelationship($input: CreateRelationshipInput!) {
+  createRelationship(input: $input) {
+    relationship {
+      id
+      relationshipTypeId
+      sourcePersonId
+      targetPersonId
+      state
+      sensitivity
+      confidence
+      strength
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdateRelationship($input: UpdateRelationshipInput!) {
+  updateRelationship(input: $input) {
+    relationship {
+      id
+      state
+      sensitivity
+      confidence
+      strength
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchiveRelationship($input: ArchiveRelationshipInput!) {
+  archiveRelationship(input: $input) {
+    relationship {
+      id
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateSource($input: CreateSourceInput!) {
+  createSource(input: $input) {
+    source {
+      id
+      kind
+      title
+      canonicalUrl
+      citation
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateEvidenceItem($input: CreateEvidenceItemInput!) {
+  createEvidenceItem(input: $input) {
+    evidenceItem {
+      id
+      sourceId
+      checksum
+      reviewState
+      sensitivity
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateEvidenceExcerpt($input: CreateEvidenceExcerptInput!) {
+  createEvidenceExcerpt(input: $input) {
+    evidenceExcerpt {
+      id
+      evidenceItemId
+      locator
+      excerpt
+      checksum
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation LinkFactEvidence($input: LinkFactEvidenceInput!) {
+  linkFactEvidence(input: $input) {
+    factEvidence {
+      id
+      factId
+      evidenceItemId
+      excerpt
+      locator
+      supportStrength
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation LinkRelationshipEvidence($input: LinkRelationshipEvidenceInput!) {
+  linkRelationshipEvidence(input: $input) {
+    relationshipEvidence {
+      id
+      relationshipId
+      evidenceItemId
+      locator
+      supportStrength
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateNote($input: CreateNoteInput!) {
+  createNote(input: $input) {
+    note {
+      id
+      personId
+      factId
+      relationshipId
+      evidenceItemId
+      plainText
+      sanitizedMarkdown
+      sensitivity
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdateNote($input: UpdateNoteInput!) {
+  updateNote(input: $input) {
+    note {
+      id
+      plainText
+      sanitizedMarkdown
+      sensitivity
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchiveNote($input: ArchiveNoteInput!) {
+  archiveNote(input: $input) {
+    note {
+      id
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreateTag($input: CreateTagInput!) {
+  createTag(input: $input) {
+    tag {
+      id
+      name
+      color
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation TagPerson($input: TagPersonInput!) {
+  tagPerson(input: $input) {
+    personTag {
+      id
+      personId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UntagPerson($input: TagPersonInput!) {
+  untagPerson(input: $input) {
+    personTag {
+      id
+      personId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}

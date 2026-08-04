@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "owner": "Humans maintainers",
+  "reviewedAt": "2026-08-03",
+  "allowedLicenses": {
+    "0BSD": "Permissive zero-clause BSD terms.",
+    "Apache-2.0": "Permissive terms with an express patent grant and notice obligations.",
+    "BSD-2-Clause": "Permissive BSD terms with attribution obligations.",
+    "BSD-3-Clause": "Permissive BSD terms with attribution and non-endorsement obligations.",
+    "BlueOak-1.0.0": "Permissive Blue Oak Model License terms.",
+    "CC-BY-4.0": "Approved for dependency data with attribution retained in distributed notices.",
+    "CC0-1.0": "Public-domain dedication with a permissive fallback license.",
+    "ISC": "Permissive ISC terms with notice obligations.",
+    "LGPL-3.0-or-later": "Approved for separately distributed or dynamically linked dependencies; modifications to the covered dependency must remain LGPL-compliant.",
+    "MIT": "Permissive MIT terms with notice obligations.",
+    "MIT-0": "Permissive MIT No Attribution terms.",
+    "MPL-2.0": "Approved file-level copyleft; modifications to covered dependency files must remain MPL-compliant.",
+    "Unlicense": "Public-domain dedication with a permissive fallback license."
+  },
+  "allowedExceptions": {},
+  "exceptions": []
+}

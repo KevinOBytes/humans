@@ -1,0 +1,229 @@
+query GraphAnalysisRuns($first: Int = 10, $after: String) {
+  graphAnalysisRuns(first: $first, after: $after) {
+    nodes {
+      id
+      algorithm
+      graphSnapshotId
+      state
+      startedAt
+      completedAt
+      createdAt
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+
+query GraphAnalysisResults($runId: UUID!, $first: Int = 100, $after: String) {
+  graphAnalysisResults(runId: $runId, first: $first, after: $after) {
+    nodes {
+      id
+      analysisRunId
+      resultKind
+      subjectPersonId
+      value
+      rank
+      explanation
+      createdAt
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+
+mutation RunGraphAnalysis($input: RunGraphAnalysisInput!) {
+  runGraphAnalysis(input: $input) {
+    run {
+      id
+      algorithm
+      graphSnapshotId
+      state
+      startedAt
+      completedAt
+      createdAt
+    }
+    metrics {
+      personId
+      metricKey
+      value
+      rank
+      algorithmVersion
+      explanation
+    }
+    graph {
+      fingerprint
+      generatedAt
+      normalizedFilter {
+        mode
+        rootPersonIds
+        depth
+        relationshipTypeIds
+        relationshipStates
+        sensitivities
+        minimumConfidence
+        at
+        from
+        until
+        nodeLimit
+        edgeLimit
+        includeIsolates
+      }
+      limits {
+        requestedNodeLimit
+        requestedEdgeLimit
+        returnedNodeCount
+        returnedEdgeCount
+        nodesTruncated
+        edgesTruncated
+        reasons
+      }
+      nodes {
+        id
+        displayName
+        sortName
+        status
+        sensitivity
+        version
+      }
+      edges {
+        id
+        relationshipId
+        source
+        target
+        relationshipTypeId
+        forwardLabel
+        inverseLabel
+        directed
+        state
+        sensitivity
+        confidence
+        strength
+        temporalSemantics
+        temporalPrecision
+        validFrom
+        validUntil
+        version
+      }
+    }
+  }
+}
+
+mutation RerunGraphAnalysis($input: RerunGraphAnalysisInput!) {
+  rerunGraphAnalysis(input: $input) {
+    run {
+      id
+      algorithm
+      graphSnapshotId
+      state
+      startedAt
+      completedAt
+      createdAt
+    }
+    metrics {
+      personId
+      metricKey
+      value
+      rank
+      algorithmVersion
+      explanation
+    }
+    graph {
+      fingerprint
+      generatedAt
+      normalizedFilter {
+        mode
+        rootPersonIds
+        depth
+        relationshipTypeIds
+        relationshipStates
+        sensitivities
+        minimumConfidence
+        at
+        from
+        until
+        nodeLimit
+        edgeLimit
+        includeIsolates
+      }
+      limits {
+        requestedNodeLimit
+        requestedEdgeLimit
+        returnedNodeCount
+        returnedEdgeCount
+        nodesTruncated
+        edgesTruncated
+        reasons
+      }
+      nodes {
+        id
+        displayName
+        sortName
+        status
+        sensitivity
+        version
+      }
+      edges {
+        id
+        relationshipId
+        source
+        target
+        relationshipTypeId
+        forwardLabel
+        inverseLabel
+        directed
+        state
+        sensitivity
+        confidence
+        strength
+        temporalSemantics
+        temporalPrecision
+        validFrom
+        validUntil
+        version
+      }
+    }
+  }
+}
+
+mutation CreateGraphSnapshot($input: RunGraphAnalysisInput!) {
+  createGraphSnapshot(input: $input) {
+    id
+    manifestSchema
+    manifestHash
+    algorithm
+    algorithmVersion
+    algorithmConfigHash
+    generatedAt
+  }
+}
+
+mutation ReplayGraphSnapshot($input: ReplayGraphSnapshotInput!) {
+  replayGraphSnapshot(input: $input) {
+    valid
+    snapshot {
+      id
+      manifestHash
+      algorithm
+      generatedAt
+    }
+  }
+}
+
+query GraphAnalysisExport(
+  $runId: UUID!
+  $format: GraphAnalysisExportFormat!
+  $first: Int = 1000
+) {
+  graphAnalysisExport(runId: $runId, format: $format, first: $first) {
+    content
+    contentType
+    filename
+    format
+    resultCount
+    truncated
+  }
+}

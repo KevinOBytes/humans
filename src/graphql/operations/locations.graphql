@@ -1,0 +1,352 @@
+fragment ContactDetails on PersonContact {
+  associationId
+  contactPointId
+  kind
+  displayValue
+  label
+  verificationState
+  sensitivity
+  usageKind
+  isPrimary
+  version
+  contactVersion
+}
+
+fragment AddressDetails on PersonAddress {
+  associationId
+  addressId
+  addressKind
+  line1
+  line2
+  locality
+  region
+  postalCode
+  countryCode
+  unstructuredText
+  sensitivity
+  isPrimary
+  version
+  addressVersion
+  place {
+    id
+    name
+    kind
+    locality
+    region
+    countryCode
+  }
+}
+
+query PersonContacts($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    contacts(first: $first, after: $after) {
+      nodes {
+        ...ContactDetails
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PersonAddresses($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    addresses(first: $first, after: $after) {
+      nodes {
+        ...AddressDetails
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query ContactEditProjection($associationId: UUID!) {
+  contactEditProjection(associationId: $associationId) {
+    associationId
+    displayValue
+    label
+    usageKind
+    sensitivity
+    isPrimary
+    version
+    contactVersion
+  }
+}
+
+query ContactDisplayProjection($associationId: UUID!) {
+  contactDisplayProjection(associationId: $associationId) {
+    associationId
+    displayValue
+    label
+    usageKind
+  }
+}
+
+query AddressEditProjection($associationId: UUID!) {
+  addressEditProjection(associationId: $associationId) {
+    associationId
+    line1
+    locality
+    region
+    postalCode
+    countryCode
+    addressKind
+    place {
+      id
+    }
+    sensitivity
+    isPrimary
+    version
+    addressVersion
+  }
+}
+
+query AddressDisplayProjection($associationId: UUID!) {
+  addressDisplayProjection(associationId: $associationId) {
+    associationId
+    line1
+    line2
+    locality
+    region
+    postalCode
+    countryCode
+    unstructuredText
+    place {
+      name
+    }
+  }
+}
+
+fragment LocationMutationOutcome on ValidationIssue {
+  path
+  code
+  message
+}
+
+query PersonLocations(
+  $id: UUID!
+  $first: Int
+  $contactAfter: String
+  $addressAfter: String
+) {
+  person(id: $id) {
+    id
+    contacts(first: $first, after: $contactAfter) {
+      nodes {
+        ...ContactDetails
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+    addresses(first: $first, after: $addressAfter) {
+      nodes {
+        ...AddressDetails
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PlaceOptions($first: Int, $after: String) {
+  places(first: $first, after: $after) {
+    nodes {
+      id
+      name
+      kind
+      locality
+      region
+      countryCode
+      sensitivity
+      version
+    }
+    pageInfo {
+      ...PageDetails
+    }
+  }
+}
+
+mutation CreatePhoneContact($input: CreatePhoneContactInput!) {
+  createPhoneContact(input: $input) {
+    contact {
+      ...ContactDetails
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreatePersonContact($input: CreatePersonContactInput!) {
+  createPersonContact(input: $input) {
+    contact {
+      ...ContactDetails
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdatePhoneContact($input: UpdatePhoneContactInput!) {
+  updatePhoneContact(input: $input) {
+    contact {
+      ...ContactDetails
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdatePersonContact($input: UpdatePhoneContactInput!) {
+  updatePersonContact(input: $input) {
+    contact {
+      ...ContactDetails
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchivePhoneContact($input: ArchivePhoneContactInput!) {
+  archivePhoneContact(input: $input) {
+    contact {
+      associationId
+      version
+      contactVersion
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchivePersonContact($input: ArchivePhoneContactInput!) {
+  archivePersonContact(input: $input) {
+    contact {
+      associationId
+      version
+      contactVersion
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreatePlace($input: CreatePlaceInput!) {
+  createPlace(input: $input) {
+    place {
+      id
+      name
+      kind
+      locality
+      region
+      countryCode
+      sensitivity
+      version
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdatePlace($input: UpdatePlaceInput!) {
+  updatePlace(input: $input) {
+    place {
+      id
+      name
+      kind
+      parentPlaceId
+      locality
+      region
+      countryCode
+      sensitivity
+      version
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchivePlace($input: ArchivePlaceInput!) {
+  archivePlace(input: $input) {
+    place {
+      id
+      version
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreatePersonAddress($input: CreatePersonAddressInput!) {
+  createPersonAddress(input: $input) {
+    address {
+      ...AddressDetails
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdatePersonAddress($input: UpdatePersonAddressInput!) {
+  updatePersonAddress(input: $input) {
+    address {
+      ...AddressDetails
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchivePersonAddress($input: ArchivePersonAddressInput!) {
+  archivePersonAddress(input: $input) {
+    address {
+      associationId
+      version
+      addressVersion
+    }
+    issues {
+      ...LocationMutationOutcome
+    }
+    code
+    currentVersion
+  }
+}

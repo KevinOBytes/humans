@@ -1,0 +1,136 @@
+query SettingsAuditEvents(
+  $first: Int = 25
+  $after: String
+  $filter: AuditEventFilterInput
+) {
+  auditEvents(first: $first, after: $after, filter: $filter) {
+    nodes {
+      action
+      resourceKind
+      requestId
+      outcome
+      occurredAt
+      actor {
+        kind
+        label
+      }
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+
+query SettingsPolicyPosture {
+  settingsPolicyPosture {
+    workspace {
+      name
+      locale
+      timezone
+      defaultRetentionDays
+      aiEnabled
+      storageEnabled
+    }
+    accessPolicies {
+      name
+      state
+      sensitivityCeiling
+      resourceKinds
+    }
+    retentionPolicies {
+      resourceKind
+      retentionDays
+      deletionBehavior
+    }
+  }
+}
+
+query SettingsOrganizationApiKeys($offset: Int) {
+  settingsOrganizationApiKeys(offset: $offset) {
+    nodes {
+      name
+      fingerprint
+      state
+      scopes
+      createdAt
+      updatedAt
+      expiresAt
+      lastUsedAt
+    }
+    offset
+    limit
+    total
+    hasPrevious
+    hasMore
+  }
+}
+
+query SettingsWorkspaceDirectory($offset: Int) {
+  settingsWorkspaceDirectory(offset: $offset) {
+    actorRole
+    invitations {
+      actionId
+      email
+      role
+      status
+      createdAt
+      expiresAt
+    }
+    members {
+      nodes {
+        actionId
+        displayName
+        email
+        role
+        joinedAt
+        isSelf
+      }
+      offset
+      limit
+      total
+      hasPrevious
+      hasMore
+    }
+  }
+}
+
+mutation IssueWorkspaceInvitation($input: IssueWorkspaceInvitationInput!) {
+  issueWorkspaceInvitation(input: $input) {
+    actionId
+    code
+    requestId
+  }
+}
+
+mutation ResendWorkspaceInvitation($input: WorkspaceInvitationActionInput!) {
+  resendWorkspaceInvitation(input: $input) {
+    actionId
+    code
+    requestId
+  }
+}
+
+mutation CancelWorkspaceInvitation($input: WorkspaceInvitationActionInput!) {
+  cancelWorkspaceInvitation(input: $input) {
+    actionId
+    code
+    requestId
+  }
+}
+
+mutation UpdateWorkspaceMemberRole($input: UpdateWorkspaceMemberRoleInput!) {
+  updateWorkspaceMemberRole(input: $input) {
+    actionId
+    code
+    requestId
+  }
+}
+
+mutation RemoveWorkspaceMember($input: WorkspaceInvitationActionInput!) {
+  removeWorkspaceMember(input: $input) {
+    actionId
+    code
+    requestId
+  }
+}

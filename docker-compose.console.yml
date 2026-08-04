@@ -1,0 +1,12 @@
+# Explicit local troubleshooting override. Never include this file on a public
+# host: the root MinIO console is bound to loopback only.
+services:
+  minio:
+    ports:
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    networks:
+      - backend
+      - console
+
+networks:
+  console:

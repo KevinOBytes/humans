@@ -1,0 +1,24 @@
+mutation CreateGraphView($input: CreateGraphViewInput!) {
+  createGraphView(input: $input) {
+    id
+    name
+    version
+    sharing
+  }
+}
+
+mutation UpdateGraphView($input: UpdateGraphViewInput!) {
+  updateGraphView(input: $input) {
+    id
+    name
+    version
+    sharing
+  }
+}
+
+mutation ArchiveGraphView($input: ArchiveGraphViewInput!) {
+  archiveGraphView(input: $input) {
+    id
+    version
+  }
+}
