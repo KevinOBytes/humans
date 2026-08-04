@@ -1,9 +1,11 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { files, importRows, imports } from "@/db/schema/files";
+import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 
 import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
@@ -122,7 +124,7 @@ liveDescribe("import row GraphQL diagnostics", () => {
         normalizedPayload: { displayName: "Obsolete generation" },
       },
     ]);
-    return { importId, rows };
+    return { fileId, importId, rows };
   }
 
   it("paginates the current staging generation with a stable opaque cursor", async () => {
@@ -198,6 +200,112 @@ liveDescribe("import row GraphQL diagnostics", () => {
       }),
       "NOT_FOUND",
     );
+  });
+
+  it("applies backing-file sensitivity and grants to import, batch, list, and diagnostics reads", async () => {
+    const owner = await fixture.createActor();
+    const reader = await fixture.createWorkspaceMember(owner, "viewer");
+    const seeded = await seedImportRows(owner);
+    await fixture.database
+      .update(files)
+      .set({ sensitivity: "restricted" })
+      .where(eq(files.id, seeded.fileId));
+
+    const importQuery = /* GraphQL */ `
+      query Import($id: UUID!) {
+        import(id: $id) {
+          id
+        }
+      }
+    `;
+    const historyQuery = /* GraphQL */ `
+      query ImportHistory {
+        imports(first: 10) {
+          nodes {
+            id
+          }
+        }
+      }
+    `;
+
+    const hidden = await fixture.execute<{
+      import: { id: string } | null;
+    }>({
+      jar: reader.jar,
+      query: importQuery,
+      variables: { id: seeded.importId },
+    });
+    expect(hidden.body?.errors).toBeUndefined();
+    expect(hidden.body?.data?.import).toBeNull();
+
+    const hiddenHistory = await fixture.execute<{
+      imports: { nodes: Array<{ id: string }> };
+    }>({ jar: reader.jar, query: historyQuery });
+    expect(hiddenHistory.body?.errors).toBeUndefined();
+    expect(hiddenHistory.body?.data?.imports.nodes).toEqual([]);
+
+    expectGraphQLError(
+      await fixture.execute({
+        jar: reader.jar,
+        query: IMPORT_ROWS_QUERY,
+        variables: { importId: seeded.importId, first: 1 },
+      }),
+      "NOT_FOUND",
+    );
+
+    const policyId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: owner.workspaceId,
+      name: "Restricted import source",
+      sensitivityCeiling: "restricted",
+      resourceKinds: ["file"],
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      policyId,
+      memberId: reader.memberId,
+      resourceId: seeded.fileId,
+      resourceKind: "file",
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+
+    const visible = await fixture.execute<{
+      import: { id: string } | null;
+    }>({
+      jar: reader.jar,
+      query: importQuery,
+      variables: { id: seeded.importId },
+    });
+    expect(visible.body?.errors).toBeUndefined();
+    expect(visible.body?.data?.import).toEqual({ id: seeded.importId });
+
+    const visibleHistory = await fixture.execute<{
+      imports: { nodes: Array<{ id: string }> };
+    }>({ jar: reader.jar, query: historyQuery });
+    expect(visibleHistory.body?.errors).toBeUndefined();
+    expect(visibleHistory.body?.data?.imports.nodes).toEqual([
+      { id: seeded.importId },
+    ]);
+
+    const visibleDiagnostics = await fixture.execute<ImportRowsResult>({
+      jar: reader.jar,
+      query: IMPORT_ROWS_QUERY,
+      variables: { importId: seeded.importId, first: 1 },
+    });
+    expect(visibleDiagnostics.body?.errors).toBeUndefined();
+    expect(visibleDiagnostics.body?.data?.importRows.nodes).toMatchObject([
+      {
+        id: seeded.rows[0]?.id,
+        normalizedPayload: { displayName: "Person 1" },
+      },
+    ]);
   });
 
   it("allows one maximum diagnostics page but rejects an aliased over-budget operation", async () => {

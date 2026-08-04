@@ -8,7 +8,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { newId } from "@/db/id";
-import { sessions } from "@/db/schema/auth";
+import { members, sessions } from "@/db/schema/auth";
 import {
   files as filesTable,
   importRows,
@@ -548,6 +548,148 @@ liveDescribe("import staging and durable start", () => {
       if (blockerOpen) await blocker`ROLLBACK`;
       await blocker.end();
       await observer.end();
+    }
+  });
+
+  it("serializes membership removal against a prepare claim before any import write", async () => {
+    const actor = await fixture.createActor("owner");
+    const context = await serviceContext(fixture, actor);
+    const store = new MemoryStore();
+    const fileService = createFilesService(context, {
+      encryptionKey,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const body = new TextEncoder().encode(
+      "external_id,name\nrace-1,Locked User\n",
+    );
+    const upload = await fileService.createUploadSession({
+      originalName: "authority-race.csv",
+      claimedMediaType: "text/csv",
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      purpose: "CSV_IMPORT",
+    });
+    store.objects.set(`${actor.workspaceId}:${upload.session.objectKey}`, body);
+    const completed = await fileService.completeUpload(upload.session.id);
+    const service = createImportsService(context, {
+      encryptionKey,
+      objectStore: store,
+    });
+    const mapping = await service.saveMapping({
+      name: "Authority race mapping",
+      format: "CSV",
+      definition: {
+        version: 1,
+        recordKind: "PERSON",
+        rowKeySource: "external_id",
+        person: {
+          displayNameSource: "name",
+          primaryNameKind: "legal",
+          fields: [],
+        },
+        facts: [],
+        defaults: {},
+      },
+    });
+    const databaseUrl = process.env.TEST_DATABASE_URL!;
+    const gate = postgres(databaseUrl, { max: 1, prepare: false });
+    const revoker = postgres(databaseUrl, { max: 1, prepare: false });
+    const observer = postgres(databaseUrl, { max: 1, prepare: false });
+    const gateKey = 8_104_202_608;
+    const revokerName = `task1_import_revoker_${newId()}`;
+    let gateHeld = false;
+    let preparePromise: Promise<
+      Awaited<ReturnType<typeof service.prepareImport>>
+    > | null = null;
+    let removalPromise: Promise<unknown> | null = null;
+    try {
+      await fixture.connection.unsafe(`
+        CREATE OR REPLACE FUNCTION task1_import_prepare_gate()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${gateKey});
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER task1_import_prepare_gate_trigger
+        BEFORE INSERT ON imports
+        FOR EACH ROW EXECUTE FUNCTION task1_import_prepare_gate();
+      `);
+      await gate`SELECT pg_advisory_lock(${gateKey})`;
+      gateHeld = true;
+      preparePromise = service.prepareImport({
+        fileId: completed.file.id,
+        mappingId: mapping.mapping.id,
+        idempotencyKey: "prepare-authority-race-v1",
+      });
+      let prepareBlocked = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const [activity] = await observer<[{ waiting: boolean }]>`
+          SELECT EXISTS (
+            SELECT 1
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event = 'advisory'
+              AND query ILIKE '%insert into "imports"%'
+          ) AS waiting
+        `;
+        if (activity?.waiting) {
+          prepareBlocked = true;
+          break;
+        }
+        await delay(10);
+      }
+      expect(prepareBlocked).toBe(true);
+      await revoker`SELECT set_config('application_name', ${revokerName}, false)`;
+      removalPromise = revoker`
+        DELETE FROM members WHERE id = ${actor.memberId}::uuid
+      `;
+      let removalBlocked = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const [activity] = await observer<[{ blocked: boolean }]>`
+          SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity
+            WHERE application_name = ${revokerName}
+              AND wait_event_type = 'Lock'
+          ) AS blocked
+        `;
+        if (activity?.blocked) {
+          removalBlocked = true;
+          break;
+        }
+        await delay(10);
+      }
+      expect(removalBlocked).toBe(true);
+      await gate`SELECT pg_advisory_unlock(${gateKey})`;
+      gateHeld = false;
+      await expect(preparePromise).resolves.toMatchObject({
+        import: { state: "preview_ready", totalRows: 1 },
+      });
+      await removalPromise;
+      expect(
+        await fixture.database
+          .select({ id: importsTable.id })
+          .from(importsTable)
+          .where(eq(importsTable.workspaceId, actor.workspaceId)),
+      ).toHaveLength(1);
+    } finally {
+      if (gateHeld) {
+        await gate`SELECT pg_advisory_unlock(${gateKey})`.catch(
+          () => undefined,
+        );
+      }
+      await fixture.connection
+        .unsafe(
+          "DROP TRIGGER IF EXISTS task1_import_prepare_gate_trigger ON imports; DROP FUNCTION IF EXISTS task1_import_prepare_gate();",
+        )
+        .catch(() => undefined);
+      await Promise.allSettled(
+        [preparePromise, removalPromise].filter(
+          (promise): promise is Promise<unknown> => promise !== null,
+        ),
+      );
+      await Promise.all([gate.end(), revoker.end(), observer.end()]);
     }
   });
 

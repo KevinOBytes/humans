@@ -10,9 +10,11 @@ import {
   lte,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 
 import {
+  files,
   importMappings,
   importRows,
   imports as importsTable,
@@ -129,34 +131,58 @@ export function createImportsRepository(database: Database) {
       return row ?? null;
     },
 
-    async getImport(input: { id: string; workspaceId: string }) {
+    async getImport(input: {
+      id: string;
+      workspaceId: string;
+      visibility?: SQL;
+    }) {
       const [row] = await database
-        .select()
+        .select({ import: importsTable })
         .from(importsTable)
+        .innerJoin(
+          files,
+          and(
+            eq(files.workspaceId, importsTable.workspaceId),
+            eq(files.id, importsTable.fileId),
+            isNull(files.deletedAt),
+          ),
+        )
         .where(
           and(
             eq(importsTable.workspaceId, input.workspaceId),
             eq(importsTable.id, input.id),
+            input.visibility,
           ),
         )
         .limit(1);
-      return row ?? null;
+      return row?.import ?? null;
     },
 
     async getImportsByIds(input: {
       ids: readonly string[];
       workspaceId: string;
+      visibility?: SQL;
     }): Promise<ImportRow[]> {
       if (!input.ids.length) return [];
-      return database
-        .select()
+      const rows = await database
+        .select({ import: importsTable })
         .from(importsTable)
+        .innerJoin(
+          files,
+          and(
+            eq(files.workspaceId, importsTable.workspaceId),
+            eq(files.id, importsTable.fileId),
+            isNull(files.deletedAt),
+          ),
+        )
         .where(
           and(
             eq(importsTable.workspaceId, input.workspaceId),
             inArray(importsTable.id, [...input.ids]),
+            input.visibility,
           ),
         );
+      return rows.map((row) => row.import);
     },
 
     async getByIdempotency(input: {
@@ -181,10 +207,19 @@ export function createImportsRepository(database: Database) {
       limit: number;
       state?: string | null;
       cursor?: { createdAt: Date; id: string } | null;
+      visibility?: SQL;
     }): Promise<ImportRow[]> {
-      return database
-        .select()
+      const rows = await database
+        .select({ import: importsTable })
         .from(importsTable)
+        .innerJoin(
+          files,
+          and(
+            eq(files.workspaceId, importsTable.workspaceId),
+            eq(files.id, importsTable.fileId),
+            isNull(files.deletedAt),
+          ),
+        )
         .where(
           and(
             eq(importsTable.workspaceId, input.workspaceId),
@@ -198,10 +233,12 @@ export function createImportsRepository(database: Database) {
                   ),
                 )
               : undefined,
+            input.visibility,
           ),
         )
         .orderBy(desc(importsTable.createdAt), desc(importsTable.id))
         .limit(input.limit);
+      return rows.map((row) => row.import);
     },
 
     async createImport(input: typeof importsTable.$inferInsert) {
