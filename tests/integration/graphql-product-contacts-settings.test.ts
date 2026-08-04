@@ -219,6 +219,55 @@ liveDescribe(
         },
       );
 
+      const updatedPhone = "+1 804 555 0172";
+      const updated = await fixture.execute<{
+        updatePersonContact: {
+          code: string | null;
+          contact: {
+            associationId: string;
+            contactVersion: number;
+            displayValue: string;
+            version: number;
+          } | null;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "UpdatePersonContact",
+        query: UpdatePersonContactDocument,
+        variables: {
+          input: {
+            associationId: contact.associationId,
+            expectedContactVersion: contact.contactVersion,
+            expectedVersion: contact.version,
+            idempotencyKey: crypto.randomUUID(),
+            value: updatedPhone,
+          },
+        },
+      });
+      expect(updated.body?.errors).toBeUndefined();
+      expect(updated.body?.data?.updatePersonContact).toMatchObject({
+        code: null,
+        contact: {
+          associationId: contact.associationId,
+          displayValue: updatedPhone,
+        },
+      });
+      const updatedContact = required(
+        updated.body?.data?.updatePersonContact.contact,
+        "updated contact",
+      );
+      const updatedProjection = await fixture.execute<{
+        contactEditProjection: { displayValue: string } | null;
+      }>({
+        jar: owner.jar,
+        operationName: "ContactEditProjection",
+        query: ContactEditProjectionDocument,
+        variables: { associationId: contact.associationId },
+      });
+      expect(
+        updatedProjection.body?.data?.contactEditProjection?.displayValue,
+      ).toBe(updatedPhone);
+
       const stale = await fixture.execute<{
         updatePersonContact: {
           code: string | null;
@@ -232,8 +281,8 @@ liveDescribe(
         variables: {
           input: {
             associationId: contact.associationId,
-            expectedContactVersion: contact.contactVersion,
-            expectedVersion: contact.version + 100,
+            expectedContactVersion: updatedContact.contactVersion,
+            expectedVersion: updatedContact.version + 100,
             idempotencyKey: crypto.randomUUID(),
             label: "stale update",
           },
@@ -243,7 +292,7 @@ liveDescribe(
       expect(stale.body?.data?.updatePersonContact).toMatchObject({
         code: "CONFLICT",
         contact: null,
-        currentVersion: contact.version,
+        currentVersion: updatedContact.version,
       });
 
       const readOnlyKey = await fixture.provisionKey(owner, {
@@ -296,7 +345,17 @@ liveDescribe(
         }),
         "NOT_FOUND",
       );
+      expectGraphQLError(
+        await fixture.execute({
+          jar: foreign.jar,
+          operationName: "AddressEditProjection",
+          query: AddressEditProjectionDocument,
+          variables: { associationId: address.associationId },
+        }),
+        "NOT_FOUND",
+      );
       expect(JSON.stringify(foreignLocations.body)).not.toContain(phone);
+      expect(JSON.stringify(foreignLocations.body)).not.toContain(updatedPhone);
       expect(JSON.stringify(foreignLocations.body)).not.toContain(line1);
     });
 
