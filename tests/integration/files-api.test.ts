@@ -12,7 +12,9 @@ import { files, uploadSessions } from "@/db/schema/files";
 import { jobs } from "@/db/schema/operations";
 import { workspaceUsage } from "@/db/schema/workspaces";
 import type { ObjectStore } from "@/lib/storage/types";
+import { archivedFileCleanupIdempotencyKey } from "@/modules/files/cleanup";
 import { createFilesService } from "@/modules/files/service";
+import { decodeJobPayload } from "@/modules/jobs/service";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
 
 import { ResearchFixture } from "../support/research-fixture";
@@ -106,6 +108,43 @@ async function fileServiceFor(
     {
       encryptionKey: "31".repeat(32),
       objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    },
+  );
+}
+
+function apiKeyFileServiceFor(input: {
+  fixture: ResearchFixture;
+  keyId: string;
+  permissions: readonly string[];
+  store: MemoryObjectStore;
+  workspaceId: string;
+}) {
+  return createFilesService(
+    {
+      actor: {
+        type: "apiKey",
+        id: input.keyId,
+        principalId: input.keyId,
+        role: null,
+      },
+      database: input.fixture.database,
+      operationLimiter: {
+        consume: async () => ({
+          allowed: true,
+          remainingMicrotokens: 1,
+          retryAfterMs: 0,
+        }),
+      },
+      permissions: new Set(input.permissions),
+      requestId: newId(),
+      searchIndexMaintenance: disabledSearchIndexMaintenance,
+      workspaceId: input.workspaceId,
+    },
+    {
+      encryptionKey: "31".repeat(32),
+      objectStore: input.store,
       storageBucket: "private",
       storageProvider: "minio",
     },
@@ -229,11 +268,34 @@ liveDescribe("file service", () => {
       version: completed.file.version + 1,
     });
     await expect(service.get(completed.file.id)).resolves.toBeNull();
+    const idempotencyKey = archivedFileCleanupIdempotencyKey({
+      encryptionKey: "31".repeat(32),
+      workspaceId: actor.workspaceId,
+      fileId: completed.file.id,
+    });
     const [cleanup] = await fixture.database
-      .select({ kind: jobs.kind, state: jobs.state })
+      .select({
+        encryptedPayload: jobs.encryptedPayload,
+        idempotencyKey: jobs.idempotencyKey,
+        kind: jobs.kind,
+        payloadHash: jobs.payloadHash,
+        state: jobs.state,
+      })
       .from(jobs)
-      .where(eq(jobs.workspaceId, actor.workspaceId));
-    expect(cleanup).toMatchObject({ kind: "file_cleanup", state: "queued" });
+      .where(eq(jobs.idempotencyKey, idempotencyKey));
+    expect(cleanup).toMatchObject({
+      idempotencyKey,
+      kind: "file_cleanup",
+      state: "queued",
+    });
+    expect(
+      decodeJobPayload({
+        encryptedPayload: cleanup!.encryptedPayload,
+        key: "31".repeat(32),
+        kind: "file_cleanup",
+        payloadHash: cleanup!.payloadHash,
+      }),
+    ).toEqual({ kind: "file_cleanup", fileId: completed.file.id });
   });
 
   it("does not archive on a stale version or through another workspace", async () => {
@@ -262,6 +324,56 @@ liveDescribe("file service", () => {
     await expect(otherService.archiveFile(fileId, 1)).rejects.toMatchObject({
       extensions: { code: "NOT_FOUND" },
     });
+  });
+
+  it("allows an API key with file:delete and denies ungranted or non-visible archival", async () => {
+    const actor = await fixture.createActor("owner");
+    const allowedKey = await fixture.provisionKey(actor, { file: ["delete"] });
+    const deniedKey = await fixture.provisionKey(actor, { file: ["read"] });
+    const createFile = async (sensitivity: "internal" | "restricted") => {
+      const id = newId();
+      await fixture.database.insert(files).values({
+        id,
+        workspaceId: actor.workspaceId,
+        storageProvider: "minio",
+        storageBucket: "private",
+        storageKey: `uploads/${id}/${newId()}`,
+        originalName: `${sensitivity}.txt`,
+        byteSize: 1,
+        checksum: `sha256:${"bb".repeat(32)}`,
+        sensitivity,
+        uploadedBy: actor.userId,
+        createdBy: actor.userId,
+        updatedBy: actor.userId,
+      });
+      return id;
+    };
+    const visibleFileId = await createFile("internal");
+    const protectedFileId = await createFile("restricted");
+    const allowed = apiKeyFileServiceFor({
+      fixture,
+      keyId: allowedKey.id,
+      permissions: ["file:delete"],
+      store,
+      workspaceId: actor.workspaceId,
+    });
+    const denied = apiKeyFileServiceFor({
+      fixture,
+      keyId: deniedKey.id,
+      permissions: ["file:read"],
+      store,
+      workspaceId: actor.workspaceId,
+    });
+
+    await expect(allowed.archiveFile(visibleFileId, 1)).resolves.toMatchObject({
+      file: { id: visibleFileId, deletedAt: expect.any(Date) },
+    });
+    await expect(denied.archiveFile(protectedFileId, 1)).rejects.toMatchObject({
+      extensions: { code: "FORBIDDEN" },
+    });
+    await expect(allowed.archiveFile(protectedFileId, 1)).rejects.toMatchObject(
+      { extensions: { code: "NOT_FOUND" } },
+    );
   });
 
   it("serializes concurrent actor and workspace pending-upload caps", async () => {

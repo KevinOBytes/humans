@@ -21,6 +21,11 @@ export type FileRow = typeof files.$inferSelect;
 export type NewFileRow = typeof files.$inferInsert;
 export type UploadSessionRow = typeof uploadSessions.$inferSelect;
 export type NewUploadSessionRow = typeof uploadSessions.$inferInsert;
+export type FileObjectLocation = {
+  storageBucket: string;
+  storageKey: string;
+  storageProvider: string;
+};
 
 export function createFilesRepository(database: Database) {
   return {
@@ -194,9 +199,13 @@ export function createFilesRepository(database: Database) {
     async lockArchivedFileObjectKeys(input: {
       id: string;
       workspaceId: string;
-    }): Promise<readonly string[] | null> {
+    }): Promise<readonly FileObjectLocation[] | null> {
       const [file] = await database
-        .select({ storageKey: files.storageKey })
+        .select({
+          storageBucket: files.storageBucket,
+          storageKey: files.storageKey,
+          storageProvider: files.storageProvider,
+        })
         .from(files)
         .where(
           and(
@@ -209,7 +218,11 @@ export function createFilesRepository(database: Database) {
         .for("update");
       if (!file) return null;
       const variants = await database
-        .select({ storageKey: fileVariants.storageKey })
+        .select({
+          storageBucket: fileVariants.storageBucket,
+          storageKey: fileVariants.storageKey,
+          storageProvider: fileVariants.storageProvider,
+        })
         .from(fileVariants)
         .where(
           and(
@@ -217,11 +230,9 @@ export function createFilesRepository(database: Database) {
             eq(fileVariants.parentFileId, input.id),
           ),
         )
-        .orderBy(fileVariants.id);
-      return [
-        file.storageKey,
-        ...variants.map((variant) => variant.storageKey),
-      ];
+        .orderBy(fileVariants.id)
+        .for("update");
+      return [file, ...variants];
     },
 
     async getCompletedSessionForFile(input: {

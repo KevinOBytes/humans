@@ -64,6 +64,8 @@ class MemoryRedis implements RedisStore {
 class CleanupStore implements ObjectStore {
   readonly objects = new Set<string>();
   failDeletes = 0;
+  failOnDelete: number | null = null;
+  deleteCalls = 0;
   createUpload(): Promise<never> {
     return Promise.reject(new Error("not used"));
   }
@@ -85,6 +87,10 @@ class CleanupStore implements ObjectStore {
     );
   }
   delete(input: { workspaceId: string; key: string }) {
+    this.deleteCalls += 1;
+    if (this.failOnDelete === this.deleteCalls) {
+      return Promise.reject(new Error("temporary storage outage"));
+    }
     if (this.failDeletes > 0) {
       this.failDeletes -= 1;
       return Promise.reject(new Error("temporary storage outage"));
@@ -134,7 +140,16 @@ liveDescribe("durable file cleanup", () => {
     return { actor, id, objectKey };
   }
 
-  function run(workerId: string) {
+  function run(
+    workerId: string,
+    storage: {
+      storageBucket: string;
+      storageProvider: "minio" | "r2" | "s3";
+    } = {
+      storageBucket: "private",
+      storageProvider: "minio",
+    },
+  ) {
     return runJobsOnce({
       database: fixture.database,
       encryptionKey,
@@ -145,6 +160,7 @@ liveDescribe("durable file cleanup", () => {
         encryptionKey,
         objectStore: store,
         searchIndexMaintenance: disabledSearchIndexMaintenance,
+        ...storage,
       }),
       workerId,
     });
@@ -300,7 +316,7 @@ liveDescribe("durable file cleanup", () => {
     });
     store.objects.add(`${actor.workspaceId}:${primaryKey}`);
     store.objects.add(`${actor.workspaceId}:${variantKey}`);
-    store.failDeletes = 1;
+    store.failOnDelete = 2;
     const { ensureArchivedFileCleanupJob } =
       await import("@/modules/files/cleanup");
     await ensureArchivedFileCleanupJob({
@@ -315,6 +331,18 @@ liveDescribe("durable file cleanup", () => {
       completed: 0,
       deferred: 1,
     });
+    expect(store.objects.has(`${actor.workspaceId}:${primaryKey}`)).toBe(false);
+    expect(store.objects.has(`${actor.workspaceId}:${variantKey}`)).toBe(true);
+    const auditsAfterFailure = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, fileId),
+          eq(auditEvents.action, "file.cleanup_completed"),
+        ),
+      );
+    expect(auditsAfterFailure).toHaveLength(0);
     await fixture.database
       .update(jobs)
       .set({ scheduledAt: new Date(0) })
@@ -327,6 +355,58 @@ liveDescribe("durable file cleanup", () => {
       .from(files)
       .where(eq(files.id, fileId));
     expect(archived?.id).toBe(fileId);
+    const completionAudits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, fileId),
+          eq(auditEvents.action, "file.cleanup_completed"),
+        ),
+      );
+    expect(completionAudits).toHaveLength(1);
+  });
+
+  it("refuses an archived object whose persisted storage location differs from the runtime", async () => {
+    const actor = await fixture.createActor("owner");
+    const fileId = newId();
+    const storageKey = `uploads/${fileId}/${newId()}`;
+    await fixture.database.insert(files).values({
+      id: fileId,
+      workspaceId: actor.workspaceId,
+      storageProvider: "s3",
+      storageBucket: "legacy-private",
+      storageKey,
+      originalName: "mismatch.txt",
+      byteSize: 1,
+      checksum: `sha256:${"35".repeat(32)}`,
+      uploadedBy: actor.userId,
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+      deletedAt: new Date(),
+      deletedBy: actor.userId,
+    });
+    store.objects.add(`${actor.workspaceId}:${storageKey}`);
+    const { ensureArchivedFileCleanupJob } =
+      await import("@/modules/files/cleanup");
+    await ensureArchivedFileCleanupJob({
+      database: fixture.database,
+      encryptionKey,
+      workspaceId: actor.workspaceId,
+      fileId,
+      createdBy: actor.userId,
+    });
+
+    await expect(run(newId())).resolves.toMatchObject({
+      completed: 0,
+      deadLettered: 1,
+    });
+    expect(store.objects.has(`${actor.workspaceId}:${storageKey}`)).toBe(true);
+    const audits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(eq(auditEvents.resourceId, fileId));
+    expect(audits).toHaveLength(0);
   });
 
   it.each([

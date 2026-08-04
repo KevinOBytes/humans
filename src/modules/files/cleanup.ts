@@ -9,7 +9,7 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 import { JobExecutionError } from "@/modules/jobs/types";
 import { createJobsService, jobPayloadHash } from "@/modules/jobs/service";
 import { equalJobHashes } from "@/modules/jobs/types";
-import { createFilesRepository } from "./repository";
+import { createFilesRepository, type FileObjectLocation } from "./repository";
 
 const CLEANUP_DELAY_MS = 60 * 60_000;
 
@@ -241,6 +241,8 @@ export async function reconcileFileCleanupJobs(input: {
 export function createFileCleanupService(input: {
   database: Database;
   objectStore: ObjectStore;
+  storageBucket?: string;
+  storageProvider?: string;
 }) {
   return {
     async executeFileCleanupJob(job: {
@@ -396,7 +398,12 @@ export function createFileCleanupService(input: {
 }
 
 async function executeArchivedFileCleanupJob(
-  input: { database: Database; objectStore: ObjectStore },
+  input: {
+    database: Database;
+    objectStore: ObjectStore;
+    storageBucket?: string;
+    storageProvider?: string;
+  },
   job: {
     fileId: string;
     jobId: string;
@@ -410,33 +417,45 @@ async function executeArchivedFileCleanupJob(
       ? job.signal.reason
       : new JobExecutionError("worker_draining", "retryable");
   }
-  const objectKeys = await input.database.transaction(async (transaction) => {
-    const keys = await createFilesRepository(
+  return input.database.transaction(async (transaction) => {
+    const repository = createFilesRepository(
       transaction as unknown as Database,
-    ).lockArchivedFileObjectKeys({
+    );
+    const locations = await repository.lockArchivedFileObjectKeys({
       id: job.fileId,
       workspaceId: job.workspaceId,
     });
-    if (!keys)
+    if (!locations)
       throw new JobExecutionError("archived_file_not_found", "permanent");
-    return keys;
-  });
-  for (const key of objectKeys) {
-    if (job.signal.aborted) {
-      throw job.signal.reason instanceof Error
-        ? job.signal.reason
-        : new JobExecutionError("worker_draining", "retryable");
+    assertRuntimeStorageLocation(input, locations);
+    for (const location of locations) {
+      if (job.signal.aborted) {
+        throw job.signal.reason instanceof Error
+          ? job.signal.reason
+          : new JobExecutionError("worker_draining", "retryable");
+      }
+      if (!(await job.renewLease())) {
+        throw new JobExecutionError("lease_lost", "retryable");
+      }
+      try {
+        await input.objectStore.delete({
+          workspaceId: job.workspaceId,
+          key: location.storageKey,
+        });
+      } catch {
+        throw new JobExecutionError("storage_unavailable", "retryable");
+      }
     }
-    if (!(await job.renewLease())) {
-      throw new JobExecutionError("lease_lost", "retryable");
+    const currentLocations = await repository.lockArchivedFileObjectKeys({
+      id: job.fileId,
+      workspaceId: job.workspaceId,
+    });
+    if (
+      !currentLocations ||
+      !sameObjectLocations(locations, currentLocations)
+    ) {
+      throw new JobExecutionError("archived_file_changed", "retryable");
     }
-    try {
-      await input.objectStore.delete({ workspaceId: job.workspaceId, key });
-    } catch {
-      throw new JobExecutionError("storage_unavailable", "retryable");
-    }
-  }
-  await input.database.transaction(async (transaction) => {
     await transaction.insert(auditEvents).values({
       id: newId(),
       workspaceId: job.workspaceId,
@@ -450,6 +469,39 @@ async function executeArchivedFileCleanupJob(
       redactedDiff: { deleted: true, jobId: job.jobId },
       outcome: "success",
     });
+    return { resultReferences: [job.fileId] };
   });
-  return { resultReferences: [job.fileId] };
+}
+
+function assertRuntimeStorageLocation(
+  runtime: { storageBucket?: string; storageProvider?: string },
+  locations: readonly FileObjectLocation[],
+): void {
+  if (!runtime.storageProvider || !runtime.storageBucket) {
+    throw new JobExecutionError("storage_location_unconfigured", "permanent");
+  }
+  if (
+    locations.some(
+      (location) =>
+        location.storageProvider !== runtime.storageProvider ||
+        location.storageBucket !== runtime.storageBucket,
+    )
+  ) {
+    throw new JobExecutionError("storage_location_mismatch", "permanent");
+  }
+}
+
+function sameObjectLocations(
+  left: readonly FileObjectLocation[],
+  right: readonly FileObjectLocation[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (location, index) =>
+        location.storageProvider === right[index]?.storageProvider &&
+        location.storageBucket === right[index]?.storageBucket &&
+        location.storageKey === right[index]?.storageKey,
+    )
+  );
 }
