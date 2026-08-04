@@ -10,6 +10,8 @@ type MatrixDomain = {
 type AcceptanceMatrix = {
   contracts: Record<string, { evidence: string[] }>;
   domains: MatrixDomain[];
+  inventorySource: string;
+  remainingDomains: string[];
   version: number;
 };
 
@@ -21,8 +23,19 @@ const requiredDomains = [
   "files",
   "imports",
   "search",
-  "graph-and-saved-views",
+  "contacts-and-locations",
+  "settings-members-api-keys-audit",
+  "dashboard",
+  "graph-explorer-and-saved-views",
+  "graph-analysis",
   "ai-analysis",
+];
+
+const expectedRemainingDomains = [
+  "contacts-and-locations",
+  "settings-members-api-keys-audit",
+  "dashboard",
+  "graph-analysis",
 ];
 
 const requiredContracts = [
@@ -47,7 +60,21 @@ describe("whole-product GraphQL acceptance manifest", () => {
     );
 
     expect(matrix.version).toBe(1);
-    expect(matrix.domains.map(({ domain }) => domain)).toEqual(requiredDomains);
+    expect(matrix.inventorySource).toBe(
+      "docs/REQUIREMENTS.md HUM-FR-007 and HUM-FR-025",
+    );
+    expect(matrix.remainingDomains).toEqual(expectedRemainingDomains);
+    expect(
+      [
+        ...matrix.domains.map(({ domain }) => domain),
+        ...matrix.remainingDomains,
+      ].sort(),
+    ).toEqual([...requiredDomains].sort());
+    expect(
+      matrix.domains
+        .map(({ domain }) => domain)
+        .filter((domain) => matrix.remainingDomains.includes(domain)),
+    ).toEqual([]);
     expect(Object.keys(matrix.contracts)).toEqual(requiredContracts);
 
     for (const entry of matrix.domains) {

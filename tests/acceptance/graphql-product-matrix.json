@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "inventorySource": "docs/REQUIREMENTS.md HUM-FR-007 and HUM-FR-025",
   "domains": [
     {
       "domain": "people",
@@ -46,7 +47,7 @@
       ]
     },
     {
-      "domain": "graph-and-saved-views",
+      "domain": "graph-explorer-and-saved-views",
       "generatedOperations": [
         "GraphPage",
         "CreateGraphView",
@@ -57,6 +58,12 @@
       "domain": "ai-analysis",
       "generatedOperations": ["StartAiAnalysis", "AiRun"]
     }
+  ],
+  "remainingDomains": [
+    "contacts-and-locations",
+    "settings-members-api-keys-audit",
+    "dashboard",
+    "graph-analysis"
   ],
   "contracts": {
     "strict-scalars": {
