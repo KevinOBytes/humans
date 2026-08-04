@@ -1,5 +1,15 @@
-import { readFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { EventEmitter } from "node:events";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join, resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -9,6 +19,52 @@ import {
   createTeardownCoordinator,
   createTrackedCommandExecutor,
 } from "../../scripts/compose-lifecycle-control.mjs";
+
+const firstRunScript = resolve("scripts/compose-first-run.mjs");
+
+function runFirstRun(options?: { envFile?: string; failAt?: number }) {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "humans-first-run-"));
+  const binaryDirectory = join(temporaryDirectory, "bin");
+  const commandLog = join(temporaryDirectory, "docker.log");
+  const countFile = join(temporaryDirectory, "docker.count");
+
+  mkdirSync(binaryDirectory);
+  writeFileSync(commandLog, "");
+  writeFileSync(
+    join(binaryDirectory, "docker"),
+    [
+      "#!/bin/sh",
+      'count="$(cat "$FAKE_DOCKER_COUNT" 2>/dev/null || printf 0)"',
+      "count=$((count + 1))",
+      'printf "%s" "$count" > "$FAKE_DOCKER_COUNT"',
+      'printf "%s\\n" "$*" >> "$FAKE_DOCKER_LOG"',
+      'if [ "$count" = "${FAKE_DOCKER_FAIL_AT:-0}" ]; then exit 23; fi',
+      "exit 0",
+    ].join("\n"),
+  );
+  chmodSync(join(binaryDirectory, "docker"), 0o755);
+  if (options?.envFile !== undefined) {
+    writeFileSync(join(temporaryDirectory, ".env"), options.envFile);
+  }
+
+  const result = spawnSync(process.execPath, [firstRunScript], {
+    cwd: temporaryDirectory,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${binaryDirectory}${delimiter}${process.env.PATH ?? ""}`,
+      FAKE_DOCKER_COUNT: countFile,
+      FAKE_DOCKER_FAIL_AT: String(options?.failAt ?? 0),
+      FAKE_DOCKER_LOG: commandLog,
+    },
+  });
+  const commands = readFileSync(commandLog, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  rmSync(temporaryDirectory, { force: true, recursive: true });
+  return { commands, result };
+}
 
 describe("isolated Compose operations contract", () => {
   it("requires Compose init as PID 1 and Node as its direct child", () => {
@@ -220,6 +276,58 @@ describe("isolated Compose operations contract", () => {
     expect(scripts["test:compose:lifecycle"]).toContain(
       "compose-lifecycle.mjs lifecycle",
     );
+    expect(scripts["compose:first-run"]).toBe(
+      "node scripts/compose-first-run.mjs",
+    );
+  });
+
+  it("runs the deterministic first-run sequence without exposing secrets", () => {
+    const adminPassword = "Admin!private-first-run-secret";
+    const authSecret = "auth-private-first-run-secret";
+    const { commands, result } = runFirstRun({
+      envFile: [
+        "NEXT_PUBLIC_APP_URL=https://humans.example.test",
+        `ADMIN_PASSWORD=${adminPassword}`,
+        `AUTH_SECRET=${authSecret}`,
+      ].join("\n"),
+    });
+
+    expect(result.status).toBe(0);
+    expect(commands).toEqual([
+      "compose config --quiet",
+      "compose up --build --detach --wait app worker",
+      "compose --profile bootstrap run --rm bootstrap-admin",
+    ]);
+    expect(result.stdout).toContain("Sign in: https://humans.example.test");
+    expect(result.stdout).toMatch(/AI.*unavailable/i);
+    expect(
+      `${result.stdout}${result.stderr}${commands.join(" ")}`,
+    ).not.toContain(adminPassword);
+    expect(
+      `${result.stdout}${result.stderr}${commands.join(" ")}`,
+    ).not.toContain(authSecret);
+  });
+
+  it("refuses a missing .env before invoking Docker", () => {
+    const { commands, result } = runFirstRun();
+
+    expect(result.status).not.toBe(0);
+    expect(commands).toEqual([]);
+    expect(result.stderr).toMatch(/\.env.*required/i);
+  });
+
+  it("stops at the first failed Compose command and propagates its status", () => {
+    const { commands, result } = runFirstRun({
+      envFile: "NEXT_PUBLIC_APP_URL=http://localhost:3000\n",
+      failAt: 2,
+    });
+
+    expect(result.status).toBe(23);
+    expect(commands).toEqual([
+      "compose config --quiet",
+      "compose up --build --detach --wait app worker",
+    ]);
+    expect(result.stdout).not.toContain("Sign in:");
   });
 
   it("documents production-provider and recovery boundaries", () => {

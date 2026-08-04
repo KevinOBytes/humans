@@ -60,8 +60,10 @@ function render(
   files: string[],
   profile?: string,
   environment: NodeJS.ProcessEnv = syntheticEnvironment,
+  envFile?: string,
 ): ComposeConfig {
   const arguments_ = ["compose", "--project-name", "humans-contract"];
+  if (envFile) arguments_.push("--env-file", envFile);
   for (const file of files) arguments_.push("--file", file);
   if (profile) arguments_.push("--profile", profile);
   arguments_.push("config", "--format", "json");
@@ -103,6 +105,7 @@ describe("rendered Compose configuration contract", () => {
     ]);
     expect(config.services.ollama).toBeUndefined();
     expect(config.services.app?.environment?.AI_PROVIDER).toBe("ollama");
+    expect(config.services.app?.environment?.AUTH_SECURE_COOKIES).toBe("true");
     expect(config.services.app?.depends_on).toMatchObject({
       migrate: { condition: "service_completed_successfully" },
       redis: { condition: "service_healthy" },
@@ -115,6 +118,17 @@ describe("rendered Compose configuration contract", () => {
       "minio-init": { condition: "service_completed_successfully" },
     });
   }, 15_000);
+
+  it("renders the published self-hosting example with production-secure cookies", () => {
+    const config = render(
+      ["docker-compose.yml"],
+      undefined,
+      { NODE_ENV: "test", PATH: process.env.PATH },
+      ".env.example",
+    );
+
+    expect(config.services.app?.environment?.AUTH_SECURE_COOKIES).toBe("true");
+  });
 
   it("applies bounded controls without making durable service roots read-only", () => {
     const config = render(["docker-compose.yml"]);

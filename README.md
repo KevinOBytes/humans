@@ -42,6 +42,28 @@ identity and role but deliberately does not replace an existing credential.
 See the [Docker operations runbook](docs/operations/docker.md) for recovery,
 rotation, and hosted deployment guidance.
 
+For a new Compose installation, populate the ignored `.env` and run the
+attended first-run command:
+
+```bash
+cp .env.example .env
+# Replace every placeholder and choose the public application URL.
+pnpm compose:first-run
+```
+
+The command validates the Compose configuration, starts the application and
+worker with their required PostgreSQL, Redis, and MinIO services, then runs the
+isolated administrator bootstrap. It does not pass `ADMIN_*` values on the
+command line or expose them to the long-running application roles. The base
+stack does not start Ollama; configure an external AI provider or explicitly
+start the Ollama overlay before treating AI as available.
+
+The example preserves the production requirement for secure cookies. A
+production-valid self-host must serve `NEXT_PUBLIC_APP_URL` over HTTPS through
+a trusted edge. For loopback-only HTTP evaluation, an operator may explicitly
+set `AUTH_SECURE_COOKIES=false`; that is a local development choice and is not
+a production configuration.
+
 Registration defaults to invitation-only. Set `AUTH_REGISTRATION_MODE` to
 `disabled`, `invite_only`, or `public` for the intended deployment and review
 the [authentication operations runbook](docs/operations/authentication.md)
