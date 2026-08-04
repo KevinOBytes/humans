@@ -1,0 +1,57 @@
+fragment AnalystPublicRun on AiRun {
+  id
+  state
+  provider
+  model
+  answer
+  errorCode
+  createdAt
+  startedAt
+  completedAt
+  citations {
+    claimText
+    locator
+    resourceId
+    resourceKind
+  }
+  toolCalls {
+    name
+    state
+    inputSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    resultSummary {
+      evidenceCount
+      filterCount
+      personCount
+      resourceCount
+      resultCount
+      truncated
+    }
+    startedAt
+    completedAt
+  }
+}
+
+mutation StartAiAnalysis($input: StartAiAnalysisInput!) {
+  startAiAnalysis(input: $input) {
+    ...AnalystPublicRun
+  }
+}
+
+query AiRun($id: UUID!) {
+  aiRun(id: $id) {
+    ...AnalystPublicRun
+  }
+}
+
+mutation CancelAiAnalysis($id: UUID!) {
+  cancelAiAnalysis(id: $id) {
+    ...AnalystPublicRun
+  }
+}

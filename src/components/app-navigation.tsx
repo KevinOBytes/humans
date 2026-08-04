@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BrainCircuit,
   Database,
   FileText,
   Menu,
@@ -34,6 +35,7 @@ const destinations = [
 ] as const;
 
 export function NavigationLinks({
+  canViewAnalyst,
   canCreatePerson,
   canViewEvidence,
   canViewGraph,
@@ -41,6 +43,7 @@ export function NavigationLinks({
   canViewSearch,
   onNavigate,
 }: {
+  canViewAnalyst: boolean;
   canCreatePerson: boolean;
   canViewEvidence: boolean;
   canViewGraph: boolean;
@@ -83,6 +86,20 @@ export function NavigationLinks({
         >
           <Network aria-hidden="true" />
           Graph
+        </Link>
+      ) : null}
+      {canViewAnalyst ? (
+        <Link
+          href="/analyst"
+          aria-current={pathname === "/analyst" ? "page" : undefined}
+          onClick={onNavigate}
+          className={cn(
+            "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 motion-reduce:transition-none",
+            pathname === "/analyst" && "bg-primary/10 text-primary",
+          )}
+        >
+          <BrainCircuit aria-hidden="true" />
+          Analyst
         </Link>
       ) : null}
       {canViewSearch ? (
@@ -143,6 +160,7 @@ export function NavigationLinks({
 
 export function MobileNavigation({
   activeWorkspace,
+  canViewAnalyst,
   canCreatePerson,
   canViewEvidence,
   canViewGraph,
@@ -151,6 +169,7 @@ export function MobileNavigation({
   organizations,
 }: {
   activeWorkspace: WorkspaceOption;
+  canViewAnalyst: boolean;
   canCreatePerson: boolean;
   canViewEvidence: boolean;
   canViewGraph: boolean;
@@ -212,6 +231,7 @@ export function MobileNavigation({
         </section>
         <div className="mt-8">
           <NavigationLinks
+            canViewAnalyst={canViewAnalyst}
             canCreatePerson={canCreatePerson}
             canViewEvidence={canViewEvidence}
             canViewGraph={canViewGraph}

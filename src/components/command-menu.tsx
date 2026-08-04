@@ -20,12 +20,14 @@ const baseCommands = [
 
 export function CommandMenu({
   canCreatePerson,
+  canViewAnalyst,
   canViewEvidence,
   canViewGraph,
   canViewImports,
   canViewSearch,
 }: {
   canCreatePerson: boolean;
+  canViewAnalyst: boolean;
   canViewEvidence: boolean;
   canViewGraph: boolean;
   canViewImports: boolean;
@@ -46,6 +48,9 @@ export function CommandMenu({
   const commands = useMemo(
     () => [
       ...baseCommands,
+      ...(canViewAnalyst
+        ? [{ href: "/analyst", label: "Analyst" as const }]
+        : []),
       ...(canViewGraph ? [{ href: "/graph", label: "Graph" as const }] : []),
       ...(canViewSearch ? [{ href: "/search", label: "Search" as const }] : []),
       ...(canViewEvidence
@@ -60,6 +65,7 @@ export function CommandMenu({
     ],
     [
       canCreatePerson,
+      canViewAnalyst,
       canViewEvidence,
       canViewGraph,
       canViewImports,

@@ -206,6 +206,37 @@ event. Reads and exports reauthorize the whole manifest in SQL before page
 limits. JSON exports use a versioned envelope; CSV exports use a fixed column
 set and neutralize spreadsheet-formula prefixes.
 
+## Cited AI analyst execution
+
+The browser analyst imports only generated `StartAiAnalysis`, `AiRun`, and
+`CancelAiAnalysis` documents and sends them through the shared browser GraphQL
+adapter. The `/analyst` server page is non-disclosing without `analysis:read`;
+start and cancel controls are independently gated by their exact permissions.
+Questions and optional person/evidence UUID scopes remain body data and are
+never serialized into URLs, storage, or server-rendered HTML.
+
+Starting a run atomically creates principal-attributed thread/message/run,
+idempotency, audit, and `ai_execute` job records. Prompt and answer material is
+sealed with the existing data-encryption boundary; low-entropy request and
+configuration identity uses domain-separated HMACs. Jobs contain only the run
+UUID. The worker uses the shared PostgreSQL claim generation and Redis lease,
+reauthorizes the principal and each allowed resource boundary, and commits one
+fenced terminal result.
+
+The provider boundary supports canonical OpenAI, the configured Docker/loopback
+Ollama endpoint, and a public-DNS-revalidated HTTPS compatible endpoint. It
+rejects redirects and maps transport material to stable errors. The model can
+request exactly `getEvidence`, `getPerson`, `searchGraph`, and `searchPeople`;
+those handlers call authorized domain services and cannot expose SQL, arbitrary
+GraphQL, network, filesystem, or mutation access.
+
+Candidate citations are accepted only when returned by an allowed tool in the
+same run and still visible at persistence and read time. GraphQL publishes only
+validated person/evidence UUIDs, claim/locator text, provider/model disclosure,
+and approved tool names/states with count-only summaries. The UI links a person
+UUID to its existing first-party record route; evidence UUIDs remain non-link
+labels because there is no safe standalone evidence-item route.
+
 ## Operation budgets and observability
 
 Search reads, saved-query runs, snapshot creation/replay, deterministic analysis,

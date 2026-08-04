@@ -391,6 +391,57 @@ describe("parseServerEnv", () => {
 
     expect(env.AI_PROVIDER).toBe("ollama");
   });
+
+  it("canonicalizes provider base URLs", () => {
+    expect(
+      parseServerEnv({
+        ...productionEnv,
+        AI_PROVIDER: "compatible",
+        AI_BASE_URL: "https://AI.EXAMPLE.COM:443/v1/",
+      }).AI_BASE_URL,
+    ).toBe("https://ai.example.com/v1");
+  });
+
+  it.each([
+    ["openai", "https://other.example.com/v1"],
+    ["openai", "http://api.openai.com/v1"],
+    ["compatible", "http://ai.example.com/v1"],
+    ["compatible", "https://user:pass@ai.example.com/v1"],
+    ["compatible", "https://ai.example.com/v1?key=value"],
+    ["compatible", "https://ai.example.com/v1#fragment"],
+    ["compatible", "https://127.0.0.1/v1"],
+    ["compatible", "https://10.0.0.1/v1"],
+    ["compatible", "https://169.254.169.254/v1"],
+    ["compatible", "https://224.0.0.1/v1"],
+    ["compatible", "https://192.0.2.1/v1"],
+    ["compatible", "https://198.18.0.1/v1"],
+    ["compatible", "https://198.51.100.1/v1"],
+    ["compatible", "https://203.0.113.1/v1"],
+    ["compatible", "https://[2001:2::1]/v1"],
+    ["compatible", "https://[2001:db8::1]/v1"],
+    ["compatible", "https://[3fff::1]/v1"],
+    ["compatible", "https://[5f00::1]/v1"],
+    ["ollama", "http://remote.example.com:11434/v1"],
+    ["ollama", "http://ollama:11434/not-v1"],
+  ])("rejects unsafe %s provider URL %s", (AI_PROVIDER, AI_BASE_URL) => {
+    expect(() =>
+      parseServerEnv({ ...productionEnv, AI_PROVIDER, AI_BASE_URL }),
+    ).toThrow(/AI_BASE_URL/);
+  });
+
+  it("permits loopback Ollama only in tests", () => {
+    expect(
+      parseServerEnv({
+        ...productionEnv,
+        NODE_ENV: "test",
+        DEPLOYMENT_MODE: "docker",
+        TRUSTED_PROXY_MODE: "none",
+        AI_PROVIDER: "ollama",
+        AI_BASE_URL: "http://127.0.0.1:11434/v1",
+        AI_API_KEY: undefined,
+      }).AI_BASE_URL,
+    ).toBe("http://127.0.0.1:11434/v1");
+  });
 });
 
 describe("parseBootstrapAdminEnv", () => {

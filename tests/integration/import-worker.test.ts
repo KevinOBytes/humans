@@ -325,6 +325,7 @@ async function runWorker(fixture: ResearchFixture, workerId: string) {
     encryptionKey,
     redis: new MemoryRedis(),
     registry: createJobRegistry({
+      aiExecute: async () => undefined,
       importExecute: createImportExecuteHandler(
         createExecutor(fixture.database),
       ),

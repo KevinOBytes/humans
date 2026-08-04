@@ -36,6 +36,7 @@ import type { ImportsService } from "@/modules/imports/service";
 import type { SearchService } from "@/modules/search/service";
 import type { SettingsService } from "@/modules/settings/service";
 import type { LocationsService } from "@/modules/locations/service";
+import type { createAiAnalysisService } from "@/modules/ai/service";
 
 export type SafeWorkspace = {
   id: string;
@@ -58,6 +59,7 @@ export type GraphQLServices = {
   search: SearchService;
   settings: SettingsService;
   locations: LocationsService;
+  ai: ReturnType<typeof createAiAnalysisService>;
 };
 
 export type GraphQLLoaders = {
