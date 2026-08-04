@@ -1,81 +1,124 @@
-import Link from "next/link";
-
 import { getAppContext } from "@/app/(app)/app-session";
-import { PeopleTable } from "@/components/people/people-table";
-import { buttonVariants } from "@/components/ui/button";
+import {
+  DashboardOverview,
+  mergeRecentAnalyses,
+  type DashboardActivity,
+  type DashboardAiAnalysis,
+  type DashboardGraphAnalysis,
+  type DashboardImport,
+} from "@/components/dashboard/dashboard-overview";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
-  DashboardPeopleDocument,
+  DashboardOverviewDocument,
+  ImportWorkspaceItemFragmentDoc,
   PersonSummaryFragmentDoc,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
 
+function incompleteDashboardData(): never {
+  throw new Error("Dashboard data is incomplete.");
+}
+
+function requiredText(value: string | null | undefined): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return incompleteDashboardData();
+  }
+  return value;
+}
+
 export default async function DashboardPage() {
   const context = await getAppContext();
   if (!context.viewer) return null;
-  const data = await executeServerGraphQL(DashboardPeopleDocument, {
-    first: 8,
+
+  const permissions = context.viewer.permissions;
+  const includeActivity = permissions.includes("audit:read");
+  const data = await executeServerGraphQL(DashboardOverviewDocument, {
+    includeActivity,
   });
-  const people = readFragment(PersonSummaryFragmentDoc, data.people.nodes);
-  const canCreate = context.viewer.permissions.includes("person:create");
+  const people = readFragment(
+    PersonSummaryFragmentDoc,
+    data.dashboardRecentPeople.nodes,
+  );
+  if (!data.imports?.nodes) incompleteDashboardData();
+  const imports = readFragment(
+    ImportWorkspaceItemFragmentDoc,
+    data.imports.nodes,
+  );
+  const role = context.viewer.role ?? "member";
+  const normalizedRole = role.toLowerCase();
+
+  const graphAnalyses: DashboardGraphAnalysis[] =
+    data.dashboardRecentGraphAnalyses.nodes.map((analysis) => ({
+      id: requiredText(analysis.id),
+      algorithm: requiredText(analysis.algorithm),
+      state: requiredText(analysis.state),
+      createdAt: requiredText(analysis.createdAt),
+      completedAt: analysis.completedAt,
+    }));
+  const aiAnalyses: DashboardAiAnalysis[] =
+    data.dashboardRecentAiAnalyses.nodes.map((analysis) => ({
+      id: requiredText(analysis.id),
+      provider: requiredText(analysis.provider),
+      model: requiredText(analysis.model),
+      state: requiredText(analysis.state),
+      createdAt: requiredText(analysis.createdAt),
+      completedAt: analysis.completedAt,
+    }));
+  const normalizedImports: DashboardImport[] = imports.map((item) => ({
+    id: requiredText(item.id),
+    format: requiredText(item.format),
+    state: requiredText(item.state),
+    totalRows: item.totalRows,
+    acceptedRows: item.acceptedRows,
+    rejectedRows: item.rejectedRows,
+    createdAt: requiredText(item.createdAt),
+  }));
+  let activity: DashboardActivity[] | null = null;
+  if (includeActivity) {
+    if (!data.auditEvents?.nodes) incompleteDashboardData();
+    activity = data.auditEvents.nodes.map((event) => {
+      if (!event.actor) incompleteDashboardData();
+      return {
+        action: requiredText(event.action),
+        resourceKind: requiredText(event.resourceKind),
+        outcome: requiredText(event.outcome),
+        occurredAt: requiredText(event.occurredAt),
+        actorKind: requiredText(event.actor.kind),
+        actorLabel: requiredText(event.actor.label),
+      };
+    });
+  }
+
+  const canStartImport = [
+    "file:create",
+    "import:create",
+    "import:run",
+    "person:create",
+  ].every((permission) => permissions.includes(permission));
+
   return (
-    <div className="space-y-10">
-      <header className="flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <p className="text-primary text-sm font-semibold">
-            {context.viewer.workspace.name}
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Research dashboard
-          </h1>
-          <p className="text-muted-foreground mt-3 text-sm">
-            Signed in as {context.viewer.role ?? "member"}. Continue the
-            workspace&apos;s most recently updated visible records.
-          </p>
-        </div>
-        {canCreate ? (
-          <Link
-            href="/people/new"
-            className={buttonVariants({ variant: "default" })}
-          >
-            Add person
-          </Link>
-        ) : null}
-      </header>
-      <section aria-labelledby="continue-research-heading">
-        <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <h2
-              id="continue-research-heading"
-              className="text-xl font-semibold"
-            >
-              Continue research
-            </h2>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Recently updated visible people
-            </p>
-          </div>
-          <Link
-            href="/people"
-            className="text-primary text-sm font-semibold underline-offset-4 hover:underline"
-          >
-            View all people
-          </Link>
-        </div>
-        <PeopleTable
-          hasFilters={false}
-          nextHref={null}
-          people={people.map((person) => ({
-            id: person.id,
-            displayName: person.displayName,
-            preferredName: person.preferredName,
-            status: person.status,
-            sensitivity: person.sensitivity,
-            updatedAt: person.updatedAt,
-            version: person.version,
-          }))}
-        />
-      </section>
-    </div>
+    <DashboardOverview
+      workspaceName={context.viewer.workspace.name}
+      role={role}
+      canCreatePerson={permissions.includes("person:create")}
+      canStartImport={canStartImport}
+      canManagePolicies={
+        normalizedRole === "owner" || normalizedRole === "admin"
+      }
+      canReadActivity={includeActivity}
+      statistics={data.graphStatistics}
+      people={people.map((person) => ({
+        id: person.id,
+        displayName: person.displayName,
+        preferredName: person.preferredName,
+        status: person.status,
+        sensitivity: person.sensitivity,
+        updatedAt: person.updatedAt,
+      }))}
+      imports={normalizedImports}
+      analyses={mergeRecentAnalyses(graphAnalyses, aiAnalyses)}
+      policy={data.workspacePolicySummary}
+      activity={activity}
+    />
   );
 }

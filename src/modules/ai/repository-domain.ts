@@ -86,6 +86,26 @@ export type AiRun = Readonly<{
   toolCalls: readonly AiToolSummary[];
 }>;
 
+export type AiRunHistoryItem = Readonly<{
+  completedAt: Date | null;
+  createdAt: Date;
+  id: string;
+  model: string;
+  provider: AiProviderDisclosure["provider"];
+  startedAt: Date | null;
+  state: "cancelled" | "completed" | "failed" | "pending" | "running";
+}>;
+
+export type AiRunHistoryCursor = Readonly<{
+  createdAt: Date;
+  id: string;
+}>;
+
+type AiRunHistoryCursorBinding = Readonly<{
+  principalId: string;
+  workspaceId: string;
+}>;
+
 export type AiJobClaim = Readonly<{
   claimGeneration: number;
   jobId: string;
@@ -138,6 +158,96 @@ export function aiPersistenceHmac(
     .update(`humans:ai-persistence:${purpose}:v1\0`, "utf8")
     .update(material, "utf8")
     .digest("hex");
+}
+
+function aiRunHistoryCursorSignature(
+  body: string,
+  binding: AiRunHistoryCursorBinding,
+  hmacKey: string,
+): string {
+  if (
+    !HMAC_KEY.test(hmacKey) ||
+    !UUID.test(binding.principalId) ||
+    !UUID.test(binding.workspaceId)
+  ) {
+    throw new TypeError("Invalid AI history cursor");
+  }
+  return createHmac("sha256", Buffer.from(hmacKey, "hex"))
+    .update("humans:ai-run-history-cursor:v1\0", "utf8")
+    .update(binding.workspaceId.toLowerCase(), "utf8")
+    .update("\0", "utf8")
+    .update(binding.principalId.toLowerCase(), "utf8")
+    .update("\0", "utf8")
+    .update(body, "utf8")
+    .digest("hex");
+}
+
+export function encodeAiRunHistoryCursor(
+  position: AiRunHistoryCursor,
+  binding: AiRunHistoryCursorBinding,
+  hmacKey: string,
+): string {
+  if (
+    !(position.createdAt instanceof Date) ||
+    Number.isNaN(position.createdAt.getTime()) ||
+    !UUID.test(position.id)
+  ) {
+    throw new TypeError("Invalid AI history cursor");
+  }
+  const body = Buffer.from(
+    JSON.stringify({
+      v: 1,
+      createdAt: position.createdAt.toISOString(),
+      id: position.id.toLowerCase(),
+    }),
+    "utf8",
+  ).toString("base64url");
+  return `${body}.${aiRunHistoryCursorSignature(body, binding, hmacKey)}`;
+}
+
+export function decodeAiRunHistoryCursor(
+  cursor: string,
+  binding: AiRunHistoryCursorBinding,
+  hmacKey: string,
+): AiRunHistoryCursor {
+  try {
+    if (
+      typeof cursor !== "string" ||
+      cursor.length > 2_048 ||
+      !/^[A-Za-z0-9_-]+\.[0-9a-f]{64}$/u.test(cursor)
+    ) {
+      throw new Error("invalid cursor");
+    }
+    const [body = "", signature = ""] = cursor.split(".");
+    const bytes = Buffer.from(body, "base64url");
+    if (bytes.length > 1_024 || bytes.toString("base64url") !== body) {
+      throw new Error("invalid cursor");
+    }
+    const parsed = JSON.parse(bytes.toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    const createdAt = new Date(String(parsed.createdAt));
+    const expected = aiRunHistoryCursorSignature(body, binding, hmacKey);
+    if (
+      !timingSafeEqual(
+        Buffer.from(signature, "hex"),
+        Buffer.from(expected, "hex"),
+      ) ||
+      Reflect.ownKeys(parsed).length !== 3 ||
+      parsed.v !== 1 ||
+      typeof parsed.createdAt !== "string" ||
+      Number.isNaN(createdAt.getTime()) ||
+      createdAt.toISOString() !== parsed.createdAt ||
+      typeof parsed.id !== "string" ||
+      !UUID.test(parsed.id)
+    ) {
+      throw new Error("invalid cursor");
+    }
+    return Object.freeze({ createdAt, id: parsed.id.toLowerCase() });
+  } catch {
+    throw new TypeError("Invalid AI history cursor");
+  }
 }
 
 export function prefixedAiPersistenceHmac(

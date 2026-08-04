@@ -1,11 +1,14 @@
 import {
   and,
   asc,
+  count,
+  desc,
   eq,
   gt,
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   gte,
   or,
@@ -970,6 +973,109 @@ export function createGraphRepository(database: Database) {
         )
         .orderBy(asc(analysisRuns.id))
         .limit(input.limit);
+    },
+    async listRecentAnalysisRuns(input: {
+      workspaceId: string;
+      actorId: string | null;
+      after?: { createdAt: Date; id: string } | null;
+      personVisibility: GraphVisibilityFactory;
+      relationshipVisibility: GraphVisibilityFactory;
+      limit: number;
+    }) {
+      return database
+        .select(analysisRunSelection())
+        .from(analysisRuns)
+        .innerJoin(
+          graphSnapshots,
+          and(
+            eq(graphSnapshots.workspaceId, analysisRuns.workspaceId),
+            eq(graphSnapshots.id, analysisRuns.graphSnapshotId),
+          ),
+        )
+        .leftJoin(
+          graphViews,
+          and(
+            eq(graphViews.workspaceId, graphSnapshots.workspaceId),
+            eq(graphViews.id, graphSnapshots.graphViewId),
+          ),
+        )
+        .where(
+          and(
+            eq(analysisRuns.workspaceId, input.workspaceId),
+            input.after
+              ? or(
+                  lt(analysisRuns.createdAt, input.after.createdAt),
+                  and(
+                    eq(analysisRuns.createdAt, input.after.createdAt),
+                    lt(analysisRuns.id, input.after.id),
+                  ),
+                )
+              : undefined,
+            analysisRunAuthorization(input),
+          ),
+        )
+        .orderBy(desc(analysisRuns.createdAt), desc(analysisRuns.id))
+        .limit(input.limit);
+    },
+    async graphStatistics(input: {
+      workspaceId: string;
+      personVisibility: GraphVisibilityFactory;
+      relationshipVisibility: GraphVisibilityFactory;
+    }): Promise<{ visiblePeople: number; visibleRelationships: number }> {
+      const [personTotals] = await database
+        .select({ value: count() })
+        .from(people)
+        .where(
+          and(
+            eq(people.workspaceId, input.workspaceId),
+            isNull(people.deletedAt),
+            input.personVisibility({
+              id: people.id,
+              sensitivity: people.sensitivity,
+            }),
+          ),
+        );
+      const [relationshipTotals] = await database
+        .select({ value: count() })
+        .from(relationships)
+        .innerJoin(
+          sourcePeople,
+          and(
+            eq(sourcePeople.workspaceId, relationships.workspaceId),
+            eq(sourcePeople.id, relationships.sourcePersonId),
+            isNull(sourcePeople.deletedAt),
+            input.personVisibility({
+              id: sourcePeople.id,
+              sensitivity: sourcePeople.sensitivity,
+            }),
+          ),
+        )
+        .innerJoin(
+          targetPeople,
+          and(
+            eq(targetPeople.workspaceId, relationships.workspaceId),
+            eq(targetPeople.id, relationships.targetPersonId),
+            isNull(targetPeople.deletedAt),
+            input.personVisibility({
+              id: targetPeople.id,
+              sensitivity: targetPeople.sensitivity,
+            }),
+          ),
+        )
+        .where(
+          and(
+            eq(relationships.workspaceId, input.workspaceId),
+            isNull(relationships.deletedAt),
+            input.relationshipVisibility({
+              id: relationships.id,
+              sensitivity: relationships.sensitivity,
+            }),
+          ),
+        );
+      return {
+        visiblePeople: personTotals?.value ?? 0,
+        visibleRelationships: relationshipTotals?.value ?? 0,
+      };
     },
     async getAnalysisResults(input: {
       workspaceId: string;

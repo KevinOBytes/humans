@@ -849,6 +849,61 @@ export type CancelAiAnalysisMutation = {
   } | null;
 };
 
+export type DashboardOverviewQueryVariables = Exact<{
+  includeActivity: boolean;
+}>;
+
+export type DashboardOverviewQuery = {
+  dashboardRecentPeople: {
+    nodes: Array<{
+      " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
+    }>;
+  };
+  imports: {
+    nodes: Array<{
+      " $fragmentRefs"?: {
+        ImportWorkspaceItemFragment: ImportWorkspaceItemFragment;
+      };
+    }> | null;
+  } | null;
+  dashboardRecentGraphAnalyses: {
+    nodes: Array<{
+      id: string | null;
+      algorithm: string | null;
+      state: string | null;
+      startedAt: string | null;
+      completedAt: string | null;
+      createdAt: string | null;
+    }>;
+  };
+  dashboardRecentAiAnalyses: {
+    nodes: Array<{
+      id: string | null;
+      provider: AiProvider | null;
+      model: string | null;
+      state: AiRunState | null;
+      startedAt: string | null;
+      completedAt: string | null;
+      createdAt: string | null;
+    }>;
+  };
+  graphStatistics: { visiblePeople: number; visibleRelationships: number };
+  workspacePolicySummary: {
+    defaultRetentionDays: number | null;
+    aiEnabled: boolean;
+    storageEnabled: boolean;
+  };
+  auditEvents?: {
+    nodes: Array<{
+      action: string | null;
+      resourceKind: string | null;
+      outcome: AuditOutcome | null;
+      occurredAt: string | null;
+      actor: { kind: ActorKind | null; label: string | null } | null;
+    }> | null;
+  } | null;
+};
+
 export type FileWorkspaceItemFragment = {
   id: string | null;
   originalName: string | null;
@@ -3839,6 +3894,98 @@ export const CancelAiAnalysisDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   CancelAiAnalysisMutation,
   CancelAiAnalysisMutationVariables
+>;
+export const DashboardOverviewDocument = new TypedDocumentString(
+  `
+    query DashboardOverview($includeActivity: Boolean!) {
+  dashboardRecentPeople(first: 8) {
+    nodes {
+      ...PersonSummary
+    }
+  }
+  imports(first: 5) {
+    nodes {
+      ...ImportWorkspaceItem
+    }
+  }
+  dashboardRecentGraphAnalyses(first: 5) {
+    nodes {
+      id
+      algorithm
+      state
+      startedAt
+      completedAt
+      createdAt
+    }
+  }
+  dashboardRecentAiAnalyses(first: 5) {
+    nodes {
+      id
+      provider
+      model
+      state
+      startedAt
+      completedAt
+      createdAt
+    }
+  }
+  graphStatistics {
+    visiblePeople
+    visibleRelationships
+  }
+  workspacePolicySummary {
+    defaultRetentionDays
+    aiEnabled
+    storageEnabled
+  }
+  auditEvents(first: 6) @include(if: $includeActivity) {
+    nodes {
+      action
+      resourceKind
+      outcome
+      occurredAt
+      actor {
+        kind
+        label
+      }
+    }
+  }
+}
+    fragment ImportWorkspaceItem on Import {
+  id
+  fileId
+  format
+  state
+  mappingId
+  totalRows
+  acceptedRows
+  rejectedRows
+  startedAt
+  completedAt
+  version
+  createdAt
+  updatedAt
+}
+fragment PersonSummary on Person {
+  id
+  displayName
+  sortName
+  preferredName
+  biography
+  status
+  sensitivity
+  confidence
+  confidenceExplanation
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:60037747d524e1d17ea2e5ea236ba93938e615b80e2d4bb753586cf7b8f50250",
+  },
+) as unknown as TypedDocumentString<
+  DashboardOverviewQuery,
+  DashboardOverviewQueryVariables
 >;
 export const EvidenceFilesDocument = new TypedDocumentString(
   `

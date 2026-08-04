@@ -43,6 +43,12 @@ export type PolicySettingsReadModel = {
   }[];
 };
 
+export type WorkspacePolicySummaryReadModel = {
+  defaultRetentionDays: number | null;
+  aiEnabled: boolean;
+  storageEnabled: boolean;
+};
+
 type TransactionDatabase = Parameters<
   Parameters<Database["transaction"]>[0]
 >[0];
@@ -379,6 +385,30 @@ export function createSettingsRepository(database: Database) {
         accessPolicies: policies,
         retentionPolicies: retention,
       };
+    },
+    async readWorkspacePolicySummary(
+      workspaceId: string,
+    ): Promise<WorkspacePolicySummaryReadModel | null> {
+      const rows = await database
+        .select({
+          defaultRetentionDays: workspaceSettings.retentionDays,
+          aiEnabled: workspaceSettings.aiEnabled,
+          storageEnabled: workspaceSettings.storageEnabled,
+        })
+        .from(workspaces)
+        .innerJoin(
+          workspaceSettings,
+          eq(workspaceSettings.workspaceId, workspaces.id),
+        )
+        .where(
+          and(
+            eq(workspaces.id, workspaceId),
+            eq(workspaces.state, "active"),
+            isNull(workspaces.deletedAt),
+          ),
+        )
+        .limit(2);
+      return rows.length === 1 ? (rows[0] ?? null) : null;
     },
   };
 }
