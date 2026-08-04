@@ -7,7 +7,7 @@ Every incomplete MVP requirement is listed exactly once. Check an item only in t
 - [ ] `HUM-FR-003` Complete hosted release evidence and recovery acceptance for the implemented explicit, idempotent administrator bootstrap.
 - [ ] `HUM-FR-004` Complete the recipient acceptance, administrator-role, resend/removal, responsive/RTL/zoom, provider-failure, and cancel/acceptance race matrix for the implemented workspace invitation and member-management boundary.
 - [ ] `HUM-FR-005` Complete policy mutation, grants, holds, deletion, and consent beyond the Task 14A typed read-only workspace/access/retention posture.
-- [ ] `HUM-FR-006` Complete atomic API-key creation/replacement/revocation beyond the Task 14A redacted organization-key list and existing exclusive auth mode.
+- [ ] `HUM-FR-006` Replace the Better Auth enabled-insert/application staging gap with a fully atomic activation protocol; the current locked lifecycle withholds secrets and performs bounded known-ID cleanup on finalization failure but cannot prove disablement if the first staging write irrecoverably fails.
 - [ ] `HUM-FR-007` Implement the canonical GraphQL application API and generated operations.
 - [ ] `HUM-FR-008` Implement stable person records and presentation selections.
 - [ ] `HUM-FR-009` Model research claims as facts and explicit field selections.
