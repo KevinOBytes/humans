@@ -1,12 +1,19 @@
 # Docker operations
 
 This runbook covers the local and self-hosted Compose topology. It is not proof
-of a hosted production deployment. The application builder and runtime bases
-are pinned to reviewed multi-architecture index digests; the PostgreSQL, Redis,
-MinIO, and MinIO client service tags remain explicit but are not digest pinned.
-Resolving and verifying those service manifest-list digests is a release
-blocker. Never invent or copy a per-platform child digest into the Compose
-files.
+of a hosted production deployment. The application builder, runtime, and every
+third-party Compose service are pinned to reviewed multi-architecture index
+digests. The Compose service indexes were resolved with Docker Buildx on
+2026-08-04.
+
+To update a Compose service image, select the reviewed upstream tag and run
+`docker buildx imagetools inspect IMAGE --format '{{json .Manifest}}'`. Require
+the reported digest to match the `tag@sha256:<digest>` pin, require an OCI index
+or Docker manifest list, and require both `linux/amd64` and `linux/arm64` child
+manifests. Update the exact `tag@sha256:<digest>` reference, run `pnpm
+compose:images:verify`, render both Compose models, and record the new
+resolution date in this runbook. Never invent or copy a per-platform child
+digest into the Compose files.
 
 ## Ownership and recovery targets
 
@@ -282,8 +289,8 @@ The application must recover safely from an empty Redis.
    their multi-architecture indexes contain `linux/amd64` and `linux/arm64`,
    review publisher provenance and vulnerabilities, then update both exact
    Dockerfile digests, their OCI labels, the resolution date, and contract
-   tests together. Resolve the remaining Compose service digests and update the
-   release record.
+   tests together. For each Compose service, follow the index-pin procedure
+   above and update the resolution date in this runbook.
 2. Verify a fresh backup and isolated restore before changing services.
 3. Review migration backward compatibility. Deploy schema-compatible code,
    then run the one-shot migration exactly once.
