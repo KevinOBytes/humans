@@ -11,11 +11,16 @@ import {
   aiThreads,
   aiToolCalls,
 } from "@/db/schema/ai";
-import { apiKeys, sessions } from "@/db/schema/auth";
+import { apiKeys, members, sessions } from "@/db/schema/auth";
 import { locationMutationIdempotency } from "@/db/schema/locations";
 import { auditEvents, jobs } from "@/db/schema/operations";
 import { people } from "@/db/schema/people";
 import { workspacePrincipals } from "@/db/schema/principals";
+import {
+  accessPolicies,
+  resourceGrants,
+  workspaces,
+} from "@/db/schema/workspaces";
 import { openSealedEnvelope } from "@/lib/security/sealed-envelope";
 import type { ResearchServiceContext } from "@/modules/audit/service";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
@@ -30,6 +35,11 @@ import { createAiAnalysisService } from "@/modules/ai/service";
 
 import { ResearchFixture } from "../support/research-fixture";
 import type { SessionActor } from "../support/graphql";
+import {
+  createTestConnection,
+  createTestDatabase,
+  type TestDatabase,
+} from "../support/auth";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const encryptionKey = "91".repeat(32);
@@ -43,6 +53,7 @@ const provider = Object.freeze({
   }),
   baseUrlFingerprint: "93".repeat(32),
 });
+const AI_WRITE_GATE = 3_204_804;
 
 function required<T>(value: T | null | undefined): T {
   if (value == null) throw new Error("Required test value is missing");
@@ -60,6 +71,7 @@ liveDescribe("atomic AI analysis persistence", () => {
 
   async function userContext(
     actor: SessionActor,
+    role: "analyst" | "owner" = "owner",
   ): Promise<ResearchServiceContext> {
     const [session] = await fixture.database
       .select({ id: sessions.id })
@@ -78,10 +90,10 @@ liveDescribe("atomic AI analysis persistence", () => {
         principalId: actor.principalId,
         sessionId: required(session).id,
         memberId: actor.memberId,
-        role: "owner",
+        role,
       },
       database: fixture.database,
-      permissions: rolePermissionKeys("owner"),
+      permissions: rolePermissionKeys(role),
       requestId: newId(),
       searchIndexMaintenance: disabledSearchIndexMaintenance,
       workspaceId: actor.workspaceId,
@@ -130,6 +142,160 @@ liveDescribe("atomic AI analysis persistence", () => {
       hmacKey,
       provider,
     });
+  }
+
+  async function claimedRun(
+    context: ResearchServiceContext,
+    input: { idempotencyKey: string; personId: string },
+  ) {
+    const run = await service(context).startAiAnalysis({
+      question: "Concurrency authority boundary",
+      scope: { personIds: [input.personId] },
+      idempotencyKey: input.idempotencyKey,
+    });
+    const leaseOwner = newId();
+    const [claimed] = await createJobsRepository(fixture.database).claimDue({
+      leaseDurationMs: 60_000,
+      leaseOwner,
+      limit: 1,
+      now: new Date(),
+    });
+    const job = required(claimed);
+    return {
+      binding: {
+        workspaceId: context.workspaceId,
+        runId: run.id,
+        jobId: job.id,
+        claimGeneration: job.claimGeneration,
+        leaseOwner,
+      },
+      run,
+    };
+  }
+
+  async function installAiWriteGate(target: "assistant" | "tool") {
+    if (target === "tool") {
+      await fixture.connection.unsafe(`
+        CREATE FUNCTION task3_gate_ai_tool_write() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${AI_WRITE_GATE});
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER task3_gate_ai_tool_write_trigger BEFORE INSERT ON ai_tool_calls
+        FOR EACH ROW EXECUTE FUNCTION task3_gate_ai_tool_write();
+      `);
+      return;
+    }
+    await fixture.connection.unsafe(`
+      CREATE FUNCTION task3_gate_ai_assistant_write() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.role = 'assistant' THEN
+          PERFORM pg_advisory_xact_lock(${AI_WRITE_GATE});
+        END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER task3_gate_ai_assistant_write_trigger BEFORE INSERT ON ai_messages
+      FOR EACH ROW EXECUTE FUNCTION task3_gate_ai_assistant_write();
+    `);
+  }
+
+  async function activity(applicationName: string) {
+    const [row] = await fixture.connection<
+      [{ waitEvent: string | null; waitEventType: string | null }]
+    >`
+      SELECT wait_event AS "waitEvent", wait_event_type AS "waitEventType"
+      FROM pg_stat_activity
+      WHERE application_name = ${applicationName}
+    `;
+    return row;
+  }
+
+  async function waitForActivity(
+    applicationName: string,
+    expectedWaitEventType: "AdvisoryLock" | "Lock",
+  ): Promise<void> {
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline) {
+      const row = await activity(applicationName);
+      if (
+        expectedWaitEventType === "AdvisoryLock"
+          ? row?.waitEvent === "advisory"
+          : row?.waitEventType === "Lock"
+      ) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(
+      `Timed out waiting for ${applicationName} ${expectedWaitEventType}`,
+    );
+  }
+
+  async function raceAiWriteAgainstRevocation(input: {
+    revoke(database: TestDatabase): Promise<void>;
+    target: "assistant" | "tool";
+    write(database: TestDatabase): Promise<boolean>;
+  }): Promise<{ revocation: "blocked" | "settled"; wrote: boolean }> {
+    await installAiWriteGate(input.target);
+    const writerConnection = createTestConnection(1);
+    const revokerConnection = createTestConnection(1);
+    const gateConnection = createTestConnection(1);
+    const writerDatabase = createTestDatabase(writerConnection);
+    const revokerDatabase = createTestDatabase(revokerConnection);
+    const writerName = `task3_ai_writer_${newId()}`;
+    const revokerName = `task3_ai_revoker_${newId()}`;
+    let gateHeld = false;
+    let writePromise: Promise<boolean> | null = null;
+    let revokePromise: Promise<void> | null = null;
+    try {
+      await writerConnection`SELECT set_config('application_name', ${writerName}, false)`;
+      await revokerConnection`SELECT set_config('application_name', ${revokerName}, false)`;
+      await gateConnection`SELECT pg_advisory_lock(${AI_WRITE_GATE})`;
+      gateHeld = true;
+      writePromise = input.write(writerDatabase);
+      await waitForActivity(writerName, "AdvisoryLock");
+
+      let revocationSettled = false;
+      revokePromise = input.revoke(revokerDatabase).then(() => {
+        revocationSettled = true;
+      });
+      let revocation: "blocked" | "settled";
+      const deadline = Date.now() + 2_000;
+      while (true) {
+        if (revocationSettled) {
+          revocation = "settled";
+          break;
+        }
+        if ((await activity(revokerName))?.waitEventType === "Lock") {
+          revocation = "blocked";
+          break;
+        }
+        if (Date.now() >= deadline)
+          throw new Error("Revoker did not settle or block");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      await gateConnection`SELECT pg_advisory_unlock(${AI_WRITE_GATE})`;
+      gateHeld = false;
+      const wrote = await writePromise;
+      await revokePromise;
+      return { revocation, wrote };
+    } finally {
+      if (gateHeld) {
+        await gateConnection`
+          SELECT pg_advisory_unlock(${AI_WRITE_GATE})
+        `.catch(() => undefined);
+      }
+      const pending: Promise<unknown>[] = [];
+      if (writePromise) pending.push(writePromise);
+      if (revokePromise) pending.push(revokePromise);
+      await Promise.allSettled(pending);
+      await Promise.all([
+        writerConnection.end(),
+        revokerConnection.end(),
+        gateConnection.end(),
+      ]);
+    }
   }
 
   it("atomically attributes, encrypts, hashes, enqueues, and audits user and API-key starts", async () => {
@@ -752,6 +918,247 @@ liveDescribe("atomic AI analysis persistence", () => {
       }),
     ).toBe(false);
     expect(await fixture.database.select().from(aiToolCalls)).toHaveLength(0);
+  });
+
+  it.each(["membership", "workspace"] as const)(
+    "serializes user %s deactivation against a claimed tool write",
+    async (revocation) => {
+      const owner = await fixture.createActor();
+      const context = await userContext(owner);
+      const personResult = await fixture.createPerson(owner, {
+        displayName: "Authority Race Person",
+      });
+      const personId = required(
+        personResult.body?.data?.createPerson?.person?.id,
+      );
+      const { binding } = await claimedRun(context, {
+        idempotencyKey: `user-authority-race-${revocation}`,
+        personId,
+      });
+      const result = await raceAiWriteAgainstRevocation({
+        target: "tool",
+        write: (database) =>
+          createAiRepository(database, {
+            encryptionKey,
+            hmacKey,
+          }).recordClaimedToolCall({
+            ...binding,
+            approvedToolName: "research.person_summary",
+            redactedArguments: { personCount: 1 },
+            redactedResultSummary: { resultCount: 1 },
+            resourceReferences:
+              revocation === "workspace"
+                ? []
+                : [{ kind: "person", id: personId }],
+          }),
+        revoke: async (database) => {
+          if (revocation === "membership") {
+            await database
+              .delete(members)
+              .where(eq(members.id, owner.memberId));
+            return;
+          }
+          await database
+            .update(workspaces)
+            .set({ state: "inactive" })
+            .where(eq(workspaces.id, owner.workspaceId));
+        },
+      });
+      expect(result).toEqual({ revocation: "blocked", wrote: true });
+      expect(await fixture.database.select().from(aiToolCalls)).toHaveLength(1);
+    },
+  );
+
+  it.each(["permission", "revocation"] as const)(
+    "serializes API-key %s against claimed citation finalization",
+    async (revocation) => {
+      const owner = await fixture.createActor();
+      const context = await apiKeyContext(owner);
+      const personResult = await fixture.createPerson(owner, {
+        displayName: "API Key Race Person",
+      });
+      const personId = required(
+        personResult.body?.data?.createPerson?.person?.id,
+      );
+      const { binding } = await claimedRun(context, {
+        idempotencyKey: `api-key-race-${revocation}`,
+        personId,
+      });
+      const repository = createAiRepository(fixture.database, {
+        encryptionKey,
+        hmacKey,
+      });
+      expect(
+        await repository.recordClaimedToolCall({
+          ...binding,
+          approvedToolName: "research.person_summary",
+          redactedArguments: { personCount: 1 },
+          redactedResultSummary: { resultCount: 1 },
+          resourceReferences: [{ kind: "person", id: personId }],
+        }),
+      ).toBe(true);
+
+      const result = await raceAiWriteAgainstRevocation({
+        target: "assistant",
+        write: (database) =>
+          createAiRepository(database, {
+            encryptionKey,
+            hmacKey,
+          }).finalizeClaimedRun({
+            ...binding,
+            answer: "The approved tool returned this person.",
+            citations: [
+              {
+                claimText: "Approved tool result.",
+                locator: null,
+                resourceId: personId,
+                resourceKind: "person",
+              },
+            ],
+          }),
+        revoke: async (database) => {
+          await database
+            .update(apiKeys)
+            .set(
+              revocation === "permission"
+                ? {
+                    permissions: JSON.stringify({
+                      analysis: ["create", "read", "run", "cancel"],
+                    }),
+                  }
+                : { enabled: false },
+            )
+            .where(eq(apiKeys.id, context.actor.id));
+        },
+      });
+      expect(result).toEqual({ revocation: "blocked", wrote: true });
+      expect(await fixture.database.select().from(aiCitations)).toHaveLength(1);
+    },
+  );
+
+  it.each(["hide", "soft-delete"] as const)(
+    "serializes resource %s against a claimed tool write",
+    async (revocation) => {
+      const owner = await fixture.createActor();
+      const context = await userContext(owner);
+      const personResult = await fixture.createPerson(owner, {
+        displayName: "Resource Race Person",
+      });
+      const personId = required(
+        personResult.body?.data?.createPerson?.person?.id,
+      );
+      const { binding } = await claimedRun(context, {
+        idempotencyKey: `resource-race-${revocation}`,
+        personId,
+      });
+      const result = await raceAiWriteAgainstRevocation({
+        target: "tool",
+        write: (database) =>
+          createAiRepository(database, {
+            encryptionKey,
+            hmacKey,
+          }).recordClaimedToolCall({
+            ...binding,
+            approvedToolName: "research.person_summary",
+            redactedArguments: { personCount: 1 },
+            redactedResultSummary: { resultCount: 1 },
+            resourceReferences: [{ kind: "person", id: personId }],
+          }),
+        revoke: async (database) => {
+          await database
+            .update(people)
+            .set(
+              revocation === "hide"
+                ? { sensitivity: "confidential" }
+                : { deletedAt: new Date(), deletedBy: owner.principalId },
+            )
+            .where(eq(people.id, personId));
+        },
+      });
+      expect(result).toEqual({ revocation: "blocked", wrote: true });
+      expect(await fixture.database.select().from(aiToolCalls)).toHaveLength(1);
+    },
+  );
+
+  it("serializes grant revocation against claimed citation finalization", async () => {
+    const owner = await fixture.createActor();
+    const analyst = await fixture.createWorkspaceMember(owner, "analyst");
+    const context = await userContext(analyst, "analyst");
+    const personResult = await fixture.createPerson(owner, {
+      displayName: "Granted Citation Person",
+      sensitivity: "CONFIDENTIAL",
+    });
+    const personId = required(
+      personResult.body?.data?.createPerson?.person?.id,
+    );
+    const policyId = newId();
+    const grantId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: owner.workspaceId,
+      name: "AI citation readers",
+      sensitivityCeiling: "confidential",
+      resourceKinds: ["person"],
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values({
+      id: grantId,
+      workspaceId: owner.workspaceId,
+      policyId,
+      memberId: analyst.memberId,
+      resourceId: personId,
+      resourceKind: "person",
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    const { binding } = await claimedRun(context, {
+      idempotencyKey: "grant-race",
+      personId,
+    });
+    const repository = createAiRepository(fixture.database, {
+      encryptionKey,
+      hmacKey,
+    });
+    expect(
+      await repository.recordClaimedToolCall({
+        ...binding,
+        approvedToolName: "research.person_summary",
+        redactedArguments: { personCount: 1 },
+        redactedResultSummary: { resultCount: 1 },
+        resourceReferences: [{ kind: "person", id: personId }],
+      }),
+    ).toBe(true);
+
+    const result = await raceAiWriteAgainstRevocation({
+      target: "assistant",
+      write: (database) =>
+        createAiRepository(database, {
+          encryptionKey,
+          hmacKey,
+        }).finalizeClaimedRun({
+          ...binding,
+          answer: "The granted tool result supports this claim.",
+          citations: [
+            {
+              claimText: "Granted tool result.",
+              locator: null,
+              resourceId: personId,
+              resourceKind: "person",
+            },
+          ],
+        }),
+      revoke: async (database) => {
+        await database
+          .update(resourceGrants)
+          .set({ state: "inactive" })
+          .where(eq(resourceGrants.id, grantId));
+      },
+    });
+    expect(result).toEqual({ revocation: "blocked", wrote: true });
+    expect(await fixture.database.select().from(aiCitations)).toHaveLength(1);
   });
 
   it("records only a stable failure while the matching unexpired claim remains current", async () => {

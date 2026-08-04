@@ -33,85 +33,107 @@ async function currentAuthority(
   database: Database,
   input: { principalId: string; workspaceId: string },
 ): Promise<CurrentAuthority | null> {
-  const [principal] = await database
-    .select()
+  // The worker-only claimed job/run locks are already held by the caller.
+  // After those, keep the global research-write order: live authority rows,
+  // resource rows, then visibility grant/policy rows. Shared locks are held
+  // through the caller's tool/citation transaction, so a concurrent revoke
+  // either wins before this check or serializes after the authorized write.
+  const userRows = await database
+    .select({
+      memberId: workspacePrincipals.memberIdSnapshot,
+      principalId: workspacePrincipals.id,
+      role: members.role,
+      userId: workspacePrincipals.userId,
+    })
     .from(workspacePrincipals)
+    .innerJoin(
+      members,
+      and(
+        eq(members.id, workspacePrincipals.memberIdSnapshot),
+        eq(members.userId, workspacePrincipals.userId),
+        eq(members.workspaceId, workspacePrincipals.workspaceId),
+      ),
+    )
+    .innerJoin(
+      workspaces,
+      and(
+        eq(workspaces.id, members.workspaceId),
+        eq(workspaces.organizationId, members.organizationId),
+      ),
+    )
     .where(
       and(
         eq(workspacePrincipals.id, input.principalId),
         eq(workspacePrincipals.workspaceId, input.workspaceId),
+        eq(workspacePrincipals.principalType, "user"),
+        eq(workspaces.state, "active"),
+        isNull(workspaces.deletedAt),
       ),
     )
-    .limit(1);
-  if (!principal) return null;
+    .limit(2)
+    .for("share");
+  const user = userRows[0];
   if (
-    principal.principalType === "user" &&
-    principal.userId &&
-    principal.memberIdSnapshot
+    userRows.length === 1 &&
+    user?.userId &&
+    user.memberId &&
+    isWorkspaceRole(user.role)
   ) {
-    const [membership] = await database
-      .select({ role: members.role })
-      .from(members)
-      .innerJoin(
-        workspaces,
-        and(
-          eq(workspaces.id, members.workspaceId),
-          eq(workspaces.organizationId, members.organizationId),
-        ),
-      )
-      .where(
-        and(
-          eq(members.id, principal.memberIdSnapshot),
-          eq(members.userId, principal.userId),
-          eq(members.workspaceId, input.workspaceId),
-          eq(workspaces.state, "active"),
-          isNull(workspaces.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!membership || !isWorkspaceRole(membership.role)) return null;
     return {
       actor: {
         type: "user",
-        id: principal.userId,
-        principalId: principal.id,
+        id: user.userId,
+        principalId: user.principalId,
         sessionId: "worker-current-authority",
-        memberId: principal.memberIdSnapshot,
-        role: membership.role,
+        memberId: user.memberId,
+        role: user.role,
       },
-      permissions: rolePermissionKeys(membership.role),
+      permissions: rolePermissionKeys(user.role),
       workspaceId: input.workspaceId,
     };
   }
-  if (principal.principalType === "api_key" && principal.apiKeyId) {
-    const [key] = await database
-      .select({ permissions: apiKeys.permissions })
-      .from(apiKeys)
-      .innerJoin(
-        workspaces,
-        and(
-          eq(workspaces.id, apiKeys.workspaceId),
-          eq(workspaces.organizationId, apiKeys.referenceId),
-        ),
-      )
-      .where(
-        and(
-          eq(apiKeys.id, principal.apiKeyId),
-          eq(apiKeys.workspaceId, input.workspaceId),
-          eq(apiKeys.configId, "organization"),
-          eq(apiKeys.enabled, true),
-          or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date())),
-          eq(workspaces.state, "active"),
-          isNull(workspaces.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!key) return null;
+  const keyRows = await database
+    .select({
+      apiKeyId: workspacePrincipals.apiKeyId,
+      permissions: apiKeys.permissions,
+      principalId: workspacePrincipals.id,
+    })
+    .from(workspacePrincipals)
+    .innerJoin(
+      apiKeys,
+      and(
+        eq(apiKeys.id, workspacePrincipals.apiKeyId),
+        eq(apiKeys.workspaceId, workspacePrincipals.workspaceId),
+      ),
+    )
+    .innerJoin(
+      workspaces,
+      and(
+        eq(workspaces.id, apiKeys.workspaceId),
+        eq(workspaces.organizationId, apiKeys.referenceId),
+      ),
+    )
+    .where(
+      and(
+        eq(workspacePrincipals.id, input.principalId),
+        eq(workspacePrincipals.workspaceId, input.workspaceId),
+        eq(workspacePrincipals.principalType, "api_key"),
+        eq(apiKeys.configId, "organization"),
+        eq(apiKeys.enabled, true),
+        or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date())),
+        eq(workspaces.state, "active"),
+        isNull(workspaces.deletedAt),
+      ),
+    )
+    .limit(2)
+    .for("share");
+  const key = keyRows[0];
+  if (keyRows.length === 1 && key?.apiKeyId) {
     return {
       actor: {
         type: "apiKey",
-        id: principal.apiKeyId,
-        principalId: principal.id,
+        id: key.apiKeyId,
+        principalId: key.principalId,
         role: null,
       },
       permissions: parseApiKeyPermissionKeys(key.permissions),
@@ -130,6 +152,8 @@ export async function authorizeAiReferences(
     workspaceId: string;
   },
 ): Promise<boolean> {
+  const authority = await currentAuthority(database, input);
+  if (!authority) return false;
   if (input.references.length === 0) return true;
   const referenceKeys = input.references.map(
     (reference) => `${reference.kind}:${reference.id}`,
@@ -146,8 +170,6 @@ export async function authorizeAiReferences(
   ) {
     return false;
   }
-  const authority = await currentAuthority(database, input);
-  if (!authority) return false;
   const personIds = input.references
     .filter((reference) => reference.kind === "person")
     .map((reference) => reference.id);
@@ -165,9 +187,11 @@ export async function authorizeAiReferences(
           inArray(people.id, personIds),
           isNull(people.deletedAt),
         ),
-      );
+      )
+      .for("share");
     if (rows.length !== personIds.length) return false;
     const visible = await visibleResourceIds(database, authority, {
+      lockGrants: true,
       resourceKind: "person",
       resources: rows,
     });
@@ -184,9 +208,11 @@ export async function authorizeAiReferences(
           inArray(evidenceItems.id, evidenceIds),
           isNull(evidenceItems.deletedAt),
         ),
-      );
+      )
+      .for("share");
     if (rows.length !== evidenceIds.length) return false;
     const visible = await visibleResourceIds(database, authority, {
+      lockGrants: true,
       resourceKind: "evidence",
       resources: rows,
     });
