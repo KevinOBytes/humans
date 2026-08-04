@@ -943,11 +943,12 @@ export function createImportsService(
           stream: object.body,
           onRow: async (row) => {
             let normalizedPayload: unknown = {};
-            let validationErrors: Array<{ code: string; message: string }> =
-              row.warnings.map((code) => ({
-                code,
-                message: "A value may be interpreted as a spreadsheet formula.",
-              }));
+            const warningErrors = row.warnings.map((code) => ({
+              code,
+              message: "A value may be interpreted as a spreadsheet formula.",
+            }));
+            let rejectionDiagnostic:
+              { code: string; message: string } | undefined;
             let state = "pending";
             try {
               const projected = projectImportRow(structural, row.values);
@@ -959,13 +960,19 @@ export function createImportsService(
             } catch {
               state = "rejected";
               rejectedRows += 1;
-              validationErrors.push({
+              rejectionDiagnostic = {
                 code: "ROW_VALIDATION_FAILED",
                 message: "The row does not satisfy the selected mapping.",
-              });
+              };
             }
-            validationErrors = validationErrors.slice(0, remainingIssueBudget);
-            remainingIssueBudget -= validationErrors.length;
+            const validationErrors = [
+              ...warningErrors.slice(0, remainingIssueBudget),
+              ...(rejectionDiagnostic ? [rejectionDiagnostic] : []),
+            ];
+            remainingIssueBudget -= Math.min(
+              warningErrors.length,
+              remainingIssueBudget,
+            );
             const sourceHash = hmac(
               runtime.encryptionKey,
               "import-row-source",

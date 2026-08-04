@@ -15,13 +15,21 @@ import {
   imports as importsTable,
 } from "@/db/schema/files";
 import { jobs } from "@/db/schema/operations";
+import { people } from "@/db/schema/people";
 import { relationshipTypes } from "@/db/schema/relationships";
 import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
+import type { RedisStore } from "@/lib/redis";
 import type { ObjectStore } from "@/lib/storage/types";
 import { createFilesService } from "@/modules/files/service";
 import { createImportsService } from "@/modules/imports/service";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { createJobsService } from "@/modules/jobs/service";
+import {
+  createImportExecuteHandler,
+  createImportExecuteService,
+} from "@/worker/handlers/import";
+import { createJobRegistry } from "@/worker/registry";
+import { runJobsOnce } from "@/worker/run-once";
 
 import { ResearchFixture } from "../support/research-fixture";
 import { createTestConnection, createTestDatabase } from "../support/auth";
@@ -141,6 +149,67 @@ class MemoryStore implements ObjectStore {
   async delete(input: { workspaceId: string; key: string }) {
     this.objects.delete(`${input.workspaceId}:${input.key}`);
   }
+}
+
+class MemoryRedis implements RedisStore {
+  private readonly leases = new Map<string, string>();
+
+  get(): Promise<string | null> {
+    return Promise.resolve(null);
+  }
+  set(): Promise<void> {
+    return Promise.resolve();
+  }
+  delete(): Promise<void> {
+    return Promise.resolve();
+  }
+  increment(): Promise<number> {
+    return Promise.resolve(1);
+  }
+  acquireLease(key: string, token: string): Promise<boolean> {
+    if (this.leases.has(key)) return Promise.resolve(false);
+    this.leases.set(key, token);
+    return Promise.resolve(true);
+  }
+  extendLease(key: string, token: string): Promise<boolean> {
+    return Promise.resolve(this.leases.get(key) === token);
+  }
+  releaseLease(key: string, token: string): Promise<boolean> {
+    if (this.leases.get(key) !== token) return Promise.resolve(false);
+    this.leases.delete(key);
+    return Promise.resolve(true);
+  }
+  consumeTokenBucket(): Promise<{
+    allowed: boolean;
+    remainingMicrotokens: number;
+    retryAfterMs: number;
+  }> {
+    return Promise.resolve({
+      allowed: true,
+      remainingMicrotokens: 0,
+      retryAfterMs: 0,
+    });
+  }
+}
+
+async function runImportWorker(fixture: ResearchFixture, workerId: string) {
+  return runJobsOnce({
+    database: fixture.database,
+    encryptionKey,
+    redis: new MemoryRedis(),
+    registry: createJobRegistry({
+      aiExecute: async () => undefined,
+      importExecute: createImportExecuteHandler(
+        createImportExecuteService({
+          database: fixture.database,
+          encryptionKey,
+          searchIndexMaintenance: disabledSearchIndexMaintenance,
+        }),
+      ),
+      fileCleanup: async () => undefined,
+    }),
+    workerId,
+  });
 }
 
 async function serviceContext(fixture: ResearchFixture, actor: SessionActor) {
@@ -277,6 +346,219 @@ liveDescribe("import staging and durable start", () => {
   });
   beforeEach(async () => fixture.reset());
   afterAll(async () => fixture.close());
+
+  it("uploads, replays, queues, and executes a mixed JSON import", async () => {
+    const actor = await fixture.createActor("owner");
+    const context = await serviceContext(fixture, actor);
+    const store = new MemoryStore();
+    const fileService = createFilesService(context, {
+      encryptionKey,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const body = new TextEncoder().encode(
+      JSON.stringify([
+        { external_id: "json-valid", name: "JSON Valid" },
+        { external_id: "json-rejected" },
+      ]),
+    );
+    const upload = await fileService.createUploadSession({
+      originalName: "people.json",
+      claimedMediaType: "application/json",
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      purpose: "JSON_IMPORT",
+    });
+    store.objects.set(`${actor.workspaceId}:${upload.session.objectKey}`, body);
+    const completed = await fileService.completeUpload(upload.session.id);
+    const service = createImportsService(context, {
+      encryptionKey,
+      objectStore: store,
+    });
+    const saved = await service.saveMapping({
+      name: "JSON people",
+      format: "JSON",
+      definition: {
+        version: 1,
+        recordKind: "PERSON",
+        rowKeySource: "external_id",
+        person: {
+          displayNameSource: "name",
+          primaryNameKind: "legal",
+          fields: [],
+        },
+        facts: [],
+        defaults: {},
+      },
+    });
+
+    const prepared = await service.prepareImport({
+      fileId: completed.file.id,
+      mappingId: saved.mapping.id,
+      idempotencyKey: "prepare-json-acceptance-v1",
+      mode: "COMMIT",
+    });
+    expect(prepared.import).toMatchObject({
+      format: "JSON",
+      state: "preview_ready",
+      totalRows: 2,
+      rejectedRows: 1,
+    });
+    expect(prepared.preview).toMatchObject([
+      {
+        rowNumber: 1,
+        state: "pending",
+        normalizedPayload: { kind: "PERSON", rowKey: "json-valid" },
+      },
+      {
+        rowNumber: 2,
+        state: "rejected",
+        issues: [
+          {
+            code: "ROW_VALIDATION_FAILED",
+            message: "The row does not satisfy the selected mapping.",
+          },
+        ],
+      },
+    ]);
+    const preparedReplay = await service.prepareImport({
+      fileId: completed.file.id,
+      mappingId: saved.mapping.id,
+      idempotencyKey: "prepare-json-acceptance-v1",
+      mode: "COMMIT",
+    });
+    expect(preparedReplay.import.id).toBe(prepared.import.id);
+
+    const queued = await service.startImport({
+      importId: prepared.import.id,
+      expectedVersion: prepared.import.version,
+      idempotencyKey: "run-json-acceptance-v1",
+    });
+    expect(queued.import).toMatchObject({ state: "queued" });
+    const queuedReplay = await service.startImport({
+      importId: prepared.import.id,
+      expectedVersion: prepared.import.version,
+      idempotencyKey: "run-json-acceptance-v1",
+    });
+    expect(queuedReplay.job.id).toBe(queued.job.id);
+
+    await expect(
+      runImportWorker(fixture, "019cc7c4-6ed2-7e0a-aed8-e5d451c96d01"),
+    ).resolves.toMatchObject({ claimed: 1, completed: 1, deadLettered: 0 });
+
+    const rows = await fixture.database
+      .select()
+      .from(importRows)
+      .where(eq(importRows.importId, prepared.import.id));
+    const succeeded = rows.find((row) => row.state === "succeeded");
+    const rejected = rows.find((row) => row.state === "rejected");
+    const [person] = await fixture.database
+      .select({ id: people.id })
+      .from(people)
+      .where(eq(people.workspaceId, actor.workspaceId));
+    expect(succeeded?.resultReferences).toHaveLength(3);
+    expect(succeeded?.resultReferences).toContain(person?.id);
+    expect(rejected).toMatchObject({
+      resultReferences: [],
+      validationErrors: [
+        {
+          code: "ROW_VALIDATION_FAILED",
+          message: "The row does not satisfy the selected mapping.",
+        },
+      ],
+    });
+    const [storedImport] = await fixture.database
+      .select()
+      .from(importsTable)
+      .where(eq(importsTable.id, prepared.import.id));
+    expect(storedImport).toMatchObject({
+      state: "completed_with_errors",
+      totalRows: 2,
+      acceptedRows: 1,
+      rejectedRows: 1,
+    });
+  });
+
+  it("retains one safe rejection diagnostic after the preview issue budget is spent", async () => {
+    const actor = await fixture.createActor("owner");
+    const context = await serviceContext(fixture, actor);
+    const store = new MemoryStore();
+    const fileService = createFilesService(context, {
+      encryptionKey,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const body = new TextEncoder().encode(
+      JSON.stringify([
+        ...Array.from({ length: 200 }, (_, index) => ({
+          external_id: `formula-${index + 1}`,
+          name: `=formula-${index + 1}`,
+        })),
+        { external_id: "private-rejected-row-key" },
+      ]),
+    );
+    const upload = await fileService.createUploadSession({
+      originalName: "bounded-diagnostics.json",
+      claimedMediaType: "application/json",
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      purpose: "JSON_IMPORT",
+    });
+    store.objects.set(`${actor.workspaceId}:${upload.session.objectKey}`, body);
+    const completed = await fileService.completeUpload(upload.session.id);
+    const service = createImportsService(context, {
+      encryptionKey,
+      objectStore: store,
+    });
+    const mapping = await service.saveMapping({
+      name: "Bounded JSON diagnostics",
+      format: "JSON",
+      definition: {
+        version: 1,
+        recordKind: "PERSON",
+        rowKeySource: "external_id",
+        person: {
+          displayNameSource: "name",
+          primaryNameKind: "legal",
+          fields: [],
+        },
+        facts: [],
+        defaults: {},
+      },
+    });
+
+    const prepared = await service.prepareImport({
+      fileId: completed.file.id,
+      mappingId: mapping.mapping.id,
+      idempotencyKey: "prepare-bounded-diagnostics-v1",
+      mode: "COMMIT",
+    });
+    expect(prepared.preview).toHaveLength(100);
+    expect(prepared.import).toMatchObject({
+      totalRows: 201,
+      rejectedRows: 1,
+    });
+    const [rejected] = await fixture.database
+      .select()
+      .from(importRows)
+      .where(
+        and(
+          eq(importRows.importId, prepared.import.id),
+          eq(importRows.rowNumber, 201),
+        ),
+      );
+    expect(rejected?.validationErrors).toEqual([
+      {
+        code: "ROW_VALIDATION_FAILED",
+        message: "The row does not satisfy the selected mapping.",
+      },
+    ]);
+    expect(JSON.stringify(rejected?.validationErrors)).not.toContain(
+      "private-rejected-row-key",
+    );
+  });
 
   it("stages a verified CSV, replays preparation, and queues one sealed job", async () => {
     const actor = await fixture.createActor("owner");
