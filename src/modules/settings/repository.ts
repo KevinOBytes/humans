@@ -49,13 +49,14 @@ type TransactionDatabase = Parameters<
 
 async function lockAndRevalidateAdministrativeActor(input: {
   actor: { id: string; memberId: string };
+  lockRows?: boolean;
   transaction: TransactionDatabase;
   workspaceId: string;
 }): Promise<"admin" | "owner" | null> {
   await input.transaction.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${input.workspaceId}, 0))`,
   );
-  const rows = await input.transaction
+  const query = input.transaction
     .select({ id: members.id, role: members.role })
     .from(workspaces)
     .innerJoin(
@@ -75,8 +76,9 @@ async function lockAndRevalidateAdministrativeActor(input: {
         inArray(members.role, ["owner", "admin"]),
       ),
     )
-    .limit(2)
-    .for("update");
+    .limit(2);
+  const rows =
+    input.lockRows === false ? await query : await query.for("update");
   const row = rows[0];
   return rows.length === 1 &&
     row &&
@@ -98,6 +100,7 @@ export function createSettingsRepository(database: Database) {
       return database.transaction(async (transaction) => {
         const role = await lockAndRevalidateAdministrativeActor({
           actor: input.actor,
+          lockRows: false,
           transaction,
           workspaceId: input.workspaceId,
         });
