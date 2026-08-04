@@ -261,6 +261,17 @@ describe("parseServerEnv", () => {
     ).toThrow(/AUTH_SECURE_COOKIES/);
   });
 
+  it("supports secure production cookies on the loopback application origin", () => {
+    expect(() =>
+      parseServerEnv({
+        ...productionEnv,
+        NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+        AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+        AUTH_SECURE_COOKIES: "true",
+      }),
+    ).not.toThrow();
+  });
+
   it("requires independent auth signing and encryption keys", () => {
     const sharedKey = productionEnv.AUTH_ENCRYPTION_KEY;
 

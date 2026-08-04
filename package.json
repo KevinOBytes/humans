@@ -35,6 +35,7 @@
     "test:performance:graph": "GRAPH_PERFORMANCE=1 NODE_OPTIONS=--conditions=react-server playwright test --project graph-reference",
     "test:storage-browser": "NODE_OPTIONS=--conditions=react-server playwright test --config playwright.storage.config.ts",
     "test:compose:config": "vitest run tests/unit/compose-config.test.ts tests/unit/infrastructure-config.test.ts",
+    "compose:first-run": "node scripts/compose-first-run.mjs",
     "test:compose:smoke": "node scripts/compose-lifecycle.mjs smoke",
     "test:compose:lifecycle": "node scripts/compose-lifecycle.mjs lifecycle",
     "db:generate": "drizzle-kit generate --name core",

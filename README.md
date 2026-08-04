@@ -1,8 +1,8 @@
 # Humans
 
-Humans is an open-source, workspace-scoped research platform for building evidence-backed records about people and the relationships between them. The planned MVP combines structured facts, provenance, a social graph, GraphQL, file ingestion, and cited analysis through an OpenAI-compatible model.
+Humans is an open-source, workspace-scoped research platform for building evidence-backed records about people and the relationships between them. The current self-hosted alpha combines structured facts, provenance, a social graph, GraphQL, file ingestion, and cited analysis through an OpenAI-compatible model.
 
-> **Project status:** usable alpha; not production-ready. The current tree includes an authenticated GraphQL application shell, tenant-safe research services, workspace member and invitation administration, an application-owned API-key lifecycle, an access-controlled import preparation/execution slice with full JSON execution and bounded row diagnostics, an authorized search workbench, deterministic graph analysis, and a cited AI analyst. [TODO.md](TODO.md) remains the authoritative requirement-linked backlog; final API-key activation atomicity, policy administration, complete invitation acceptance evidence, extraction runs beyond their current schema-only foundation, deployment proof, optional Ollama smoke, and the remaining production gates are not finished.
+> **Project status:** usable self-hosted alpha and MVP release candidate; neither the full MVP nor production readiness is complete. The current tree supports an authenticated, workspace-scoped research loop through generated GraphQL operations: people, facts, relationships, evidence, private files, CSV/JSON imports, search, graph exploration and deterministic analysis, plus a cited AI analyst when an operator configures a reachable provider. [The self-hosted alpha boundary](docs/releases/SELF_HOSTED_ALPHA.md) states what is proven and what is not. [TODO.md](TODO.md) remains the authoritative requirement-linked MVP closure and production-hardening backlog; Vercel deployment proof, external-provider acceptance, mutable policy administration, extraction runs, and the remaining exhaustive security, accessibility, performance, and recovery matrices are not finished.
 
 ## Quick start
 
@@ -41,6 +41,28 @@ migration, and seed roles do not. Re-running it reconciles administrator
 identity and role but deliberately does not replace an existing credential.
 See the [Docker operations runbook](docs/operations/docker.md) for recovery,
 rotation, and hosted deployment guidance.
+
+For a new Compose installation, populate the ignored `.env` and run the
+attended first-run command:
+
+```bash
+cp .env.example .env
+# Replace every placeholder and choose the public application URL.
+pnpm compose:first-run
+```
+
+The command validates the Compose configuration, starts the application and
+worker with their required PostgreSQL, Redis, and MinIO services, then runs the
+isolated administrator bootstrap. It does not pass `ADMIN_*` values on the
+command line or expose them to the long-running application roles. The base
+stack does not start Ollama; configure an external AI provider or explicitly
+start the Ollama overlay before treating AI as available.
+
+Keep `AUTH_SECURE_COOKIES=true`. Secure cookies are supported by browsers on
+the `http://localhost` loopback exception used by the default Compose binding;
+non-loopback self-hosts must serve `NEXT_PUBLIC_APP_URL` over HTTPS through a
+trusted edge. Production validation rejects `AUTH_SECURE_COOKIES=false` in
+every deployment mode.
 
 Registration defaults to invitation-only. Set `AUTH_REGISTRATION_MODE` to
 `disabled`, `invite_only`, or `public` for the intended deployment and review
@@ -182,7 +204,10 @@ external-provider smoke, deployment proof, or production-readiness evidence.
 
 ## Deployment direction
 
-The MVP will support one application contract in two modes:
+The application is designed for one contract in two modes, but only the local
+dependency topology and self-hosted application path are part of the current
+usable alpha boundary. The hosted Vercel path still requires deployment
+evidence before full MVP completion:
 
 - **Vercel:** Neon PostgreSQL, Upstash Redis, S3-compatible storage such as Cloudflare R2, Resend, and an OpenAI-compatible model endpoint.
 - **Docker Compose:** the application and worker with PostgreSQL, Redis, MinIO, bucket initialization, and optional Ollama.
@@ -246,7 +271,9 @@ PERSON_IDENTIFIER match; it never returns the submitted value, ciphertext, or
 blind index. Phone, email, and other protected contacts support durable create,
 read, update, and archive operations with post-write authorization checks.
 
-Deployment artifacts are not complete yet. Track them in [TODO.md](TODO.md) rather than treating this foundation as production-ready.
+Deployment evidence is not complete yet. Track it in [TODO.md](TODO.md) and use
+[the self-hosted alpha boundary](docs/releases/SELF_HOSTED_ALPHA.md) rather than
+treating this foundation as a completed MVP or as production-ready.
 
 ## Security and privacy
 
@@ -256,6 +283,7 @@ Humans is designed for sensitive research data. Workspace isolation, record-leve
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Requirements](docs/REQUIREMENTS.md)
+- [Self-hosted alpha boundary](docs/releases/SELF_HOSTED_ALPHA.md)
 - [Product and interface design](docs/DESIGN.md)
 - [Docker operations](docs/operations/docker.md)
 - [Authentication operations](docs/operations/authentication.md)
