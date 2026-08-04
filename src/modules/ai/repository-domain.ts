@@ -6,16 +6,43 @@ import type { AiProviderDisclosure } from "./types";
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const HMAC_KEY = /^[0-9a-f]{64}$/iu;
-const REDACTED_KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
-const SENSITIVE_REDACTED_KEY =
-  /(?:api.?key|base.?url|content|credential|error|exception|message|prompt|query|raw|request|response|secret|token|url)/iu;
-const MAX_REDACTED_BYTES = 16_384;
-const MAX_REDACTED_NODES = 512;
-const MAX_REDACTED_DEPTH = 8;
 const MAX_CITATIONS = 64;
+const TOOL_SUMMARY_COUNT_KEYS = new Set([
+  "evidenceCount",
+  "filterCount",
+  "personCount",
+  "resourceCount",
+  "resultCount",
+]);
+const TOOL_SUMMARY_BOOLEAN_KEYS = new Set(["truncated"]);
 
 export const AI_TOOL_NAME = /^[a-z][a-z0-9_.-]{0,63}$/u;
-export const AI_STABLE_ERROR_CODE = /^[a-z][a-z0-9_]{0,63}$/u;
+export const AI_STABLE_ERROR_CODES = [
+  "analysis_cancelled",
+  "analysis_limit_reached",
+  "authorization_changed",
+  "execution_failed",
+  "input_unavailable",
+  "provider_invalid_response",
+  "provider_response_too_large",
+  "provider_timeout",
+  "provider_unavailable",
+] as const;
+export type AiStableErrorCode = (typeof AI_STABLE_ERROR_CODES)[number];
+const aiStableErrorCodeSet: ReadonlySet<string> = new Set(
+  AI_STABLE_ERROR_CODES,
+);
+const aiFailureCodeMap: Readonly<Record<string, AiStableErrorCode>> = {
+  AUTHORIZATION_CHANGED: "authorization_changed",
+  CAPABILITY_UNSUPPORTED: "analysis_limit_reached",
+  INPUT_UNAVAILABLE: "input_unavailable",
+  PROVIDER_ABORTED: "analysis_cancelled",
+  PROVIDER_REDIRECTED: "provider_invalid_response",
+  PROVIDER_RESPONSE_INVALID: "provider_invalid_response",
+  PROVIDER_RESPONSE_TOO_LARGE: "provider_response_too_large",
+  PROVIDER_TIMEOUT: "provider_timeout",
+  PROVIDER_UNAVAILABLE: "provider_unavailable",
+};
 export const MAX_AI_TOOL_CALLS = 64;
 export const MAX_AI_ANSWER_BYTES = 64_000;
 
@@ -202,48 +229,47 @@ export function validAiRunState(value: string): value is AiRun["state"] {
 export function validateRedactedToolJson(
   value: unknown,
 ): Readonly<Record<string, unknown>> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
     throw new TypeError("Invalid redacted tool summary");
   }
-  let nodes = 0;
-  const visit = (item: unknown, depth: number): void => {
-    nodes += 1;
-    if (nodes > MAX_REDACTED_NODES || depth > MAX_REDACTED_DEPTH) {
-      throw new TypeError("Invalid redacted tool summary");
-    }
-    if (item === null || typeof item === "boolean") return;
-    if (typeof item === "number" && Number.isFinite(item)) return;
-    if (typeof item === "string" && Buffer.byteLength(item, "utf8") <= 512)
-      return;
-    if (Array.isArray(item)) {
-      if (item.length > 64)
-        throw new TypeError("Invalid redacted tool summary");
-      for (const child of item) visit(child, depth + 1);
-      return;
-    }
-    if (
-      !item ||
-      typeof item !== "object" ||
-      Object.getPrototypeOf(item) !== Object.prototype
-    ) {
-      throw new TypeError("Invalid redacted tool summary");
-    }
-    const entries = Object.entries(item as Record<string, unknown>);
-    if (
-      entries.length > 64 ||
-      entries.some(
-        ([key]) => !REDACTED_KEY.test(key) || SENSITIVE_REDACTED_KEY.test(key),
-      )
-    ) {
-      throw new TypeError("Invalid redacted tool summary");
-    }
-    for (const [, child] of entries) visit(child, depth + 1);
-  };
-  visit(value, 0);
-  if (Buffer.byteLength(JSON.stringify(value), "utf8") > MAX_REDACTED_BYTES) {
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (
+    entries.length >
+      TOOL_SUMMARY_COUNT_KEYS.size + TOOL_SUMMARY_BOOLEAN_KEYS.size ||
+    entries.some(([key, item]) => {
+      if (TOOL_SUMMARY_COUNT_KEYS.has(key)) {
+        return (
+          !Number.isSafeInteger(item) ||
+          Number(item) < 0 ||
+          Number(item) > 10_000
+        );
+      }
+      if (TOOL_SUMMARY_BOOLEAN_KEYS.has(key)) {
+        return typeof item !== "boolean";
+      }
+      return true;
+    })
+  ) {
     throw new TypeError("Invalid redacted tool summary");
   }
   return structuredClone(value) as Readonly<Record<string, unknown>>;
+}
+
+export function isAiStableErrorCode(
+  value: unknown,
+): value is AiStableErrorCode {
+  return typeof value === "string" && aiStableErrorCodeSet.has(value);
+}
+
+export function mapAiFailureCode(value: unknown): AiStableErrorCode {
+  return typeof value === "string"
+    ? (aiFailureCodeMap[value] ?? "execution_failed")
+    : "execution_failed";
 }
 
 export function validateAiResourceReferences(

@@ -9,12 +9,13 @@ import {
 } from "@/lib/security/sealed-envelope";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { decodeJobPayload } from "@/modules/jobs/service";
+import { authorizeAiReferences } from "./repository-authority";
 import {
-  AI_STABLE_ERROR_CODE,
   AI_TOOL_NAME,
   MAX_AI_ANSWER_BYTES,
   MAX_AI_TOOL_CALLS,
   equalAiDigest,
+  isAiStableErrorCode,
   parseStoredAiUserMessage,
   prefixedAiPersistenceHmac,
   validAiProvider,
@@ -95,57 +96,75 @@ export function createAiWorkerRepository(
     return run ?? null;
   }
 
+  async function loadValidatedRunInput(
+    transaction: Database,
+    run: StoredRun,
+  ): Promise<ReturnType<typeof parseStoredAiUserMessage> | null> {
+    if (!run.messageId || !validAiProvider(run.provider)) return null;
+    const [message] = await transaction
+      .select()
+      .from(aiMessages)
+      .where(
+        and(
+          eq(aiMessages.workspaceId, run.workspaceId),
+          eq(aiMessages.threadId, run.threadId),
+          eq(aiMessages.id, run.messageId),
+          eq(aiMessages.role, "user"),
+        ),
+      )
+      .limit(1);
+    if (!message) return null;
+    try {
+      const plaintext = openSealedEnvelope({
+        key: runtime.encryptionKey,
+        purpose: "ai-user-message",
+        token: message.encryptedContent,
+      });
+      if (
+        !equalAiDigest(
+          message.contentHash,
+          prefixedAiPersistenceHmac(runtime, "user-content", plaintext),
+        )
+      ) {
+        return null;
+      }
+      return parseStoredAiUserMessage(plaintext);
+    } catch {
+      return null;
+    }
+  }
+
   return {
     async loadClaimedPendingRun(
       input: AiJobClaim,
     ): Promise<ClaimedAiRun | null> {
-      return database.transaction(async (transactionValue) => {
-        const transaction = transactionValue as unknown as Database;
-        const run = await lockClaimedRun(transaction, input);
-        if (!run) return null;
-        if (run.state === "pending") {
-          const [started] = await transaction
-            .update(aiRuns)
-            .set({ state: "running", startedAt: sql<Date>`clock_timestamp()` })
-            .where(
-              and(
-                eq(aiRuns.workspaceId, input.workspaceId),
-                eq(aiRuns.id, input.runId),
-                eq(aiRuns.state, "pending"),
-              ),
-            )
-            .returning({ id: aiRuns.id });
-          if (!started) return null;
-        }
-        if (!run.messageId || !validAiProvider(run.provider)) return null;
-        const [message] = await transaction
-          .select()
-          .from(aiMessages)
-          .where(
-            and(
-              eq(aiMessages.workspaceId, input.workspaceId),
-              eq(aiMessages.threadId, run.threadId),
-              eq(aiMessages.id, run.messageId),
-              eq(aiMessages.role, "user"),
-            ),
-          )
-          .limit(1);
-        if (!message) return null;
-        try {
-          const plaintext = openSealedEnvelope({
-            key: runtime.encryptionKey,
-            purpose: "ai-user-message",
-            token: message.encryptedContent,
-          });
-          if (
-            !equalAiDigest(
-              message.contentHash,
-              prefixedAiPersistenceHmac(runtime, "user-content", plaintext),
-            )
-          ) {
-            return null;
+      try {
+        return await database.transaction(async (transactionValue) => {
+          const transaction = transactionValue as unknown as Database;
+          const run = await lockClaimedRun(transaction, input);
+          if (!run) return null;
+          const parsed = await loadValidatedRunInput(transaction, run);
+          if (!parsed || !validAiProvider(run.provider)) return null;
+          if (run.state === "pending") {
+            const [started] = await transaction
+              .update(aiRuns)
+              .set({
+                state: "running",
+                startedAt: sql<Date>`clock_timestamp()`,
+              })
+              .where(
+                and(
+                  eq(aiRuns.workspaceId, input.workspaceId),
+                  eq(aiRuns.id, input.runId),
+                  eq(aiRuns.state, "pending"),
+                ),
+              )
+              .returning({ id: aiRuns.id });
+            if (!started) return null;
           }
-          const parsed = parseStoredAiUserMessage(plaintext);
+          if (!(await lockCurrentClaim(transaction, input))) {
+            throw new AiClaimLostRollback();
+          }
           return Object.freeze({
             configurationHash: run.configurationHash,
             model: run.model,
@@ -156,10 +175,11 @@ export function createAiWorkerRepository(
             scope: parsed.scope,
             threadId: run.threadId,
           });
-        } catch {
-          return null;
-        }
-      });
+        });
+      } catch (error) {
+        if (error instanceof AiClaimLostRollback) return null;
+        throw error;
+      }
     },
 
     async recordClaimedToolCall(
@@ -191,6 +211,18 @@ export function createAiWorkerRepository(
           const transaction = transactionValue as unknown as Database;
           const run = await lockClaimedRun(transaction, input);
           if (!run) return false;
+          const protectedInput = await loadValidatedRunInput(transaction, run);
+          if (
+            !protectedInput ||
+            !(await authorizeAiReferences(transaction, {
+              principalId: run.createdBy,
+              references: resourceReferences,
+              scope: protectedInput.scope,
+              workspaceId: input.workspaceId,
+            }))
+          ) {
+            return false;
+          }
           const [{ count }] = await transaction
             .select({ count: sql<number>`count(*)::int` })
             .from(aiToolCalls)
@@ -243,6 +275,58 @@ export function createAiWorkerRepository(
           const transaction = transactionValue as unknown as Database;
           const run = await lockClaimedRun(transaction, input);
           if (!run) return false;
+          const protectedInput = await loadValidatedRunInput(transaction, run);
+          if (!protectedInput) return false;
+          const citationReferences = [
+            ...new Map(
+              citations.map((citation) => [
+                `${citation.resourceKind}:${citation.resourceId}`,
+                { id: citation.resourceId, kind: citation.resourceKind },
+              ]),
+            ).values(),
+          ];
+          if (
+            !(await authorizeAiReferences(transaction, {
+              principalId: run.createdBy,
+              references: citationReferences,
+              scope: protectedInput.scope,
+              workspaceId: input.workspaceId,
+            }))
+          ) {
+            return false;
+          }
+          if (citationReferences.length) {
+            const toolRows = await transaction
+              .select({ references: aiToolCalls.resourceReferences })
+              .from(aiToolCalls)
+              .where(
+                and(
+                  eq(aiToolCalls.workspaceId, input.workspaceId),
+                  eq(aiToolCalls.aiRunId, input.runId),
+                  eq(aiToolCalls.state, "completed"),
+                ),
+              );
+            let returned: ReadonlySet<string>;
+            try {
+              returned = new Set(
+                toolRows.flatMap((tool) =>
+                  validateAiResourceReferences(tool.references).map(
+                    (reference) => `${reference.kind}:${reference.id}`,
+                  ),
+                ),
+              );
+            } catch {
+              return false;
+            }
+            if (
+              citationReferences.some(
+                (reference) =>
+                  !returned.has(`${reference.kind}:${reference.id}`),
+              )
+            ) {
+              return false;
+            }
+          }
           const messageId = newId();
           const now = new Date();
           await transaction.insert(aiMessages).values({
@@ -326,7 +410,7 @@ export function createAiWorkerRepository(
     async recordClaimedFailure(
       input: AiJobClaim & { errorCode: string },
     ): Promise<boolean> {
-      if (!AI_STABLE_ERROR_CODE.test(input.errorCode)) return false;
+      if (!isAiStableErrorCode(input.errorCode)) return false;
       try {
         return await database.transaction(async (transactionValue) => {
           const transaction = transactionValue as unknown as Database;

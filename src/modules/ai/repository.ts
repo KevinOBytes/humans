@@ -17,10 +17,10 @@ import type { ResearchServiceContext } from "@/modules/audit/service";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { createJobsService } from "@/modules/jobs/service";
 import {
-  AI_STABLE_ERROR_CODE,
   aiPersistenceHmac,
   canonicalAiUserMessage,
   equalAiDigest,
+  isAiStableErrorCode,
   prefixedAiPersistenceHmac,
   validAiProvider,
   validAiRunState,
@@ -174,10 +174,9 @@ export function createAiRepository(
       citations: validatedCitations,
       completedAt: run.run.completedAt,
       createdAt: run.run.createdAt,
-      errorCode:
-        run.run.errorCode && AI_STABLE_ERROR_CODE.test(run.run.errorCode)
-          ? run.run.errorCode
-          : null,
+      errorCode: isAiStableErrorCode(run.run.errorCode)
+        ? run.run.errorCode
+        : null,
       id: run.run.id,
       model: run.run.model,
       provider: run.run.provider,
