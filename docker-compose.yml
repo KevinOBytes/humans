@@ -34,6 +34,7 @@ x-app-environment: &app-environment
   EMAIL_FROM: ${EMAIL_FROM:-Humans <humans@localhost.invalid>}
   AI_PROVIDER: ${AI_PROVIDER:-ollama}
   AI_BASE_URL: ${AI_BASE_URL:-http://ollama:11434/v1}
+  AI_API_KEY: ${AI_API_KEY:-}
   AI_MODEL: ${AI_MODEL:-llama3.2:3b}
 
 x-app-service: &app-service

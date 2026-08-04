@@ -49,6 +49,12 @@ Resend, proxy, cron, or AI credentials. Restrict `.env` to the deployment
 operator and rotate a credential immediately if it appears in a log, image,
 shell history, backup, or support artifact.
 
+Keep `AUTH_SECURE_COOKIES=true`. Browsers support secure cookies on the
+`http://localhost` loopback exception used by the default Compose binding. A
+non-loopback self-host must terminate HTTPS for `NEXT_PUBLIC_APP_URL` through a
+trusted edge. Production validation rejects `AUTH_SECURE_COOKIES=false` in
+every deployment mode; there is no supported insecure-cookie Compose override.
+
 Set `AUTH_REGISTRATION_MODE=invite_only` for the default self-hosted posture,
 or explicitly choose `disabled` or `public`. Registration-mode changes require
 an application restart. Recovery and two-factor operational guidance lives in
@@ -61,7 +67,26 @@ forwarding/Humans headers, signs its directly observed peer address, and is the
 only network path to the application. Never forward a client-supplied
 `x-forwarded-for` value into this trust boundary.
 
-Validate and start the ordinary stack:
+For a first installation, replace every placeholder in `.env`, keep that file
+operator-restricted, and use the attended first-run command:
+
+```sh
+pnpm compose:first-run
+```
+
+It runs the configuration validation and application startup below, then the
+isolated one-shot administrator bootstrap. It stops at the first failed
+command, prints no secret values, and reports the configured sign-in URL. The
+command treats the ignored `.env` as the sign-in URL source and refuses a
+conflicting inherited `NEXT_PUBLIC_APP_URL`; unset that shell override rather
+than allowing Docker Compose precedence to make the report ambiguous. The
+base Compose stack intentionally reports AI unavailable: configure an external
+OpenAI-compatible provider or start the explicit Ollama overlay before relying
+on analyst features. Ollama and model download are never first-run
+prerequisites.
+
+To validate and start the ordinary stack without bootstrapping an
+administrator, run:
 
 ```sh
 docker compose config --quiet

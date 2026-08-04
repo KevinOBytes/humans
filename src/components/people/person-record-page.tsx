@@ -7,6 +7,7 @@ import { EvidenceSection } from "@/components/evidence/evidence-section";
 import { FactsSection } from "@/components/facts/facts-section";
 import { NotesSection } from "@/components/notes/notes-section";
 import { ContactsPlacesSection } from "@/components/locations/contacts-places-section";
+import { PersonEditForm } from "@/components/people/person-edit-form";
 import { RelationshipsSection } from "@/components/relationships/relationships-section";
 import { Badge } from "@/components/ui/badge";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
@@ -86,6 +87,9 @@ export async function PersonRecordPage({
           <p className="text-muted-foreground mt-5 max-w-3xl text-sm leading-6 whitespace-pre-wrap">
             {person.biography}
           </p>
+        ) : null}
+        {permissions.includes("person:update") ? (
+          <PersonEditForm person={person} />
         ) : null}
       </header>
       <nav

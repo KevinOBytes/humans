@@ -59,6 +59,25 @@ describe("PersonForm", () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith("person-a"));
   });
 
+  it("prevents cancellation while a save is pending", async () => {
+    const user = userEvent.setup();
+    let resolve!: (value: PersonFormResult) => void;
+    const submit = vi.fn(
+      () => new Promise<PersonFormResult>((next) => (resolve = next)),
+    );
+    const onCancel = vi.fn();
+    render(<PersonForm submit={submit} onCancel={onCancel} />);
+
+    await user.click(screen.getByRole("button", { name: "Create person" }));
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toBeDisabled();
+    await user.click(cancel);
+    expect(onCancel).not.toHaveBeenCalled();
+
+    resolve({ person: null, issues: [], code: "SAVE_FAILED" });
+    await waitFor(() => expect(cancel).toBeEnabled());
+  });
+
   it("shows a reload action for optimistic conflicts", async () => {
     const user = userEvent.setup();
     const onReload = vi.fn();
