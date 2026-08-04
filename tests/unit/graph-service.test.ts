@@ -84,6 +84,20 @@ function createStatementTimeoutGraphService() {
 }
 
 describe("graph service preflight", () => {
+  it("maps statistics timeouts to one neutral error without partial counts", async () => {
+    const { execute, service, transaction } =
+      createStatementTimeoutGraphService();
+
+    const error = await service.statistics().catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      extensions: { code: "RATE_LIMITED", requestId: "request-1" },
+    });
+    expect(JSON.stringify(error)).not.toContain("private query text");
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
   it("maps snapshot create/read/replay statement timeouts to neutral bounded errors", async () => {
     const { service } = createStatementTimeoutGraphService();
     const attempts = [

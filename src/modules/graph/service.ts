@@ -162,6 +162,8 @@ const UUID_PATTERN =
 const VIEW_CURSOR_ORDER = "graph-view-name-asc";
 const POSITION_CURSOR_ORDER = "graph-view-position-person-asc";
 const ANALYSIS_RUN_CURSOR_ORDER = "graph-analysis-run-id-asc";
+const DASHBOARD_ANALYSIS_RUN_CURSOR_ORDER =
+  "dashboard-graph-analysis-created-desc";
 const ANALYSIS_RESULT_CURSOR_ORDER = "graph-analysis-result-rank-id-asc";
 
 function graphCost(input: GraphFilterInput) {
@@ -337,6 +339,72 @@ function decodeAnalysisRunCursor(
   } catch {
     throw createGraphQLError("VALIDATION_FAILED", "The cursor is invalid.");
   }
+}
+
+function encodeDashboardAnalysisRunCursor(
+  row: { id: string; createdAt: Date },
+  workspaceId: string,
+  secret: string,
+) {
+  return encodeAnalysisCursor(
+    {
+      v: 1,
+      p: "humans.graph.dashboard-analysis-runs.cursor.v1",
+      o: DASHBOARD_ANALYSIS_RUN_CURSOR_ORDER,
+      q: "dashboard-analysis-runs",
+      w: workspaceId,
+      t: row.createdAt.toISOString(),
+      i: row.id,
+    },
+    secret,
+  );
+}
+
+function decodeDashboardAnalysisRunCursor(
+  value: string | null,
+  workspaceId: string,
+  secret: string,
+): { createdAt: Date; id: string } | null {
+  if (value === null) return null;
+  try {
+    const { body, decoded, signature } = decodeAnalysisCursor(value);
+    const expected = analysisCursorSignature(secret, body);
+    const createdAt = new Date(String(decoded.t));
+    if (
+      !timingSafeEqual(
+        Buffer.from(signature, "hex"),
+        Buffer.from(expected, "hex"),
+      ) ||
+      Reflect.ownKeys(decoded).length !== 7 ||
+      decoded.v !== 1 ||
+      decoded.p !== "humans.graph.dashboard-analysis-runs.cursor.v1" ||
+      decoded.o !== DASHBOARD_ANALYSIS_RUN_CURSOR_ORDER ||
+      decoded.q !== "dashboard-analysis-runs" ||
+      decoded.w !== workspaceId ||
+      typeof decoded.t !== "string" ||
+      Number.isNaN(createdAt.getTime()) ||
+      createdAt.toISOString() !== decoded.t ||
+      typeof decoded.i !== "string" ||
+      !UUID_PATTERN.test(decoded.i)
+    )
+      throw new Error("invalid cursor");
+    return { createdAt, id: decoded.i.toLowerCase() };
+  } catch {
+    throw createGraphQLError("VALIDATION_FAILED", "The cursor is invalid.");
+  }
+}
+
+function normalizeDashboardAnalysisPage(input: {
+  first?: number | null;
+  after?: string | null;
+}): { first: number; after: string | null } {
+  const first = input.first ?? 5;
+  if (!Number.isInteger(first) || first < 1 || first > 10)
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "first must be between 1 and 10.",
+    );
+  return { first, after: input.after ?? null };
 }
 
 function encodeAnalysisResultCursor(
@@ -2349,6 +2417,95 @@ export function createGraphService(context: GraphServiceContext) {
           throw createGraphQLError(
             "RATE_LIMITED",
             "The graph analysis query exceeded its bounded execution time.",
+            { requestId: context.requestId },
+          );
+        throw error;
+      }
+    },
+    async listRecentAnalysisRuns(input: {
+      first?: number | null;
+      after?: string | null;
+    }): Promise<AnalysisRunConnection> {
+      const page = normalizeDashboardAnalysisPage(input);
+      const after = decodeDashboardAnalysisRunCursor(
+        page.after,
+        context.workspaceId,
+        context.cursorHmacKey,
+      );
+      await context.operationLimiter.consume({
+        clientPolicy: ANALYSIS_READ_CLIENT_POLICY,
+        operationClass: ANALYSIS_READ_OPERATION_CLASS,
+        cost: analysisRunListReadCost(page.first),
+        policy: ANALYSIS_READ_POLICY,
+      });
+      try {
+        return await context.database.transaction(
+          async (transaction) => {
+            await transaction.execute(
+              sql`set local statement_timeout = '2500ms'`,
+            );
+            const repository = createGraphRepository(transaction as Database);
+            const rows = await repository.listRecentAnalysisRuns({
+              workspaceId: context.workspaceId,
+              actorId: context.actor.type === "user" ? context.actor.id : null,
+              after,
+              personVisibility,
+              relationshipVisibility,
+              limit: page.first + 1,
+            });
+            const nodes = rows.slice(0, page.first);
+            const last = nodes.at(-1);
+            return {
+              nodes,
+              pageInfo: {
+                endCursor: last
+                  ? encodeDashboardAnalysisRunCursor(
+                      last,
+                      context.workspaceId,
+                      context.cursorHmacKey,
+                    )
+                  : null,
+                hasNextPage: rows.length > page.first,
+              },
+            };
+          },
+          { isolationLevel: "repeatable read", accessMode: "read only" },
+        );
+      } catch (error) {
+        if (isStatementTimeout(error))
+          throw createGraphQLError(
+            "RATE_LIMITED",
+            "The graph analysis query exceeded its bounded execution time.",
+            { requestId: context.requestId },
+          );
+        throw error;
+      }
+    },
+    async statistics(): Promise<{
+      visiblePeople: number;
+      visibleRelationships: number;
+    }> {
+      try {
+        return await context.database.transaction(
+          async (transaction) => {
+            await transaction.execute(
+              sql`set local statement_timeout = '2500ms'`,
+            );
+            return createGraphRepository(
+              transaction as Database,
+            ).graphStatistics({
+              workspaceId: context.workspaceId,
+              personVisibility,
+              relationshipVisibility,
+            });
+          },
+          { isolationLevel: "repeatable read", accessMode: "read only" },
+        );
+      } catch (error) {
+        if (isStatementTimeout(error))
+          throw createGraphQLError(
+            "RATE_LIMITED",
+            "The graph statistics query exceeded its bounded execution time.",
             { requestId: context.requestId },
           );
         throw error;

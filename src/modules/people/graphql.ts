@@ -184,6 +184,17 @@ function connectionComplexity(first: number | null | undefined) {
   };
 }
 
+function dashboardConnectionComplexity(first: number | null | undefined) {
+  const requested = first ?? 8;
+  return {
+    field: 1,
+    multiplier:
+      Number.isInteger(requested) && requested >= 1 && requested <= 10
+        ? requested
+        : 11,
+  };
+}
+
 export function registerPeopleGraphQL(): void {
   builder.queryFields((t) => ({
     people: t.field({
@@ -207,6 +218,19 @@ export function registerPeopleGraphQL(): void {
           status: args.filter?.status,
           sensitivity: args.filter?.sensitivity,
         });
+      },
+    }),
+    dashboardRecentPeople: t.field({
+      type: PersonConnection,
+      nullable: false,
+      args: {
+        first: t.arg.int(),
+        after: t.arg.string(),
+      },
+      complexity: (args) => dashboardConnectionComplexity(args.first),
+      resolve: (_root, args, context) => {
+        requirePermission(context, "person", "read");
+        return context.services.people.listRecent(args);
       },
     }),
     person: t.field({

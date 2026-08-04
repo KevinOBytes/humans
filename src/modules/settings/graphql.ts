@@ -1,7 +1,11 @@
 import { builder } from "@/graphql/builder";
+import { requirePermission } from "@/graphql/context";
 import { createGraphQLError } from "@/graphql/errors";
 
-import type { PolicySettingsReadModel } from "./repository";
+import type {
+  PolicySettingsReadModel,
+  WorkspacePolicySummaryReadModel,
+} from "./repository";
 import type { SafeApiKeySettings } from "./read-model";
 import type { SafeSettingsPage } from "./pagination";
 import {
@@ -291,6 +295,18 @@ const SettingsPolicyPosture = builder
     }),
   });
 
+const WorkspacePolicySummary = builder
+  .objectRef<WorkspacePolicySummaryReadModel>("WorkspacePolicySummary")
+  .implement({
+    fields: (t) => ({
+      defaultRetentionDays: t.exposeInt("defaultRetentionDays", {
+        nullable: true,
+      }),
+      aiEnabled: t.exposeBoolean("aiEnabled", { nullable: false }),
+      storageEnabled: t.exposeBoolean("storageEnabled", { nullable: false }),
+    }),
+  });
+
 export function registerSettingsGraphQL(): void {
   builder.queryFields((t) => ({
     settingsWorkspaceDirectory: t.field({
@@ -348,6 +364,15 @@ export function registerSettingsGraphQL(): void {
           );
         }
         return context.services.settings.readPolicySettings();
+      },
+    }),
+    workspacePolicySummary: t.field({
+      type: WorkspacePolicySummary,
+      nullable: false,
+      complexity: { field: 2, multiplier: 1 },
+      resolve: (_root, _args, context) => {
+        requirePermission(context, "workspace", "read");
+        return context.services.settings.readWorkspacePolicySummary();
       },
     }),
   }));

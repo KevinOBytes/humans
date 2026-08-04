@@ -61,6 +61,67 @@ function sortValue(row: PersonRow): string {
   return row.sortName ?? row.displayName;
 }
 
+const RECENT_PEOPLE_CURSOR_ORDER = "dashboard-people-updated-desc";
+
+function encodeRecentCursor(row: Pick<PersonRow, "id" | "updatedAt">): string {
+  return Buffer.from(
+    JSON.stringify({
+      v: 1,
+      o: RECENT_PEOPLE_CURSOR_ORDER,
+      t: row.updatedAt.toISOString(),
+      i: row.id,
+    }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function decodeRecentCursor(
+  value: string | null,
+): { updatedAt: Date; id: string } | null {
+  if (value === null) return null;
+  try {
+    if (value.length > 1_024 || !/^[A-Za-z0-9_-]+$/u.test(value))
+      throw new Error("invalid cursor");
+    const bytes = Buffer.from(value, "base64url");
+    if (bytes.toString("base64url") !== value)
+      throw new Error("invalid cursor");
+    const decoded = JSON.parse(bytes.toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    const updatedAt = new Date(String(decoded.t));
+    if (
+      Reflect.ownKeys(decoded).length !== 4 ||
+      decoded.v !== 1 ||
+      decoded.o !== RECENT_PEOPLE_CURSOR_ORDER ||
+      typeof decoded.t !== "string" ||
+      Number.isNaN(updatedAt.getTime()) ||
+      updatedAt.toISOString() !== decoded.t ||
+      typeof decoded.i !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+        decoded.i,
+      )
+    )
+      throw new Error("invalid cursor");
+    return { updatedAt, id: decoded.i.toLowerCase() };
+  } catch {
+    throw createGraphQLError("VALIDATION_FAILED", "The cursor is invalid.");
+  }
+}
+
+function normalizeDashboardPage(input: {
+  first?: number | null;
+  after?: string | null;
+}): { first: number; after: string | null } {
+  const first = input.first ?? 8;
+  if (!Number.isInteger(first) || first < 1 || first > 10)
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "first must be between 1 and 10.",
+    );
+  return { first, after: input.after ?? null };
+}
+
 function validateVersion(value: number): ValidationIssue[] {
   return Number.isInteger(value) && value >= 1 && value <= 2_147_483_647
     ? []
@@ -200,6 +261,28 @@ export function createPeopleService(context: ResearchServiceContext) {
                   sortValue(nodes.at(-1)!),
                   nodes.at(-1)!.id,
                 ),
+        },
+      };
+    },
+
+    async listRecent(input: {
+      first?: number | null;
+      after?: string | null;
+    }): Promise<Connection<PersonRow>> {
+      const page = normalizeDashboardPage(input);
+      const rows = await repository.listRecent({
+        workspaceId: context.workspaceId,
+        cursor: decodeRecentCursor(page.after),
+        limit: page.first + 1,
+        visibility,
+      });
+      const nodes = rows.slice(0, page.first);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > page.first,
+          endCursor:
+            nodes.length === 0 ? null : encodeRecentCursor(nodes.at(-1)!),
         },
       };
     },
