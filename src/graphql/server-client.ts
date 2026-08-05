@@ -3,13 +3,12 @@ import "server-only";
 import { headers } from "next/headers";
 
 import type { TypedDocumentString } from "@/graphql/generated/graphql";
+import {
+  normalizeGraphQLRequestId,
+  normalizePublicGraphQLErrors,
+  type PublicGraphQLError,
+} from "@/graphql/error-contract";
 import { getServerEnv } from "@/lib/env/server";
-
-type PublicGraphQLError = {
-  code: string;
-  message: string;
-  requestId?: string;
-};
 
 type GraphQLResponse<TData> = {
   data?: TData;
@@ -61,41 +60,19 @@ export async function executeServerGraphQL<
     },
     body: JSON.stringify({ query: document.toString(), variables }),
   });
-  const requestId = response.headers.get("x-request-id") ?? undefined;
+  const requestId = normalizeGraphQLRequestId(
+    response.headers.get("x-request-id"),
+  );
   let body: GraphQLResponse<TResult>;
   try {
     body = (await response.json()) as GraphQLResponse<TResult>;
   } catch {
-    throw new ServerGraphQLError([
-      {
-        code: "INTERNAL",
-        message: "The request could not be completed.",
-        ...(requestId ? { requestId } : {}),
-      },
-    ]);
+    throw new ServerGraphQLError(
+      normalizePublicGraphQLErrors(undefined, requestId),
+    );
   }
   if (!response.ok || body.errors?.length || body.data === undefined) {
-    const errors = body.errors?.map((error) => ({
-      code:
-        typeof error.extensions?.code === "string"
-          ? error.extensions.code
-          : "INTERNAL",
-      message:
-        typeof error.message === "string"
-          ? error.message
-          : "The request could not be completed.",
-      ...(typeof error.extensions?.requestId === "string"
-        ? { requestId: error.extensions.requestId }
-        : requestId
-          ? { requestId }
-          : {}),
-    })) ?? [
-      {
-        code: "INTERNAL",
-        message: "The request could not be completed.",
-        ...(requestId ? { requestId } : {}),
-      },
-    ];
+    const errors = normalizePublicGraphQLErrors(body.errors, requestId);
     throw new ServerGraphQLError(errors);
   }
   return body.data;
