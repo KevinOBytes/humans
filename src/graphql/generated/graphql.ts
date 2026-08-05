@@ -141,6 +141,7 @@ export type CreateFactInput = {
   confidenceExplanation?: string | null | undefined;
   confidenceMethod?: string | null | undefined;
   definitionId: string;
+  idempotencyKey?: string | null | undefined;
   language?: string | null | undefined;
   observedAt?: string | null | undefined;
   personId: string;

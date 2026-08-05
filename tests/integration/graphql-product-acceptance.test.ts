@@ -3,8 +3,12 @@
 import { readFile } from "node:fs/promises";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { newId } from "@/db/id";
+import { auditEvents } from "@/db/schema/operations";
+import { facts } from "@/db/schema/facts";
+import { locationMutationIdempotency } from "@/db/schema/locations";
 import {
   AiRunDocument,
   CreateEvidenceItemDocument,
@@ -604,6 +608,143 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     expect(replay.body?.data?.createPerson.person?.id).toBe(
       first.body?.data?.createPerson.person?.id,
     );
+  });
+
+  it("covers generated createFact replay, concurrency, expiry, malformed references, and tenant fencing", async () => {
+    const owner = await fixture.createActor();
+    const person = dataField<{ person: { id: string } }>(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreatePerson",
+        query: CreatePersonDocument,
+        variables: { input: { displayName: "Generated fact subject" } },
+      }),
+      "createPerson",
+    );
+    const definition = dataField<{
+      factDefinition: { id: string };
+    }>(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateFactDefinition",
+        query: CreateFactDefinitionDocument,
+        variables: {
+          input: {
+            allowedValueType: "TEXT",
+            fieldKey: "generated_fact_idempotency",
+            label: "Generated fact idempotency",
+            namespace: "person",
+          },
+        },
+      }),
+      "createFactDefinition",
+    );
+    const input = (idempotencyKey: string, text: string) => ({
+      definitionId: definition.factDefinition.id,
+      idempotencyKey,
+      personId: person.person.id,
+      value: { text },
+    });
+    const create = (idempotencyKey: string, text: string) =>
+      fixture.execute<{
+        createFact: { code: string | null; fact: { id: string } | null };
+      }>({
+        jar: owner.jar,
+        operationName: "CreateFact",
+        query: CreateFactDocument,
+        variables: { input: input(idempotencyKey, text) },
+      });
+
+    const concurrent = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        create("generated-fact-concurrent", "concurrent fact"),
+      ),
+    );
+    for (const result of concurrent) {
+      expect(result.body?.errors).toBeUndefined();
+      expect(result.body?.data?.createFact).toMatchObject({ code: null });
+    }
+    const concurrentIds = new Set(
+      concurrent.map((result) => result.body?.data?.createFact.fact?.id),
+    );
+    expect(concurrentIds.size).toBe(1);
+
+    const malformedFirst = await create(
+      "generated-fact-malformed",
+      "malformed reference fact",
+    );
+    const malformedId = malformedFirst.body?.data?.createFact.fact?.id;
+    expect(malformedId).toEqual(expect.any(String));
+    const malformedClaims = await fixture.database
+      .select()
+      .from(locationMutationIdempotency)
+      .where(eq(locationMutationIdempotency.workspaceId, owner.workspaceId));
+    const malformedClaim = malformedClaims.find(
+      (claim) =>
+        claim.operation === "fact.create.graphql" &&
+        (claim.responseReference as { factId?: unknown } | null)?.factId ===
+          malformedId,
+    );
+    if (!malformedClaim)
+      throw new Error("The fact idempotency claim is missing.");
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({ responseReference: { factId: ["malformed"] } })
+      .where(eq(locationMutationIdempotency.id, malformedClaim.id));
+    expectGraphQLError(
+      await create("generated-fact-malformed", "malformed reference fact"),
+      "VALIDATION_FAILED",
+    );
+
+    const expiredFirst = await create(
+      "generated-fact-expired",
+      "expired reference fact",
+    );
+    const expiredId = expiredFirst.body?.data?.createFact.fact?.id;
+    const expiredClaim = (
+      await fixture.database
+        .select()
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.workspaceId, owner.workspaceId))
+    ).find(
+      (claim) =>
+        claim.operation === "fact.create.graphql" &&
+        (claim.responseReference as { factId?: unknown } | null)?.factId ===
+          expiredId,
+    );
+    if (!expiredClaim) throw new Error("The expiring fact claim is missing.");
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(locationMutationIdempotency.id, expiredClaim.id));
+    const expiredReplay = await create(
+      "generated-fact-expired",
+      "expired reference fact",
+    );
+    expect(expiredReplay.body?.errors).toBeUndefined();
+    expect(expiredReplay.body?.data?.createFact.fact?.id).not.toBe(expiredId);
+
+    const foreign = await fixture.createActor();
+    const foreignResult = await fixture.execute({
+      jar: foreign.jar,
+      operationName: "CreateFact",
+      query: CreateFactDocument,
+      variables: { input: input("generated-fact-foreign", "cross tenant") },
+    });
+    expectGraphQLError(foreignResult, "NOT_FOUND");
+
+    const persistedFacts = await fixture.database
+      .select({ id: facts.id })
+      .from(facts)
+      .where(eq(facts.workspaceId, owner.workspaceId));
+    expect(persistedFacts).toHaveLength(4);
+    const persistedAudits = await fixture.database
+      .select({ action: auditEvents.action })
+      .from(auditEvents)
+      .where(eq(auditEvents.workspaceId, owner.workspaceId));
+    expect(
+      persistedAudits.filter((row) => row.action === "fact.create").length,
+    ).toBe(4);
   });
 
   it("allows owner and administrator production introspection while denying lesser authority", async () => {
