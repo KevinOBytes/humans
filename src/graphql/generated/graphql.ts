@@ -742,6 +742,16 @@ export type UnmergePersonInput = {
   loserPersonId: string;
 };
 
+export type UpdateAccessPolicyInput = {
+  expectedVersion: number;
+  id: string;
+  name?: string | null | undefined;
+  resourceKinds?: Array<string> | null | undefined;
+  roleBindings?: unknown;
+  sensitivityCeiling?: Sensitivity | null | undefined;
+  state?: PolicyState | null | undefined;
+};
+
 export type UpdateGraphViewInput = {
   appearance?: GraphViewAppearanceInput | null | undefined;
   expectedVersion: number;
@@ -3880,6 +3890,19 @@ export type CreateAccessPolicyMutationVariables = Exact<{
 
 export type CreateAccessPolicyMutation = {
   createAccessPolicy: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type UpdateAccessPolicyMutationVariables = Exact<{
+  input: UpdateAccessPolicyInput;
+}>;
+
+export type UpdateAccessPolicyMutation = {
+  updateAccessPolicy: {
     id: string | null;
     version: number | null;
     code: string | null;
@@ -8719,6 +8742,24 @@ export const CreateAccessPolicyDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   CreateAccessPolicyMutation,
   CreateAccessPolicyMutationVariables
+>;
+export const UpdateAccessPolicyDocument = new TypedDocumentString(
+  `
+    mutation UpdateAccessPolicy($input: UpdateAccessPolicyInput!) {
+  updateAccessPolicy(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:a69d777360746491cb811e17391eec5e63b1fec7d21911ee52b2c2a34ff6faa5",
+  },
+) as unknown as TypedDocumentString<
+  UpdateAccessPolicyMutation,
+  UpdateAccessPolicyMutationVariables
 >;
 export const CreateResourceGrantDocument = new TypedDocumentString(
   `
