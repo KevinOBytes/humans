@@ -58,7 +58,9 @@ The following evidence or capability remains open:
   model smoke;
 - mutable retention/access/AI policy administration, grants, legal holds,
   consent and deletion workflows, and provider administration;
-- webhook lifecycle, signing, delivery retries, and operator controls;
+- live webhook destination, destination-rebinding, retry progression,
+  upgrade-migration, and external provider-failure acceptance beyond the
+  generated-GraphQL/PostgreSQL lifecycle and signed-delivery evidence;
 - extraction-run execution beyond the current schema foundation;
 - remaining identity reconciliation/merge, exhaustive person-presentation,
   invitation-race, API-key activation, and whole-product error/failure matrices;
@@ -210,3 +212,13 @@ workspace-shared visibility, non-owner mutation denial, stale optimistic-version
 conflicts, archive exclusion from current reads and saved-query runs, and
 cross-workspace non-disclosure for both resource types. This closes
 `HUM-FR-020`; it does not replace the remaining whole-product release gates.
+
+## Current webhook lifecycle evidence
+
+On 2026-08-05, the live PostgreSQL generated-GraphQL acceptance passed webhook
+create, secret rotation, test-event enqueue, and disable. Its deterministic
+outbound edge verifies the delivered body’s timestamped HMAC against the
+rotated secret, records a redacted HTTP 503 retry state, and verifies that a
+replayed completed delivery makes no second outbound call. It does not claim a
+live destination, DNS-rebinding defense, retry progression, upgrade migration,
+or external provider-failure matrix; `HUM-FR-024` remains incomplete.

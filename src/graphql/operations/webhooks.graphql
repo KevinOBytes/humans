@@ -38,3 +38,12 @@ mutation DisableWorkspaceWebhook($input: WebhookIdInput!) {
     requestId
   }
 }
+
+mutation SendWorkspaceWebhookTestEvent($input: WebhookIdInput!) {
+  sendWebhookTestEvent(input: $input) {
+    id
+    deliveryId
+    code
+    requestId
+  }
+}
