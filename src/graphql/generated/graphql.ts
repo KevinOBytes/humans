@@ -883,6 +883,7 @@ export type UpdateSavedQueryInput = {
 export type UpdateWorkspaceDefaultsInput = {
   aiEnabled?: boolean | null | undefined;
   expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
   locale?: string | null | undefined;
   retainRestrictedAiPrompts?: boolean | null | undefined;
   retentionDays?: number | null | undefined;
