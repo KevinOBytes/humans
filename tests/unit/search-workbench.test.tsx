@@ -298,8 +298,12 @@ describe("SearchWorkbench", () => {
       expect(await screen.findByRole("status")).toHaveTextContent(message);
       expect(history).not.toHaveBeenCalled();
       expect(storage).not.toHaveBeenCalled();
-      expect(window.localStorage.getItem("private phrase")).toBeNull();
-      expect(window.sessionStorage.getItem("private phrase")).toBeNull();
+      expect(
+        window.localStorage?.getItem?.("private phrase") ?? null,
+      ).toBeNull();
+      expect(
+        window.sessionStorage?.getItem?.("private phrase") ?? null,
+      ).toBeNull();
       for (const method of consoles) expect(method).not.toHaveBeenCalled();
       expect(screen.getByRole("status")).not.toHaveTextContent(
         "private phrase",

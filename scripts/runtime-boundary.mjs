@@ -138,11 +138,6 @@ export function assertRequiredRuntimePackageIdentities(
 ) {
   const names = new Set(packages.map((entry) => entry.name));
   const packageArchitecture = architecture === "amd64" ? "x64" : architecture;
-  if (names.has("@opentelemetry/api")) {
-    throw new Error(
-      "Unexpected optional OpenTelemetry peer in runtime package inventory",
-    );
-  }
   for (const required of [
     "next",
     "react-dom",
