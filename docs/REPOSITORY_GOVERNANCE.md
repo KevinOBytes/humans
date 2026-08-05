@@ -19,7 +19,7 @@ Ruleset `20371861` requires pull requests, resolved review conversations, strict
 
 ## Workflow safety
 
-The CI workflow grants read-only repository contents, cancels superseded runs, bounds jobs and steps, and does not use `pull_request_target`. Pull requests do not receive repository secrets or write permissions. Checkout credentials are not persisted. Dependency review is limited to pull-request events because its comparison API is not available on ordinary pushes; the local license and audit checks run on every event.
+The CI workflow runs automatically for pull requests and pushes to `main`, with optional manual dispatch. Feature-branch pushes do not create a duplicate run alongside the pull-request run. The workflow grants read-only repository contents, cancels superseded runs, bounds jobs and steps, and does not use `pull_request_target`. Pull requests do not receive repository secrets or write permissions. Checkout credentials are not persisted. Dependency review is limited to pull-request events because its comparison API is not available on ordinary pushes; the local license and audit checks run on every configured event.
 
 Every third-party action is pinned to a 40-character commit SHA with its release tag in an adjacent comment. To update a pin:
 
