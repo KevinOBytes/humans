@@ -16,7 +16,8 @@ import {
   type ValidationIssue,
 } from "@/modules/facts/validation";
 import { newId } from "@/db/id";
-import { people } from "@/db/schema/people";
+import { mergeDecisions, people } from "@/db/schema/people";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { createPeopleRepository, type PersonRow } from "./repository";
 
@@ -608,6 +609,235 @@ export function createPeopleService(context: ResearchServiceContext) {
           currentVersion: current.version,
         };
       return { resource: archived, issues: [], code: null };
+    },
+    async merge(input: {
+      winnerPersonId: string;
+      loserPersonId: string;
+      reason: string;
+    }): Promise<MutationOutcome<PersonRow>> {
+      if (!context.permissions.has("person:merge")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Person merging is not permitted.",
+        );
+      }
+      if (
+        input.winnerPersonId === input.loserPersonId ||
+        input.reason.trim().length < 1
+      ) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "A distinct winner, loser, and reason are required.",
+        );
+      }
+      const merged = await writeTransaction(context, async (transaction) => {
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 19017))`,
+        );
+        const rows = await transaction
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.winnerPersonId),
+              isNull(people.deletedAt),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        const loserRows = await transaction
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.loserPersonId),
+              isNull(people.deletedAt),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        const winner = rows[0];
+        const loser = loserRows[0];
+        if (
+          !winner ||
+          !loser ||
+          winner.status === "merged" ||
+          loser.status === "merged"
+        ) {
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The people selected for merge were not found.",
+          );
+        }
+        const decisionId = newId();
+        await transaction.insert(mergeDecisions).values({
+          id: decisionId,
+          workspaceId: context.workspaceId,
+          winnerPersonId: winner.id,
+          loserPersonId: loser.id,
+          reason: input.reason.trim().slice(0, 2048),
+          fieldChoices: {},
+          reversibleSnapshot: {
+            loser: {
+              status: loser.status,
+              mergedIntoPersonId: loser.mergedIntoPersonId,
+              version: loser.version,
+            },
+          },
+          decidedBy: context.actor.principalId,
+          createdBy: context.actor.principalId,
+          updatedBy: context.actor.principalId,
+        });
+        const [updated] = await transaction
+          .update(people)
+          .set({
+            status: "merged",
+            mergedIntoPersonId: winner.id,
+            version: sql`${people.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          })
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, loser.id),
+              eq(people.version, loser.version),
+            ),
+          )
+          .returning();
+        if (!updated) return null;
+        await audit.write(transaction as unknown as typeof context.database, {
+          action: "person.merge",
+          resourceKind: "person",
+          resourceId: winner.id,
+          sensitivity: winner.sensitivity,
+          changedFields: ["mergedIntoPersonId", "status"],
+          metadata: { loserPersonId: loser.id, mergeDecisionId: decisionId },
+        });
+        await applySearchIndexMaintenance(context, transaction, [
+          {
+            action: "upsert",
+            sourceId: winner.id,
+            sourceKind: "person",
+            sourceVersion: winner.version,
+            workspaceId: context.workspaceId,
+          },
+          {
+            action: "remove",
+            sourceId: loser.id,
+            sourceKind: "person",
+            sourceVersion: updated.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return winner;
+      });
+      if (!merged) return { resource: null, issues: [], code: "CONFLICT" };
+      return { resource: merged, issues: [], code: null };
+    },
+    async unmerge(input: {
+      loserPersonId: string;
+      expectedVersion: number;
+    }): Promise<MutationOutcome<PersonRow>> {
+      if (!context.permissions.has("person:merge")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Person merging is not permitted.",
+        );
+      }
+      const restored = await writeTransaction(context, async (transaction) => {
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 19017))`,
+        );
+        const [loser] = await transaction
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.loserPersonId),
+              eq(people.status, "merged"),
+              eq(people.version, input.expectedVersion),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!loser) return null;
+        const [decision] = await transaction
+          .select()
+          .from(mergeDecisions)
+          .where(
+            and(
+              eq(mergeDecisions.workspaceId, context.workspaceId),
+              eq(mergeDecisions.loserPersonId, loser.id),
+              isNull(mergeDecisions.deletedAt),
+            ),
+          )
+          .orderBy(sql`${mergeDecisions.decidedAt} desc`)
+          .limit(1)
+          .for("update");
+        if (!decision) return null;
+        const snapshot = decision.reversibleSnapshot as {
+          loser?: { status?: string; version?: number };
+        };
+        const status =
+          snapshot.loser?.status &&
+          ["active", "deceased", "missing", "unknown", "archived"].includes(
+            snapshot.loser.status,
+          )
+            ? snapshot.loser.status
+            : "unknown";
+        const [updated] = await transaction
+          .update(people)
+          .set({
+            status: status as PersonRow["status"],
+            mergedIntoPersonId: null,
+            version: sql`${people.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          })
+          .where(
+            and(
+              eq(people.id, loser.id),
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.version, loser.version),
+            ),
+          )
+          .returning();
+        if (!updated) return null;
+        await transaction
+          .update(mergeDecisions)
+          .set({
+            deletedAt: new Date(),
+            deletedBy: context.actor.principalId,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+            version: sql`${mergeDecisions.version} + 1`,
+          })
+          .where(eq(mergeDecisions.id, decision.id));
+        await audit.write(transaction as unknown as typeof context.database, {
+          action: "person.unmerge",
+          resourceKind: "person",
+          resourceId: loser.id,
+          sensitivity: loser.sensitivity,
+          changedFields: ["mergedIntoPersonId", "status"],
+          metadata: { mergeDecisionId: decision.id },
+        });
+        await applySearchIndexMaintenance(context, transaction, [
+          {
+            action: "upsert",
+            sourceId: loser.id,
+            sourceKind: "person",
+            sourceVersion: updated.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return updated;
+      });
+      if (!restored) return { resource: null, issues: [], code: "CONFLICT" };
+      return { resource: restored, issues: [], code: null };
     },
   };
 }

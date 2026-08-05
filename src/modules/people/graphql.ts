@@ -119,6 +119,20 @@ const PersonFilterInput = builder.inputType("PersonFilterInput", {
   }),
 });
 
+const MergePersonInput = builder.inputType("MergePersonInput", {
+  fields: (t) => ({
+    winnerPersonId: t.field({ type: "UUID", required: true }),
+    loserPersonId: t.field({ type: "UUID", required: true }),
+    reason: t.string({ required: true }),
+  }),
+});
+const UnmergePersonInput = builder.inputType("UnmergePersonInput", {
+  fields: (t) => ({
+    loserPersonId: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+  }),
+});
+
 const CreatePersonInput = builder.inputType("CreatePersonInput", {
   fields: (t) => ({
     displayName: t.string({ required: true }),
@@ -279,6 +293,36 @@ export function registerPeopleGraphQL(): void {
       resolve: async (_root, args, context) => {
         requirePermission(context, "person", "delete");
         const outcome = await context.services.people.archive(args.input);
+        if (outcome.resource)
+          invalidateVisibilityDependentLoaders(context.loaders, {
+            kind: "person",
+            id: outcome.resource.id,
+          });
+        return payload(outcome);
+      },
+    }),
+    mergePerson: t.field({
+      type: PersonPayload,
+      nullable: false,
+      args: { input: t.arg({ type: MergePersonInput, required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "merge");
+        const outcome = await context.services.people.merge(args.input);
+        if (outcome.resource)
+          invalidateVisibilityDependentLoaders(context.loaders, {
+            kind: "person",
+            id: args.input.loserPersonId,
+          });
+        return payload(outcome);
+      },
+    }),
+    unmergePerson: t.field({
+      type: PersonPayload,
+      nullable: false,
+      args: { input: t.arg({ type: UnmergePersonInput, required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "merge");
+        const outcome = await context.services.people.unmerge(args.input);
         if (outcome.resource)
           invalidateVisibilityDependentLoaders(context.loaders, {
             kind: "person",

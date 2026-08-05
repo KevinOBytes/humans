@@ -460,6 +460,38 @@ mutation ArchivePerson($input: ArchivePersonInput!) {
   }
 }
 
+mutation MergePerson($input: MergePersonInput!) {
+  mergePerson(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
+mutation UnmergePerson($input: UnmergePersonInput!) {
+  unmergePerson(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
 mutation CreateFactDefinition($input: CreateFactDefinitionInput!) {
   createFactDefinition(input: $input) {
     factDefinition {

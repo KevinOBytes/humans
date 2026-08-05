@@ -488,6 +488,12 @@ export type LinkRelationshipEvidenceInput = {
   supportStrength?: number | null | undefined;
 };
 
+export type MergePersonInput = {
+  loserPersonId: string;
+  reason: string;
+  winnerPersonId: string;
+};
+
 export type NoteContentInput = {
   markdown?: string | null | undefined;
   plainText?: string | null | undefined;
@@ -672,6 +678,11 @@ export type TemporalSemantics =
   | "EXACT"
   | "UNKNOWN"
   | "YEAR_ONLY";
+
+export type UnmergePersonInput = {
+  expectedVersion: number;
+  loserPersonId: string;
+};
 
 export type UpdateGraphViewInput = {
   appearance?: GraphViewAppearanceInput | null | undefined;
@@ -2785,6 +2796,38 @@ export type ArchivePersonMutation = {
     issues: Array<{
       " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
     }>;
+  };
+};
+
+export type MergePersonMutationVariables = Exact<{
+  input: MergePersonInput;
+}>;
+
+export type MergePersonMutation = {
+  mergePerson: {
+    person: {
+      id: string;
+      displayName: string;
+      status: PersonStatus;
+      version: number;
+    } | null;
+    issues: Array<{ code: string; message: string; path: Array<string> }>;
+  };
+};
+
+export type UnmergePersonMutationVariables = Exact<{
+  input: UnmergePersonInput;
+}>;
+
+export type UnmergePersonMutation = {
+  unmergePerson: {
+    person: {
+      id: string;
+      displayName: string;
+      status: PersonStatus;
+      version: number;
+    } | null;
+    issues: Array<{ code: string; message: string; path: Array<string> }>;
   };
 };
 
@@ -6733,6 +6776,56 @@ export const ArchivePersonDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ArchivePersonMutation,
   ArchivePersonMutationVariables
+>;
+export const MergePersonDocument = new TypedDocumentString(
+  `
+    mutation MergePerson($input: MergePersonInput!) {
+  mergePerson(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:f4cdcd0c91d3a7660e6162a15b0898007ddeed921584d5e4506de2807bdb3e44",
+  },
+) as unknown as TypedDocumentString<
+  MergePersonMutation,
+  MergePersonMutationVariables
+>;
+export const UnmergePersonDocument = new TypedDocumentString(
+  `
+    mutation UnmergePerson($input: UnmergePersonInput!) {
+  unmergePerson(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:30e0d401d8a1ccd5bb4312d0844fc8a7ae0aea136c40c2c1af34a56922a030da",
+  },
+) as unknown as TypedDocumentString<
+  UnmergePersonMutation,
+  UnmergePersonMutationVariables
 >;
 export const CreateFactDefinitionDocument = new TypedDocumentString(
   `
