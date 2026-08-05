@@ -40,6 +40,7 @@
     "compose:first-run": "node scripts/compose-first-run.mjs",
     "test:compose:smoke": "node scripts/compose-lifecycle.mjs smoke",
     "test:compose:lifecycle": "node scripts/compose-lifecycle.mjs lifecycle",
+    "test:compose:ollama": "node scripts/ollama-compose-smoke.mjs",
     "db:generate": "drizzle-kit generate --name core",
     "db:drift:check": "node scripts/check-drizzle-drift.mjs",
     "db:migrate": "node --env-file-if-exists=.env.local --conditions react-server --import tsx src/db/migrate.ts",

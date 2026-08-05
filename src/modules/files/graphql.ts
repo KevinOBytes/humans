@@ -10,6 +10,8 @@ import {
 import type { PageInfo as PageInfoShape } from "@/modules/people/service";
 
 import type { FileRow, FileVariantRow, UploadSessionRow } from "./repository";
+import type { InferSelectModel } from "drizzle-orm";
+import { extractionRuns } from "@/db/schema/files";
 
 const UploadPurpose = builder.enumType("UploadPurpose", {
   values: ["EVIDENCE", "CSV_IMPORT", "JSON_IMPORT"] as const,
@@ -43,6 +45,50 @@ const FileScanState = builder.enumType("FileScanState", {
 const GrantMethod = builder.enumType("FileGrantMethod", {
   values: ["GET", "PUT"] as const,
 });
+const ExtractionRunState = builder.enumType("ExtractionRunState", {
+  values: ["PENDING", "PROCESSING", "COMPLETED", "ERROR"] as const,
+});
+type ExtractionRunRow = InferSelectModel<typeof extractionRuns>;
+const ExtractionRun = builder
+  .objectRef<ExtractionRunRow>("ExtractionRun")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      fileId: t.expose("fileId", { type: "UUID" }),
+      extractor: t.exposeString("extractor"),
+      extractorVersion: t.exposeString("extractorVersion"),
+      state: t.field({
+        type: ExtractionRunState,
+        resolve: (row) =>
+          row.state.toUpperCase() as
+            "PENDING" | "PROCESSING" | "COMPLETED" | "ERROR",
+      }),
+      structuredOutput: t.field({
+        type: "JSON",
+        nullable: true,
+        resolve: (row) => row.structuredOutput,
+      }),
+      errorSummary: t.field({
+        type: "JSON",
+        nullable: true,
+        resolve: (row) => row.errorSummary,
+      }),
+      startedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.startedAt?.toISOString() ?? null,
+      }),
+      completedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.completedAt?.toISOString() ?? null,
+      }),
+      createdAt: t.field({
+        type: "DateTime",
+        resolve: (row) => row.createdAt.toISOString(),
+      }),
+    }),
+  });
 
 const FileVariant = builder.objectRef<FileVariantRow>("FileVariant").implement({
   fields: (t) => ({
@@ -299,6 +345,15 @@ export function registerFilesGraphQL(): void {
         });
       },
     }),
+    extractionRuns: t.field({
+      type: [ExtractionRun],
+      args: { fileId: t.arg({ type: "UUID", required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "file", "read");
+        if (!context.services.extraction) return [];
+        return context.services.extraction.list(args.fileId);
+      },
+    }),
   }));
 
   builder.mutationFields((t) => ({
@@ -367,6 +422,29 @@ export function registerFilesGraphQL(): void {
       resolve: (_root, args, context) => {
         requirePermission(context, "file", "read");
         return context.services.files.createDownload(args.fileId);
+      },
+    }),
+    requestExtraction: t.field({
+      type: ExtractionRun,
+      args: {
+        fileId: t.arg({ type: "UUID", required: true }),
+        extractor: t.arg.string(),
+        configuration: t.arg({ type: "JSON" }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "file", "update");
+        if (!context.services.extraction) {
+          throw new Error("Extraction storage is not configured");
+        }
+        const queued = await context.services.extraction.request({
+          fileId: args.fileId,
+          extractor: args.extractor ?? undefined,
+          configuration: args.configuration,
+        });
+        const runs = await context.services.extraction.list(args.fileId);
+        const run = runs.find((item) => item.id === queued.runId);
+        if (!run) throw new Error("Extraction run was not persisted");
+        return run;
       },
     }),
   }));

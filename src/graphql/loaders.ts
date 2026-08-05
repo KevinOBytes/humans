@@ -31,12 +31,14 @@ import type { ActorAttribution } from "@/modules/audit/service";
 import type { GraphService } from "@/modules/graph/service";
 import type { FileRow } from "@/modules/files/repository";
 import type { FilesService } from "@/modules/files/service";
+import type { createExtractionService } from "@/modules/files/extraction-service";
 import type { ImportMappingRow, ImportRow } from "@/modules/imports/repository";
 import type { ImportsService } from "@/modules/imports/service";
 import type { SearchService } from "@/modules/search/service";
 import type { SettingsService } from "@/modules/settings/service";
 import type { LocationsService } from "@/modules/locations/service";
 import type { createAiAnalysisService } from "@/modules/ai/service";
+import type { createWebhooksService } from "@/modules/webhooks/service";
 
 export type SafeWorkspace = {
   id: string;
@@ -55,11 +57,13 @@ export type GraphQLServices = {
   audit: AuditQueryService;
   graph: GraphService;
   files: FilesService;
+  extraction?: ReturnType<typeof createExtractionService>;
   imports: ImportsService;
   search: SearchService;
   settings: SettingsService;
   locations: LocationsService;
   ai: ReturnType<typeof createAiAnalysisService>;
+  webhooks: ReturnType<typeof createWebhooksService>;
 };
 
 export type GraphQLLoaders = {

@@ -17,15 +17,15 @@ recovery.
 
 - [ ] `HUM-FR-003` Complete hosted release evidence and recovery acceptance for the implemented explicit, idempotent administrator bootstrap.
 - [ ] `HUM-FR-004` Complete the recipient acceptance, administrator-role, resend/removal, responsive/RTL/zoom, provider-failure, and cancel/acceptance race matrix for the implemented workspace invitation and member-management boundary.
-- [ ] `HUM-FR-005` Complete policy mutation, grants, holds, deletion, and consent beyond the Task 14A typed read-only workspace/access/retention posture.
+- [ ] `HUM-FR-005` Complete live policy/grant/hold/deletion/consent acceptance, retention-worker enforcement, and the full role/resource matrix for the now-implemented audited mutation boundary.
 - [ ] `HUM-FR-006` Replace the Better Auth enabled-insert/application staging gap with a fully atomic activation protocol; the current locked lifecycle withholds secrets and performs bounded known-ID cleanup on finalization failure but cannot prove disablement if the first staging write irrecoverably fails.
 - [ ] `HUM-FR-008` Complete explicit full-contract acceptance for the implemented stable person records and presentation selections, including merge-target and accepted name/photo behavior.
-- [ ] `HUM-FR-010` Complete identity support and reversible merge workflows beyond the Task 12A protected-identifier normalization and exact-lookup foundation.
-- [ ] `HUM-FR-018` Implement extraction-run execution beyond the implemented access-controlled, idempotent CSV/JSON import preparation, execution, diagnostics, and retry boundary.
+- [ ] `HUM-FR-010` Complete live identity-candidate, merge/unmerge, tag, external-record, and conflict-matrix acceptance for the bounded reversible reconciliation workflow.
+- [ ] `HUM-FR-018` Complete live extraction-run acceptance for object-store reads, parser output contracts, retries, cancellation, and malformed/oversized input handling beyond the implemented durable execution boundary.
 - [ ] `HUM-FR-019` Complete optional embedding support and final release/Compose proof beyond the implemented Task 12 transactional PostgreSQL full-text, structured, and protected-exact search slice.
 - [ ] `HUM-FR-020` Complete the full saved-query/view release matrix beyond the implemented closed saved-search AST, ownership/sharing, current-authority runs, graph views, and immutable snapshot manifests.
 - [ ] `HUM-FR-023` Implement workspace-policy-controlled restricted-prompt omission/retention beyond the implemented read-only tool allowlist, authorization checks, citation validation, and provider/model disclosure.
-- [ ] `HUM-FR-024` Implement webhook lifecycle, signed delivery, retry execution, and acceptance coverage beyond the implemented durable jobs, immutable audit events, and idempotency records.
+- [ ] `HUM-FR-024` Complete live webhook lifecycle, signed delivery, retry, destination-rebinding, and upgrade-migration acceptance beyond the implemented durable jobs and immutable audit records.
 - [ ] `HUM-FR-028` Complete names/reconciliation, timeline, person-file, and contradictory-fact profile workflows plus full accessibility acceptance beyond the implemented people search/create, overview edit, facts, relationships, evidence, notes, contacts, and activity surfaces.
 - [ ] `HUM-FR-029` Complete graph editing and performance acceptance beyond the existing explorer, accessible table fallback, and Task 12 snapshot/analysis/result/export controls.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes.
@@ -33,7 +33,7 @@ recovery.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, and bounded signal drain.
 - [ ] `HUM-FR-035` Build and verify the parity Vercel deployment path.
 - [ ] `HUM-FR-036` Complete cross-mode worker-contract and Redis lease-concurrency runtime evidence for the implemented shared durable executor, continuous Docker worker, and bounded scheduled route.
-- [ ] `HUM-FR-037` Add opt-in Ollama service and model initialization.
+- [ ] `HUM-FR-037` Run the opt-in Ollama service/model initialization smoke with an operator-provisioned model image and record the runtime evidence.
 
 ## Non-functional
 

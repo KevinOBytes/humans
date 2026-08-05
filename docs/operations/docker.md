@@ -171,9 +171,20 @@ docker compose -f docker-compose.yml -f docker-compose.ollama.yml \
   --profile ollama up --detach ollama-init app worker
 ```
 
-Model download time, disk use, model suitability, and the optional AI smoke are
-not base-stack prerequisites. The optional Ollama runtime remains unverified in
-the current Task 15B evidence.
+Model download time, disk use, and model suitability are not base-stack
+prerequisites. After building the production image, the opt-in acceptance check
+starts an isolated profile, waits for the configured model, calls the local
+OpenAI-compatible chat endpoint, verifies the application health endpoint, and
+removes the stack:
+
+```sh
+OLLAMA_SMOKE=1 OLLAMA_MODEL=llama3.2:3b pnpm test:compose:ollama
+```
+
+The command is intentionally skipped unless `OLLAMA_SMOKE=1` is set because a
+model download is large, slow, and an operator decision. A successful run is
+the evidence for the optional Ollama/model portion of `HUM-FR-037` and
+`HUM-NFR-013`; it does not make Ollama a prerequisite for the ordinary stack.
 
 ## Health, worker drain, and observability
 
