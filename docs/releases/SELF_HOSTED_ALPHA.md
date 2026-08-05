@@ -237,3 +237,17 @@ rotated secret, records a redacted HTTP 503 retry state, and verifies that a
 replayed completed delivery makes no second outbound call. It does not claim a
 live destination, DNS-rebinding defense, retry progression, upgrade migration,
 or external provider-failure matrix; `HUM-FR-024` remains incomplete.
+
+## Current invitation acceptance evidence
+
+On 2026-08-05, the live PostgreSQL workspace-member suite passed recipient
+invitation handoff through a sealed HTTP-only, SameSite=Strict cookie into the
+application-owned atomic acceptance route. It verifies that the matching
+verified recipient receives the invited role and the invitation becomes
+accepted; owner-to-admin assignment; an admin managing lower roles but unable
+to promote a peer or mutate an owner; and a controlled race in which an
+acceptance transaction already holding the invitation causes cancellation to
+return unchanged. This is local application and PostgreSQL evidence only. It
+does not prove external Resend delivery, provider failure, cancellation-first
+races, or browser responsive/RTL/zoom acceptance; `HUM-FR-004` remains
+incomplete.
