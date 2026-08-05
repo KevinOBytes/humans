@@ -493,6 +493,49 @@ liveDescribe("durable PostgreSQL job executor", () => {
     expect(JSON.stringify(storedAudit)).not.toContain("provider credentials");
   });
 
+  it("normalizes direct repository failure codes before durable state and audit", async () => {
+    const workspaceId = await seedWorkspace();
+    const service = createJobsService({ database, encryptionKey });
+    const job = await service.enqueue({
+      workspaceId,
+      idempotencyKey: "direct-secret-code",
+      payload: { kind: "file_cleanup", uploadSessionId: workspaceId },
+      scheduledAt: new Date(Date.now() - 1_000),
+    });
+    const [claim] = await service.repository.claimDue({
+      limit: 1,
+      leaseDurationMs: 60_000,
+      leaseOwner: "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf9",
+      now: new Date(),
+    });
+    expect(claim?.id).toBe(job.id);
+
+    await expect(
+      service.repository.failClaim({
+        claimGeneration: claim!.claimGeneration,
+        errorCode: "provider token https://secret.example.test sk-live-secret",
+        id: job.id,
+        leaseOwner: claim!.leaseOwner!,
+        now: new Date(),
+        retryDelayMs: null,
+        workspaceId,
+      }),
+    ).resolves.toBe(true);
+
+    const stored = await service.repository.getById({
+      id: job.id,
+      workspaceId,
+    });
+    expect(stored?.errorCode).toBe("dependency_unavailable");
+    const audits = await database
+      .select({ redactedDiff: auditEvents.redactedDiff })
+      .from(auditEvents)
+      .where(eq(auditEvents.resourceId, job.id));
+    expect(JSON.stringify(audits)).not.toContain("sk-live-secret");
+    expect(JSON.stringify(audits)).not.toContain("secret.example.test");
+    expect(JSON.stringify(audits)).toContain("dependency_unavailable");
+  });
+
   it("does not run a PostgreSQL claim whose Redis lease belongs to another worker", async () => {
     const workspaceId = await seedWorkspace();
     const service = createJobsService({ database, encryptionKey });
