@@ -39,7 +39,7 @@ export default async function IntegrationsSettingsPage() {
       </SettingsCard>
       <SettingsCard
         title="Provider settings"
-        description="AI provider configuration is intentionally unavailable until Task 13 delivers the reviewed encrypted secret, policy, SSRF, and generated-operation backend."
+        description="AI provider configuration is supplied by the validated deployment boundary. Provider credentials and private endpoints are never rendered or persisted in the browser."
       >
         <p className="text-muted-foreground text-sm">
           No provider connection or capability probe is performed during page
