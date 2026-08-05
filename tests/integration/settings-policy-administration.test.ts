@@ -7,6 +7,7 @@ import {
   CreateAccessPolicyDocument,
   SettingsPolicyPostureDocument,
   UpdateAccessPolicyDocument,
+  UpdateWorkspaceDefaultsDocument,
 } from "@/graphql/generated/graphql";
 import { auditEvents } from "@/db/schema/operations";
 
@@ -26,9 +27,10 @@ liveDescribe("settings policy administration", () => {
 
   afterAll(async () => fixture.close());
 
-  it("enforces owner updates, tenant boundaries, optimistic retries, and audit rollback", async () => {
+  it("enforces owner/admin updates, tenant boundaries, optimistic retries, and audit rollback", async () => {
     const owner = await fixture.createActor();
     const viewer = await fixture.createWorkspaceMember(owner, "viewer");
+    const admin = await fixture.createWorkspaceMember(owner, "admin");
     const foreign = await fixture.createActor();
     const created = await fixture.execute<{
       createAccessPolicy: {
@@ -113,6 +115,33 @@ liveDescribe("settings policy administration", () => {
       code: "CONFLICT",
       id: null,
       version: null,
+    });
+
+    const adminPosture = await fixture.execute<{
+      settingsPolicyPosture: { workspace: { version: number } };
+    }>({
+      jar: admin.jar,
+      operationName: "SettingsPolicyPosture",
+      query: SettingsPolicyPostureDocument,
+    });
+    const adminVersion =
+      adminPosture.body?.data?.settingsPolicyPosture.workspace.version;
+    if (adminVersion == null) throw new Error("Missing admin policy version");
+    const adminUpdate = await fixture.execute<{
+      updateWorkspaceDefaults: { code: string; version: number | null };
+    }>({
+      headers: { "x-request-id": "33333333-3333-4333-8333-333333333333" },
+      jar: admin.jar,
+      operationName: "UpdateWorkspaceDefaults",
+      query: UpdateWorkspaceDefaultsDocument,
+      variables: {
+        input: { expectedVersion: adminVersion, aiEnabled: true },
+      },
+    });
+    expect(adminUpdate.body?.errors).toBeUndefined();
+    expect(adminUpdate.body?.data?.updateWorkspaceDefaults).toMatchObject({
+      code: "APPLIED",
+      version: adminVersion + 1,
     });
 
     const viewerDenied = await fixture.execute({
@@ -212,11 +241,15 @@ liveDescribe("settings policy administration", () => {
         ),
       );
     expect(updates).toHaveLength(1);
-    expect(updates[0]).toMatchObject({
-      action: "access_policy.update",
-      requestId,
-      redactedDiff: null,
-    });
+    expect(updates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "access_policy.update",
+          requestId,
+          redactedDiff: null,
+        }),
+      ]),
+    );
     expect(JSON.stringify(updates)).not.toContain("Sensitive policy name");
     expect(JSON.stringify(updates)).not.toContain("Updated policy name");
   });
