@@ -10,6 +10,7 @@ import {
   FactDetailDocument,
   FactSummaryFragmentDoc,
   PageDetailsFragmentDoc,
+  PersonContradictoryFactsDocument,
   PersonFactsDocument,
   PersonFieldSelectionsDocument,
   type PersonSummaryFragment,
@@ -37,15 +38,21 @@ export async function FactsSection({
   search: SearchState;
 }) {
   const factAfter = cursorParam(search, "factAfter");
+  const contradictoryAfter = cursorParam(search, "contradictoryAfter");
   const catalogAfter = cursorParam(search, "catalogAfter");
   const requestedDetail = uuidParam(search, "factDetail");
   const revisionAfter = cursorParam(search, "factRevisionAfter");
   const evidenceAfter = cursorParam(search, "factEvidenceAfter");
-  const [data, catalog] = await Promise.all([
+  const [data, contradictoryData, catalog] = await Promise.all([
     executeServerGraphQL(PersonFactsDocument, {
       id: personId,
       first: 5,
       after: factAfter,
+    }),
+    executeServerGraphQL(PersonContradictoryFactsDocument, {
+      id: personId,
+      first: 5,
+      after: contradictoryAfter,
     }),
     canCreate
       ? executeServerGraphQL(FactCatalogDocument, {
@@ -138,6 +145,15 @@ export async function FactsSection({
     PageDetailsFragmentDoc,
     data.person.facts?.pageInfo,
   );
+  const contradictoryFacts = (
+    contradictoryData.person?.contradictoryFacts?.nodes ?? []
+  )
+    .map((node) => readFragment(FactSummaryFragmentDoc, node))
+    .filter((fact) => Boolean(fact.id && fact.label));
+  const contradictoryPage = readFragment(
+    PageDetailsFragmentDoc,
+    contradictoryData.person?.contradictoryFacts?.pageInfo,
+  );
   const catalogPage = readFragment(
     PageDetailsFragmentDoc,
     catalog?.factDefinitions?.pageInfo,
@@ -179,6 +195,49 @@ export async function FactsSection({
           remain visible, but selection badges and selection actions are
           disabled.
         </p>
+      ) : null}
+      {contradictoryFacts.length > 0 ? (
+        <section
+          aria-labelledby="contradictory-facts-heading"
+          className="border-disputed/40 bg-disputed/10 rounded-xl border p-4"
+        >
+          <h2 id="contradictory-facts-heading" className="font-semibold">
+            Contradictory claims
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Multiple active claims exist for the same field. Review the evidence
+            and select an accepted presentation claim where needed.
+          </p>
+          <ul className="mt-3 grid gap-2">
+            {contradictoryFacts.map((fact) => (
+              <li
+                key={fact.id}
+                className="border-disputed/30 bg-background/70 rounded-lg border p-3 text-sm"
+              >
+                <span className="font-medium">{fact.label}</span>
+                <span className="text-muted-foreground"> — </span>
+                <span>{factDisplayValue(fact.value)}</span>
+              </li>
+            ))}
+          </ul>
+          <PageControls
+            label="Contradictory claims"
+            resetHref={
+              contradictoryAfter
+                ? profilePageHref(personId, "facts", { factAfter })
+                : null
+            }
+            nextHref={
+              contradictoryPage?.hasNextPage && contradictoryPage.endCursor
+                ? profilePageHref(personId, "facts", {
+                    factAfter,
+                    contradictoryAfter: contradictoryPage.endCursor,
+                  })
+                : null
+            }
+            nextLabel="More contradictory claims"
+          />
+        </section>
       ) : null}
       <PersonProfile
         showHeader={false}
