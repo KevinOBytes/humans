@@ -42,8 +42,10 @@ export async function purgeExpiredAiThreads(input: {
       .where(
         and(
           isNull(aiThreads.deletedAt),
+          eq(aiThreads.sharing, "private"),
           sql`coalesce(${aiThreads.retentionDays}, ${workspaceSettings.retentionDays}) is not null`,
           sql`${aiThreads.updatedAt} < ${now.toISOString()}::timestamptz - (coalesce(${aiThreads.retentionDays}, ${workspaceSettings.retentionDays}) * interval '1 day')`,
+          sql`exists (select 1 from ${aiRuns} where ${aiRuns.workspaceId} = ${aiThreads.workspaceId} and ${aiRuns.threadId} = ${aiThreads.id} and ${aiRuns.state} = 'completed')`,
           not(
             sql`exists (select 1 from ${aiRuns} where ${aiRuns.workspaceId} = ${aiThreads.workspaceId} and ${aiRuns.threadId} = ${aiThreads.id} and ${aiRuns.state} in ('pending', 'running'))`,
           ),
