@@ -114,6 +114,10 @@ liveDescribe("settings policy administration", () => {
       id: null,
       version: null,
     });
+    expect(JSON.stringify(foreignDenied.body)).not.toContain(policyId);
+    expect(JSON.stringify(foreignDenied.body)).not.toContain(
+      "Sensitive policy name",
+    );
 
     const staleRetry = await fixture.execute<{
       updateAccessPolicy: {
