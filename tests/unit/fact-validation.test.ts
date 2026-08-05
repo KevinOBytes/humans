@@ -16,6 +16,10 @@ describe("research GraphQL validation contract", () => {
     expect(mutation).toBeDefined();
     expect(mutation?.getFields()).toHaveProperty("createPerson");
     expect(schema.getType("CreatePersonInput")).toBeDefined();
+    const personType = schema.getType("Person") as
+      { getFields?: () => Record<string, unknown> } | undefined;
+    expect(typeof personType?.getFields).toBe("function");
+    expect(personType?.getFields?.()).toHaveProperty("contradictoryFacts");
   });
 });
 

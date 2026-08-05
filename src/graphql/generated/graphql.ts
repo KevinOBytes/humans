@@ -2565,6 +2565,26 @@ export type PersonFactsQuery = {
   } | null;
 };
 
+export type PersonContradictoryFactsQueryVariables = Exact<{
+  id: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type PersonContradictoryFactsQuery = {
+  person: {
+    id: string;
+    contradictoryFacts: {
+      nodes: Array<{
+        " $fragmentRefs"?: { FactSummaryFragment: FactSummaryFragment };
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      } | null;
+    } | null;
+  } | null;
+};
+
 export type PersonFieldSelectionsQueryVariables = Exact<{
   id: string;
   first?: number | null | undefined;
@@ -6620,6 +6640,66 @@ fragment FactSummary on Fact {
 ) as unknown as TypedDocumentString<
   PersonFactsQuery,
   PersonFactsQueryVariables
+>;
+export const PersonContradictoryFactsDocument = new TypedDocumentString(
+  `
+    query PersonContradictoryFacts($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    contradictoryFacts(first: $first, after: $after) {
+      nodes {
+        ...FactSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+    fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}
+fragment FactSummary on Fact {
+  id
+  personId
+  definitionId
+  namespace
+  fieldKey
+  label
+  valueType
+  value {
+    text
+    decimal
+    boolean
+    dateStart
+    dateEnd
+    timestamp
+    json
+    referencedPersonId
+    placeId
+    fileId
+    unit
+  }
+  state
+  reviewState
+  sensitivity
+  confidence
+  temporalSemantics
+  temporalPrecision
+  validEarliestAt
+  validLatestAt
+  assertedAt
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:ef63c1a7a77f72d9b61edb2c9ca7167019f8555a5b7a4e18304c240b66d6d603",
+  },
+) as unknown as TypedDocumentString<
+  PersonContradictoryFactsQuery,
+  PersonContradictoryFactsQueryVariables
 >;
 export const PersonFieldSelectionsDocument = new TypedDocumentString(
   `

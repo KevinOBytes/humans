@@ -39,6 +39,7 @@ const dateCursorOrders = new Set([
   "source-created-desc",
   "person-names-created-desc",
   "person-events-created-desc",
+  "contradictory-facts-asserted-desc",
 ]);
 
 export function decodeResearchCursor(

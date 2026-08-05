@@ -187,6 +187,20 @@ query PersonFacts($id: UUID!, $first: Int, $after: String) {
   }
 }
 
+query PersonContradictoryFacts($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    contradictoryFacts(first: $first, after: $after) {
+      nodes {
+        ...FactSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
 query PersonFieldSelections($id: UUID!, $first: Int, $after: String) {
   person(id: $id) {
     id
