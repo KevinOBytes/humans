@@ -752,6 +752,7 @@ export type UnmergePersonInput = {
 export type UpdateAccessPolicyInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
   name?: string | null | undefined;
   resourceKinds?: Array<string> | null | undefined;
   roleBindings?: unknown;
