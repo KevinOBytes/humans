@@ -18,6 +18,7 @@ import { storageObjectKey } from "@/lib/storage/proxy";
 import type { ObjectStore } from "@/lib/storage/types";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { createExtractionService } from "@/modules/files/extraction-service";
+import { JobExecutionError } from "@/modules/jobs/types";
 import { createExtractionHandler } from "@/worker/handlers/extraction";
 
 import { ResearchFixture } from "../support/research-fixture";
@@ -184,6 +185,44 @@ liveDescribe("durable extraction worker", () => {
       .where(eq(extractionRuns.id, seeded.runId));
     expect(run?.state).toBe("error");
     expect(run?.errorSummary).toEqual({ code: "extraction_malformed_input" });
+  });
+
+  it("normalizes unknown worker codes before persisting extraction errors", async () => {
+    const seeded = await seed({
+      content: "not used",
+      detectedType: "text/plain",
+      extractor: "text",
+    });
+    store.openRead = async () => {
+      throw new JobExecutionError(
+        "provider token https://secret.example.test sk-live-secret",
+        "permanent",
+      );
+    };
+    const handler = createExtractionHandler({
+      database: fixture.database,
+      objectStore: store,
+    });
+
+    await expect(
+      handler(
+        { extractionRunId: seeded.runId, fileId: seeded.fileId },
+        {
+          job: { workspaceId: seeded.actor.workspaceId },
+          signal: new AbortController().signal,
+        },
+      ),
+    ).rejects.toBeInstanceOf(JobExecutionError);
+
+    const [run] = await fixture.database
+      .select()
+      .from(extractionRuns)
+      .where(eq(extractionRuns.id, seeded.runId));
+    expect(run?.errorSummary).toEqual({ code: "dependency_unavailable" });
+    expect(JSON.stringify(run?.errorSummary)).not.toContain("sk-live-secret");
+    expect(JSON.stringify(run?.errorSummary)).not.toContain(
+      "secret.example.test",
+    );
   });
 
   it("cancels a pending run and requeues the same run through the service", async () => {

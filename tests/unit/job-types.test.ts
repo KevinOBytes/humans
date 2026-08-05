@@ -4,8 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   canonicalJobPayload,
+  JobExecutionError,
+  jobFailureCode,
   jobPayloadPurpose,
   parseJobPayload,
+  safeJobFailureCode,
   type AiExecuteJobPayload,
   type FileCleanupJobPayload,
 } from "@/modules/jobs/types";
@@ -16,6 +19,28 @@ const encryptionKey = "42".repeat(32);
 const runId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf3";
 
 describe("AI durable job protocol", () => {
+  it("allows only stable worker failure codes into durable state", () => {
+    expect(safeJobFailureCode("validation_failed")).toBe("validation_failed");
+    expect(safeJobFailureCode("cancelled")).toBe("cancelled");
+    expect(safeJobFailureCode("PROVIDER_UNAVAILABLE")).toBe(
+      "provider_unavailable",
+    );
+    expect(safeJobFailureCode("webhook_http_503")).toBe("webhook_http_503");
+    expect(safeJobFailureCode("WEBHOOK_HTTP_503")).toBe("webhook_http_503");
+    expect(
+      safeJobFailureCode("provider https://ai.example.test/api-key=secret"),
+    ).toBe("dependency_unavailable");
+    expect(safeJobFailureCode("private_prompt_secret")).toBe(
+      "dependency_unavailable",
+    );
+    expect(
+      jobFailureCode(new JobExecutionError("api-key-secret", "permanent")),
+    ).toBe("dependency_unavailable");
+    expect(jobFailureCode({ extensions: { code: "VALIDATION_FAILED" } })).toBe(
+      "validation_failed",
+    );
+  });
+
   it("parses and canonicalizes the exact closed ai_execute payload", () => {
     const payload: AiExecuteJobPayload = { kind: "ai_execute", runId };
 
