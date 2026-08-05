@@ -66,6 +66,44 @@ query PendingWorkspaceUploads {
   }
 }
 
+query FileExtractionRuns($fileId: UUID!) {
+  extractionRuns(fileId: $fileId) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+
+mutation RequestFileExtraction(
+  $fileId: UUID!
+  $extractor: String
+  $configuration: JSON
+) {
+  requestExtraction(
+    fileId: $fileId
+    extractor: $extractor
+    configuration: $configuration
+  ) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+
 query ImportHistory($first: Int, $after: String) {
   imports(first: $first, after: $after) {
     nodes {

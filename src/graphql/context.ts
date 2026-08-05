@@ -33,6 +33,7 @@ import {
   createFilesService,
   type FileServiceRuntime,
 } from "@/modules/files/service";
+import { createExtractionService } from "@/modules/files/extraction-service";
 import {
   createImportsService,
   type ImportServiceRuntime,
@@ -259,6 +260,25 @@ function createServices(input: {
         storageProvider: "s3",
       },
     ),
+    ...(input.fileRuntime?.objectStore
+      ? {
+          extraction: createExtractionService(
+            {
+              actor: input.context.actor,
+              database: input.database,
+              permissions: input.context.permissions,
+              requestId: input.context.requestId,
+              searchIndexMaintenance: input.searchIndexMaintenance,
+              workspaceId: input.context.workspaceId,
+            },
+            {
+              encryptionKey:
+                input.searchRuntime.encryptionKey ?? "00".repeat(32),
+              objectStore: input.fileRuntime.objectStore,
+            },
+          ),
+        }
+      : {}),
     imports: createImportsService(
       {
         actor: input.context.actor,

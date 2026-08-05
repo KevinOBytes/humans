@@ -31,6 +31,7 @@ import type { ActorAttribution } from "@/modules/audit/service";
 import type { GraphService } from "@/modules/graph/service";
 import type { FileRow } from "@/modules/files/repository";
 import type { FilesService } from "@/modules/files/service";
+import type { createExtractionService } from "@/modules/files/extraction-service";
 import type { ImportMappingRow, ImportRow } from "@/modules/imports/repository";
 import type { ImportsService } from "@/modules/imports/service";
 import type { SearchService } from "@/modules/search/service";
@@ -56,6 +57,7 @@ export type GraphQLServices = {
   audit: AuditQueryService;
   graph: GraphService;
   files: FilesService;
+  extraction?: ReturnType<typeof createExtractionService>;
   imports: ImportsService;
   search: SearchService;
   settings: SettingsService;

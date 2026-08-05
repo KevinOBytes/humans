@@ -334,6 +334,9 @@ export type CreateWebhookInput = {
   url: string;
 };
 
+export type ExtractionRunState =
+  "COMPLETED" | "ERROR" | "PENDING" | "PROCESSING";
+
 export type FactCardinality = "MANY" | "ONE";
 
 export type FactDefinitionState =
@@ -1012,6 +1015,46 @@ export type PendingWorkspaceUploadsQuery = {
       expiresAt: string | null;
     }> | null;
     pageInfo: { hasNextPage: boolean; endCursor: string | null } | null;
+  } | null;
+};
+
+export type FileExtractionRunsQueryVariables = Exact<{
+  fileId: string;
+}>;
+
+export type FileExtractionRunsQuery = {
+  extractionRuns: Array<{
+    id: string | null;
+    fileId: string | null;
+    extractor: string | null;
+    extractorVersion: string | null;
+    state: ExtractionRunState | null;
+    structuredOutput: unknown;
+    errorSummary: unknown;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string | null;
+  }> | null;
+};
+
+export type RequestFileExtractionMutationVariables = Exact<{
+  fileId: string;
+  extractor?: string | null | undefined;
+  configuration?: unknown;
+}>;
+
+export type RequestFileExtractionMutation = {
+  requestExtraction: {
+    id: string | null;
+    fileId: string | null;
+    extractor: string | null;
+    extractorVersion: string | null;
+    state: ExtractionRunState | null;
+    structuredOutput: unknown;
+    errorSummary: unknown;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string | null;
   } | null;
 };
 
@@ -4215,6 +4258,58 @@ export const PendingWorkspaceUploadsDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   PendingWorkspaceUploadsQuery,
   PendingWorkspaceUploadsQueryVariables
+>;
+export const FileExtractionRunsDocument = new TypedDocumentString(
+  `
+    query FileExtractionRuns($fileId: UUID!) {
+  extractionRuns(fileId: $fileId) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:3868032ac4a028ab46d29b5e53bb4001d5bc8a9d13bfeef1881134ee4313d52d",
+  },
+) as unknown as TypedDocumentString<
+  FileExtractionRunsQuery,
+  FileExtractionRunsQueryVariables
+>;
+export const RequestFileExtractionDocument = new TypedDocumentString(
+  `
+    mutation RequestFileExtraction($fileId: UUID!, $extractor: String, $configuration: JSON) {
+  requestExtraction(
+    fileId: $fileId
+    extractor: $extractor
+    configuration: $configuration
+  ) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:b770d0a5eaf984bb54482aaba4daa1b48dd7110fba3e726ef59d6892c7cb9e38",
+  },
+) as unknown as TypedDocumentString<
+  RequestFileExtractionMutation,
+  RequestFileExtractionMutationVariables
 >;
 export const ImportHistoryDocument = new TypedDocumentString(
   `

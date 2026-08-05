@@ -23,6 +23,9 @@ export function createJobRegistry(input: {
   webhookDelivery?: JobHandler<
     Extract<JobPayload, { kind: "webhook_delivery" }>
   >;
+  extractionExecute?: JobHandler<
+    Extract<JobPayload, { kind: "extraction_execute" }>
+  >;
 }): JobRegistry {
   return {
     get(payload) {
@@ -38,6 +41,11 @@ export function createJobRegistry(input: {
             throw new Error("Webhook delivery handler is not configured");
           }
           return input.webhookDelivery as JobHandler;
+        case "extraction_execute":
+          if (!input.extractionExecute) {
+            throw new Error("Extraction handler is not configured");
+          }
+          return input.extractionExecute as JobHandler;
       }
     },
   };
