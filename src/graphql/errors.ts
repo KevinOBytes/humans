@@ -69,3 +69,25 @@ export function publicErrorMessage(code: GraphQLErrorCode): string {
       return "An internal error occurred.";
   }
 }
+
+/**
+ * Preserve useful validation copy while preventing secrets, credentials, and
+ * infrastructure details from crossing the GraphQL response boundary.
+ */
+export function normalizeGraphQLErrorMessage(
+  code: GraphQLErrorCode,
+  message: unknown,
+): string {
+  const fallback = publicErrorMessage(code);
+  if (code === "INTERNAL" || typeof message !== "string") return fallback;
+  const trimmed = message.trim();
+  if (!trimmed) return fallback;
+  if (
+    /(?:api[ _-]?key|authorization|bearer|credential|database|password|private|prompt|secret|stack(?:trace)?|token|sk-[a-z0-9]|sql)/iu.test(
+      trimmed,
+    )
+  ) {
+    return fallback;
+  }
+  return trimmed;
+}

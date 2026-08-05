@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { GRAPHQL_ERROR_CODES, publicErrorMessage } from "@/graphql/errors";
+import {
+  GRAPHQL_ERROR_CODES,
+  normalizeGraphQLErrorMessage,
+  publicErrorMessage,
+} from "@/graphql/errors";
 import {
   graphQLRequestIdPattern,
   normalizePublicGraphQLError,
@@ -104,5 +108,51 @@ describe("GraphQL public error contract", () => {
         requestId,
       },
     ]);
+  });
+
+  it("contains malformed error entries without throwing or leaking values", () => {
+    const secret = "password=not-for-public-output";
+    expect(
+      normalizePublicGraphQLErrors(
+        [null, secret, [], { extensions: { code: "NOT_FOUND" } }],
+        requestId,
+      ),
+    ).toEqual([
+      {
+        code: "INTERNAL",
+        message: publicErrorMessage("INTERNAL"),
+        requestId,
+      },
+      {
+        code: "INTERNAL",
+        message: publicErrorMessage("INTERNAL"),
+        requestId,
+      },
+      {
+        code: "INTERNAL",
+        message: publicErrorMessage("INTERNAL"),
+        requestId,
+      },
+      {
+        code: "NOT_FOUND",
+        message: publicErrorMessage("NOT_FOUND"),
+        requestId,
+      },
+    ]);
+  });
+
+  it("normalizes secret-bearing known-code messages at the API boundary", () => {
+    expect(
+      normalizeGraphQLErrorMessage(
+        "PROVIDER_UNAVAILABLE",
+        "provider-key=sk-live-redacted private prompt",
+      ),
+    ).toBe(publicErrorMessage("PROVIDER_UNAVAILABLE"));
+    expect(
+      normalizeGraphQLErrorMessage(
+        "VALIDATION_FAILED",
+        "The cursor is invalid.",
+      ),
+    ).toBe("The cursor is invalid.");
   });
 });

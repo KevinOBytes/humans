@@ -15,10 +15,7 @@ export type GraphQLResult<TData> =
 
 type GraphQLResponse<TData> = {
   data?: TData;
-  errors?: readonly {
-    message?: unknown;
-    extensions?: { code?: unknown; requestId?: unknown };
-  }[];
+  errors?: readonly unknown[];
 };
 
 export async function executeBrowserGraphQL<
@@ -42,7 +39,11 @@ export async function executeBrowserGraphQL<
     const safeRequestId = normalizeGraphQLRequestId(requestId);
     let body: GraphQLResponse<TResult>;
     try {
-      body = (await response.json()) as GraphQLResponse<TResult>;
+      const parsed = (await response.json()) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("invalid GraphQL response shape");
+      }
+      body = parsed as GraphQLResponse<TResult>;
     } catch {
       return {
         ok: false,
@@ -55,10 +56,14 @@ export async function executeBrowserGraphQL<
         ],
       };
     }
-    if (!response.ok || body.errors?.length || body.data === undefined) {
+    const hasErrors = Object.prototype.hasOwnProperty.call(body, "errors");
+    if (!response.ok || hasErrors || body.data === undefined) {
       return {
         ok: false,
-        errors: normalizePublicGraphQLErrors(body.errors, safeRequestId),
+        errors: normalizePublicGraphQLErrors(
+          Array.isArray(body.errors) ? body.errors : undefined,
+          safeRequestId,
+        ),
       };
     }
     return {

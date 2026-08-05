@@ -84,6 +84,25 @@ browser and server convenience clients intentionally use bounded public copy;
 field-level issues remain available in typed mutation payloads. The whole-product
 failure matrix remains open in `TODO.md`.
 
+Direct non-GraphQL API routes use the same correlation transport convention but
+retain route-specific codes until the whole-product envelope is completed. The
+invitation handoff and acceptance routes emit `FORBIDDEN`, `INVALID_INPUT`,
+`UNAUTHORIZED`, and `INVITATION_UNAVAILABLE`; the cookie-session-only 2FA
+disable route emits `FORBIDDEN`, `INVALID_INPUT`, `UNAUTHORIZED`,
+`SECURITY_CHANGE_UNAVAILABLE`, and `SECURITY_CHANGE_REJECTED`; and the Better
+Auth catch-all emits `AUTH_SERVICE_UNAVAILABLE`, `AUTH_REQUEST_FAILED`,
+`AUTH_ADMINISTRATION_DISABLED`, `AUTH_LIFECYCLE_WRAPPER_REQUIRED`,
+`AUTH_API_KEY_INTERACTIVE_FORBIDDEN`, and `AUTH_METHOD_NOT_ALLOWED`. Each
+JSON failure includes a request ID in the body and `x-request-id` response
+header, and route handlers use no-store responses. These listed account/auth
+route codes are not
+silently coerced into GraphQL codes; the remaining cross-surface error matrix
+and a shared typed direct-route client are tracked in `TODO.md`. Health probes,
+the cron job trigger, and the storage proxy use separate operational envelopes
+and headers (including service-specific success/error behavior); they are not
+represented by the account/auth inventory above and remain part of the
+whole-product failure matrix.
+
 Invitation links reach the browser as fragments and are scrubbed synchronously.
 The client exchanges the identifier for a short-lived AES-GCM handoff stored in
 an HTTP-only, SameSite=Strict cookie. Authentication return paths therefore
