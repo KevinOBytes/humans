@@ -154,6 +154,22 @@ pending-run preservation, and redacted retention audits. This is representative
 database evidence only: it does not classify arbitrary free-text prompts or
 close the full retention policy matrix.
 
+## Current representative performance harness
+
+`GRAPH_PERFORMANCE=1 pnpm test:performance:graph` is an opt-in,
+production-build Playwright run for the documented 10,000-person/25,000-edge
+reference workspace. It authenticates 20 concurrent readers, records GraphQL
+p95/query-count/response-byte artifacts, measures graph transform/first-Sigma
+render/camera FPS/WebGL recovery, and captures compressed JavaScript transfer
+for public, dashboard, people, and graph-editor routes. The harness writes
+`graph-api-performance.json`, `graph-render-performance.json`, and
+`graph-route-javascript.json` to the Playwright result for review.
+
+It has not been run here on the documented reference desktop, and it does not
+yet measure upload-path latency, public-route Web Vitals, or an externally
+hosted deployment. `HUM-NFR-020` remains incomplete until those measured
+artifacts are collected and continuously verified.
+
 `tests/integration/conventions-contract.test.ts` is a bounded `HUM-NFR-003`
 contract. It checks UUIDv7 generation and ordering, representative
 workspace-leading composite references across people, facts, locations, files,
