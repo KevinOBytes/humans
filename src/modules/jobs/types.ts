@@ -192,6 +192,7 @@ const safeJobFailureCodes = new Set([
   "analysis_limit_reached",
   "archived_file_changed",
   "archived_file_not_found",
+  "cancelled",
   "authorization_changed",
   "cleanup_changed",
   "cleanup_coordinate_conflict",

@@ -21,6 +21,7 @@ const runId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf3";
 describe("AI durable job protocol", () => {
   it("allows only stable worker failure codes into durable state", () => {
     expect(safeJobFailureCode("validation_failed")).toBe("validation_failed");
+    expect(safeJobFailureCode("cancelled")).toBe("cancelled");
     expect(safeJobFailureCode("PROVIDER_UNAVAILABLE")).toBe(
       "provider_unavailable",
     );
