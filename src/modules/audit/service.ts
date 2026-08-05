@@ -58,6 +58,8 @@ export type ResearchActor =
 export type ResearchServiceContext = {
   actor: ResearchActor;
   database: Database;
+  /** HMAC material used by retryable research mutations when enabled. */
+  idempotencyHmacKey?: string;
   permissions: ReadonlySet<string>;
   requestId: string;
   searchIndexMaintenance: SearchIndexMaintenance;

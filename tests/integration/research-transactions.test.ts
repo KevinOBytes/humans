@@ -177,6 +177,7 @@ async function serviceContext(
       role: "owner",
     },
     database: fixture.database,
+    idempotencyHmacKey: TEST_IDEMPOTENCY_SECRET,
     permissions: new Set(permissions),
     requestId: "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf3",
     searchIndexMaintenance: disabledSearchIndexMaintenance,
@@ -706,6 +707,124 @@ liveDescribe("research write transactions", () => {
         .from(facts)
         .where(eq(facts.workspaceId, foreign.workspaceId)),
     ).toHaveLength(0);
+  });
+
+  it("covers durable person-create replay, expiry, malformed references, and tenant fencing", async () => {
+    const actor = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+    ]);
+    const foreignContext = await serviceContext(fixture, foreign, [
+      "person:create",
+      "person:read",
+    ]);
+    const peopleService = createPeopleService(context);
+    const replayInput = {
+      idempotencyKey: "person-create-replay",
+      displayName: "Idempotent person",
+      biography: "A single durable person row.",
+    } as const;
+
+    const first = await peopleService.create(replayInput);
+    const replayed = await peopleService.create(replayInput);
+    if (!first.resource || !replayed.resource) {
+      throw new Error("The person idempotency fixture is missing a resource.");
+    }
+    expect(replayed.resource.id).toBe(first.resource.id);
+    expect(
+      await fixture.database
+        .select({ id: people.id })
+        .from(people)
+        .where(eq(people.workspaceId, actor.workspaceId)),
+    ).toHaveLength(1);
+
+    const firstClaim = (
+      await fixture.database
+        .select()
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId))
+    ).find(
+      (claim) =>
+        claim.operation === "person.create" &&
+        (claim.responseReference as { personId?: unknown } | null)?.personId ===
+          first.resource?.id,
+    );
+    if (!firstClaim)
+      throw new Error("The person idempotency claim is missing.");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { personId: ["invalid"] } })
+      .where(eq(idempotencyKeys.id, firstClaim.id));
+    await expect(peopleService.create(replayInput)).rejects.toMatchObject({
+      extensions: { code: "VALIDATION_FAILED" },
+    });
+
+    const expiredInput = {
+      idempotencyKey: "person-create-expired",
+      displayName: "Expired person claim",
+    } as const;
+    const expiredFirst = await peopleService.create(expiredInput);
+    if (!expiredFirst.resource)
+      throw new Error("The expired fixture is missing.");
+    const expiredClaim = (
+      await fixture.database
+        .select()
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId))
+    ).find(
+      (claim) =>
+        claim.operation === "person.create" &&
+        (claim.responseReference as { personId?: unknown } | null)?.personId ===
+          expiredFirst.resource?.id,
+    );
+    if (!expiredClaim) throw new Error("The expired person claim is missing.");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ expiresAt: new Date(Date.now() - 1) })
+      .where(eq(idempotencyKeys.id, expiredClaim.id));
+    const expiredTakeover = await peopleService.create(expiredInput);
+    if (!expiredTakeover.resource)
+      throw new Error("The expired claim did not take over.");
+    expect(expiredTakeover.resource.id).not.toBe(expiredFirst.resource.id);
+
+    const concurrentInput = {
+      idempotencyKey: "person-create-concurrent",
+      displayName: "Concurrent person",
+    } as const;
+    const concurrent = await Promise.all([
+      peopleService.create(concurrentInput),
+      peopleService.create(concurrentInput),
+    ]);
+    if (!concurrent[0]?.resource || !concurrent[1]?.resource) {
+      throw new Error("The concurrent person fixture is missing a resource.");
+    }
+    expect(concurrent[0].resource.id).toBe(concurrent[1].resource.id);
+
+    const tenantInput = {
+      idempotencyKey: "person-create-tenant-fence",
+      displayName: "Tenant-fenced person",
+    } as const;
+    const localTenant = await peopleService.create(tenantInput);
+    const foreignTenant =
+      await createPeopleService(foreignContext).create(tenantInput);
+    if (!localTenant.resource || !foreignTenant.resource) {
+      throw new Error("The tenant fixture is missing a resource.");
+    }
+    expect(foreignTenant.resource.id).not.toBe(localTenant.resource.id);
+    expect(
+      await fixture.database
+        .select({ id: people.id })
+        .from(people)
+        .where(eq(people.workspaceId, foreign.workspaceId)),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: idempotencyKeys.id })
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId)),
+    ).toHaveLength(4);
   });
 
   it("rejects invalid live audit attribution before a composed write", async () => {
