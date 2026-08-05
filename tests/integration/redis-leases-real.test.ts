@@ -93,6 +93,25 @@ describe.runIf(runSmoke)("real Redis lease Lua", () => {
     }
   });
 
+  it("allows only one owner to acquire a lease concurrently", async () => {
+    for (const { name, store } of stores) {
+      const key = `task3-real-lease:${name}:concurrent-owner`;
+      const owners = Array.from(
+        { length: 10 },
+        (_, index) => `owner-${name}-${index}`,
+      );
+      const results = await Promise.all(
+        owners.map((owner) => store.acquireLease(key, owner, 2_000)),
+      );
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      const winner = owners[results.findIndex(Boolean)];
+      expect(winner).toBeTruthy();
+      expect(await store.releaseLease(key, winner!)).toBe(true);
+      expect(await client.exists(key)).toBe(0);
+    }
+  });
+
   it("demonstrates unconditional Lua mutations violate ownership", async () => {
     const extendKey = "task3-real-lease:mutation:extend";
     await client.set(extendKey, "owner", "PX", 2_000);
