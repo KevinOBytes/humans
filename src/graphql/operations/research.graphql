@@ -511,6 +511,33 @@ mutation SelectPersonPresentation($input: SelectPersonPresentationInput!) {
   }
 }
 
+query IdentityCandidates($limit: Int) {
+  identityCandidates(limit: $limit) {
+    id
+    firstPersonId
+    secondPersonId
+    score
+    matchSignals
+    state
+    reviewReason
+    reviewedAt
+    version
+  }
+}
+
+mutation ReviewIdentityCandidate($input: ReviewIdentityCandidateInput!) {
+  reviewIdentityCandidate(input: $input) {
+    id
+    firstPersonId
+    secondPersonId
+    score
+    state
+    reviewReason
+    reviewedAt
+    version
+  }
+}
+
 mutation CreateFactDefinition($input: CreateFactDefinitionInput!) {
   createFactDefinition(input: $input) {
     factDefinition {

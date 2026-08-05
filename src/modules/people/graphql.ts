@@ -5,6 +5,8 @@ import { normalizePagination } from "@/graphql/limits";
 import { ActorAttribution } from "@/modules/audit/attribution-graphql";
 
 import type { PersonRow } from "./repository";
+import type { InferSelectModel } from "drizzle-orm";
+import { identityCandidates } from "@/db/schema/people";
 import type { MutationOutcome, PageInfo as PageInfoShape } from "./service";
 
 export const Sensitivity = builder.enumType("Sensitivity", {
@@ -102,6 +104,44 @@ export const Person = builder.objectRef<PersonRow>("Person").implement({
   }),
 });
 
+type IdentityCandidateRow = InferSelectModel<typeof identityCandidates>;
+const IdentityCandidateState = builder.enumType("IdentityCandidateState", {
+  values: [
+    "PENDING",
+    "REVIEWING",
+    "ACCEPTED",
+    "REJECTED",
+    "CANCELLED",
+  ] as const,
+});
+const IdentityCandidate = builder
+  .objectRef<IdentityCandidateRow>("IdentityCandidate")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      firstPersonId: t.expose("firstPersonId", { type: "UUID" }),
+      secondPersonId: t.expose("secondPersonId", { type: "UUID" }),
+      score: t.float({ resolve: (row) => Number(row.score) }),
+      matchSignals: t.field({
+        type: "JSON",
+        resolve: (row) => row.matchSignals,
+      }),
+      state: t.field({
+        type: IdentityCandidateState,
+        resolve: (row) =>
+          row.state.toUpperCase() as
+            "PENDING" | "REVIEWING" | "ACCEPTED" | "REJECTED" | "CANCELLED",
+      }),
+      reviewReason: t.exposeString("reviewReason", { nullable: true }),
+      reviewedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.reviewedAt?.toISOString() ?? null,
+      }),
+      version: t.exposeInt("version"),
+    }),
+  });
+
 const PersonConnection = builder
   .objectRef<{
     nodes: PersonRow[];
@@ -149,6 +189,17 @@ const SelectPersonPresentationInput = builder.inputType(
       expectedVersion: t.int({ required: true }),
       primaryNameId: t.field({ type: "UUID" }),
       primaryPhotoFileId: t.field({ type: "UUID" }),
+    }),
+  },
+);
+const ReviewIdentityCandidateInput = builder.inputType(
+  "ReviewIdentityCandidateInput",
+  {
+    fields: (t) => ({
+      id: t.field({ type: "UUID", required: true }),
+      expectedVersion: t.int({ required: true }),
+      state: t.field({ type: IdentityCandidateState, required: true }),
+      reason: t.string(),
     }),
   },
 );
@@ -251,6 +302,16 @@ export function registerPeopleGraphQL(): void {
           nameContains: args.filter?.nameContains,
           status: args.filter?.status,
           sensitivity: args.filter?.sensitivity,
+        });
+      },
+    }),
+    identityCandidates: t.field({
+      type: [IdentityCandidate],
+      args: { limit: t.arg.int() },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "person", "read");
+        return context.services.people.listIdentityCandidates({
+          limit: args.limit,
         });
       },
     }),
@@ -368,6 +429,21 @@ export function registerPeopleGraphQL(): void {
             id: outcome.resource.id,
           });
         return payload(outcome);
+      },
+    }),
+    reviewIdentityCandidate: t.field({
+      type: IdentityCandidate,
+      nullable: false,
+      args: {
+        input: t.arg({ type: ReviewIdentityCandidateInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "person", "merge");
+        return context.services.people.reviewIdentityCandidate({
+          ...args.input,
+          state: args.input.state.toLowerCase() as
+            "pending" | "reviewing" | "accepted" | "rejected" | "cancelled",
+        });
       },
     }),
   }));

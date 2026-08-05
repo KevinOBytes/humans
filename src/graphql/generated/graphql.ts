@@ -451,6 +451,9 @@ export type GraphViewLayoutSettingsInput = {
 
 export type GraphViewSharing = "PRIVATE" | "WORKSPACE";
 
+export type IdentityCandidateState =
+  "ACCEPTED" | "CANCELLED" | "PENDING" | "REJECTED" | "REVIEWING";
+
 export type ImportFormat = "CSV" | "JSON";
 
 export type ImportMode = "COMMIT" | "DRY_RUN";
@@ -558,6 +561,13 @@ export type ReplayGraphSnapshotInput = {
 export type RerunGraphAnalysisInput = {
   algorithm: GraphAnalysisAlgorithm;
   snapshotId: string;
+};
+
+export type ReviewIdentityCandidateInput = {
+  expectedVersion: number;
+  id: string;
+  reason?: string | null | undefined;
+  state: IdentityCandidateState;
 };
 
 export type ReviseFactInput = {
@@ -2854,6 +2864,41 @@ export type SelectPersonPresentationMutation = {
       mergedIntoPersonId: string | null;
     } | null;
     issues: Array<{ code: string; message: string; path: Array<string> }>;
+  };
+};
+
+export type IdentityCandidatesQueryVariables = Exact<{
+  limit?: number | null | undefined;
+}>;
+
+export type IdentityCandidatesQuery = {
+  identityCandidates: Array<{
+    id: string | null;
+    firstPersonId: string | null;
+    secondPersonId: string | null;
+    score: number | null;
+    matchSignals: unknown;
+    state: IdentityCandidateState | null;
+    reviewReason: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+  }> | null;
+};
+
+export type ReviewIdentityCandidateMutationVariables = Exact<{
+  input: ReviewIdentityCandidateInput;
+}>;
+
+export type ReviewIdentityCandidateMutation = {
+  reviewIdentityCandidate: {
+    id: string | null;
+    firstPersonId: string | null;
+    secondPersonId: string | null;
+    score: number | null;
+    state: IdentityCandidateState | null;
+    reviewReason: string | null;
+    reviewedAt: string | null;
+    version: number | null;
   };
 };
 
@@ -6880,6 +6925,51 @@ export const SelectPersonPresentationDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   SelectPersonPresentationMutation,
   SelectPersonPresentationMutationVariables
+>;
+export const IdentityCandidatesDocument = new TypedDocumentString(
+  `
+    query IdentityCandidates($limit: Int) {
+  identityCandidates(limit: $limit) {
+    id
+    firstPersonId
+    secondPersonId
+    score
+    matchSignals
+    state
+    reviewReason
+    reviewedAt
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:0e1ff74eca3177672fc907ab0ca75766eb5d7984631b8d90cff3f21838bbff14",
+  },
+) as unknown as TypedDocumentString<
+  IdentityCandidatesQuery,
+  IdentityCandidatesQueryVariables
+>;
+export const ReviewIdentityCandidateDocument = new TypedDocumentString(
+  `
+    mutation ReviewIdentityCandidate($input: ReviewIdentityCandidateInput!) {
+  reviewIdentityCandidate(input: $input) {
+    id
+    firstPersonId
+    secondPersonId
+    score
+    state
+    reviewReason
+    reviewedAt
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:2ca0b872ae40e40d5bc5eade2cb28d9f3d44a197ba2206e18f060bc1ee2de7b2",
+  },
+) as unknown as TypedDocumentString<
+  ReviewIdentityCandidateMutation,
+  ReviewIdentityCandidateMutationVariables
 >;
 export const CreateFactDefinitionDocument = new TypedDocumentString(
   `

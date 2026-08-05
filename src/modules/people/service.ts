@@ -17,7 +17,12 @@ import {
 } from "@/modules/facts/validation";
 import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
-import { mergeDecisions, people, personNames } from "@/db/schema/people";
+import {
+  identityCandidates,
+  mergeDecisions,
+  people,
+  personNames,
+} from "@/db/schema/people";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { createPeopleRepository, type PersonRow } from "./repository";
@@ -953,6 +958,69 @@ export function createPeopleService(context: ResearchServiceContext) {
       });
       if (!result) return { resource: null, issues: [], code: "CONFLICT" };
       return { resource: result, issues: [], code: null };
+    },
+    async listIdentityCandidates(input: { limit?: number | null } = {}) {
+      if (!context.permissions.has("person:read")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Identity candidates are not permitted.",
+        );
+      }
+      return context.database
+        .select()
+        .from(identityCandidates)
+        .where(
+          and(
+            eq(identityCandidates.workspaceId, context.workspaceId),
+            isNull(identityCandidates.deletedAt),
+          ),
+        )
+        .orderBy(
+          sql`${identityCandidates.score} desc`,
+          sql`${identityCandidates.createdAt} asc`,
+        )
+        .limit(Math.min(100, Math.max(1, input.limit ?? 25)));
+    },
+    async reviewIdentityCandidate(input: {
+      id: string;
+      expectedVersion: number;
+      state: "pending" | "reviewing" | "accepted" | "rejected" | "cancelled";
+      reason?: string | null;
+    }) {
+      if (!context.permissions.has("person:merge")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Identity candidate review is not permitted.",
+        );
+      }
+      const [row] = await writeTransaction(context, async (transaction) =>
+        transaction
+          .update(identityCandidates)
+          .set({
+            state: input.state,
+            reviewedAt: new Date(),
+            reviewedBy: context.actor.principalId,
+            reviewReason: input.reason?.trim().slice(0, 2048) ?? null,
+            version: sql`${identityCandidates.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          })
+          .where(
+            and(
+              eq(identityCandidates.workspaceId, context.workspaceId),
+              eq(identityCandidates.id, input.id),
+              eq(identityCandidates.version, input.expectedVersion),
+              isNull(identityCandidates.deletedAt),
+            ),
+          )
+          .returning(),
+      );
+      if (!row)
+        throw createGraphQLError(
+          "CONFLICT",
+          "The identity candidate changed or no longer exists.",
+        );
+      return row;
     },
   };
 }
