@@ -6,6 +6,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
 import { invitations, members, sessions } from "@/db/schema/auth";
 import { auditEvents } from "@/db/schema/operations";
+import { createInvitationAcceptanceHandler } from "@/app/api/account/invitations/accept/route";
+import { createInvitationHandoffHandlers } from "@/app/api/account/invitations/handoff/route";
+import { acceptInvitationAtomically } from "@/modules/auth/invitation-lifecycle";
 import {
   enqueueAuthEmail,
   runAuthEmailOutboxOnce,
@@ -76,6 +79,8 @@ const CANCEL = /* GraphQL */ `
     }
   }
 `;
+
+const appOrigin = new URL(testAdminEnv.NEXT_PUBLIC_APP_URL).origin;
 
 liveDescribe("workspace member administration transactions", () => {
   let fixture: ResearchFixture;
@@ -178,6 +183,265 @@ liveDescribe("workspace member administration transactions", () => {
     expect(JSON.stringify(audits[0]?.redactedDiff)).not.toContain(
       "peer@example.test",
     );
+  });
+
+  it("hands a recipient invitation through the opaque handoff into atomic acceptance", async () => {
+    const owner = await fixture.createActor();
+    const recipientEmail = "handoff-recipient@example.test";
+    const recipient = await fixture.createUser({
+      email: recipientEmail,
+      username: "HandoffRecipient",
+    });
+    const issued = await fixture.execute<{
+      issueWorkspaceInvitation?: { actionId?: string; code?: string };
+    }>({
+      jar: owner.jar,
+      query: ISSUE,
+      variables: {
+        input: {
+          email: recipientEmail,
+          role: "VIEWER",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    });
+    const invitationId = issued.body?.data?.issueWorkspaceInvitation?.actionId;
+    expect(issued.body?.data?.issueWorkspaceInvitation?.code).toBe("APPLIED");
+    expect(invitationId).toEqual(expect.any(String));
+
+    const handoff = createInvitationHandoffHandlers({
+      encryptionKey: testAdminEnv.AUTH_ENCRYPTION_KEY,
+      getSession: async () => ({ user: { id: recipient.userId } }),
+      secureCookies: false,
+      trustedOrigins: [appOrigin],
+    });
+    const established = await handoff.POST(
+      new Request(`${appOrigin}/api/account/invitations/handoff`, {
+        body: JSON.stringify({ invitationId }),
+        headers: { "content-type": "application/json", origin: appOrigin },
+        method: "POST",
+      }),
+    );
+    expect(established.status).toBe(200);
+    const handoffCookie = established.headers.get("set-cookie");
+    expect(handoffCookie).toContain("HttpOnly");
+    expect(handoffCookie).toContain("SameSite=Strict");
+    expect(handoffCookie).not.toContain(invitationId!);
+
+    const opened = await handoff.GET(
+      new Request(`${appOrigin}/api/account/invitations/handoff`, {
+        headers: { cookie: handoffCookie!.split(";", 1)[0]! },
+      }),
+    );
+    expect(opened.status).toBe(200);
+    await expect(opened.json()).resolves.toMatchObject({ invitationId });
+
+    const acceptance = createInvitationAcceptanceHandler({
+      database: fixture.database,
+      getSession: async () => ({ user: { id: recipient.userId } }),
+      trustedOrigins: [appOrigin],
+    });
+    const accepted = await acceptance(
+      new Request(`${appOrigin}/api/account/invitations/accept`, {
+        body: JSON.stringify({ invitationId }),
+        headers: {
+          "content-type": "application/json",
+          cookie: handoffCookie!.split(";", 1)[0]!,
+          origin: appOrigin,
+        },
+        method: "POST",
+      }),
+    );
+    expect(accepted.status).toBe(200);
+    expect(accepted.headers.get("set-cookie")).toContain("Max-Age=0");
+    await expect(accepted.json()).resolves.toMatchObject({
+      result: {
+        organizationId: owner.organizationId,
+        workspaceId: owner.workspaceId,
+      },
+      status: true,
+    });
+    expect(
+      await fixture.database
+        .select({ role: members.role })
+        .from(members)
+        .where(
+          and(
+            eq(members.organizationId, owner.organizationId),
+            eq(members.userId, recipient.userId),
+          ),
+        ),
+    ).toEqual([{ role: "viewer" }]);
+    expect(
+      await fixture.database
+        .select({ status: invitations.status })
+        .from(invitations)
+        .where(eq(invitations.id, invitationId!)),
+    ).toEqual([{ status: "accepted" }]);
+  });
+
+  it("permits owners to assign admins while restricting admins to lower-role members", async () => {
+    const owner = await fixture.createActor();
+    const admin = await fixture.createWorkspaceMember(owner, "admin");
+    const viewer = await fixture.createWorkspaceMember(owner, "viewer");
+    const promoted = await fixture.execute<{
+      updateWorkspaceMemberRole?: { actionId?: string | null; code?: string };
+    }>({
+      jar: owner.jar,
+      query: UPDATE,
+      variables: {
+        input: {
+          actionId: viewer.memberId,
+          role: "ADMIN",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    });
+    expect(promoted.body?.data?.updateWorkspaceMemberRole).toMatchObject({
+      actionId: viewer.memberId,
+      code: "APPLIED",
+    });
+
+    const lowerMember = await fixture.createWorkspaceMember(owner, "viewer");
+    const managed = await fixture.execute<{
+      updateWorkspaceMemberRole?: { actionId?: string | null; code?: string };
+    }>({
+      jar: admin.jar,
+      query: UPDATE,
+      variables: {
+        input: {
+          actionId: lowerMember.memberId,
+          role: "CONTRIBUTOR",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    });
+    expect(managed.body?.data?.updateWorkspaceMemberRole).toMatchObject({
+      actionId: lowerMember.memberId,
+      code: "APPLIED",
+    });
+
+    const blockedPromotion = await fixture.execute<{
+      updateWorkspaceMemberRole?: { actionId?: string | null; code?: string };
+    }>({
+      jar: admin.jar,
+      query: UPDATE,
+      variables: {
+        input: {
+          actionId: lowerMember.memberId,
+          role: "ADMIN",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    });
+    expect(
+      blockedPromotion.body?.data?.updateWorkspaceMemberRole,
+    ).toMatchObject({ actionId: null, code: "FORBIDDEN" });
+
+    const blockedOwnerMutation = await fixture.execute<{
+      updateWorkspaceMemberRole?: { actionId?: string | null; code?: string };
+    }>({
+      jar: admin.jar,
+      query: UPDATE,
+      variables: {
+        input: {
+          actionId: owner.memberId,
+          role: "VIEWER",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    });
+    expect(
+      blockedOwnerMutation.body?.data?.updateWorkspaceMemberRole,
+    ).toMatchObject({ actionId: null, code: "FORBIDDEN" });
+    expect(
+      await fixture.database
+        .select({ role: members.role })
+        .from(members)
+        .where(eq(members.id, owner.memberId)),
+    ).toEqual([{ role: "owner" }]);
+  });
+
+  it("makes cancellation unchanged when locked acceptance wins the invitation race", async () => {
+    const owner = await fixture.createActor();
+    const recipientEmail = "acceptance-race@example.test";
+    const recipient = await fixture.createUser({
+      email: recipientEmail,
+      username: "AcceptanceRace",
+    });
+    const issued = await fixture.execute<{
+      issueWorkspaceInvitation?: { actionId?: string; code?: string };
+    }>({
+      jar: owner.jar,
+      query: ISSUE,
+      variables: {
+        input: {
+          email: recipientEmail,
+          role: "VIEWER",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    });
+    const invitationId = issued.body?.data?.issueWorkspaceInvitation?.actionId;
+    expect(invitationId).toEqual(expect.any(String));
+
+    let releaseAcceptance!: () => void;
+    let invitationLocked!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseAcceptance = resolve;
+    });
+    const locked = new Promise<void>((resolve) => {
+      invitationLocked = resolve;
+    });
+    const acceptance = acceptInvitationAtomically({
+      afterStep: async (step) => {
+        if (step !== "invitation_locked") return;
+        invitationLocked();
+        await release;
+      },
+      database: fixture.database,
+      invitationId: invitationId!,
+      userId: recipient.userId,
+    });
+    await locked;
+    const cancellation = fixture.execute<{
+      cancelWorkspaceInvitation?: { actionId?: string | null; code?: string };
+    }>({
+      jar: owner.jar,
+      query: CANCEL,
+      variables: {
+        input: { actionId: invitationId, idempotencyKey: crypto.randomUUID() },
+      },
+    });
+    releaseAcceptance();
+    await expect(acceptance).resolves.toMatchObject({
+      organizationId: owner.organizationId,
+      workspaceId: owner.workspaceId,
+    });
+    await expect(cancellation).resolves.toMatchObject({
+      body: {
+        data: {
+          cancelWorkspaceInvitation: { actionId: null, code: "UNCHANGED" },
+        },
+      },
+    });
+    expect(
+      await fixture.database
+        .select({ status: invitations.status })
+        .from(invitations)
+        .where(eq(invitations.id, invitationId!)),
+    ).toEqual([{ status: "accepted" }]);
+    expect(
+      await fixture.database
+        .select({ userId: members.userId })
+        .from(members)
+        .where(
+          and(
+            eq(members.organizationId, owner.organizationId),
+            eq(members.userId, recipient.userId),
+          ),
+        ),
+    ).toEqual([{ userId: recipient.userId }]);
   });
 
   it("applies roles immediately and removes only the affected active workspace session", async () => {
