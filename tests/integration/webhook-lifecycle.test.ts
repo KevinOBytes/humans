@@ -33,6 +33,7 @@ import { verifyWebhookSignature } from "@/modules/webhooks/signature";
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 
 import { testAdminEnv } from "../support/auth";
+import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -295,5 +296,132 @@ liveDescribe("webhook lifecycle acceptance", () => {
       );
     expect(disabledWebhook).toMatchObject({ state: "disabled" });
     expect(disabledWebhook?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps webhook administration bound to the active actor workspace before ordering", async () => {
+    const owner = await fixture.createSessionActor({ name: "Webhook owner" });
+    const foreign = await fixture.createSessionActor({
+      name: "Webhook foreign",
+    });
+
+    const ownerCreated = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          // The owner URL sorts after the foreign URL. A missing tenant
+          // predicate would therefore expose the foreign row first.
+          url: "https://hooks.example.test/z-owner",
+        },
+      },
+    });
+    expect(ownerCreated.body?.errors).toBeUndefined();
+    const ownerWebhookId = required(
+      ownerCreated.body?.data?.createWebhook.id,
+      "owner webhook ID",
+    );
+
+    const foreignCreated = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/a-foreign",
+        },
+      },
+    });
+    expect(foreignCreated.body?.errors).toBeUndefined();
+    const foreignWebhookId = required(
+      foreignCreated.body?.data?.createWebhook.id,
+      "foreign webhook ID",
+    );
+
+    const ownerList = await fixture.execute<{
+      webhooks: { nodes: Array<{ id: string; url: string }> };
+    }>({
+      jar: owner.jar,
+      operationName: "WorkspaceWebhooks",
+      query: WorkspaceWebhooksDocument,
+      // A caller-controlled workspace header must not replace the actor's
+      // active workspace before the service applies its deterministic order.
+      headers: { "x-workspace-id": foreign.workspaceId },
+    });
+    expect(ownerList.body?.errors).toBeUndefined();
+    expect(ownerList.body?.data?.webhooks.nodes).toHaveLength(1);
+    expect(ownerList.body?.data?.webhooks.nodes).toEqual([
+      expect.objectContaining({
+        id: ownerWebhookId,
+        url: "https://hooks.example.test/z-owner",
+      }),
+    ]);
+    expect(JSON.stringify(ownerList.body)).not.toContain(foreignWebhookId);
+
+    const foreignRotate = await fixture.execute<{
+      rotateWebhookSecret: { code: string; id: string | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "RotateWorkspaceWebhookSecret",
+      query: RotateWorkspaceWebhookSecretDocument,
+      variables: { input: { id: ownerWebhookId } },
+    });
+    expect(foreignRotate.body?.errors).toBeUndefined();
+    expect(foreignRotate.body?.data?.rotateWebhookSecret).toMatchObject({
+      code: "INVALID",
+      id: null,
+    });
+
+    const foreignDisable = await fixture.execute<{
+      disableWebhook: { code: string; id: string | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "DisableWorkspaceWebhook",
+      query: DisableWorkspaceWebhookDocument,
+      variables: { input: { id: ownerWebhookId } },
+    });
+    expect(foreignDisable.body?.errors).toBeUndefined();
+    expect(foreignDisable.body?.data?.disableWebhook).toMatchObject({
+      code: "INVALID",
+      id: null,
+    });
+
+    const foreignSend = await fixture.execute({
+      jar: foreign.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: ownerWebhookId } },
+    });
+    expectGraphQLError(foreignSend, "NOT_FOUND");
+    expect(JSON.stringify(foreignSend.body)).not.toContain(ownerWebhookId);
+
+    const ownerKey = await fixture.provisionKey(owner, {
+      webhook: ["read", "update", "delete"],
+    });
+    const apiKeyList = await fixture.execute({
+      apiKey: ownerKey.key,
+      origin: null,
+      operationName: "WorkspaceWebhooks",
+      query: WorkspaceWebhooksDocument,
+    });
+    expectGraphQLError(apiKeyList, "FORBIDDEN");
+    expect(JSON.stringify(apiKeyList.body)).not.toContain(ownerWebhookId);
+
+    const [ownerRow] = await fixture.database
+      .select({ state: webhooks.state, version: webhooks.version })
+      .from(webhooks)
+      .where(
+        and(
+          eq(webhooks.id, ownerWebhookId),
+          eq(webhooks.workspaceId, owner.workspaceId),
+        ),
+      );
+    expect(ownerRow).toEqual({ state: "active", version: 1 });
   });
 });

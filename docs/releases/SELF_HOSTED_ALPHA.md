@@ -286,6 +286,14 @@ replayed completed delivery makes no second outbound call. It does not claim a
 live destination, DNS-rebinding defense, retry progression, upgrade migration,
 or external provider-failure matrix; `HUM-FR-024` remains incomplete.
 
+The same live suite now covers the webhook tenant boundary: a foreign webhook
+with an earlier URL sort key is absent before the owner list is ordered, a
+caller-controlled workspace header cannot substitute the active actor tenant,
+foreign rotate/disable/send attempts produce neutral outcomes without
+disclosure or side effects, and an API-key actor cannot enter the user-only
+administration path. This is bounded local PostgreSQL/GraphQL evidence for
+`HUM-NFR-004`; the whole-MVP actor and repository bypass matrix remains open.
+
 ## Current invitation acceptance evidence
 
 On 2026-08-05, the live PostgreSQL workspace-member suite passed recipient
