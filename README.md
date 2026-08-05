@@ -226,6 +226,12 @@ The command validates:
 - unauthenticated GraphQL boundary response shape
 - `/api/jobs/run` auth enforcement with an invalid secret and optional secret probe
 
+If neither `VERCEL_SMOKE_URL` nor `VERCEL_URL` is present, the command exits
+successfully with an explicit **skipped** message. If a URL is present but
+`VERCEL_SMOKE_CRON_SECRET` is absent, it intentionally checks only the
+unauthorized job boundary; that result is local smoke evidence, not proof that
+Vercel invoked the scheduled job or that the hosted providers are configured.
+
 - **Vercel:** Neon PostgreSQL, Upstash Redis, S3-compatible storage such as Cloudflare R2, Resend, and an OpenAI-compatible model endpoint.
 - **Docker Compose:** the application and worker with PostgreSQL, Redis, MinIO, bucket initialization, and optional Ollama.
 
