@@ -422,8 +422,8 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
     },
   );
 
-  it.each(["staged", "before_audit"] as const)(
-    "keeps a created key disabled when %s finalization fails",
+  it.each(["created", "staged", "before_audit"] as const)(
+    "rolls back the entire API-key lifecycle when %s finalization fails",
     async (failedStep) => {
       const owner = await fixture.createActor();
       afterApiKeyLifecycleStep = (step) => {
@@ -442,8 +442,7 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
         .select({ enabled: apiKeys.enabled })
         .from(apiKeys)
         .where(eq(apiKeys.workspaceId, owner.workspaceId));
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.enabled).toBe(false);
+      expect(rows).toHaveLength(0);
       expect(
         await fixture.database
           .select({ id: auditEvents.id })

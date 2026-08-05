@@ -196,7 +196,10 @@ export function createSettingsService(input: {
     }
 
     let created:
-      Awaited<ReturnType<BetterAuthRuntime["api"]["createApiKey"]>> | undefined;
+      | Awaited<
+          ReturnType<typeof repository.createOrganizationApiKeyInTransaction>
+        >
+      | undefined;
     try {
       await runtime.beforeApiKeyLifecycleWrite?.();
       const finalized = await repository.withAdministrativeApiKeyLifecycle({
@@ -204,23 +207,15 @@ export function createSettingsService(input: {
         workspaceId: input.workspaceId,
         run: async (transaction, role) => {
           if (!permittedPermissions(role, validated.permissions)) return null;
-          created = await auth.api.createApiKey({
-            body: {
-              configId: "organization",
-              name: validated.name,
-              organizationId,
-              permissions: validated.permissions,
-              userId: actor.id,
-              ...(validated.expiresIn === undefined
-                ? {}
-                : { expiresIn: validated.expiresIn }),
-            },
-          });
-          await runtime.afterApiKeyLifecycleStep?.("created");
-          await repository.disableCreatedOrganizationApiKey({
-            apiKeyId: created.id,
+          created = await repository.createOrganizationApiKeyInTransaction({
+            expiresInSeconds: validated.expiresIn,
+            name: validated.name,
+            organizationId,
+            permissions: validated.permissions,
+            transaction,
             workspaceId: input.workspaceId,
           });
+          await runtime.afterApiKeyLifecycleStep?.("created");
           await runtime.afterApiKeyLifecycleStep?.("staged");
           const activated = await repository.activateCreatedOrganizationApiKey({
             apiKeyId: created.id,
