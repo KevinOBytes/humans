@@ -130,4 +130,18 @@ also exercised the GraphQL research and file-upload paths, PostgreSQL/object
 storage/Redis restart recovery, SHA-256 backup restore, active-job shutdown
 fencing, and diagnostic secret/private-data leakage checks. This is local
 self-hosted evidence only; it does not close the hosted Vercel, external
-provider, optional Ollama-model, or remaining whole-product requirements.
+provider, or remaining whole-product requirements.
+
+## Current optional Ollama evidence
+
+The optional Ollama profile was exercised against the production image on
+2026-08-05 with:
+
+```sh
+OLLAMA_SMOKE=1 OLLAMA_MODEL=tinyllama:latest pnpm test:compose:ollama
+```
+
+The smoke pulled the configured model, waited for the Ollama health gate,
+executed an OpenAI-compatible chat request through the application, and
+reported `Ollama smoke passed for model tinyllama:latest`. The default Compose
+stack remains Ollama-free and does not require a model download.
