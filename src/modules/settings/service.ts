@@ -51,6 +51,7 @@ export function createSettingsService(input: {
   const policyMutations = createPolicyMutationService({
     actor: input.actor,
     database: input.database,
+    idempotencySecret: input.runtime?.authSecret,
     requestId,
     workspaceId: input.workspaceId,
   });
