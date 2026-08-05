@@ -10,7 +10,9 @@ import {
   type ResearchServiceContext,
 } from "@/modules/audit/service";
 import {
+  claimIdempotentResearchWrite,
   deriveResearchIdempotency,
+  finalizeIdempotentResearchWrite,
   runIdempotentResearchWrite,
   runResearchTransaction,
   withResearchWriteTransaction,
@@ -45,6 +47,44 @@ const MAX_PENDING_ACTOR = 5;
 const MAX_PENDING_WORKSPACE = 100;
 const UPLOAD_SESSION_REFERENCE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const UPLOAD_COMPLETION_IDEMPOTENCY_TTL_MS = 15 * 60_000;
+
+type UploadCompletionResponseReference = {
+  fileId: string;
+  uploadSessionId: string;
+};
+
+function parseUploadCompletionReference(
+  value: unknown,
+): UploadCompletionResponseReference {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 2
+  ) {
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      publicErrorMessage("PRECONDITION_FAILED"),
+    );
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.fileId !== "string" ||
+    !UPLOAD_SESSION_REFERENCE_UUID.test(candidate.fileId) ||
+    typeof candidate.uploadSessionId !== "string" ||
+    !UPLOAD_SESSION_REFERENCE_UUID.test(candidate.uploadSessionId)
+  ) {
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      publicErrorMessage("PRECONDITION_FAILED"),
+    );
+  }
+  return {
+    fileId: candidate.fileId,
+    uploadSessionId: candidate.uploadSessionId,
+  };
+}
 
 export type FileServiceContext = ResearchServiceContext & {
   operationLimiter: RequestOperationLimiter;
@@ -435,7 +475,10 @@ export function createFilesService(
       }
     },
 
-    async completeUpload(uploadSessionId: string) {
+    async completeUpload(
+      uploadSessionId: string,
+      idempotencyKey?: string | null,
+    ) {
       requireSessionActor(context);
       requirePermission(context, "file:create");
       const store = runtime.objectStore;
@@ -445,6 +488,109 @@ export function createFilesService(
         workspaceId: context.workspaceId,
       });
       if (!initial || initial.actorId !== context.actor.id) return notFound();
+      let idempotency: ReturnType<typeof deriveResearchIdempotency> | undefined;
+      let idempotencyClaim:
+        Awaited<ReturnType<typeof claimIdempotentResearchWrite>> | undefined;
+      if (idempotencyKey != null) {
+        if (!encryptionKey) return providerUnavailable();
+        idempotency = deriveResearchIdempotency(context, {
+          expiresAt: new Date(
+            Date.now() + UPLOAD_COMPLETION_IDEMPOTENCY_TTL_MS,
+          ),
+          idempotencyKey,
+          operation: "file.upload.complete",
+          requestMaterial: { uploadSessionId },
+          secret: encryptionKey,
+        });
+        idempotencyClaim = await claimIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["file:create"],
+        );
+        if (idempotencyClaim.state === "completed") {
+          const reference = parseUploadCompletionReference(
+            idempotencyClaim.responseReference,
+          );
+          if (
+            reference.uploadSessionId !== uploadSessionId ||
+            initial.state !== "completed" ||
+            initial.fileId !== reference.fileId
+          ) {
+            throw createGraphQLError(
+              "PRECONDITION_FAILED",
+              publicErrorMessage("PRECONDITION_FAILED"),
+            );
+          }
+          const file = await repository.getFile({
+            id: reference.fileId,
+            workspaceId: context.workspaceId,
+          });
+          if (!file) {
+            throw createGraphQLError(
+              "PRECONDITION_FAILED",
+              publicErrorMessage("PRECONDITION_FAILED"),
+            );
+          }
+          return { session: initial, file, issues: [] as const };
+        }
+      }
+      const finalize = async <
+        T extends {
+          file: FileRow;
+          session: UploadSessionRow;
+          issues: readonly [];
+        },
+      >(
+        result: T,
+      ): Promise<T> => {
+        if (idempotency && idempotencyClaim) {
+          await finalizeIdempotentResearchWrite(
+            context,
+            idempotency,
+            idempotencyClaim.claimId,
+            {
+              fileId: result.file.id,
+              uploadSessionId: result.session.id,
+            },
+            ["file:create"],
+          );
+        }
+        return result;
+      };
+      const waitForConcurrentCompletion = async (): Promise<{
+        file: FileRow;
+        session: UploadSessionRow;
+      } | null> => {
+        if (!idempotencyClaim || idempotencyClaim.state !== "pending") {
+          return null;
+        }
+        const startedAt = Date.now();
+        const deadline = startedAt + VERIFY_TIMEOUT_MS + 5_000;
+        while (Date.now() < deadline) {
+          const current = await repository.getSession({
+            id: uploadSessionId,
+            workspaceId: context.workspaceId,
+          });
+          if (!current || current.actorId !== context.actor.id) return null;
+          if (current.state === "completed" && current.fileId) {
+            const file = await repository.getFile({
+              id: current.fileId,
+              workspaceId: context.workspaceId,
+            });
+            if (!file) return null;
+            return { file, session: current };
+          }
+          if (current.state === "pending" && Date.now() - startedAt >= 100) {
+            return null;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        return null;
+      };
+      const concurrentCompletion = await waitForConcurrentCompletion();
+      if (concurrentCompletion) {
+        return finalize({ ...concurrentCompletion, issues: [] as const });
+      }
       await context.operationLimiter.consume({
         cost: uploadCompletionCost(initial.maxBytes),
         operationClass: "file.upload.complete.actor",
@@ -472,6 +618,12 @@ export function createFilesService(
             });
             if (!file) throw new Error("Completed upload file is missing");
             return { mode: "replay" as const, session, file };
+          }
+          if (
+            session.state === "verifying" &&
+            idempotencyClaim?.state === "pending"
+          ) {
+            return { mode: "wait" as const };
           }
           if (session.state !== "pending") {
             throw createGraphQLError(
@@ -515,12 +667,17 @@ export function createFilesService(
           "The upload session has expired.",
         );
       }
+      if (claim.mode === "wait") {
+        const settled = await waitForConcurrentCompletion();
+        if (settled) return finalize({ ...settled, issues: [] as const });
+        throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
+      }
       if (claim.mode === "replay") {
-        return {
+        return finalize({
           session: claim.session,
           file: claim.file,
           issues: [] as const,
-        };
+        });
       }
       const session = claim.session;
       const controller = new AbortController();
@@ -727,7 +884,11 @@ export function createFilesService(
           // Rejected state remains fail closed if deletion must be retried.
         }
       }
-      return { session: created.session, file: scanned, issues: [] as const };
+      return finalize({
+        session: created.session,
+        file: scanned,
+        issues: [] as const,
+      });
     },
 
     async listUploadSessions(input: {

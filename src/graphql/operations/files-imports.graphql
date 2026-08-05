@@ -206,8 +206,14 @@ mutation CreateWorkspaceUpload($input: CreateUploadSessionInput!) {
   }
 }
 
-mutation CompleteWorkspaceUpload($uploadSessionId: UUID!) {
-  completeUpload(uploadSessionId: $uploadSessionId) {
+mutation CompleteWorkspaceUpload(
+  $uploadSessionId: UUID!
+  $idempotencyKey: String
+) {
+  completeUpload(
+    uploadSessionId: $uploadSessionId
+    idempotencyKey: $idempotencyKey
+  ) {
     session {
       id
       state
