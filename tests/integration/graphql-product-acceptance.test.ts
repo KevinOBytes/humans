@@ -22,6 +22,7 @@ import {
   ImportHistoryDocument,
   LinkFactEvidenceDocument,
   PeopleListDocument,
+  PersonContradictoryFactsDocument,
   PersonFactsDocument,
   PersonHeaderDocument,
   PersonRelationshipsDocument,
@@ -154,6 +155,42 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       ).facts.nodes,
     ).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: fact.fact.id })]),
+    );
+    const contradictoryFact = dataField<{
+      code: string | null;
+      fact: { id: string };
+      issues: unknown[];
+    }>(
+      await run({
+        name: "CreateFact",
+        query: CreateFactDocument,
+        variables: {
+          input: {
+            definitionId: definition.factDefinition.id,
+            personId: firstPerson.person.id,
+            value: { text: "Contradictory operation evidence" },
+          },
+        },
+      }),
+      "createFact",
+    );
+    expect(contradictoryFact).toMatchObject({ code: null, issues: [] });
+    expect(
+      dataField<{
+        contradictoryFacts: { nodes: Array<{ id: string }> };
+      }>(
+        await run({
+          name: "PersonContradictoryFacts",
+          query: PersonContradictoryFactsDocument,
+          variables: { first: 10, id: firstPerson.person.id },
+        }),
+        "person",
+      ).contradictoryFacts.nodes,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: fact.fact.id }),
+        expect.objectContaining({ id: contradictoryFact.fact.id }),
+      ]),
     );
 
     const relationshipType = dataField<{
