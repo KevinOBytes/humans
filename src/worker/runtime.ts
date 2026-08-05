@@ -27,7 +27,10 @@ import {
 } from "@/worker/handlers/import";
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 import { createExtractionHandler } from "@/worker/handlers/extraction";
-import { purgeExpiredAiThreads } from "@/modules/ai/retention";
+import {
+  purgeExpiredAiEphemeralInputs,
+  purgeExpiredAiThreads,
+} from "@/modules/ai/retention";
 import { createJobRegistry } from "@/worker/registry";
 import { runJobsOnce } from "@/worker/run-once";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
@@ -179,6 +182,10 @@ export function createRuntimeJobRunner(input: {
           limit: 1,
         });
     if (!options.signal?.aborted) {
+      await purgeExpiredAiEphemeralInputs({
+        database: input.database,
+        limit: 100,
+      });
       await purgeExpiredAiThreads({
         database: input.database,
         limit: 100,

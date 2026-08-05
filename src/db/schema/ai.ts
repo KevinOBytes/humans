@@ -193,6 +193,35 @@ export const aiRuns = pgTable(
   ],
 );
 
+export const aiEphemeralInputs = pgTable(
+  "ai_ephemeral_inputs",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id").notNull(),
+    aiRunId: uuid("ai_run_id").notNull(),
+    encryptedContent: text("encrypted_content").notNull(),
+    contentHash: text("content_hash").notNull(),
+    expiresAt: domainTimestamp("expires_at").notNull(),
+    claimedAt: domainTimestamp("claimed_at"),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("ai_ephemeral_inputs_workspace_run_unique").on(
+      table.workspaceId,
+      table.aiRunId,
+    ),
+    index("ai_ephemeral_inputs_expiry_idx").on(table.expiresAt),
+    foreignKey({
+      name: "ai_ephemeral_inputs_workspace_run_fk",
+      columns: [table.workspaceId, table.threadId, table.aiRunId],
+      foreignColumns: [aiRuns.workspaceId, aiRuns.threadId, aiRuns.id],
+    }).onDelete("cascade"),
+  ],
+);
+
 export const aiToolCalls = pgTable(
   "ai_tool_calls",
   {

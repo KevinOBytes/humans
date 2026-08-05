@@ -149,6 +149,10 @@ export function omittedAiUserMessage(): string {
   return OMITTED_AI_USER_MESSAGE;
 }
 
+export function isOmittedAiUserMessage(value: string): boolean {
+  return value === OMITTED_AI_USER_MESSAGE;
+}
+
 export function validateAiRepositoryRuntime(
   runtime: AiRepositoryRuntime,
 ): void {

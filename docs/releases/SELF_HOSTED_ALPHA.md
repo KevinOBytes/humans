@@ -145,13 +145,14 @@ provider, or remaining whole-product requirements.
 
 `tests/integration/ai-analysis.test.ts` is a live PostgreSQL boundary check for
 the durable `retainRestrictedAiPrompts` workspace default. It proves that a
-restricted scoped prompt is replaced with an encrypted omission marker by
-default and that the canonical prompt is retained only after explicit policy
-enablement; it also keeps provider/model disclosure public. The same suite
+restricted scoped prompt is replaced in durable message history with an
+encrypted omission marker by default, while a run-scoped encrypted delivery
+record is verified by the worker and deleted on completion/failure or five-minute
+expiry. Explicit policy enablement retains the canonical prompt. The same suite
 proves zero-day expiry, bounded worker batches, active/released legal holds,
-and pending-run preservation. This is representative database evidence only:
-it does not classify arbitrary free-text prompts or close the full retention
-policy matrix.
+pending-run preservation, and redacted retention audits. This is representative
+database evidence only: it does not classify arbitrary free-text prompts or
+close the full retention policy matrix.
 
 `tests/integration/conventions-contract.test.ts` is a bounded `HUM-NFR-003`
 contract. It checks UUIDv7 generation and ordering, representative

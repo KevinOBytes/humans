@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { newId } from "@/db/id";
 import {
   aiCitations,
+  aiEphemeralInputs,
   aiMessages,
   aiRuns,
   aiThreads,
@@ -38,6 +39,8 @@ import {
   type StartAiRowsInput,
 } from "./repository-domain";
 import { createAiWorkerRepository } from "./repository-worker";
+
+const EPHEMERAL_AI_INPUT_TTL_MS = 5 * 60 * 1_000;
 
 export function aiJobIdempotencyKey(
   runtime: AiRepositoryRuntime,
@@ -341,6 +344,29 @@ export function createAiRepository(
         createdAt: now,
         createdBy: principalId,
       });
+      if (
+        input.containsRestrictedScope &&
+        !settings?.retainRestrictedAiPrompts
+      ) {
+        await database.insert(aiEphemeralInputs).values({
+          id: newId(),
+          workspaceId,
+          threadId,
+          aiRunId: runId,
+          encryptedContent: sealEnvelope({
+            key: runtime.encryptionKey,
+            plaintext: canonicalMessage,
+            purpose: "ai-ephemeral-input",
+          }),
+          contentHash: prefixedAiPersistenceHmac(
+            runtime,
+            "ephemeral-input",
+            canonicalMessage,
+          ),
+          expiresAt: new Date(now.getTime() + EPHEMERAL_AI_INPUT_TTL_MS),
+          createdAt: now,
+        });
+      }
       const requestHash = prefixedAiPersistenceHmac(
         runtime,
         "job-request",

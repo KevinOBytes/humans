@@ -6,6 +6,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { newId } from "@/db/id";
 import {
   aiCitations,
+  aiEphemeralInputs,
   aiMessages,
   aiRuns,
   aiThreads,
@@ -34,8 +35,12 @@ import {
 import { createJobsRepository } from "@/modules/jobs/repository";
 import { decodeJobPayload } from "@/modules/jobs/service";
 import { createAiRepository } from "@/modules/ai/repository";
+import { createAiWorkerRepository } from "@/modules/ai/repository-worker";
 import { createAiAnalysisService } from "@/modules/ai/service";
-import { purgeExpiredAiThreads } from "@/modules/ai/retention";
+import {
+  purgeExpiredAiEphemeralInputs,
+  purgeExpiredAiThreads,
+} from "@/modules/ai/retention";
 
 import { ResearchFixture } from "../support/research-fixture";
 import type { SessionActor } from "../support/graphql";
@@ -641,6 +646,54 @@ liveDescribe("atomic AI analysis persistence", () => {
       provider: "COMPATIBLE",
       state: "pending",
     });
+    const leaseOwner = newId();
+    const [omittedJob] = await createJobsRepository(fixture.database).claimDue({
+      leaseDurationMs: 60_000,
+      leaseOwner,
+      limit: 1,
+      now: new Date(),
+    });
+    const workerRepository = createAiWorkerRepository(fixture.database, {
+      encryptionKey,
+      hmacKey,
+    });
+    const claimed = await workerRepository.loadClaimedPendingRun({
+      claimGeneration: required(omittedJob).claimGeneration,
+      jobId: omittedJob.id,
+      leaseOwner,
+      runId: omitted.id,
+      workspaceId: owner.workspaceId,
+    });
+    expect(claimed).toMatchObject({
+      question: omittedQuestion,
+      scope: { personIds: [restrictedPersonId] },
+    });
+    expect(
+      await fixture.database
+        .select({
+          id: aiEphemeralInputs.id,
+          claimedAt: aiEphemeralInputs.claimedAt,
+        })
+        .from(aiEphemeralInputs)
+        .where(eq(aiEphemeralInputs.aiRunId, omitted.id)),
+    ).toEqual([expect.objectContaining({ claimedAt: expect.any(Date) })]);
+    await expect(
+      workerRepository.finalizeClaimedRun({
+        answer: "Ephemeral execution completed.",
+        citations: [],
+        claimGeneration: omittedJob.claimGeneration,
+        jobId: omittedJob.id,
+        leaseOwner,
+        runId: omitted.id,
+        workspaceId: owner.workspaceId,
+      }),
+    ).resolves.toBe(true);
+    expect(
+      await fixture.database
+        .select({ id: aiEphemeralInputs.id })
+        .from(aiEphemeralInputs)
+        .where(eq(aiEphemeralInputs.aiRunId, omitted.id)),
+    ).toHaveLength(0);
 
     await fixture.database
       .update(workspaceSettings)
@@ -664,6 +717,61 @@ liveDescribe("atomic AI analysis persistence", () => {
     });
     expect(retainedPlaintext).toContain(retainedQuestion);
     expect(retainedPlaintext).toContain(restrictedPersonId);
+    const retainedLeaseOwner = newId();
+    const [retainedJob] = await createJobsRepository(fixture.database).claimDue(
+      {
+        leaseDurationMs: 60_000,
+        leaseOwner: retainedLeaseOwner,
+        limit: 1,
+        now: new Date(),
+      },
+    );
+    const retainedClaim = {
+      claimGeneration: required(retainedJob).claimGeneration,
+      jobId: retainedJob.id,
+      leaseOwner: retainedLeaseOwner,
+      runId: retained.id,
+      workspaceId: owner.workspaceId,
+    };
+    const retainedWorker = createAiWorkerRepository(fixture.database, {
+      encryptionKey,
+      hmacKey,
+    });
+    await expect(
+      retainedWorker.loadClaimedPendingRun(retainedClaim),
+    ).resolves.toMatchObject({
+      question: retainedQuestion,
+    });
+    await expect(
+      retainedWorker.finalizeClaimedRun({
+        ...retainedClaim,
+        answer: "Retained execution completed.",
+        citations: [],
+      }),
+    ).resolves.toBe(true);
+
+    await fixture.database
+      .update(workspaceSettings)
+      .set({ retainRestrictedAiPrompts: false })
+      .where(eq(workspaceSettings.workspaceId, owner.workspaceId));
+    const expired = await service(context).startAiAnalysis({
+      question: "Ephemeral payload expiry",
+      idempotencyKey: "restricted-expired",
+      scope: { personIds: [restrictedPersonId] },
+    });
+    await fixture.database
+      .update(aiEphemeralInputs)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(aiEphemeralInputs.aiRunId, expired.id));
+    await expect(
+      purgeExpiredAiEphemeralInputs({ database: fixture.database, limit: 1 }),
+    ).resolves.toBe(1);
+    expect(
+      await fixture.database
+        .select({ id: aiEphemeralInputs.id })
+        .from(aiEphemeralInputs)
+        .where(eq(aiEphemeralInputs.aiRunId, expired.id)),
+    ).toHaveLength(0);
   });
 
   it("purges bounded completed threads while preserving active holds and in-flight work", async () => {
@@ -740,6 +848,22 @@ liveDescribe("atomic AI analysis persistence", () => {
     await expect(
       purgeExpiredAiThreads({ database: fixture.database, limit: 1 }),
     ).resolves.toBe(1);
+    const retentionAudits = await fixture.database
+      .select({
+        action: auditEvents.action,
+        redactedDiff: auditEvents.redactedDiff,
+      })
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "ai.retention.purged"));
+    expect(retentionAudits).toEqual([
+      {
+        action: "ai.retention.purged",
+        redactedDiff: { reason: "retention_expired" },
+      },
+    ]);
+    expect(JSON.stringify(retentionAudits)).not.toContain(
+      "Completed and expired",
+    );
     expect(
       await fixture.database
         .select({ id: aiThreads.id })
