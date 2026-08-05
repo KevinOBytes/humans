@@ -114,6 +114,7 @@ export type CreateEvidenceItemInput = {
   externalLocator?: string | null | undefined;
   extractedText?: string | null | undefined;
   fileId?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
   reviewState?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   sourceId: string;

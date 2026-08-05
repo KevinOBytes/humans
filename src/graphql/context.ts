@@ -224,6 +224,7 @@ function createServices(input: {
     evidence: createEvidenceService({
       actor: input.context.actor,
       database: input.database,
+      idempotencyHmacKey: input.searchRuntime.protectedLookupHmacKey,
       permissions: input.context.permissions,
       requestId: input.context.requestId,
       searchIndexMaintenance: input.searchIndexMaintenance,

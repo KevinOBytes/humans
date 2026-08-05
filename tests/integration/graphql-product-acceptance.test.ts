@@ -3,7 +3,7 @@
 import { readFile } from "node:fs/promises";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { auditEvents } from "@/db/schema/operations";
@@ -58,6 +58,118 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
   });
   beforeEach(async () => fixture.reset());
   afterAll(async () => fixture.close());
+
+  it("replays evidence-create references, converges concurrent callers, and fences expiry, corruption, and tenants", async () => {
+    const owner = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const sourceFor = async (actor: typeof owner, title: string) => {
+      const result = await fixture.execute<{
+        createSource: { source: { id: string } };
+      }>({
+        jar: actor.jar,
+        operationName: "CreateSource",
+        query: CreateSourceDocument,
+        variables: { input: { kind: "archive", title } },
+      });
+      expect(result.body?.errors).toBeUndefined();
+      return result.body?.data?.createSource.source.id ?? "";
+    };
+    const ownerSourceId = await sourceFor(owner, "Idempotent owner source");
+    const input = {
+      checksum: `sha256:${"b".repeat(64)}`,
+      idempotencyKey: "evidence-create-replay-v1",
+      sourceId: ownerSourceId,
+    };
+    const create = (actor: typeof owner, variables: typeof input) =>
+      fixture.execute<{
+        createEvidenceItem: { evidenceItem: { id: string } | null };
+      }>({
+        jar: actor.jar,
+        operationName: "CreateEvidenceItem",
+        query: CreateEvidenceItemDocument,
+        variables: { input: variables },
+      });
+    const [first, replay] = await Promise.all([
+      create(owner, input),
+      create(owner, input),
+    ]);
+    expect(first.body?.errors).toBeUndefined();
+    expect(replay.body?.errors).toBeUndefined();
+    const firstEvidenceId =
+      first.body?.data?.createEvidenceItem.evidenceItem?.id;
+    expect(firstEvidenceId).toBeTruthy();
+    expect(replay.body?.data?.createEvidenceItem.evidenceItem?.id).toBe(
+      firstEvidenceId,
+    );
+    const claims = await fixture.database
+      .select()
+      .from(locationMutationIdempotency)
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+          eq(locationMutationIdempotency.operation, "evidence.create.graphql"),
+        ),
+      );
+    expect(claims).toHaveLength(1);
+    const claim = claims[0];
+    expect(claim?.responseReference).toEqual({ evidenceId: firstEvidenceId });
+
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({ responseReference: { evidenceId: "not-a-uuid" } })
+      .where(eq(locationMutationIdempotency.id, claim?.id ?? ""));
+    await expectGraphQLError(await create(owner, input), "PRECONDITION_FAILED");
+
+    const takeoverInput = {
+      ...input,
+      idempotencyKey: "evidence-create-expiry-v1",
+      checksum: `sha256:${"c".repeat(64)}`,
+    };
+    const beforeExpiry = await create(owner, takeoverInput);
+    const beforeExpiryId =
+      beforeExpiry.body?.data?.createEvidenceItem.evidenceItem?.id;
+    expect(beforeExpiryId).toBeTruthy();
+    const takeoverClaims = await fixture.database
+      .select()
+      .from(locationMutationIdempotency)
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+          eq(locationMutationIdempotency.operation, "evidence.create.graphql"),
+        ),
+      );
+    const takeoverClaim = takeoverClaims.find(
+      (row) =>
+        (row.responseReference as { evidenceId?: unknown } | null)
+          ?.evidenceId === beforeExpiryId,
+    );
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(locationMutationIdempotency.id, takeoverClaim?.id ?? ""));
+    const takeover = await create(owner, takeoverInput);
+    const takeoverId = takeover.body?.data?.createEvidenceItem.evidenceItem?.id;
+    expect(takeover.body?.errors).toBeUndefined();
+    expect(takeoverId).toBeTruthy();
+    expect(takeoverId).not.toBe(beforeExpiryId);
+
+    const foreignSourceId = await sourceFor(
+      foreign,
+      "Idempotent foreign source",
+    );
+    const foreignResult = await create(foreign, {
+      ...input,
+      sourceId: foreignSourceId,
+    });
+    expect(foreignResult.body?.errors).toBeUndefined();
+    const foreignEvidenceId =
+      foreignResult.body?.data?.createEvidenceItem.evidenceItem?.id;
+    expect(foreignEvidenceId).toBeTruthy();
+    expect(foreignEvidenceId).not.toBe(firstEvidenceId);
+    expect(JSON.stringify(foreignResult.body)).not.toContain(
+      firstEvidenceId ?? "",
+    );
+  });
 
   it("executes generated operations for every canonical MVP domain through Yoga", async () => {
     const owner = await fixture.createActor();
