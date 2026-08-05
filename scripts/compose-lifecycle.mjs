@@ -297,6 +297,38 @@ async function assertProcessTree(service, expectedArgument) {
   });
 }
 
+async function workerHeartbeatUpdatedAt(service = "worker") {
+  const container = await compose(["ps", "--quiet", service], {
+    capture: true,
+  });
+  const containerId = container.stdout.toString("utf8").trim();
+  if (!containerId) return null;
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const result = await execute(
+      "docker",
+      [
+        "exec",
+        containerId,
+        "/nodejs/bin/node",
+        "-e",
+        "process.stdout.write(require('node:fs').readFileSync('/tmp/humans-worker/heartbeat','utf8'))",
+      ],
+      { allowFailure: true, capture: true },
+    );
+    if (result.code === 0) {
+      try {
+        const payload = JSON.parse(result.stdout.toString("utf8"));
+        if (Number.isSafeInteger(payload.updatedAt)) return payload.updatedAt;
+      } catch {
+        // Retry while the worker atomically replaces the marker.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
+}
+
 async function assertNoLeakage() {
   const [logs, metadata, history] = await Promise.all([
     compose(["logs", "--no-color"], { capture: true }),
@@ -713,6 +745,113 @@ async function runPersistenceAndRestore() {
     "-c",
     'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli flushdb >/dev/null',
   ]);
+  // Stop the backing PostgreSQL service itself (not just a client) and prove
+  // readiness names only that failed dependency before recovery.
+  await compose(["stop", "postgres"]);
+  const readinessDuringPostgresOutage = await appRequest("/api/health/ready", {
+    method: "GET",
+  });
+  const postgresOutageBody = await readinessDuringPostgresOutage.json();
+  assert(
+    readinessDuringPostgresOutage.status === 503 &&
+      postgresOutageBody?.status === "unavailable" &&
+      postgresOutageBody?.dependencies?.configuration === "ok" &&
+      postgresOutageBody?.dependencies?.postgres === "failed" &&
+      postgresOutageBody?.dependencies?.redis === "ok" &&
+      postgresOutageBody?.dependencies?.storage === "ok",
+    `Readiness did not identify the PostgreSQL outage (${JSON.stringify(postgresOutageBody)})`,
+  );
+  for (const secretValue of [
+    environment.POSTGRES_PASSWORD,
+    environment.REDIS_PASSWORD,
+    environment.MINIO_ROOT_PASSWORD,
+    environment.AUTH_SECRET,
+  ]) {
+    assert(
+      !JSON.stringify(postgresOutageBody).includes(secretValue),
+      "Readiness exposed a credential during PostgreSQL outage",
+    );
+  }
+  await compose(["up", "--detach", "--wait", "postgres"]);
+  const readinessAfterPostgresRecovery = await appRequest("/api/health/ready", {
+    method: "GET",
+  });
+  assert(
+    readinessAfterPostgresRecovery.status === 200,
+    `Readiness did not recover after PostgreSQL restart (${readinessAfterPostgresRecovery.status})`,
+  );
+  // Exercise the dependency-failure contract while the worker is still
+  // running: liveness must remain available, readiness must fail closed, and
+  // the independent heartbeat must keep the worker healthy. Restoring Redis
+  // must allow the same app/worker processes to become ready again.
+  const heartbeatBeforeRedisOutage = await workerHeartbeatUpdatedAt();
+  await compose(["stop", "redis"]);
+  const livenessDuringRedisOutage = await appRequest("/api/health/live", {
+    method: "GET",
+  });
+  assert(
+    livenessDuringRedisOutage.status === 200,
+    `Liveness failed during Redis outage (${livenessDuringRedisOutage.status})`,
+  );
+  const readinessDuringRedisOutage = await appRequest("/api/health/ready", {
+    method: "GET",
+  });
+  const readinessBody = await readinessDuringRedisOutage.json();
+  const serializedReadiness = JSON.stringify(readinessBody);
+  assert(
+    readinessDuringRedisOutage.status === 503 &&
+      readinessBody?.status === "unavailable" &&
+      readinessBody?.dependencies?.configuration === "ok" &&
+      readinessBody?.dependencies?.postgres === "ok" &&
+      readinessBody?.dependencies?.storage === "ok" &&
+      readinessBody?.dependencies?.redis === "failed",
+    `Readiness did not fail closed during Redis outage (${JSON.stringify(readinessBody)})`,
+  );
+  for (const secretValue of [
+    environment.POSTGRES_PASSWORD,
+    environment.REDIS_PASSWORD,
+    environment.MINIO_ROOT_PASSWORD,
+    environment.AUTH_SECRET,
+  ]) {
+    assert(
+      !serializedReadiness.includes(secretValue),
+      "Readiness exposed a credential during Redis outage",
+    );
+  }
+  await new Promise((resolve) => setTimeout(resolve, 6_000));
+  const heartbeatAfterRedisOutage = await workerHeartbeatUpdatedAt();
+  assert(
+    heartbeatBeforeRedisOutage !== null &&
+      heartbeatAfterRedisOutage !== null &&
+      heartbeatAfterRedisOutage > heartbeatBeforeRedisOutage,
+    `Worker heartbeat did not advance during Redis outage (${String(heartbeatBeforeRedisOutage)} -> ${String(heartbeatAfterRedisOutage)})`,
+  );
+  const workerDuringRedisOutage = await compose(
+    ["ps", "--all", "--format", "json", "worker"],
+    { capture: true },
+  );
+  const workerOutageState = JSON.parse(
+    workerDuringRedisOutage.stdout.toString("utf8").trim(),
+  );
+  assert(
+    workerOutageState.State === "running" &&
+      workerOutageState.Health === "healthy",
+    `Worker heartbeat was not independent of Redis outage (${JSON.stringify(workerOutageState)})`,
+  );
+  await compose(["up", "--detach", "--wait", "redis"]);
+  const readinessAfterRedisRecovery = await appRequest("/api/health/ready", {
+    method: "GET",
+  });
+  const readinessAfterRedisRecoveryBody =
+    await readinessAfterRedisRecovery.json();
+  assert(
+    readinessAfterRedisRecovery.status === 200 &&
+      readinessAfterRedisRecoveryBody?.status === "ready" &&
+      Object.values(readinessAfterRedisRecoveryBody.dependencies ?? {}).every(
+        (status) => status === "ok",
+      ),
+    `Readiness did not recover after Redis restart (${JSON.stringify(readinessAfterRedisRecoveryBody)})`,
+  );
   await compose(["restart", "redis"]);
   await compose(["up", "--detach", "--wait", "app", "worker"]);
 
