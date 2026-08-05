@@ -175,3 +175,12 @@ budget; the same suite keeps cancellation and retry assertions on the
 transactional service lifecycle. A typed `ObjectReadLimitError` prevents a
 provider stream-limit exception from being recorded as an opaque internal
 failure.
+
+## Current saved-query and graph-view evidence
+
+On 2026-08-05, the live PostgreSQL generated-GraphQL lifecycle acceptance
+passed for saved queries and graph views. It verifies owner updates,
+workspace-shared visibility, non-owner mutation denial, stale optimistic-version
+conflicts, archive exclusion from current reads and saved-query runs, and
+cross-workspace non-disclosure for both resource types. This closes
+`HUM-FR-020`; it does not replace the remaining whole-product release gates.
