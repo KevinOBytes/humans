@@ -403,6 +403,7 @@ const ReviewIdentityCandidateInput = builder.inputType(
 
 const CreatePersonInput = builder.inputType("CreatePersonInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     displayName: t.string({ required: true }),
     sortName: t.string(),
     preferredName: t.string(),
