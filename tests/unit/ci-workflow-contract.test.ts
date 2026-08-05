@@ -97,8 +97,10 @@ describe("CI workflow contract", () => {
   it("uses safe events, read-only permissions, cancellation, and bounded jobs", () => {
     const workflow = readWorkflow();
 
-    expect(workflow).toMatch(
-      /^on:\n  push:\n    branches:\n      - main\n  pull_request:\n  workflow_dispatch:\s*$/m,
+    const eventBlock = workflow.match(/^on:\n(?:[ \t].*(?:\n|$))*/m)?.[0];
+
+    expect(eventBlock?.trimEnd()).toBe(
+      "on:\n  push:\n    branches:\n      - main\n  pull_request:\n  workflow_dispatch:",
     );
     expect(workflow).not.toContain("pull_request_target");
     expect(workflow).not.toMatch(/\b(?:write-all|[a-z-]+:\s*write)\b/u);
