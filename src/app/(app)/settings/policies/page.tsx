@@ -27,6 +27,9 @@ export default async function PoliciesSettingsPage() {
           timezone={settings.workspace.timezone}
           retentionDays={settings.workspace.defaultRetentionDays}
           aiEnabled={settings.workspace.aiEnabled}
+          retainRestrictedAiPrompts={
+            settings.workspace.retainRestrictedAiPrompts
+          }
           storageEnabled={settings.workspace.storageEnabled}
         />
       </SettingsCard>
@@ -50,6 +53,12 @@ export default async function PoliciesSettingsPage() {
             {
               label: "AI feature flag",
               value: settings.workspace.aiEnabled ? "Enabled" : "Disabled",
+            },
+            {
+              label: "Restricted AI prompt retention",
+              value: settings.workspace.retainRestrictedAiPrompts
+                ? "Explicitly enabled"
+                : "Omitted by default",
             },
           ]}
         />

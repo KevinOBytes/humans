@@ -21,6 +21,7 @@ import {
   SettingsPolicyPostureDocument,
   SettingsWorkspaceDirectoryDocument,
   UpdatePersonContactDocument,
+  UpdateWorkspaceDefaultsDocument,
   UpdateWorkspaceMemberRoleDocument,
 } from "@/graphql/generated/graphql";
 import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
@@ -371,13 +372,47 @@ liveDescribe(
       const foreign = await fixture.createActor();
       const invitationEmail = "generated.invitee@example.test";
 
-      const policy = await fixture.execute({
+      const policy = await fixture.execute<{
+        settingsPolicyPosture: {
+          workspace: {
+            retainRestrictedAiPrompts: boolean;
+            version: number;
+          };
+        };
+      }>({
         jar: owner.jar,
         operationName: "SettingsPolicyPosture",
         query: SettingsPolicyPostureDocument,
       });
       expect(policy.body?.errors).toBeUndefined();
       expect(policy.body?.data).toHaveProperty("settingsPolicyPosture");
+      expect(
+        policy.body?.data?.settingsPolicyPosture.workspace
+          .retainRestrictedAiPrompts,
+      ).toBe(false);
+      const policyVersion = required(
+        policy.body?.data?.settingsPolicyPosture.workspace.version,
+        "workspace policy version",
+      );
+      const updatedDefaults = await fixture.execute<{
+        updateWorkspaceDefaults: { code: string; version: number | null };
+      }>({
+        jar: owner.jar,
+        operationName: "UpdateWorkspaceDefaults",
+        query: UpdateWorkspaceDefaultsDocument,
+        variables: {
+          input: {
+            expectedVersion: policyVersion,
+            retainRestrictedAiPrompts: true,
+          },
+        },
+      });
+      expect(updatedDefaults.body?.data?.updateWorkspaceDefaults).toMatchObject(
+        {
+          code: "APPLIED",
+          version: policyVersion + 1,
+        },
+      );
 
       const updatedRole = await fixture.execute<{
         updateWorkspaceMemberRole: {

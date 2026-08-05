@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { newId } from "@/db/id";
 import {
   aiCitations,
+  aiEphemeralInputs,
   aiMessages,
   aiRuns,
   aiThreads,
@@ -20,6 +21,7 @@ import { createJobsService } from "@/modules/jobs/service";
 import {
   aiPersistenceHmac,
   canonicalAiUserMessage,
+  omittedAiUserMessage,
   equalAiDigest,
   isAiStableErrorCode,
   prefixedAiPersistenceHmac,
@@ -37,6 +39,8 @@ import {
   type StartAiRowsInput,
 } from "./repository-domain";
 import { createAiWorkerRepository } from "./repository-worker";
+
+const EPHEMERAL_AI_INPUT_TTL_MS = 5 * 60 * 1_000;
 
 export function aiJobIdempotencyKey(
   runtime: AiRepositoryRuntime,
@@ -261,13 +265,24 @@ export function createAiRepository(
       const threadId = newId();
       const messageId = newId();
       const runId = newId();
-      const plaintext = canonicalAiUserMessage(input.question, input.scope);
+      const canonicalMessage = canonicalAiUserMessage(
+        input.question,
+        input.scope,
+      );
       const now = new Date();
       const [settings] = await database
-        .select({ retentionDays: workspaceSettings.retentionDays })
+        .select({
+          retentionDays: workspaceSettings.retentionDays,
+          retainRestrictedAiPrompts:
+            workspaceSettings.retainRestrictedAiPrompts,
+        })
         .from(workspaceSettings)
         .where(eq(workspaceSettings.workspaceId, workspaceId))
         .limit(1);
+      const plaintext =
+        input.containsRestrictedScope && !settings?.retainRestrictedAiPrompts
+          ? omittedAiUserMessage()
+          : canonicalMessage;
       await database.insert(aiThreads).values({
         id: threadId,
         workspaceId,
@@ -308,7 +323,7 @@ export function createAiRepository(
       const promptHash = prefixedAiPersistenceHmac(
         runtime,
         "prompt",
-        plaintext,
+        canonicalMessage,
       );
       await database.insert(aiRuns).values({
         id: runId,
@@ -329,6 +344,29 @@ export function createAiRepository(
         createdAt: now,
         createdBy: principalId,
       });
+      if (
+        input.containsRestrictedScope &&
+        !settings?.retainRestrictedAiPrompts
+      ) {
+        await database.insert(aiEphemeralInputs).values({
+          id: newId(),
+          workspaceId,
+          threadId,
+          aiRunId: runId,
+          encryptedContent: sealEnvelope({
+            key: runtime.encryptionKey,
+            plaintext: canonicalMessage,
+            purpose: "ai-ephemeral-input",
+          }),
+          contentHash: prefixedAiPersistenceHmac(
+            runtime,
+            "ephemeral-input",
+            canonicalMessage,
+          ),
+          expiresAt: new Date(now.getTime() + EPHEMERAL_AI_INPUT_TTL_MS),
+          createdAt: now,
+        });
+      }
       const requestHash = prefixedAiPersistenceHmac(
         runtime,
         "job-request",
@@ -420,6 +458,15 @@ export function createAiRepository(
           )
           .returning({ id: aiRuns.id });
         if (!updated) return { transitioned: false };
+        await transaction
+          .delete(aiEphemeralInputs)
+          .where(
+            and(
+              eq(aiEphemeralInputs.workspaceId, input.context.workspaceId),
+              eq(aiEphemeralInputs.threadId, row.run.threadId),
+              eq(aiEphemeralInputs.aiRunId, input.runId),
+            ),
+          );
         await transaction
           .update(jobs)
           .set({
