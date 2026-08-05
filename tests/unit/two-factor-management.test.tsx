@@ -106,4 +106,44 @@ describe("enabled two-factor management", () => {
     expect(screen.getByText("backup-one")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /finish/iu })).toBeDisabled();
   });
+
+  it("wipes the QR and backup-code presentation after explicit finish", async () => {
+    auth.enable.mockResolvedValue({
+      data: {
+        totpURI:
+          "otpauth://totp/Humans:finish-test?secret=FINISHSECRET&issuer=Humans",
+        backupCodes: ["finish-backup-one", "finish-backup-two"],
+      },
+      error: null,
+    });
+    auth.verifyTotp.mockResolvedValue({
+      data: { token: "ignored" },
+      error: null,
+    });
+    const navigate = vi.fn();
+    render(
+      <TwoFactorEnrollment twoFactorEnabled={false} navigate={navigate} />,
+    );
+
+    await userEvent.type(screen.getByLabelText("Current password"), "password");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Begin secure setup" }),
+    );
+    await userEvent.type(
+      screen.getByLabelText("Authentication code"),
+      "123456",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Verify and enable" }),
+    );
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(
+      screen.getByRole("button", { name: /saved my codes/i }),
+    );
+
+    expect(navigate).toHaveBeenCalledWith("/dashboard");
+    expect(screen.queryByText("FINISHSECRET")).not.toBeInTheDocument();
+    expect(screen.queryByText("finish-backup-one")).not.toBeInTheDocument();
+    expect(screen.queryByText("finish-backup-two")).not.toBeInTheDocument();
+  });
 });
