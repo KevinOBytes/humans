@@ -218,6 +218,32 @@ query PersonFacts($id: UUID!, $first: Int, $after: String) {
   }
 }
 
+query PersonFiles($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    files(first: $first, after: $after) {
+      nodes {
+        id
+        originalName
+        mediaType
+        detectedType
+        byteSize
+        availability
+        scanState
+        sensitivity
+        version
+        archivedAt
+        createdAt
+        updatedAt
+        roles
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
 query PersonContradictoryFacts($id: UUID!, $first: Int, $after: String) {
   person(id: $id) {
     id

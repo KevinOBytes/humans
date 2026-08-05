@@ -9,6 +9,7 @@ import { NotesSection } from "@/components/notes/notes-section";
 import { ContactsPlacesSection } from "@/components/locations/contacts-places-section";
 import { PersonEditForm } from "@/components/people/person-edit-form";
 import { NamesTimelineSection } from "@/components/people/names-timeline-section";
+import { PersonFilesSection } from "@/components/people/person-files-section";
 import { RelationshipsSection } from "@/components/relationships/relationships-section";
 import { Badge } from "@/components/ui/badge";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
@@ -28,6 +29,7 @@ const views = [
   "notes",
   "activity",
   "contacts",
+  "files",
 ] as const;
 type View = (typeof views)[number];
 
@@ -50,6 +52,8 @@ export async function PersonRecordPage({
       : "facts";
   if (view === "activity" && !context.viewer.permissions.includes("audit:read"))
     notFound();
+  if (view === "files" && !context.viewer.permissions.includes("file:read"))
+    notFound();
 
   const headerData = await executeServerGraphQL(PersonHeaderDocument, {
     id: personId,
@@ -60,6 +64,11 @@ export async function PersonRecordPage({
     (candidate) =>
       candidate !== "activity" ||
       context.viewer?.permissions.includes("audit:read"),
+  );
+  const permissionedViews = visibleViews.filter(
+    (candidate) =>
+      candidate !== "files" ||
+      context.viewer?.permissions.includes("file:read"),
   );
   const permissions = context.viewer.permissions;
 
@@ -99,7 +108,7 @@ export async function PersonRecordPage({
         className="border-border overflow-x-auto border-b"
       >
         <ul className="flex min-w-max gap-1">
-          {visibleViews.map((candidate) => (
+          {permissionedViews.map((candidate) => (
             <li key={candidate}>
               <Link
                 href={profilePageHref(personId, candidate)}
@@ -178,6 +187,9 @@ export async function PersonRecordPage({
           canUpdatePlace={permissions.includes("place:update")}
           canDeletePlace={permissions.includes("place:delete")}
         />
+      ) : null}
+      {view === "files" ? (
+        <PersonFilesSection search={search} personId={personId} />
       ) : null}
     </div>
   );
