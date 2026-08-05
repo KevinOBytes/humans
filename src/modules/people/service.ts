@@ -26,6 +26,7 @@ import {
   notes,
   personAddresses,
   personContactPoints,
+  sources,
   personTags,
 } from "@/db/schema/evidence";
 import { consentRecords } from "@/db/schema/privacy";
@@ -460,6 +461,13 @@ export function createPeopleService(context: ResearchServiceContext) {
               resourceKind: "evidence",
               id: evidenceItems.id,
               sensitivity: evidenceItems.sensitivity,
+            })
+          : sql`false`,
+        sourceVisibility: context.permissions.has("source:read")
+          ? resourceVisibilitySql(context, {
+              resourceKind: "source",
+              id: sources.id,
+              sensitivity: sources.sensitivity,
             })
           : sql`false`,
         relationshipVisibility: context.permissions.has("relationship:read")

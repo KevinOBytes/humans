@@ -20,6 +20,7 @@ import {
   factEvidence,
   personAddresses,
   personContactPoints,
+  sources,
 } from "@/db/schema/evidence";
 import { relationshipEvidence } from "@/db/schema/evidence";
 import { relationships } from "@/db/schema/relationships";
@@ -238,6 +239,7 @@ export function createPeopleRepository(database: Database) {
       personVisibility?: SQL;
       factVisibility?: SQL;
       evidenceVisibility?: SQL;
+      sourceVisibility?: SQL;
       relationshipVisibility?: SQL;
       contactVisibility?: SQL;
       addressVisibility?: SQL;
@@ -286,6 +288,8 @@ export function createPeopleRepository(database: Database) {
                   AND ${facts.id} = ${factEvidence.factId}
                 INNER JOIN ${evidenceItems} ON ${evidenceItems.workspaceId} = ${factEvidence.workspaceId}
                   AND ${evidenceItems.id} = ${factEvidence.evidenceItemId}
+                INNER JOIN ${sources} ON ${sources.workspaceId} = ${evidenceItems.workspaceId}
+                  AND ${sources.id} = ${evidenceItems.sourceId}
                 WHERE ${factEvidence.workspaceId} = ${input.workspaceId}::uuid
                   AND ${facts.personId} = ${input.personId}::uuid
                   AND ${evidenceItems.fileId} = ${files.id}
@@ -293,6 +297,7 @@ export function createPeopleRepository(database: Database) {
                   AND ${evidenceItems.deletedAt} IS NULL
                   AND ${input.factVisibility}
                   AND ${input.evidenceVisibility}
+                  AND ${input.sourceVisibility}
               )
               OR EXISTS (
                 SELECT 1 FROM ${relationshipEvidence}
@@ -300,6 +305,8 @@ export function createPeopleRepository(database: Database) {
                   AND ${relationships.id} = ${relationshipEvidence.relationshipId}
                 INNER JOIN ${evidenceItems} ON ${evidenceItems.workspaceId} = ${relationshipEvidence.workspaceId}
                   AND ${evidenceItems.id} = ${relationshipEvidence.evidenceItemId}
+                INNER JOIN ${sources} ON ${sources.workspaceId} = ${evidenceItems.workspaceId}
+                  AND ${sources.id} = ${evidenceItems.sourceId}
                 WHERE ${relationshipEvidence.workspaceId} = ${input.workspaceId}::uuid
                   AND (${relationships.sourcePersonId} = ${input.personId}::uuid OR ${relationships.targetPersonId} = ${input.personId}::uuid)
                   AND ${evidenceItems.fileId} = ${files.id}
@@ -307,6 +314,7 @@ export function createPeopleRepository(database: Database) {
                   AND ${evidenceItems.deletedAt} IS NULL
                   AND ${input.relationshipVisibility}
                   AND ${input.evidenceVisibility}
+                  AND ${input.sourceVisibility}
               )
               OR EXISTS (
                 SELECT 1 FROM ${personContactPoints}
@@ -314,6 +322,8 @@ export function createPeopleRepository(database: Database) {
                   AND ${contactPoints.id} = ${personContactPoints.contactPointId}
                 INNER JOIN ${evidenceItems} ON ${evidenceItems.workspaceId} = ${personContactPoints.workspaceId}
                   AND ${evidenceItems.id} = ${personContactPoints.evidenceId}
+                INNER JOIN ${sources} ON ${sources.workspaceId} = ${evidenceItems.workspaceId}
+                  AND ${sources.id} = ${evidenceItems.sourceId}
                 WHERE ${personContactPoints.workspaceId} = ${input.workspaceId}::uuid
                   AND ${personContactPoints.personId} = ${input.personId}::uuid
                   AND ${evidenceItems.fileId} = ${files.id}
@@ -322,6 +332,7 @@ export function createPeopleRepository(database: Database) {
                   AND ${input.contactVisibility}
                   AND ${input.contactResourceVisibility}
                   AND ${input.evidenceVisibility}
+                  AND ${input.sourceVisibility}
               )
               OR EXISTS (
                 SELECT 1 FROM ${personAddresses}
@@ -329,6 +340,8 @@ export function createPeopleRepository(database: Database) {
                   AND ${addresses.id} = ${personAddresses.addressId}
                 INNER JOIN ${evidenceItems} ON ${evidenceItems.workspaceId} = ${personAddresses.workspaceId}
                   AND ${evidenceItems.id} = ${personAddresses.evidenceId}
+                INNER JOIN ${sources} ON ${sources.workspaceId} = ${evidenceItems.workspaceId}
+                  AND ${sources.id} = ${evidenceItems.sourceId}
                 WHERE ${personAddresses.workspaceId} = ${input.workspaceId}::uuid
                   AND ${personAddresses.personId} = ${input.personId}::uuid
                   AND ${evidenceItems.fileId} = ${files.id}
@@ -337,6 +350,7 @@ export function createPeopleRepository(database: Database) {
                   AND ${input.addressVisibility}
                   AND ${input.addressResourceVisibility}
                   AND ${input.evidenceVisibility}
+                  AND ${input.sourceVisibility}
               )
             )`,
           ),
@@ -399,6 +413,14 @@ export function createPeopleRepository(database: Database) {
               input.evidenceVisibility,
             ),
           )
+          .innerJoin(
+            sources,
+            and(
+              eq(sources.workspaceId, input.workspaceId),
+              eq(sources.id, evidenceItems.sourceId),
+              input.sourceVisibility,
+            ),
+          )
           .where(
             and(
               eq(factEvidence.workspaceId, input.workspaceId),
@@ -430,6 +452,14 @@ export function createPeopleRepository(database: Database) {
               input.evidenceVisibility,
             ),
           )
+          .innerJoin(
+            sources,
+            and(
+              eq(sources.workspaceId, input.workspaceId),
+              eq(sources.id, evidenceItems.sourceId),
+              input.sourceVisibility,
+            ),
+          )
           .where(
             and(
               eq(relationshipEvidence.workspaceId, input.workspaceId),
@@ -453,6 +483,14 @@ export function createPeopleRepository(database: Database) {
               eq(evidenceItems.workspaceId, input.workspaceId),
               eq(evidenceItems.id, personContactPoints.evidenceId),
               isNull(evidenceItems.deletedAt),
+            ),
+          )
+          .innerJoin(
+            sources,
+            and(
+              eq(sources.workspaceId, input.workspaceId),
+              eq(sources.id, evidenceItems.sourceId),
+              input.sourceVisibility,
             ),
           )
           .where(
@@ -482,6 +520,14 @@ export function createPeopleRepository(database: Database) {
               eq(evidenceItems.workspaceId, input.workspaceId),
               eq(evidenceItems.id, personAddresses.evidenceId),
               isNull(evidenceItems.deletedAt),
+            ),
+          )
+          .innerJoin(
+            sources,
+            and(
+              eq(sources.workspaceId, input.workspaceId),
+              eq(sources.id, evidenceItems.sourceId),
+              input.sourceVisibility,
             ),
           )
           .where(

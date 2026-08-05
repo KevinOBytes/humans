@@ -327,6 +327,92 @@ liveDescribe("research API", () => {
       expect.objectContaining({ id: availableFileId }),
     ]);
 
+    const sourceOnlyFileId = newId();
+    await fixture.database.insert(files).values(
+      makeFile({
+        id: sourceOnlyFileId,
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        quarantineState: "available",
+        scanState: "clean",
+      }),
+    );
+    const sourceOnlyDefinition = await fixture.execute<{
+      createFactDefinition: { factDefinition: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CreateFactDefinitionDocument,
+      operationName: "CreateFactDefinition",
+      variables: {
+        input: {
+          allowedValueType: "TEXT",
+          fieldKey: "source_only_fact",
+          label: "Source-only fact",
+          namespace: "person",
+        },
+      },
+    });
+    const sourceOnlyDefinitionId = required(
+      sourceOnlyDefinition.body?.data?.createFactDefinition.factDefinition?.id,
+    );
+    const sourceOnlyFact = await fixture.execute<{
+      createFact: { fact: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CreateFactDocument,
+      operationName: "CreateFact",
+      variables: {
+        input: {
+          definitionId: sourceOnlyDefinitionId,
+          personId: subjectId,
+          value: { text: "Evidence source policy" },
+        },
+      },
+    });
+    const sourceOnlyFactId = required(
+      sourceOnlyFact.body?.data?.createFact.fact?.id,
+    );
+    const restrictedSourceId = newId();
+    const sourceOnlyEvidenceId = newId();
+    await fixture.database.insert(sources).values({
+      id: restrictedSourceId,
+      workspaceId: owner.workspaceId,
+      kind: "archive",
+      title: "Restricted evidence source",
+      sensitivity: "restricted",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(evidenceItems).values({
+      id: sourceOnlyEvidenceId,
+      workspaceId: owner.workspaceId,
+      sourceId: restrictedSourceId,
+      fileId: sourceOnlyFileId,
+      checksum: `sha256:${"d".repeat(64)}`,
+      sensitivity: "internal",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(factEvidence).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      factId: sourceOnlyFactId,
+      evidenceItemId: sourceOnlyEvidenceId,
+      createdBy: owner.principalId,
+    });
+    const sourceDeniedFiles = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(sourceDeniedFiles.body?.errors).toBeUndefined();
+    expect(
+      sourceDeniedFiles.body?.data?.person?.files.nodes.map((node) => node.id),
+    ).not.toContain(sourceOnlyFileId);
+
     const pagedFileId = newId();
     await fixture.database.insert(files).values(
       makeFile({
