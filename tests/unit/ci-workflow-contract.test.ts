@@ -98,7 +98,7 @@ describe("CI workflow contract", () => {
     const workflow = readWorkflow();
 
     expect(workflow).toMatch(
-      /^on:\n  push:\n  pull_request:\n  workflow_dispatch:\s*$/m,
+      /^on:\n  push:\n    branches:\n      - main\n  pull_request:\n  workflow_dispatch:\s*$/m,
     );
     expect(workflow).not.toContain("pull_request_target");
     expect(workflow).not.toMatch(/\b(?:write-all|[a-z-]+:\s*write)\b/u);
