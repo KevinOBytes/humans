@@ -221,6 +221,7 @@ export type CreatePersonInput = {
   confidence?: number | null | undefined;
   confidenceExplanation?: string | null | undefined;
   displayName: string;
+  idempotencyKey?: string | null | undefined;
   preferredName?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   sortName?: string | null | undefined;

@@ -8,6 +8,8 @@ import {
 } from "@/modules/audit/service";
 import {
   applySearchIndexMaintenance,
+  deriveResearchIdempotency,
+  runIdempotentResearchWrite,
   withResearchWriteTransaction as writeTransaction,
 } from "@/modules/audit/transactions";
 import {
@@ -99,6 +101,9 @@ const RECENT_PEOPLE_CURSOR_ORDER = "dashboard-people-updated-desc";
 const PERSON_NAMES_CURSOR_ORDER = "person-names-created-desc";
 const PERSON_EVENTS_CURSOR_ORDER = "person-events-created-desc";
 const CONTRADICTORY_FACTS_CURSOR_ORDER = "contradictory-facts-asserted-desc";
+const PERSON_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const PERSON_REFERENCE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function encodeRecentCursor(row: Pick<PersonRow, "id" | "updatedAt">): string {
   return Buffer.from(
@@ -518,6 +523,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     },
 
     async create(input: {
+      idempotencyKey?: string | null;
       displayName: string;
       sortName?: string | null;
       preferredName?: string | null;
@@ -590,14 +596,15 @@ export function createPeopleService(context: ResearchServiceContext) {
           message: "Invalid sensitivity.",
         });
       if (issues.length > 0) return invalid(issues);
-      const now = new Date();
-      const id = newId();
-      const row = await writeTransaction(context, async (transaction) => {
-        const scopedRepository = createPeopleRepository(
-          transaction as unknown as typeof context.database,
-        );
+      const persist = async (
+        writeContext: ResearchServiceContext,
+        transaction: typeof context.database,
+      ) => {
+        const now = new Date();
+        const id = newId();
+        const scopedRepository = createPeopleRepository(transaction);
         const created = await scopedRepository.create({
-          workspaceId: context.workspaceId,
+          workspaceId: writeContext.workspaceId,
           value: {
             id,
             displayName: displayName.value!,
@@ -609,12 +616,12 @@ export function createPeopleService(context: ResearchServiceContext) {
             confidence: confidence.value ?? "1",
             confidenceExplanation: input.confidenceExplanation?.trim() || null,
             createdAt: now,
-            createdBy: context.actor.principalId,
+            createdBy: writeContext.actor.principalId,
             updatedAt: now,
-            updatedBy: context.actor.principalId,
+            updatedBy: writeContext.actor.principalId,
           },
         });
-        await audit.write(transaction as unknown as typeof context.database, {
+        await createAuditService(writeContext).write(transaction, {
           action: "person.create",
           resourceKind: "person",
           resourceId: created.id,
@@ -634,17 +641,79 @@ export function createPeopleService(context: ResearchServiceContext) {
             version: created.version,
           },
         });
-        await applySearchIndexMaintenance(context, transaction, [
+        await applySearchIndexMaintenance(writeContext, transaction, [
           {
             action: "upsert",
             sourceId: created.id,
             sourceKind: "person",
             sourceVersion: created.version,
-            workspaceId: context.workspaceId,
+            workspaceId: writeContext.workspaceId,
           },
         ]);
         return created;
-      });
+      };
+      const idempotencyKey = input.idempotencyKey;
+      if (idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person creation is not configured.",
+          );
+        }
+        const idempotency = deriveResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+          idempotencyKey,
+          operation: "person.create",
+          requestMaterial: {
+            biography: biography.value ?? null,
+            confidence: confidence.value ?? "1",
+            confidenceExplanation: input.confidenceExplanation?.trim() || null,
+            displayName: displayName.value ?? "",
+            preferredName: preferredName.value ?? null,
+            sensitivity,
+            sortName: sortName.value ?? null,
+            status,
+          },
+          secret,
+        });
+        const result = await runIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:create"],
+          async (scopedContext) => {
+            const created = await persist(
+              scopedContext,
+              scopedContext.database,
+            );
+            return { personId: created.id };
+          },
+        );
+        const personId = result.responseReference.personId;
+        if (
+          typeof personId !== "string" ||
+          !PERSON_REFERENCE_UUID.test(personId)
+        ) {
+          throw createGraphQLError(
+            "VALIDATION_FAILED",
+            "The operation response reference is invalid.",
+          );
+        }
+        const replayed = await repository.getById({
+          workspaceId: context.workspaceId,
+          id: personId,
+        });
+        if (!replayed || !(await visible(replayed))) {
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        }
+        return { resource: replayed, issues: [], code: null };
+      }
+      const row = await writeTransaction(context, async (transaction) =>
+        persist(context, transaction),
+      );
       return { resource: row, issues: [], code: null };
     },
 

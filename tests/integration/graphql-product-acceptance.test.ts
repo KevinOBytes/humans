@@ -575,6 +575,37 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     );
   });
 
+  it("replays generated createPerson responses without duplicating the person", async () => {
+    const owner = await fixture.createActor();
+    const input = {
+      displayName: "Generated idempotent person",
+      idempotencyKey: "generated-person-replay",
+    };
+    const first = await fixture.execute<{
+      createPerson: { code: string | null; person: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input },
+    });
+    const replay = await fixture.execute<{
+      createPerson: { code: string | null; person: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input },
+    });
+    expect(first.body?.errors).toBeUndefined();
+    expect(replay.body?.errors).toBeUndefined();
+    expect(first.body?.data?.createPerson).toMatchObject({ code: null });
+    expect(replay.body?.data?.createPerson).toMatchObject({ code: null });
+    expect(replay.body?.data?.createPerson.person?.id).toBe(
+      first.body?.data?.createPerson.person?.id,
+    );
+  });
+
   it("allows owner and administrator production introspection while denying lesser authority", async () => {
     const production = new ResearchFixture({ environment: "production" });
     try {
