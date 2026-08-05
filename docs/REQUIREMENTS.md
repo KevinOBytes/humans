@@ -2,7 +2,7 @@
 
 This matrix converts the approved Humans design into numbered, verifiable acceptance requirements. Full MVP completion requires this current matrix and the release evidence defined by `HUM-NFR-018`, including the Vercel deployment contract in `HUM-FR-035`. The current usable self-hosted alpha and MVP release-candidate boundary is recorded in `docs/releases/SELF_HOSTED_ALPHA.md`; it does not redefine or move incomplete design requirements outside the MVP. `TODO.md` contains every row marked **Incomplete**. A requirement changes to **Complete** only when its stated tests or runtime checks pass in the current repository state.
 
-Bounded HUM-NFR-008 people and webhook evidence (2026-08-05): `createPerson` and generated `sendWebhookTestEvent` now support durable HMAC response-reference replay. Live PostgreSQL acceptance proves replay without duplicate rows, concurrent convergence, malformed-reference rejection, expiry takeover, and workspace fencing for both mutation seams; the webhook path also commits its delivery and durable job in the same transaction. Facts, evidence, and settings mutation matrices remain open.
+Bounded HUM-NFR-008 people, webhook, and settings evidence (2026-08-05): `createPerson`, generated `sendWebhookTestEvent`, and generated `UpdateAccessPolicy` now support durable HMAC response-reference replay. Live PostgreSQL acceptance proves replay without duplicate effects, concurrent convergence, malformed-reference rejection, expiry takeover, and workspace fencing for these mutation seams; the webhook path also commits its delivery and durable job in the same transaction, while the policy path preserves optimistic versions and redacted audit behavior. Facts, evidence, and the remaining settings mutation matrix remain open.
 
 ## Functional requirements
 
@@ -81,6 +81,14 @@ also proves the QR/manual secret and backup-code presentation is wiped after
 explicit finish. These additions strengthen the existing live
 `auth-security`/AES-GCM and browser leakage evidence; the whole-product
 redaction, provider, and storage matrix remains incomplete.
+
+### NFR-008 bounded settings tranche evidence
+
+`settings-policy-administration.test.ts` adds generated GraphQL
+`UpdateAccessPolicy` response-reference replay, corrupted-reference rejection,
+serialized expiry takeover, concurrent convergence, optimistic-version
+preservation, redacted audit behavior, and workspace fencing. The broader
+settings/provider matrix remains incomplete.
 
 ## Current Task 17 auth/runtime hardening evidence
 

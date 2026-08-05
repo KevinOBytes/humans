@@ -1,4 +1,6 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { createHmac } from "node:crypto";
+
+import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 
 import { members } from "@/db/schema/auth";
 import {
@@ -9,7 +11,7 @@ import {
   workspaceSettings,
 } from "@/db/schema/workspaces";
 import { consentRecords, deletionRequests } from "@/db/schema/privacy";
-import { auditEvents } from "@/db/schema/operations";
+import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
 import { newId } from "@/db/id";
 import type { GraphQLActor } from "@/graphql/context";
 import { createGraphQLError } from "@/graphql/errors";
@@ -23,6 +25,8 @@ const RESOURCE_KIND = /^[a-z][a-z0-9_.-]{1,63}$/u;
 const ROLE = /^(owner|admin|analyst|contributor|viewer)$/u;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const IDEMPOTENCY_KEY_MAX_BYTES = 128;
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60_000;
 
 function normalizePolicyName(value: string): string {
   const name = value.normalize("NFKC").trim();
@@ -42,6 +46,54 @@ export type PolicyMutationResult = {
   code: "APPLIED" | "CONFLICT" | "INVALID";
   requestId: string;
 };
+
+function hmac(secret: string, value: string): string {
+  return createHmac("sha256", secret).update(value, "utf8").digest("hex");
+}
+
+function canonicalMaterial(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value))
+      throw new TypeError("Invalid idempotency material");
+    return JSON.stringify(Object.is(value, -0) ? 0 : value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalMaterial(item)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalMaterial(record[key])}`)
+      .join(",")}}`;
+  }
+  throw new TypeError("Invalid idempotency material");
+}
+
+function parseStoredPolicyResult(value: unknown): PolicyMutationResult | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const keys = Object.keys(row).sort();
+  if (keys.join(",") !== "code,id,requestId,version") return null;
+  const validId =
+    row.id === null || (typeof row.id === "string" && UUID.test(row.id));
+  const validVersion =
+    row.version === null ||
+    (typeof row.version === "number" && Number.isSafeInteger(row.version));
+  return validId &&
+    validVersion &&
+    (row.code === "APPLIED" ||
+      row.code === "CONFLICT" ||
+      row.code === "INVALID") &&
+    typeof row.requestId === "string" &&
+    row.requestId.length > 0
+    ? (row as PolicyMutationResult)
+    : null;
+}
 
 function requireUserAdmin(
   actor: GraphQLActor,
@@ -133,6 +185,7 @@ async function audit(
 export function createPolicyMutationService(input: {
   actor: GraphQLActor;
   database: Database;
+  idempotencySecret?: string;
   requestId: string;
   workspaceId: string;
 }) {
@@ -171,6 +224,174 @@ export function createPolicyMutationService(input: {
     return input.database.transaction(async (transaction) =>
       operation(transaction, await authorize(transaction)),
     );
+  }
+
+  async function idempotentMutation(options: {
+    actor: Extract<GraphQLActor, { type: "user" }>;
+    key: string | null | undefined;
+    material: Record<string, unknown>;
+    operation: string;
+    run: () => Promise<PolicyMutationResult>;
+    transaction: TransactionDatabase;
+  }): Promise<PolicyMutationResult> {
+    if (options.key === undefined || options.key === null) {
+      return options.run();
+    }
+    const normalizedKey =
+      typeof options.key === "string"
+        ? options.key.normalize("NFKC").trim()
+        : "";
+    if (
+      !input.idempotencySecret ||
+      normalizedKey.length === 0 ||
+      Buffer.byteLength(normalizedKey, "utf8") > IDEMPOTENCY_KEY_MAX_BYTES
+    ) {
+      return {
+        id: null,
+        version: null,
+        code: "INVALID",
+        requestId: input.requestId,
+      };
+    }
+    const binding = `${input.workspaceId}:${options.actor.id}:${options.operation}`;
+    const keyHash = hmac(
+      input.idempotencySecret,
+      `${binding}:key:${normalizedKey}`,
+    );
+    const requestHash = `sha256:${hmac(
+      input.idempotencySecret,
+      `${binding}:request:${canonicalMaterial(options.material)}`,
+    )}`;
+    const now = new Date();
+    const identity = and(
+      eq(idempotencyKeys.workspaceId, input.workspaceId),
+      eq(idempotencyKeys.actorId, options.actor.id),
+      eq(idempotencyKeys.operation, options.operation),
+      eq(idempotencyKeys.keyHash, keyHash),
+    );
+    const [prior] = await options.transaction
+      .select()
+      .from(idempotencyKeys)
+      .where(identity)
+      .for("update");
+    if (prior && prior.expiresAt <= now) {
+      await options.transaction
+        .delete(idempotencyKeys)
+        .where(
+          and(
+            eq(idempotencyKeys.workspaceId, input.workspaceId),
+            eq(idempotencyKeys.id, prior.id),
+            lte(idempotencyKeys.expiresAt, now),
+          ),
+        );
+    } else if (prior) {
+      if (prior.requestHash !== requestHash) {
+        throw createGraphQLError(
+          "CONFLICT",
+          "The idempotency key is already bound to another request.",
+        );
+      }
+      if (prior.status !== "completed" || prior.responseReference == null) {
+        throw createGraphQLError(
+          "CONFLICT",
+          "The idempotent operation is not replayable.",
+        );
+      }
+      const stored = parseStoredPolicyResult(prior.responseReference);
+      if (!stored) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The operation response reference is invalid.",
+        );
+      }
+      return stored;
+    }
+
+    const [inserted] = await options.transaction
+      .insert(idempotencyKeys)
+      .values({
+        id: newId(),
+        workspaceId: input.workspaceId,
+        actorId: options.actor.id,
+        operation: options.operation,
+        keyHash,
+        requestHash,
+        status: "pending",
+        expiresAt: new Date(now.getTime() + IDEMPOTENCY_TTL_MS),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: [
+          idempotencyKeys.workspaceId,
+          idempotencyKeys.actorId,
+          idempotencyKeys.operation,
+          idempotencyKeys.keyHash,
+        ],
+      })
+      .returning({ id: idempotencyKeys.id });
+    const [claim] = await options.transaction
+      .select()
+      .from(idempotencyKeys)
+      .where(identity)
+      .for("update");
+    if (!claim) {
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation could not be claimed.",
+      );
+    }
+    if (!inserted) {
+      if (claim.expiresAt <= now) {
+        throw createGraphQLError(
+          "CONFLICT",
+          "The expired idempotent operation could not be reclaimed.",
+        );
+      }
+      if (claim.requestHash !== requestHash) {
+        throw createGraphQLError(
+          "CONFLICT",
+          "The idempotency key is already bound to another request.",
+        );
+      }
+      if (claim.status !== "completed" || claim.responseReference == null) {
+        throw createGraphQLError(
+          "CONFLICT",
+          "The idempotent operation is not replayable.",
+        );
+      }
+      const stored = parseStoredPolicyResult(claim.responseReference);
+      if (!stored) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The operation response reference is invalid.",
+        );
+      }
+      return stored;
+    }
+    const result = await options.run();
+    const [completed] = await options.transaction
+      .update(idempotencyKeys)
+      .set({
+        status: "completed",
+        responseReference: result,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, input.workspaceId),
+          eq(idempotencyKeys.id, claim.id),
+          eq(idempotencyKeys.status, "pending"),
+        ),
+      )
+      .returning({ id: idempotencyKeys.id });
+    if (!completed) {
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation could not be completed.",
+      );
+    }
+    return result;
   }
 
   return {
@@ -281,6 +502,7 @@ export function createPolicyMutationService(input: {
     updateAccessPolicy(inputValue: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
       name?: string | null;
       sensitivityCeiling?:
         "public" | "internal" | "confidential" | "restricted" | null;
@@ -289,68 +511,89 @@ export function createPolicyMutationService(input: {
       state?: "draft" | "active" | "disabled" | "archived" | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const updated = await transaction
-          .update(accessPolicies)
-          .set({
-            ...(inputValue.name == null
-              ? {}
-              : {
-                  name: normalizePolicyName(inputValue.name),
-                }),
-            ...(inputValue.sensitivityCeiling == null
-              ? {}
-              : { sensitivityCeiling: inputValue.sensitivityCeiling }),
-            ...(inputValue.resourceKinds == null
-              ? {}
-              : {
-                  resourceKinds: validateResourceKinds(
-                    inputValue.resourceKinds,
-                  ),
-                }),
-            ...(inputValue.roleBindings === undefined
-              ? {}
-              : {
-                  roleBindings: validateRoleBindings(inputValue.roleBindings),
-                }),
-            ...(inputValue.state == null ? {} : { state: inputValue.state }),
-            version: sql`${accessPolicies.version} + 1`,
-            updatedAt: new Date(),
-            updatedBy: actor.id,
-          })
-          .where(
-            and(
-              eq(accessPolicies.id, inputValue.id),
-              eq(accessPolicies.workspaceId, input.workspaceId),
-              eq(accessPolicies.version, inputValue.expectedVersion),
-              isNull(accessPolicies.deletedAt),
-            ),
-          )
-          .returning({
-            id: accessPolicies.id,
-            version: accessPolicies.version,
-          });
-        const row = updated[0];
-        if (!row)
-          return {
-            id: null,
-            version: null,
-            code: "CONFLICT",
-            requestId: input.requestId,
-          };
-        await audit(transaction, {
+        return idempotentMutation({
           actor,
-          action: "access_policy.update",
-          requestId: input.requestId,
-          resourceId: row.id,
-          resourceKind: "access_policy",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            expectedVersion: inputValue.expectedVersion,
+            id: inputValue.id,
+            name: inputValue.name,
+            resourceKinds: inputValue.resourceKinds,
+            roleBindings: inputValue.roleBindings,
+            sensitivityCeiling: inputValue.sensitivityCeiling,
+            state: inputValue.state,
+          },
+          operation: "access_policy.update",
+          transaction,
+          run: async () => {
+            const updated = await transaction
+              .update(accessPolicies)
+              .set({
+                ...(inputValue.name == null
+                  ? {}
+                  : {
+                      name: normalizePolicyName(inputValue.name),
+                    }),
+                ...(inputValue.sensitivityCeiling == null
+                  ? {}
+                  : { sensitivityCeiling: inputValue.sensitivityCeiling }),
+                ...(inputValue.resourceKinds == null
+                  ? {}
+                  : {
+                      resourceKinds: validateResourceKinds(
+                        inputValue.resourceKinds,
+                      ),
+                    }),
+                ...(inputValue.roleBindings === undefined
+                  ? {}
+                  : {
+                      roleBindings: validateRoleBindings(
+                        inputValue.roleBindings,
+                      ),
+                    }),
+                ...(inputValue.state == null
+                  ? {}
+                  : { state: inputValue.state }),
+                version: sql`${accessPolicies.version} + 1`,
+                updatedAt: new Date(),
+                updatedBy: actor.id,
+              })
+              .where(
+                and(
+                  eq(accessPolicies.id, inputValue.id),
+                  eq(accessPolicies.workspaceId, input.workspaceId),
+                  eq(accessPolicies.version, inputValue.expectedVersion),
+                  isNull(accessPolicies.deletedAt),
+                ),
+              )
+              .returning({
+                id: accessPolicies.id,
+                version: accessPolicies.version,
+              });
+            const row = updated[0];
+            if (!row)
+              return {
+                id: null,
+                version: null,
+                code: "CONFLICT",
+                requestId: input.requestId,
+              };
+            await audit(transaction, {
+              actor,
+              action: "access_policy.update",
+              requestId: input.requestId,
+              resourceId: row.id,
+              resourceKind: "access_policy",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id: row.id,
+              version: row.version,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return {
-          id: row.id,
-          version: row.version,
-          code: "APPLIED",
-          requestId: input.requestId,
-        };
       });
     },
     archiveAccessPolicy(

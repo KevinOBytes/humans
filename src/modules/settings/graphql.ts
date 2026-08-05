@@ -229,6 +229,7 @@ const UpdateAccessPolicyInput = builder.inputType("UpdateAccessPolicyInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
     name: t.string(),
     sensitivityCeiling: t.field({ type: Sensitivity }),
     resourceKinds: t.stringList(),
