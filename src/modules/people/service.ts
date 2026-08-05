@@ -35,7 +35,17 @@ import {
   personIdentifiers,
   personNames,
 } from "@/db/schema/people";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import {
   createPeopleRepository,
@@ -88,6 +98,7 @@ function sortValue(row: PersonRow): string {
 const RECENT_PEOPLE_CURSOR_ORDER = "dashboard-people-updated-desc";
 const PERSON_NAMES_CURSOR_ORDER = "person-names-created-desc";
 const PERSON_EVENTS_CURSOR_ORDER = "person-events-created-desc";
+const CONTRADICTORY_FACTS_CURSOR_ORDER = "contradictory-facts-asserted-desc";
 
 function encodeRecentCursor(row: Pick<PersonRow, "id" | "updatedAt">): string {
   return Buffer.from(
@@ -399,6 +410,108 @@ export function createPeopleService(context: ResearchServiceContext) {
           hasNextPage: rows.length > page.first,
           endCursor: last
             ? encodeDateCursor(PERSON_EVENTS_CURSOR_ORDER, last)
+            : null,
+        },
+      };
+    },
+
+    async listContradictoryFacts(input: {
+      personId: string;
+      first?: number | null;
+      after?: string | null;
+    }): Promise<Connection<typeof facts.$inferSelect>> {
+      const page = normalizePagination(input);
+      const decoded = decodeResearchCursor(
+        page.after,
+        CONTRADICTORY_FACTS_CURSOR_ORDER,
+      );
+      const cursor = decoded
+        ? { assertedAt: new Date(String(decoded.t)), id: String(decoded.i) }
+        : null;
+      const factVisibility = resourceVisibilitySql(context, {
+        resourceKind: "fact",
+        id: facts.id,
+        sensitivity: facts.sensitivity,
+      });
+      const activeState = sql`${facts.state} NOT IN ('disproven', 'superseded')`;
+      const valueFingerprint = sql`md5(concat_ws('|',
+        ${facts.valueType},
+        ${facts.valueText},
+        ${facts.valueDecimal},
+        ${facts.valueBoolean},
+        ${facts.valueDateStart},
+        ${facts.valueDateEnd},
+        ${facts.valueTimestamp},
+        (${facts.valueJson})::text,
+        ${facts.referencedPersonId},
+        ${facts.placeId},
+        ${facts.fileId},
+        ${facts.encryptedValue}
+      ))`;
+      const contradictoryFields = context.database
+        .select({
+          namespace: facts.namespace,
+          fieldKey: facts.fieldKey,
+        })
+        .from(facts)
+        .where(
+          and(
+            eq(facts.workspaceId, context.workspaceId),
+            eq(facts.personId, input.personId),
+            isNull(facts.deletedAt),
+            activeState,
+            factVisibility,
+          ),
+        )
+        .groupBy(facts.namespace, facts.fieldKey)
+        .having(sql`count(distinct ${valueFingerprint}) > 1`)
+        .as("contradictory_fact_fields");
+      const rows = await context.database
+        .select(getTableColumns(facts))
+        .from(facts)
+        .innerJoin(
+          contradictoryFields,
+          and(
+            eq(facts.namespace, contradictoryFields.namespace),
+            eq(facts.fieldKey, contradictoryFields.fieldKey),
+          ),
+        )
+        .where(
+          and(
+            eq(facts.workspaceId, context.workspaceId),
+            eq(facts.personId, input.personId),
+            isNull(facts.deletedAt),
+            activeState,
+            factVisibility,
+            cursor
+              ? or(
+                  lt(facts.assertedAt, cursor.assertedAt),
+                  and(
+                    eq(facts.assertedAt, cursor.assertedAt),
+                    sql`${facts.id} < ${cursor.id}::uuid`,
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(facts.assertedAt), desc(facts.id))
+        .limit(page.first + 1);
+      const nodes = rows.slice(0, page.first);
+      const last = nodes.at(-1);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > page.first,
+          endCursor: last
+            ? Buffer.from(
+                JSON.stringify({
+                  v: 1,
+                  o: CONTRADICTORY_FACTS_CURSOR_ORDER,
+                  t: last.assertedAt.toISOString(),
+                  i: last.id,
+                }),
+                "utf8",
+              ).toString("base64url")
             : null,
         },
       };

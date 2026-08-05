@@ -2549,12 +2549,21 @@ export type PersonFactsQueryVariables = Exact<{
   id: string;
   first?: number | null | undefined;
   after?: string | null | undefined;
+  contradictoryAfter?: string | null | undefined;
 }>;
 
 export type PersonFactsQuery = {
   person: {
     id: string;
     facts: {
+      nodes: Array<{
+        " $fragmentRefs"?: { FactSummaryFragment: FactSummaryFragment };
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      } | null;
+    } | null;
+    contradictoryFacts: {
       nodes: Array<{
         " $fragmentRefs"?: { FactSummaryFragment: FactSummaryFragment };
       }> | null;
@@ -6563,10 +6572,18 @@ fragment PersonEventSummary on PersonEvent {
 >;
 export const PersonFactsDocument = new TypedDocumentString(
   `
-    query PersonFacts($id: UUID!, $first: Int, $after: String) {
+    query PersonFacts($id: UUID!, $first: Int, $after: String, $contradictoryAfter: String) {
   person(id: $id) {
     id
     facts(first: $first, after: $after) {
+      nodes {
+        ...FactSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+    contradictoryFacts(first: $first, after: $contradictoryAfter) {
       nodes {
         ...FactSummary
       }
@@ -6615,7 +6632,7 @@ fragment FactSummary on Fact {
   updatedAt
 }`,
   {
-    hash: "sha256:35289b783d3424dcffa805a398ec5fbbf1f0161c8c45c4494f86c5254624c21d",
+    hash: "sha256:20c5cbd1da6cc97a451c170b9ec03ea646a71b947262b28607f1c9be3bcf5ce9",
   },
 ) as unknown as TypedDocumentString<
   PersonFactsQuery,

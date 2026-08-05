@@ -173,10 +173,23 @@ query PersonNamesAndEvents(
   }
 }
 
-query PersonFacts($id: UUID!, $first: Int, $after: String) {
+query PersonFacts(
+  $id: UUID!
+  $first: Int
+  $after: String
+  $contradictoryAfter: String
+) {
   person(id: $id) {
     id
     facts(first: $first, after: $after) {
+      nodes {
+        ...FactSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+    contradictoryFacts(first: $first, after: $contradictoryAfter) {
       nodes {
         ...FactSummary
       }

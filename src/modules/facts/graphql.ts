@@ -730,6 +730,24 @@ export function registerFactsGraphQL(): void {
         });
       },
     }),
+    contradictoryFacts: t.field({
+      type: FactConnection,
+      args: { first: t.arg.int(), after: t.arg.string() },
+      complexity: (args) => ({
+        field: 3,
+        multiplier: pageMultiplier(args.first),
+      }),
+      resolve: (person, args, context) => {
+        requirePermission(context, "person", "read");
+        requirePermission(context, "fact", "read");
+        normalizePagination(args);
+        return context.services.people.listContradictoryFacts({
+          personId: person.id,
+          first: args.first,
+          after: args.after,
+        });
+      },
+    }),
     fieldSelections: t.field({
       type: PersonFieldSelectionConnection,
       args: { first: t.arg.int(), after: t.arg.string() },
