@@ -525,8 +525,41 @@ export type PersonFilterInput = {
   status?: PersonStatus | null | undefined;
 };
 
+export type PersonNameKind =
+  | "ALIAS"
+  | "BIRTH"
+  | "FORMER"
+  | "LEGAL"
+  | "MARRIED"
+  | "OTHER"
+  | "PREFERRED"
+  | "TRANSLITERATION";
+
+export type PersonRecordState =
+  "ASSERTED" | "DISPUTED" | "SUPERSEDED" | "UNKNOWN" | "VERIFIED";
+
 export type PersonStatus =
   "ACTIVE" | "ARCHIVED" | "DECEASED" | "MERGED" | "MISSING" | "UNKNOWN";
+
+export type PersonTemporalPrecision =
+  | "DAY"
+  | "HOUR"
+  | "INSTANT"
+  | "MINUTE"
+  | "MONTH"
+  | "RANGE"
+  | "SECOND"
+  | "UNKNOWN"
+  | "YEAR";
+
+export type PersonTemporalSemantics =
+  | "AFTER"
+  | "APPROXIMATE"
+  | "BEFORE"
+  | "BETWEEN"
+  | "EXACT"
+  | "UNKNOWN"
+  | "YEAR_ONLY";
 
 export type PolicyState = "ACTIVE" | "ARCHIVED" | "DISABLED" | "DRAFT";
 
@@ -2435,6 +2468,83 @@ export type PersonHeaderQuery = {
   } | null;
 };
 
+export type PersonNameSummaryFragment = {
+  id: string;
+  personId: string;
+  kind: PersonNameKind;
+  fullName: string;
+  givenName: string | null;
+  middleName: string | null;
+  familyName: string | null;
+  prefix: string | null;
+  suffix: string | null;
+  script: string | null;
+  language: string | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  temporalSemantics: PersonTemporalSemantics;
+  temporalPrecision: PersonTemporalPrecision;
+  confidence: number;
+  sensitivity: Sensitivity;
+  state: PersonRecordState;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+} & { " $fragmentName"?: "PersonNameSummaryFragment" };
+
+export type PersonEventSummaryFragment = {
+  id: string;
+  personId: string;
+  eventKind: string;
+  title: string;
+  description: string | null;
+  placeId: string | null;
+  earliestAt: string | null;
+  latestAt: string | null;
+  temporalSemantics: PersonTemporalSemantics;
+  temporalPrecision: PersonTemporalPrecision;
+  confidence: number;
+  sensitivity: Sensitivity;
+  state: PersonRecordState;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+} & { " $fragmentName"?: "PersonEventSummaryFragment" };
+
+export type PersonNamesAndEventsQueryVariables = Exact<{
+  id: string;
+  namesFirst?: number | null | undefined;
+  namesAfter?: string | null | undefined;
+  eventsFirst?: number | null | undefined;
+  eventsAfter?: string | null | undefined;
+}>;
+
+export type PersonNamesAndEventsQuery = {
+  person: {
+    id: string;
+    names: {
+      nodes: Array<{
+        " $fragmentRefs"?: {
+          PersonNameSummaryFragment: PersonNameSummaryFragment;
+        };
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      };
+    } | null;
+    events: {
+      nodes: Array<{
+        " $fragmentRefs"?: {
+          PersonEventSummaryFragment: PersonEventSummaryFragment;
+        };
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      };
+    } | null;
+  } | null;
+};
+
 export type PersonFactsQueryVariables = Exact<{
   id: string;
   first?: number | null | undefined;
@@ -4049,6 +4159,57 @@ export const FactSummaryFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "FactSummary" },
 ) as unknown as TypedDocumentString<FactSummaryFragment, unknown>;
+export const PersonNameSummaryFragmentDoc = new TypedDocumentString(
+  `
+    fragment PersonNameSummary on PersonName {
+  id
+  personId
+  kind
+  fullName
+  givenName
+  middleName
+  familyName
+  prefix
+  suffix
+  script
+  language
+  validFrom
+  validUntil
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}
+    `,
+  { fragmentName: "PersonNameSummary" },
+) as unknown as TypedDocumentString<PersonNameSummaryFragment, unknown>;
+export const PersonEventSummaryFragmentDoc = new TypedDocumentString(
+  `
+    fragment PersonEventSummary on PersonEvent {
+  id
+  personId
+  eventKind
+  title
+  description
+  placeId
+  earliestAt
+  latestAt
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}
+    `,
+  { fragmentName: "PersonEventSummary" },
+) as unknown as TypedDocumentString<PersonEventSummaryFragment, unknown>;
 export const SearchWorkbenchHitFragmentDoc = new TypedDocumentString(
   `
     fragment SearchWorkbenchHit on SearchHit {
@@ -6324,6 +6485,81 @@ export const PersonHeaderDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   PersonHeaderQuery,
   PersonHeaderQueryVariables
+>;
+export const PersonNamesAndEventsDocument = new TypedDocumentString(
+  `
+    query PersonNamesAndEvents($id: UUID!, $namesFirst: Int, $namesAfter: String, $eventsFirst: Int, $eventsAfter: String) {
+  person(id: $id) {
+    id
+    names(first: $namesFirst, after: $namesAfter) {
+      nodes {
+        ...PersonNameSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+    events(first: $eventsFirst, after: $eventsAfter) {
+      nodes {
+        ...PersonEventSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+    fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}
+fragment PersonNameSummary on PersonName {
+  id
+  personId
+  kind
+  fullName
+  givenName
+  middleName
+  familyName
+  prefix
+  suffix
+  script
+  language
+  validFrom
+  validUntil
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}
+fragment PersonEventSummary on PersonEvent {
+  id
+  personId
+  eventKind
+  title
+  description
+  placeId
+  earliestAt
+  latestAt
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:2a4354e6c301e5ee964527d291c631089f5d01f4c8dd7ed2d4839401502e356e",
+  },
+) as unknown as TypedDocumentString<
+  PersonNamesAndEventsQuery,
+  PersonNamesAndEventsQueryVariables
 >;
 export const PersonFactsDocument = new TypedDocumentString(
   `

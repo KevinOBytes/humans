@@ -8,6 +8,7 @@ import { FactsSection } from "@/components/facts/facts-section";
 import { NotesSection } from "@/components/notes/notes-section";
 import { ContactsPlacesSection } from "@/components/locations/contacts-places-section";
 import { PersonEditForm } from "@/components/people/person-edit-form";
+import { NamesTimelineSection } from "@/components/people/names-timeline-section";
 import { RelationshipsSection } from "@/components/relationships/relationships-section";
 import { Badge } from "@/components/ui/badge";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
@@ -21,6 +22,7 @@ import { profilePageHref } from "@/lib/research-pagination";
 
 const views = [
   "facts",
+  "names",
   "relationships",
   "evidence",
   "notes",
@@ -106,9 +108,11 @@ export async function PersonRecordPage({
               >
                 {candidate === "notes"
                   ? "Notes & tags"
-                  : candidate === "contacts"
-                    ? "Contacts & places"
-                    : candidate}
+                  : candidate === "names"
+                    ? "Names & timeline"
+                    : candidate === "contacts"
+                      ? "Contacts & places"
+                      : candidate}
               </Link>
             </li>
           ))}
@@ -122,6 +126,9 @@ export async function PersonRecordPage({
           canCreate={permissions.includes("fact:create")}
           canSelect={permissions.includes("fact:select")}
         />
+      ) : null}
+      {view === "names" ? (
+        <NamesTimelineSection search={search} personId={personId} />
       ) : null}
       {view === "relationships" ? (
         <RelationshipsSection
