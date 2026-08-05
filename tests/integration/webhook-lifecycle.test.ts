@@ -248,6 +248,12 @@ liveDescribe("webhook lifecycle acceptance", () => {
       queuedRebound.body?.data?.sendWebhookTestEvent.deliveryId,
       "rebound webhook delivery ID",
     );
+    const providerFailure = new Error("transport body with private detail");
+    Object.defineProperty(providerFailure, "name", {
+      configurable: true,
+      value: "provider token sk-live-secret https://private.example.test",
+    });
+    vi.mocked(lookup).mockRejectedValueOnce(providerFailure);
     await expect(
       handler(
         { deliveryId: reboundDeliveryId, webhookId },
@@ -268,10 +274,14 @@ liveDescribe("webhook lifecycle acceptance", () => {
       .where(eq(webhookDeliveries.id, reboundDeliveryId));
     expect(reboundDelivery?.redactedError).toEqual({
       code: "delivery_failed",
-      detail: "Error",
     });
     const serializedDelivery = JSON.stringify(reboundDelivery);
     expect(serializedDelivery).not.toContain("temporarily unavailable");
+    expect(serializedDelivery).not.toContain("sk-live-secret");
+    expect(serializedDelivery).not.toContain("private.example.test");
+    expect(serializedDelivery).not.toContain(
+      "transport body with private detail",
+    );
     expect(serializedDelivery).not.toContain(firstSecret);
     expect(serializedDelivery).not.toContain(rotatedSecret);
     expect(serializedDelivery).not.toContain("Humans webhook test");

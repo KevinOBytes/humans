@@ -11,10 +11,8 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 import { assertPublicWebhookTarget } from "@/modules/webhooks/target";
 
 function safeError(error: unknown): Record<string, string> {
-  return {
-    code: "delivery_failed",
-    detail: error instanceof Error ? error.name.slice(0, 64) : "unknown",
-  };
+  void error;
+  return { code: "delivery_failed" };
 }
 
 export function createWebhookDeliveryHandler(input: {

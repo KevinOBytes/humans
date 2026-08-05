@@ -101,6 +101,13 @@ upstream payloads. This is bounded NFR-005/006/007 evidence; the broader
 browser, provider, upload, audit, and whole-product matrices remain
 incomplete.
 
+The webhook delivery worker now persists only the static
+`{ code: "delivery_failed" }` marker for transport failures. It does not
+retain an upstream `Error.name` or message in `redactedError`; the live
+`webhook-lifecycle.test.ts` regression injects a secret-bearing provider error
+name and proves the durable row contains neither the token nor endpoint.
+This is additional bounded NFR-007 evidence, not whole-product closure.
+
 ### NFR-008 bounded settings tranche evidence
 
 `settings-policy-administration.test.ts` adds generated GraphQL
