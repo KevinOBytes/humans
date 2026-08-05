@@ -9,6 +9,8 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { defaultKeyHasher } from "@better-auth/api-key";
+import { generateRandomString } from "better-auth/crypto";
 
 import { newId } from "@/db/id";
 import { apiKeys, members } from "@/db/schema/auth";
@@ -113,6 +115,79 @@ async function lockAndRevalidateAdministrativeActor(input: {
 
 export function createSettingsRepository(database: Database) {
   return {
+    /**
+     * Inserts an organization API key in the caller's transaction in the
+     * disabled state. Better Auth's public createApiKey endpoint always
+     * inserts enabled rows through its own adapter call, which cannot share
+     * the application transaction. Generating and hashing the credential
+     * here keeps the insert, principal, activation, and audit in one commit.
+     */
+    async createOrganizationApiKeyInTransaction(input: {
+      expiresInSeconds?: number;
+      name: string;
+      organizationId: string;
+      permissions: Record<string, string[]>;
+      transaction: TransactionDatabase;
+      workspaceId: string;
+    }) {
+      const rawKey = `hum_${generateRandomString(64, "a-z", "A-Z")}`;
+      const now = new Date();
+      const expiresAt =
+        input.expiresInSeconds === undefined
+          ? null
+          : new Date(now.getTime() + input.expiresInSeconds * 1_000);
+      const [created] = await input.transaction
+        .insert(apiKeys)
+        .values({
+          id: newId(),
+          configId: "organization",
+          name: input.name,
+          prefix: "hum_",
+          start: rawKey.slice(0, 6),
+          referenceId: input.organizationId,
+          key: await defaultKeyHasher(rawKey),
+          enabled: false,
+          rateLimitEnabled: true,
+          rateLimitTimeWindow: 86_400_000,
+          rateLimitMax: 10,
+          requestCount: 0,
+          remaining: null,
+          refillAmount: null,
+          refillInterval: null,
+          lastRefillAt: null,
+          lastRequest: null,
+          expiresAt,
+          createdAt: now,
+          updatedAt: now,
+          permissions: JSON.stringify(input.permissions),
+          metadata: null,
+          workspaceId: input.workspaceId,
+        })
+        .returning({
+          id: apiKeys.id,
+          createdAt: apiKeys.createdAt,
+          updatedAt: apiKeys.updatedAt,
+          name: apiKeys.name,
+          prefix: apiKeys.prefix,
+          start: apiKeys.start,
+          enabled: apiKeys.enabled,
+          expiresAt: apiKeys.expiresAt,
+          referenceId: apiKeys.referenceId,
+          lastRefillAt: apiKeys.lastRefillAt,
+          lastRequest: apiKeys.lastRequest,
+          metadata: apiKeys.metadata,
+          rateLimitMax: apiKeys.rateLimitMax,
+          rateLimitTimeWindow: apiKeys.rateLimitTimeWindow,
+          remaining: apiKeys.remaining,
+          refillAmount: apiKeys.refillAmount,
+          refillInterval: apiKeys.refillInterval,
+          rateLimitEnabled: apiKeys.rateLimitEnabled,
+          requestCount: apiKeys.requestCount,
+          permissions: apiKeys.permissions,
+        });
+      if (!created) throw new Error("Created API key could not be stored");
+      return { ...created, key: rawKey };
+    },
     async withAdministrativeApiKeyLifecycle<T>(input: {
       actor: { id: string; memberId: string };
       run: (
