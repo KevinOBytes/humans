@@ -10,6 +10,7 @@ import {
   FactDetailDocument,
   FactSummaryFragmentDoc,
   PageDetailsFragmentDoc,
+  PersonContradictoryFactsDocument,
   PersonFactsDocument,
   PersonFieldSelectionsDocument,
   type PersonSummaryFragment,
@@ -42,12 +43,16 @@ export async function FactsSection({
   const requestedDetail = uuidParam(search, "factDetail");
   const revisionAfter = cursorParam(search, "factRevisionAfter");
   const evidenceAfter = cursorParam(search, "factEvidenceAfter");
-  const [data, catalog] = await Promise.all([
+  const [data, contradictoryData, catalog] = await Promise.all([
     executeServerGraphQL(PersonFactsDocument, {
       id: personId,
       first: 5,
       after: factAfter,
-      contradictoryAfter,
+    }),
+    executeServerGraphQL(PersonContradictoryFactsDocument, {
+      id: personId,
+      first: 5,
+      after: contradictoryAfter,
     }),
     canCreate
       ? executeServerGraphQL(FactCatalogDocument, {
@@ -140,12 +145,14 @@ export async function FactsSection({
     PageDetailsFragmentDoc,
     data.person.facts?.pageInfo,
   );
-  const contradictoryFacts = (data.person.contradictoryFacts?.nodes ?? [])
+  const contradictoryFacts = (
+    contradictoryData.person?.contradictoryFacts?.nodes ?? []
+  )
     .map((node) => readFragment(FactSummaryFragmentDoc, node))
     .filter((fact) => Boolean(fact.id && fact.label));
   const contradictoryPage = readFragment(
     PageDetailsFragmentDoc,
-    data.person.contradictoryFacts?.pageInfo,
+    contradictoryData.person?.contradictoryFacts?.pageInfo,
   );
   const catalogPage = readFragment(
     PageDetailsFragmentDoc,
