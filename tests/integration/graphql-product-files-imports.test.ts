@@ -6,7 +6,9 @@ import { Readable } from "node:stream";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { idempotencyKeys } from "@/db/schema/operations";
+import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
+import { files } from "@/db/schema/files";
+import { workspaceUsage } from "@/db/schema/workspaces";
 import {
   CompleteWorkspaceUploadDocument,
   CreateWorkspaceUploadDocument,
@@ -30,6 +32,7 @@ const encryptionKey = "31".repeat(32);
 class MemoryObjectStore implements ObjectStore {
   readonly objects = new Map<string, Uint8Array>();
   readonly uploadInputs: Array<{ key: string; workspaceId: string }> = [];
+  beforeOpenRead?: () => Promise<void>;
 
   async createUpload(input: {
     bytes: number;
@@ -65,6 +68,7 @@ class MemoryObjectStore implements ObjectStore {
   }
 
   async openRead(input: { key: string; workspaceId: string }) {
+    await this.beforeOpenRead?.();
     const body = this.objects.get(`${input.workspaceId}:${input.key}`);
     return body
       ? { body: Readable.from([body]), bytes: body.byteLength }
@@ -105,6 +109,7 @@ liveDescribe("generated files and imports product inventory", () => {
   beforeEach(async () => {
     store.objects.clear();
     store.uploadInputs.length = 0;
+    store.beforeOpenRead = undefined;
     await fixture.reset();
   });
   afterAll(async () => fixture.close());
@@ -416,6 +421,182 @@ liveDescribe("generated files and imports product inventory", () => {
     expect(foreignUpload.body?.errors).toBeUndefined();
     expect(foreignUpload.body?.data?.createUploadSession.session.id).not.toBe(
       firstSessionId,
+    );
+  });
+
+  it("replays and converges generated complete-upload claims with malformed, expiry, and workspace fencing", async () => {
+    const owner = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const body = new TextEncoder().encode("complete upload idempotency body");
+    const digest = createHash("sha256").update(body).digest("hex");
+    const created = await fixture.execute<{
+      createUploadSession: { session: { id: string } };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceUpload",
+      query: CreateWorkspaceUploadDocument,
+      variables: {
+        input: {
+          byteSize: body.byteLength,
+          checksumSha256: digest,
+          claimedMediaType: "text/plain",
+          originalName: "complete-idempotency.txt",
+          purpose: "EVIDENCE",
+        },
+      },
+    });
+    const uploadSessionId = required(
+      created.body?.data?.createUploadSession.session.id,
+      "complete upload session",
+    );
+    const upload = required(store.uploadInputs.at(-1), "complete upload grant");
+    store.objects.set(`${upload.workspaceId}:${upload.key}`, body);
+    const idempotencyKey = "file-complete-replay-v1";
+    let releaseVerification!: () => void;
+    const verificationBarrier = new Promise<void>((resolve) => {
+      releaseVerification = resolve;
+    });
+    let verificationReads = 0;
+    store.beforeOpenRead = async () => {
+      verificationReads += 1;
+      if (verificationReads === 1) await verificationBarrier;
+    };
+    const firstPromise = fixture.execute<{
+      completeUpload: {
+        file: { id: string };
+        session: { id: string; state: string };
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CompleteWorkspaceUpload",
+      query: CompleteWorkspaceUploadDocument,
+      variables: { uploadSessionId, idempotencyKey },
+    });
+    while (verificationReads < 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const concurrentPromise = fixture.execute<{
+      completeUpload: {
+        file: { id: string };
+        session: { id: string; state: string };
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CompleteWorkspaceUpload",
+      query: CompleteWorkspaceUploadDocument,
+      variables: { uploadSessionId, idempotencyKey },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    releaseVerification();
+    const [first, concurrent] = await Promise.all([
+      firstPromise,
+      concurrentPromise,
+    ]);
+    store.beforeOpenRead = undefined;
+    expect(verificationReads).toBeGreaterThanOrEqual(1);
+    expect(first.body?.errors).toBeUndefined();
+    expect(concurrent.body?.errors).toBeUndefined();
+    const firstResult = required(
+      first.body?.data?.completeUpload,
+      "first complete upload result",
+    );
+    const concurrentResult = required(
+      concurrent.body?.data?.completeUpload,
+      "concurrent complete upload result",
+    );
+    expect(firstResult.session).toMatchObject({
+      id: uploadSessionId,
+      state: "COMPLETED",
+    });
+    expect(concurrentResult.session).toMatchObject({
+      id: uploadSessionId,
+      state: "COMPLETED",
+    });
+    expect(concurrentResult.file.id).toBe(firstResult.file.id);
+
+    const [claim] = await fixture.database
+      .select()
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, owner.workspaceId),
+          eq(idempotencyKeys.actorId, owner.userId),
+          eq(idempotencyKeys.operation, "file.upload.complete"),
+        ),
+      );
+    expect(claim?.status).toBe("completed");
+    expect(claim?.responseReference).toEqual({
+      fileId: firstResult.file.id,
+      uploadSessionId,
+    });
+    const persistedFiles = await fixture.database
+      .select({ id: files.id })
+      .from(files)
+      .where(eq(files.workspaceId, owner.workspaceId));
+    expect(persistedFiles).toHaveLength(1);
+    const completionAudits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.action, "file.upload_completed"),
+          eq(auditEvents.resourceId, firstResult.file.id),
+        ),
+      );
+    expect(completionAudits).toHaveLength(1);
+    const [usage] = await fixture.database
+      .select({ storageBytes: workspaceUsage.storageBytes })
+      .from(workspaceUsage)
+      .where(eq(workspaceUsage.workspaceId, owner.workspaceId));
+    expect(usage?.storageBytes).toBe(String(body.byteLength));
+
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { fileId: ["invalid"], uploadSessionId } })
+      .where(eq(idempotencyKeys.id, required(claim?.id, "complete claim")));
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CompleteWorkspaceUpload",
+        query: CompleteWorkspaceUploadDocument,
+        variables: { uploadSessionId, idempotencyKey },
+      }),
+      "VALIDATION_FAILED",
+    );
+
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({
+        responseReference: {
+          fileId: firstResult.file.id,
+          uploadSessionId,
+        },
+        expiresAt: new Date(Date.now() - 1_000),
+      })
+      .where(eq(idempotencyKeys.id, required(claim?.id, "complete claim")));
+    const takeover = await fixture.execute<{
+      completeUpload: { file: { id: string }; session: { state: string } };
+    }>({
+      jar: owner.jar,
+      operationName: "CompleteWorkspaceUpload",
+      query: CompleteWorkspaceUploadDocument,
+      variables: { uploadSessionId, idempotencyKey },
+    });
+    expect(takeover.body?.errors).toBeUndefined();
+    expect(takeover.body?.data?.completeUpload).toMatchObject({
+      file: { id: firstResult.file.id },
+      session: { state: "COMPLETED" },
+    });
+
+    expectGraphQLError(
+      await fixture.execute({
+        jar: foreign.jar,
+        operationName: "CompleteWorkspaceUpload",
+        query: CompleteWorkspaceUploadDocument,
+        variables: { uploadSessionId, idempotencyKey },
+      }),
+      "NOT_FOUND",
     );
   });
 

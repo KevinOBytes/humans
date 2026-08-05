@@ -1269,6 +1269,7 @@ export type CreateWorkspaceUploadMutation = {
 
 export type CompleteWorkspaceUploadMutationVariables = Exact<{
   uploadSessionId: string;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type CompleteWorkspaceUploadMutation = {
@@ -4927,8 +4928,11 @@ export const CreateWorkspaceUploadDocument = new TypedDocumentString(
 >;
 export const CompleteWorkspaceUploadDocument = new TypedDocumentString(
   `
-    mutation CompleteWorkspaceUpload($uploadSessionId: UUID!) {
-  completeUpload(uploadSessionId: $uploadSessionId) {
+    mutation CompleteWorkspaceUpload($uploadSessionId: UUID!, $idempotencyKey: String) {
+  completeUpload(
+    uploadSessionId: $uploadSessionId
+    idempotencyKey: $idempotencyKey
+  ) {
     session {
       id
       state
@@ -4968,7 +4972,7 @@ export const CompleteWorkspaceUploadDocument = new TypedDocumentString(
   }
 }`,
   {
-    hash: "sha256:f480645b6a871dd3fa23880d1b151502ee44421111b0bc14b03e25bf3215aa98",
+    hash: "sha256:60fe07c6cbd1062b54fb0d4a99eaed46ccd0277b6652fddb0522b5e00d76e1b4",
   },
 ) as unknown as TypedDocumentString<
   CompleteWorkspaceUploadMutation,
