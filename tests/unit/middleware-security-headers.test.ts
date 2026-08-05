@@ -48,6 +48,9 @@ describe("middleware security envelope", () => {
     expect(response.headers.get("content-security-policy")).not.toContain(
       "upgrade-insecure-requests",
     );
+    expect(response.headers.get("content-security-policy")).toContain(
+      "ws://localhost:*",
+    );
     expect(response.headers.get("x-frame-options")).toBe("DENY");
   });
 

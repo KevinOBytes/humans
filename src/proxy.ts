@@ -21,20 +21,28 @@ const securityHeaders = {
 const loopbackHostnames = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 function applySecurityHeaders(request: NextRequest, response: NextResponse) {
+  const isLoopbackHttp =
+    request.nextUrl.protocol === "http:" &&
+    loopbackHostnames.has(request.nextUrl.hostname);
+
   if (!request.nextUrl.pathname.startsWith("/api/")) {
     response.headers.set("cache-control", "no-store");
   }
   for (const [name, value] of Object.entries(securityHeaders)) {
     if (
-      request.nextUrl.protocol === "http:" &&
-      loopbackHostnames.has(request.nextUrl.hostname) &&
+      isLoopbackHttp &&
       (name === "strict-transport-security" ||
         name === "content-security-policy")
     ) {
       if (name === "content-security-policy") {
         response.headers.set(
           name,
-          value.replace("; upgrade-insecure-requests", ""),
+          value
+            .replace(
+              "connect-src 'self'",
+              "connect-src 'self' ws://localhost:* ws://127.0.0.1:* ws://[::1]:*",
+            )
+            .replace("; upgrade-insecure-requests", ""),
         );
       }
       continue;
