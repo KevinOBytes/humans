@@ -22,6 +22,7 @@ import {
   notes,
   personAddresses,
   personContactPoints,
+  personTags,
 } from "@/db/schema/evidence";
 import { consentRecords } from "@/db/schema/privacy";
 import { relationships } from "@/db/schema/relationships";
@@ -838,6 +839,46 @@ export function createPeopleService(context: ResearchServiceContext) {
             ),
           )
           .limit(mergeRowLimit);
+        const loserTagRows = await transaction
+          .select({ id: personTags.id, tagId: personTags.tagId })
+          .from(personTags)
+          .where(
+            and(
+              eq(personTags.workspaceId, context.workspaceId),
+              eq(personTags.personId, loser.id),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const winnerTagRows = await transaction
+          .select({ tagId: personTags.tagId })
+          .from(personTags)
+          .where(
+            and(
+              eq(personTags.workspaceId, context.workspaceId),
+              eq(personTags.personId, winner.id),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const candidateRows = await transaction
+          .select({
+            id: identityCandidates.id,
+            state: identityCandidates.state,
+            reviewedAt: identityCandidates.reviewedAt,
+            reviewedBy: identityCandidates.reviewedBy,
+            reviewReason: identityCandidates.reviewReason,
+          })
+          .from(identityCandidates)
+          .where(
+            and(
+              eq(identityCandidates.workspaceId, context.workspaceId),
+              isNull(identityCandidates.deletedAt),
+              or(
+                eq(identityCandidates.firstPersonId, loser.id),
+                eq(identityCandidates.secondPersonId, loser.id),
+              ),
+            ),
+          )
+          .limit(mergeRowLimit);
         const oversized = [
           relationshipRows,
           factRows,
@@ -850,6 +891,8 @@ export function createPeopleService(context: ResearchServiceContext) {
           consentRows,
           contactRows,
           addressRows,
+          loserTagRows,
+          candidateRows,
         ].some((rows) => rows.length >= mergeRowLimit);
         if (oversized) {
           throw createGraphQLError(
@@ -861,6 +904,11 @@ export function createPeopleService(context: ResearchServiceContext) {
         const movableFactIds = factRows
           .map((row) => row.id)
           .filter((id) => !selectedFactIds.has(id));
+        const winnerTagIds = new Set(winnerTagRows.map((row) => row.tagId));
+        const movableTagRows = loserTagRows.filter(
+          (row) => !winnerTagIds.has(row.tagId),
+        );
+        const decisionId = newId();
         // The composite person/name foreign key requires clearing the loser
         // presentation pointer before its names are moved.
         if (loser.primaryNameId) {
@@ -1012,6 +1060,20 @@ export function createPeopleService(context: ResearchServiceContext) {
               ),
             );
         }
+        if (movableTagRows.length) {
+          await transaction
+            .update(personTags)
+            .set({ personId: winner.id })
+            .where(
+              and(
+                eq(personTags.workspaceId, context.workspaceId),
+                inArray(
+                  personTags.id,
+                  movableTagRows.map((row) => row.id),
+                ),
+              ),
+            );
+        }
         const dependentUpdates = [
           [personNames, nameRows.map((row) => row.id)],
           [personIdentifiers, identifierRows.map((row) => row.id)],
@@ -1032,7 +1094,29 @@ export function createPeopleService(context: ResearchServiceContext) {
               ),
             );
         }
-        const decisionId = newId();
+        if (candidateRows.length) {
+          await transaction
+            .update(identityCandidates)
+            .set({
+              state: "cancelled",
+              reviewedAt: new Date(),
+              reviewedBy: context.actor.principalId,
+              reviewReason: `merge:${decisionId}`,
+              version: sql`${identityCandidates.version} + 1`,
+              updatedAt: new Date(),
+              updatedBy: context.actor.principalId,
+            })
+            .where(
+              and(
+                eq(identityCandidates.workspaceId, context.workspaceId),
+                inArray(
+                  identityCandidates.id,
+                  candidateRows.map((row) => row.id),
+                ),
+                isNull(identityCandidates.deletedAt),
+              ),
+            );
+        }
         await transaction.insert(mergeDecisions).values({
           id: decisionId,
           workspaceId: context.workspaceId,
@@ -1068,6 +1152,14 @@ export function createPeopleService(context: ResearchServiceContext) {
             addresses: addressRows.map((row) => ({
               id: row.id,
               isPrimary: row.isPrimary,
+            })),
+            personTags: movableTagRows.map((row) => row.id),
+            identityCandidates: candidateRows.map((row) => ({
+              id: row.id,
+              state: row.state,
+              reviewedAt: row.reviewedAt,
+              reviewedBy: row.reviewedBy,
+              reviewReason: row.reviewReason,
             })),
           },
           decidedBy: context.actor.principalId,
@@ -1185,6 +1277,15 @@ export function createPeopleService(context: ResearchServiceContext) {
           consentRecords?: readonly string[];
           contactPoints?: readonly { id: string; isPrimary: boolean }[];
           addresses?: readonly { id: string; isPrimary: boolean }[];
+          personTags?: readonly string[];
+          identityCandidates?: readonly {
+            id: string;
+            state:
+              "pending" | "reviewing" | "accepted" | "rejected" | "cancelled";
+            reviewedAt: Date | null;
+            reviewedBy: string | null;
+            reviewReason: string | null;
+          }[];
         };
         const status =
           snapshot.loser?.status &&
@@ -1296,6 +1397,42 @@ export function createPeopleService(context: ResearchServiceContext) {
                 and(
                   eq(personAddresses.workspaceId, context.workspaceId),
                   eq(personAddresses.id, row.id),
+                ),
+              );
+          }
+        }
+        if (snapshot.personTags?.length) {
+          await transaction
+            .update(personTags)
+            .set({ personId: loser.id })
+            .where(
+              and(
+                eq(personTags.workspaceId, context.workspaceId),
+                eq(personTags.personId, decision.winnerPersonId),
+                inArray(personTags.id, [...snapshot.personTags]),
+              ),
+            );
+        }
+        if (snapshot.identityCandidates?.length) {
+          for (const candidate of snapshot.identityCandidates) {
+            await transaction
+              .update(identityCandidates)
+              .set({
+                state: candidate.state,
+                reviewedAt: candidate.reviewedAt,
+                reviewedBy: candidate.reviewedBy,
+                reviewReason: candidate.reviewReason,
+                version: sql`${identityCandidates.version} + 1`,
+                updatedAt: new Date(),
+                updatedBy: context.actor.principalId,
+              })
+              .where(
+                and(
+                  eq(identityCandidates.workspaceId, context.workspaceId),
+                  eq(identityCandidates.id, candidate.id),
+                  eq(identityCandidates.state, "cancelled"),
+                  eq(identityCandidates.reviewReason, `merge:${decision.id}`),
+                  isNull(identityCandidates.deletedAt),
                 ),
               );
           }
