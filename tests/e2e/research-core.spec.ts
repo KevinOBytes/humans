@@ -422,8 +422,19 @@ test("authenticated research core preserves tenant and claim boundaries", async 
       updatedBy: owner.principalId,
     },
   ]);
-  await page.goto(`${personUrl}?view=names`);
+  await page.goto(personUrl);
+  await expect(
+    page.getByRole("heading", { name: "Claims", exact: true }),
+  ).toBeVisible();
+  const namesTimelineLink = page.getByRole("link", {
+    name: "Names & timeline",
+  });
+  await expect(namesTimelineLink).not.toHaveAttribute("aria-current", "page");
+  await namesTimelineLink.focus();
+  await page.keyboard.press("Enter");
+  await expect(namesTimelineLink).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: "Names" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Ada Byron", exact: true }),
   ).toBeVisible();
@@ -438,6 +449,12 @@ test("authenticated research core preserves tenant and claim boundaries", async 
     document.documentElement.style.zoom = "2";
   });
   await expectAxeClean(page);
+  const rtlZoomOverflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth >
+      document.documentElement.clientWidth,
+  );
+  expect(rtlZoomOverflow, "profile should reflow at RTL 200% zoom").toBe(false);
   await page.evaluate(() => {
     document.documentElement.dir = "ltr";
     document.documentElement.style.zoom = "";
