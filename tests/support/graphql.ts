@@ -154,7 +154,10 @@ export function createSyntheticGraphQLSchema(): GraphQLSchema {
           if (args.code === "INTERNAL") {
             throw new Error(args.secret ?? "synthetic internal failure");
           }
-          throw createGraphQLError(args.code, publicErrorMessage(args.code));
+          throw createGraphQLError(
+            args.code,
+            args.secret ?? publicErrorMessage(args.code),
+          );
         },
       }),
       internalFailure: t.string({

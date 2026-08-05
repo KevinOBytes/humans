@@ -41,6 +41,7 @@ import {
 import {
   createGraphQLError,
   isGraphQLErrorCode,
+  normalizeGraphQLErrorMessage,
   publicErrorMessage,
   type GraphQLErrorCode,
 } from "./errors";
@@ -259,7 +260,7 @@ function normalizeExecutionResult(
         });
       }
       return new GraphQLError(
-        code === "INTERNAL" ? publicErrorMessage(code) : error.message,
+        normalizeGraphQLErrorMessage(code, error.message),
         {
           extensions: {
             code,
@@ -278,7 +279,7 @@ function normalizeExecutionResult(
   };
 }
 
-async function normalizeYogaResponse(
+export async function normalizeYogaResponse(
   response: Response,
   requestId: string,
   logger: GraphQLLogger,
@@ -295,27 +296,33 @@ async function normalizeYogaResponse(
   if (!payload || typeof payload !== "object") return response;
   const result = payload as {
     data?: unknown;
-    errors?: Array<{
-      extensions?: Record<string, unknown>;
-      message?: unknown;
-      path?: unknown;
-    }>;
+    errors?: unknown[];
   };
   if (!Array.isArray(result.errors)) return response;
   let recordedInternal = false;
   const errors = result.errors.map((error) => {
-    const rawCode = error.extensions?.code;
+    const candidate =
+      error && typeof error === "object" && !Array.isArray(error)
+        ? (error as {
+            extensions?: Record<string, unknown>;
+            message?: unknown;
+            path?: unknown;
+          })
+        : undefined;
+    const rawCode = candidate?.extensions?.code;
     const message =
-      typeof error.message === "string"
-        ? error.message
+      typeof candidate?.message === "string"
+        ? candidate.message
         : publicErrorMessage("INTERNAL");
-    const code = isGraphQLErrorCode(rawCode)
-      ? rawCode
-      : /introspection/iu.test(message)
-        ? "FORBIDDEN"
-        : rawCode === "BAD_REQUEST" || error.path === undefined
-          ? "VALIDATION_FAILED"
-          : "INTERNAL";
+    const code = !candidate
+      ? "INTERNAL"
+      : isGraphQLErrorCode(rawCode)
+        ? rawCode
+        : /introspection/iu.test(message)
+          ? "FORBIDDEN"
+          : rawCode === "BAD_REQUEST" || candidate.path === undefined
+            ? "VALIDATION_FAILED"
+            : "INTERNAL";
     if (code === "INTERNAL" && rawCode !== "INTERNAL" && !recordedInternal) {
       recordedInternal = true;
       logger.log({
@@ -325,18 +332,18 @@ async function normalizeYogaResponse(
       });
     }
     return {
-      message: code === "INTERNAL" ? publicErrorMessage(code) : message,
+      message: normalizeGraphQLErrorMessage(code, message),
       extensions: {
         code,
         requestId,
         ...(code === "RATE_LIMITED" &&
-        Number.isSafeInteger(error.extensions?.retryAfterMs) &&
-        Number(error.extensions?.retryAfterMs) >= 1 &&
-        Number(error.extensions?.retryAfterMs) <= 3_600_000
-          ? { retryAfterMs: Number(error.extensions?.retryAfterMs) }
+        Number.isSafeInteger(candidate?.extensions?.retryAfterMs) &&
+        Number(candidate?.extensions?.retryAfterMs) >= 1 &&
+        Number(candidate?.extensions?.retryAfterMs) <= 3_600_000
+          ? { retryAfterMs: Number(candidate?.extensions?.retryAfterMs) }
           : {}),
       },
-      ...(Array.isArray(error.path) ? { path: error.path } : {}),
+      ...(Array.isArray(candidate?.path) ? { path: candidate.path } : {}),
     };
   });
   const headers = new Headers(response.headers);
