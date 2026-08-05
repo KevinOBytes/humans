@@ -324,6 +324,7 @@ export type CreateUploadSessionInput = {
   byteSize: number;
   checksumSha256: string;
   claimedMediaType: string;
+  idempotencyKey?: string | null | undefined;
   originalName: string;
   purpose: UploadPurpose;
   sensitivity?: Sensitivity | null | undefined;

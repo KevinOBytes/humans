@@ -10,6 +10,8 @@ import {
   type ResearchServiceContext,
 } from "@/modules/audit/service";
 import {
+  deriveResearchIdempotency,
+  runIdempotentResearchWrite,
   runResearchTransaction,
   withResearchWriteTransaction,
 } from "@/modules/audit/transactions";
@@ -41,6 +43,8 @@ const GRANT_TTL_MS = 5 * 60_000;
 const VERIFY_TIMEOUT_MS = 60_000;
 const MAX_PENDING_ACTOR = 5;
 const MAX_PENDING_WORKSPACE = 100;
+const UPLOAD_SESSION_REFERENCE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export type FileServiceContext = ResearchServiceContext & {
   operationLimiter: RequestOperationLimiter;
@@ -290,77 +294,130 @@ export function createFilesService(
           ttlMs: 60 * 60_000,
         },
       });
-      const now = new Date();
-      const id = newId();
-      const expiresAt = new Date(now.getTime() + GRANT_TTL_MS);
-      const objectKey = `uploads/${id}/${newId()}`;
-      const session = await withResearchWriteTransaction(
-        context,
-        async (database) => {
-          const txRepository = createFilesRepository(database);
-          await txRepository.serializeUploadCapacity(context.workspaceId);
-          const [actorPending, workspacePending] = await Promise.all([
-            txRepository.countPending({
-              actorId: context.actor.id,
-              workspaceId: context.workspaceId,
-              now,
-            }),
-            txRepository.countPending({
-              workspaceId: context.workspaceId,
-              now,
-            }),
-          ]);
-          if (
-            actorPending >= MAX_PENDING_ACTOR ||
-            workspacePending >= MAX_PENDING_WORKSPACE
-          ) {
-            throw createGraphQLError(
-              "RATE_LIMITED",
-              publicErrorMessage("RATE_LIMITED"),
-            );
-          }
-          const created = await txRepository.createSession({
-            id,
-            workspaceId: context.workspaceId,
-            actorId: context.actor.id,
-            intendedPurpose: validated.purpose,
+      const persistSession = async (
+        writeContext: ResearchServiceContext,
+        database: ResearchServiceContext["database"],
+      ): Promise<UploadSessionRow> => {
+        const now = new Date();
+        const id = newId();
+        const expiresAt = new Date(now.getTime() + GRANT_TTL_MS);
+        const objectKey = `uploads/${id}/${newId()}`;
+        const txRepository = createFilesRepository(database);
+        await txRepository.serializeUploadCapacity(writeContext.workspaceId);
+        const [actorPending, workspacePending] = await Promise.all([
+          txRepository.countPending({
+            actorId: writeContext.actor.id,
+            workspaceId: writeContext.workspaceId,
+            now,
+          }),
+          txRepository.countPending({
+            workspaceId: writeContext.workspaceId,
+            now,
+          }),
+        ]);
+        if (
+          actorPending >= MAX_PENDING_ACTOR ||
+          workspacePending >= MAX_PENDING_WORKSPACE
+        ) {
+          throw createGraphQLError(
+            "RATE_LIMITED",
+            publicErrorMessage("RATE_LIMITED"),
+          );
+        }
+        const created = await txRepository.createSession({
+          id,
+          workspaceId: writeContext.workspaceId,
+          actorId: writeContext.actor.id,
+          intendedPurpose: validated.purpose,
+          originalName: validated.originalName,
+          sensitivity: validated.sensitivity,
+          maxBytes: validated.byteSize,
+          expectedChecksum: validated.checksumSha256,
+          expectedMediaType: validated.claimedMediaType,
+          objectKey,
+          state: "pending",
+          expiresAt,
+          createdAt: now,
+          createdBy: writeContext.actor.id,
+          updatedAt: now,
+          updatedBy: writeContext.actor.id,
+        });
+        if (encryptionKey) {
+          await ensureFileCleanupJob({
+            database,
+            encryptionKey,
+            workspaceId: writeContext.workspaceId,
+            uploadSessionId: created.id,
+            expiresAt: created.expiresAt,
+            createdBy: writeContext.actor.id,
+          });
+        }
+        await createAuditService(writeContext).write(database, {
+          action: "file.upload_session_created",
+          changedFields: ["state", "intendedPurpose", "maxBytes"],
+          metadata: {
+            byteSize: validated.byteSize,
+            purpose: validated.purpose,
+          },
+          resourceId: created.id,
+          resourceKind: "upload_session",
+          sensitivity: validated.sensitivity,
+        });
+        return created;
+      };
+      let session: UploadSessionRow;
+      if (input.idempotencyKey != null) {
+        if (!encryptionKey) return providerUnavailable();
+        const idempotency = deriveResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + GRANT_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "file.upload.session.create",
+          requestMaterial: {
+            byteSize: validated.byteSize,
+            claimedMediaType: validated.claimedMediaType,
+            checksumSha256: validated.checksumSha256,
             originalName: validated.originalName,
+            purpose: validated.purpose,
             sensitivity: validated.sensitivity,
-            maxBytes: validated.byteSize,
-            expectedChecksum: validated.checksumSha256,
-            expectedMediaType: validated.claimedMediaType,
-            objectKey,
-            state: "pending",
-            expiresAt,
-            createdAt: now,
-            createdBy: context.actor.id,
-            updatedAt: now,
-            updatedBy: context.actor.id,
-          });
-          if (encryptionKey) {
-            await ensureFileCleanupJob({
-              database,
-              encryptionKey,
-              workspaceId: context.workspaceId,
-              uploadSessionId: created.id,
-              expiresAt: created.expiresAt,
-              createdBy: context.actor.id,
-            });
-          }
-          await audit.write(database, {
-            action: "file.upload_session_created",
-            changedFields: ["state", "intendedPurpose", "maxBytes"],
-            metadata: {
-              byteSize: validated.byteSize,
-              purpose: validated.purpose,
-            },
-            resourceId: created.id,
-            resourceKind: "upload_session",
-            sensitivity: validated.sensitivity,
-          });
-          return created;
-        },
-      );
+          },
+          secret: encryptionKey,
+        });
+        const result = await runIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["file:create"],
+          async (scopedContext) => {
+            const created = await persistSession(
+              scopedContext,
+              scopedContext.database,
+            );
+            return { uploadSessionId: created.id };
+          },
+        );
+        if (
+          typeof result.responseReference.uploadSessionId !== "string" ||
+          !UPLOAD_SESSION_REFERENCE_UUID.test(
+            result.responseReference.uploadSessionId,
+          )
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            publicErrorMessage("PRECONDITION_FAILED"),
+          );
+        }
+        const replayedSession = await repository.getSession({
+          id: result.responseReference.uploadSessionId,
+          workspaceId: context.workspaceId,
+        });
+        if (!replayedSession || replayedSession.actorId !== context.actor.id)
+          return notFound();
+        session = replayedSession;
+      } else {
+        session = await withResearchWriteTransaction(
+          context,
+          async (database) => persistSession(context, database),
+        );
+      }
       try {
         const grant = await store.createUpload({
           actorId: session.actorId,
