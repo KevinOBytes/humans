@@ -6,7 +6,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { factDefinitions, factRevisions, facts } from "@/db/schema/facts";
 import { files } from "@/db/schema/files";
-import { PersonHeaderDocument } from "@/graphql/generated/graphql";
+import {
+  MergePersonDocument,
+  PersonHeaderDocument,
+} from "@/graphql/generated/graphql";
 import {
   evidenceItems,
   factEvidence,
@@ -302,6 +305,40 @@ liveDescribe("research API", () => {
         version: 3,
       },
       issues: [],
+    });
+
+    const merged = await fixture.execute({
+      jar: owner.jar,
+      query: MergePersonDocument,
+      variables: {
+        input: {
+          winnerPersonId: subjectId,
+          loserPersonId: otherId,
+          reason: "Full-contract presentation acceptance merge.",
+        },
+      },
+    });
+    expect(merged.body?.errors).toBeUndefined();
+    expect(merged.body?.data?.mergePerson).toMatchObject({
+      person: { id: subjectId, status: "ACTIVE" },
+      issues: [],
+    });
+
+    const mergedHeader = await fixture.execute<{
+      person: {
+        id: string;
+        status: string;
+        mergedIntoPersonId: string | null;
+      } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonHeaderDocument,
+      variables: { id: otherId },
+    });
+    expect(mergedHeader.body?.data?.person).toMatchObject({
+      id: otherId,
+      status: "MERGED",
+      mergedIntoPersonId: subjectId,
     });
   });
 
