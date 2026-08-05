@@ -19,6 +19,8 @@ function privateIpv4(value: string): boolean {
 
 function privateIpv6(value: string): boolean {
   const normalized = value.toLowerCase();
+  const mappedIpv4 = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/u);
+  if (mappedIpv4?.[1]) return privateIpv4(mappedIpv4[1]);
   return (
     normalized === "::" ||
     normalized === "::1" ||
@@ -27,10 +29,7 @@ function privateIpv6(value: string): boolean {
     normalized.startsWith("fe8") ||
     normalized.startsWith("fe9") ||
     normalized.startsWith("fea") ||
-    normalized.startsWith("feb") ||
-    normalized.startsWith("::ffff:10.") ||
-    normalized.startsWith("::ffff:192.168.") ||
-    normalized.startsWith("::ffff:172.")
+    normalized.startsWith("feb")
   );
 }
 

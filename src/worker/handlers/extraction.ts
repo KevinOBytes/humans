@@ -61,12 +61,21 @@ export function createExtractionHandler(input: {
       .limit(1);
     if (!row)
       throw new JobExecutionError("extraction_run_not_found", "permanent");
-    if (row.run.state === "completed")
+    if (row.run.state === "completed" || row.run.state === "error")
       return { resultReferences: [row.run.id] };
-    await input.database
-      .update(extractionRuns)
-      .set({ state: "processing", startedAt: new Date() })
-      .where(eq(extractionRuns.id, row.run.id));
+    if (row.run.state === "pending") {
+      const [claimed] = await input.database
+        .update(extractionRuns)
+        .set({ state: "processing", startedAt: new Date() })
+        .where(
+          and(
+            eq(extractionRuns.id, row.run.id),
+            eq(extractionRuns.state, "pending"),
+          ),
+        )
+        .returning({ id: extractionRuns.id });
+      if (!claimed) return { resultReferences: [row.run.id] };
+    }
     try {
       if (row.file.quarantineState !== "available") {
         throw new JobExecutionError("extraction_file_unavailable", "permanent");
@@ -97,7 +106,12 @@ export function createExtractionHandler(input: {
             errorSummary: null,
             completedAt: new Date(),
           })
-          .where(eq(extractionRuns.id, row.run.id));
+          .where(
+            and(
+              eq(extractionRuns.id, row.run.id),
+              eq(extractionRuns.state, "processing"),
+            ),
+          );
         await transaction
           .update(files)
           .set({
@@ -123,7 +137,12 @@ export function createExtractionHandler(input: {
           errorSummary: { code: failure },
           completedAt: new Date(),
         })
-        .where(eq(extractionRuns.id, row.run.id));
+        .where(
+          and(
+            eq(extractionRuns.id, row.run.id),
+            eq(extractionRuns.state, "processing"),
+          ),
+        );
       if (error instanceof JobExecutionError) throw error;
       throw new JobExecutionError(failure, "permanent");
     }

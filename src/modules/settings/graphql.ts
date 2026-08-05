@@ -27,6 +27,19 @@ const WorkspaceAdministrationRole = builder.enumType(
 const PolicyState = builder.enumType("PolicyState", {
   values: ["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] as const,
 });
+
+function parseResourceGrantState(
+  value: "DRAFT" | "ACTIVE" | "DISABLED" | "ARCHIVED" | null | undefined,
+): "active" | "inactive" | "archived" | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (value === "ACTIVE") return "active";
+  if (value === "DISABLED") return "inactive";
+  if (value === "ARCHIVED") return "archived";
+  throw createGraphQLError(
+    "VALIDATION_FAILED",
+    "A resource grant cannot be in draft state.",
+  );
+}
 const DeletionBehavior = builder.enumType("DeletionBehavior", {
   values: ["REVIEW", "SOFT_DELETE", "HARD_DELETE", "ANONYMIZE"] as const,
 });
@@ -766,8 +779,7 @@ export function registerSettingsGraphQL(): void {
           validUntil: args.input.validUntil
             ? new Date(args.input.validUntil)
             : undefined,
-          state: args.input.state?.toLowerCase() as
-            "active" | "inactive" | "archived" | undefined,
+          state: parseResourceGrantState(args.input.state),
         });
       },
     }),

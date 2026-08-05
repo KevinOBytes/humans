@@ -291,10 +291,7 @@ export function createWebhooksService(input: {
       options: { webhookId?: string } = {},
     ): Promise<readonly string[]> {
       const actor = input.actor.type === "user" ? input.actor : null;
-      if (
-        !EVENT_NAME.test(event) ||
-        Buffer.byteLength(JSON.stringify(payload), "utf8") > 64 * 1024
-      ) {
+      if (!EVENT_NAME.test(event)) {
         throw createGraphQLError(
           "VALIDATION_FAILED",
           "Webhook event payload is invalid.",
@@ -317,6 +314,12 @@ export function createWebhooksService(input: {
         id: newId(),
         occurredAt: new Date().toISOString(),
       });
+      if (Buffer.byteLength(payloadText, "utf8") > 64 * 1024) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "Webhook event payload is invalid.",
+        );
+      }
       const eventId = JSON.parse(payloadText).id as string;
       const deliveries: string[] = [];
       for (const webhook of rows.filter((row) =>

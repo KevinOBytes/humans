@@ -73,6 +73,7 @@ export function createWebhookDeliveryHandler(input: {
     });
     const parsed = JSON.parse(payloadText) as { event?: unknown };
     const event = typeof parsed.event === "string" ? parsed.event : "unknown";
+    const startedAt = new Date();
     const timestampSeconds = Math.floor(Date.now() / 1_000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5_000);
@@ -98,7 +99,7 @@ export function createWebhookDeliveryHandler(input: {
         .set({
           attempt: context.job.attemptCount,
           responseStatus: response.status,
-          startedAt: new Date(Date.now() - 1),
+          startedAt,
           completedAt: new Date(),
           nextRetryAt: nextRetryAt ? new Date(Date.now() + nextRetryAt) : null,
           redactedError: response.ok ? null : { code: "http_failure" },
@@ -119,6 +120,7 @@ export function createWebhookDeliveryHandler(input: {
         .update(webhookDeliveries)
         .set({
           attempt: context.job.attemptCount,
+          startedAt,
           completedAt: new Date(),
           nextRetryAt: (() => {
             const delay = webhookRetryDelayMs(context.job.attemptCount);
