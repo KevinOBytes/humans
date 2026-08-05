@@ -8,6 +8,11 @@ import { newId } from "@/db/id";
 import { members, sessions, users } from "@/db/schema/auth";
 import { createSchemaBuilder } from "@/graphql/builder";
 import { requirePermission, type GraphQLContext } from "@/graphql/context";
+import {
+  createGraphQLError,
+  isGraphQLErrorCode,
+  publicErrorMessage,
+} from "@/graphql/errors";
 import type { SafeWorkspace } from "@/graphql/loaders";
 import { normalizePagination } from "@/graphql/limits";
 import { OperationLimiter } from "@/graphql/operation-limiter";
@@ -136,6 +141,21 @@ export function createSyntheticGraphQLSchema(): GraphQLSchema {
           field: normalizePagination({ first: args.first }).first * 6,
         }),
         resolve: () => "expensive",
+      }),
+      errorProbe: t.string({
+        args: {
+          code: t.arg.string({ required: true }),
+          secret: t.arg.string(),
+        },
+        resolve: (_root, args) => {
+          if (!isGraphQLErrorCode(args.code)) {
+            throw new Error(args.secret ?? "unsupported error code");
+          }
+          if (args.code === "INTERNAL") {
+            throw new Error(args.secret ?? "synthetic internal failure");
+          }
+          throw createGraphQLError(args.code, publicErrorMessage(args.code));
+        },
       }),
       internalFailure: t.string({
         args: { secret: t.arg.string({ required: true }) },

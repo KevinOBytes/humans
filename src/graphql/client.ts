@@ -1,12 +1,13 @@
 "use client";
 
 import type { TypedDocumentString } from "@/graphql/generated/graphql";
+import {
+  normalizeGraphQLRequestId,
+  normalizePublicGraphQLErrors,
+  type PublicGraphQLError,
+} from "@/graphql/error-contract";
 
-export type PublicGraphQLError = {
-  code: string;
-  message: string;
-  requestId?: string;
-};
+export type { PublicGraphQLError } from "@/graphql/error-contract";
 
 export type GraphQLResult<TData> =
   | { ok: true; data: TData; requestId?: string }
@@ -19,36 +20,6 @@ type GraphQLResponse<TData> = {
     extensions?: { code?: unknown; requestId?: unknown };
   }[];
 };
-
-function publicErrors(
-  body: GraphQLResponse<unknown>,
-  requestId?: string | null,
-) {
-  const errors = body.errors?.map((error) => ({
-    code:
-      typeof error.extensions?.code === "string"
-        ? error.extensions.code
-        : "INTERNAL",
-    message:
-      typeof error.message === "string"
-        ? error.message
-        : "The request could not be completed.",
-    ...(typeof error.extensions?.requestId === "string"
-      ? { requestId: error.extensions.requestId }
-      : requestId
-        ? { requestId }
-        : {}),
-  }));
-  return errors?.length
-    ? errors
-    : [
-        {
-          code: "INTERNAL",
-          message: "The request could not be completed.",
-          ...(requestId ? { requestId } : {}),
-        },
-      ];
-}
 
 export async function executeBrowserGraphQL<
   TResult,
@@ -68,6 +39,7 @@ export async function executeBrowserGraphQL<
       body: JSON.stringify({ query: document.toString(), variables }),
     });
     const requestId = response.headers.get("x-request-id");
+    const safeRequestId = normalizeGraphQLRequestId(requestId);
     let body: GraphQLResponse<TResult>;
     try {
       body = (await response.json()) as GraphQLResponse<TResult>;
@@ -78,18 +50,21 @@ export async function executeBrowserGraphQL<
           {
             code: "INVALID_RESPONSE",
             message: "The server returned an unreadable response.",
-            ...(requestId ? { requestId } : {}),
+            ...(safeRequestId ? { requestId: safeRequestId } : {}),
           },
         ],
       };
     }
     if (!response.ok || body.errors?.length || body.data === undefined) {
-      return { ok: false, errors: publicErrors(body, requestId) };
+      return {
+        ok: false,
+        errors: normalizePublicGraphQLErrors(body.errors, safeRequestId),
+      };
     }
     return {
       ok: true,
       data: body.data,
-      ...(requestId ? { requestId } : {}),
+      ...(safeRequestId ? { requestId: safeRequestId } : {}),
     };
   } catch {
     return {
