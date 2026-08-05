@@ -4,6 +4,7 @@ import {
   parseFactDraft,
   supportedFactValueType,
 } from "@/components/facts/fact-value";
+import { factDisplayValue } from "@/components/facts/fact-display-value";
 
 describe("fact draft parsing", () => {
   it("parses Boolean values explicitly without coercing arbitrary text", () => {
@@ -49,5 +50,23 @@ describe("fact draft parsing", () => {
     expect(supportedFactValueType("PERSON_REFERENCE")).toBe(false);
     expect(supportedFactValueType("PLACE_REFERENCE")).toBe(false);
     expect(supportedFactValueType("FILE_REFERENCE")).toBe(false);
+  });
+
+  it("renders a file-backed claim as a safe reference label", () => {
+    expect(
+      factDisplayValue({
+        fileId: "018f5f39-9ca7-7b67-a2f1-b8a82ca894d1",
+        text: null,
+        dateStart: null,
+        dateEnd: null,
+        decimal: null,
+        boolean: null,
+        timestamp: null,
+        json: null,
+        referencedPersonId: null,
+        placeId: null,
+        unit: null,
+      }),
+    ).toBe("Referenced file");
   });
 });
