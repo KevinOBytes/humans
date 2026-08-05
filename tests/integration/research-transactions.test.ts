@@ -11,6 +11,7 @@ import {
 } from "vitest";
 import { count, eq } from "drizzle-orm";
 
+import { newId } from "@/db/id";
 import { members, sessions } from "@/db/schema/auth";
 import { personTags, tags } from "@/db/schema/evidence";
 import { factDefinitions, facts } from "@/db/schema/facts";
@@ -458,6 +459,253 @@ liveDescribe("research write transactions", () => {
     expect(await workspaceCounts(fixture, actor.workspaceId)).toEqual([
       2, 2, 1, 5, 1,
     ]);
+  });
+
+  it("covers durable fact-create replay, expiry, malformed references, and tenant fencing", async () => {
+    const { deriveResearchIdempotency, runIdempotentResearchWrite } =
+      hardenedTransactionFunctions();
+    const actor = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+      "fact:create",
+    ]);
+    const foreignContext = await serviceContext(fixture, foreign, [
+      "person:create",
+      "person:read",
+      "fact:create",
+    ]);
+    const person = await createPeopleService(context).create({
+      displayName: "Idempotent fact subject",
+    });
+    const foreignPerson = await createPeopleService(foreignContext).create({
+      displayName: "Foreign fact subject",
+    });
+    if (!person.resource || !foreignPerson.resource) {
+      throw new Error("The fact idempotency fixture person is missing.");
+    }
+    const definitionId = newId();
+    const foreignDefinitionId = newId();
+    await fixture.database.insert(factDefinitions).values([
+      {
+        id: definitionId,
+        workspaceId: actor.workspaceId,
+        namespace: "person",
+        fieldKey: "idempotent_alias",
+        label: "Idempotent alias",
+        allowedValueType: "text",
+        cardinality: "many",
+        state: "active",
+        createdBy: actor.principalId,
+        updatedBy: actor.principalId,
+      },
+      {
+        id: foreignDefinitionId,
+        workspaceId: foreign.workspaceId,
+        namespace: "person",
+        fieldKey: "idempotent_alias",
+        label: "Foreign idempotent alias",
+        allowedValueType: "text",
+        cardinality: "many",
+        state: "active",
+        createdBy: foreign.principalId,
+        updatedBy: foreign.principalId,
+      },
+    ]);
+
+    const createFact = vi.fn(async (scoped: ResearchServiceContext) => {
+      const result = await createFactsService(scoped).create({
+        personId: person.resource!.id,
+        definitionId,
+        value: { text: "single durable fact" },
+      });
+      if (!result.resource) throw new Error("The fact was not created.");
+      return { factId: result.resource.id };
+    });
+    const requestMaterial = {
+      definitionId,
+      personId: person.resource.id,
+      value: { text: "single durable fact" },
+    } as const;
+    const input = derivedInput(context, {
+      idempotencyKey: "fact-create-replay",
+      operation: "fact.create",
+      requestMaterial,
+    });
+
+    const first = await runIdempotentResearchWrite(
+      context,
+      input,
+      ["fact:create"],
+      createFact,
+    );
+    const equivalent = deriveResearchIdempotency(context, {
+      expiresAt: new Date(Date.now() + 60_000),
+      idempotencyKey: " fact-create-replay ",
+      operation: "fact.create",
+      requestMaterial: {
+        value: { text: "single durable fact" },
+        personId: person.resource.id,
+        definitionId,
+      },
+      secret: TEST_IDEMPOTENCY_SECRET,
+    });
+    const replayed = await runIdempotentResearchWrite(
+      context,
+      equivalent,
+      ["fact:create"],
+      createFact,
+    );
+    expect(first.replayed).toBe(false);
+    expect(replayed).toEqual({
+      replayed: true,
+      responseReference: first.responseReference,
+    });
+    expect(createFact).toHaveBeenCalledTimes(1);
+
+    const firstClaim = (
+      await fixture.database
+        .select()
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId))
+    ).find(
+      (claim) =>
+        claim.operation === "fact.create" &&
+        (claim.responseReference as { factId?: unknown } | null)?.factId ===
+          first.responseReference.factId,
+    );
+    if (!firstClaim) throw new Error("The fact idempotency claim is missing.");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { factId: ["invalid"] } })
+      .where(eq(idempotencyKeys.id, firstClaim.id));
+    await expect(
+      runIdempotentResearchWrite(
+        context,
+        equivalent,
+        ["fact:create"],
+        createFact,
+      ),
+    ).rejects.toMatchObject({ extensions: { code: "VALIDATION_FAILED" } });
+
+    const concurrentInput = derivedInput(context, {
+      idempotencyKey: "fact-create-concurrent",
+      operation: "fact.create",
+      requestMaterial: {
+        definitionId,
+        personId: person.resource.id,
+        value: { text: "concurrent fact" },
+      },
+    });
+    const concurrentCreate = vi.fn(async (scoped: ResearchServiceContext) => {
+      const result = await createFactsService(scoped).create({
+        personId: person.resource!.id,
+        definitionId,
+        value: { text: "concurrent fact" },
+      });
+      if (!result.resource) throw new Error("The concurrent fact is missing.");
+      return { factId: result.resource.id };
+    });
+    const concurrent = await Promise.all([
+      runIdempotentResearchWrite(
+        context,
+        concurrentInput,
+        ["fact:create"],
+        concurrentCreate,
+      ),
+      runIdempotentResearchWrite(
+        context,
+        concurrentInput,
+        ["fact:create"],
+        concurrentCreate,
+      ),
+    ]);
+    expect(concurrent.map((result) => result.replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(concurrent[0]?.responseReference).toEqual(
+      concurrent[1]?.responseReference,
+    );
+    expect(concurrentCreate).toHaveBeenCalledTimes(1);
+
+    const malformedWrite = vi.fn(async () => ({ factId: "unreachable" }));
+    await expect(
+      runIdempotentResearchWrite(
+        context,
+        {
+          expiresAt: new Date(Date.now() + 60_000),
+          keyHash: "a".repeat(64),
+          operation: "fact.create",
+          requestHash: "b".repeat(64),
+          workspaceId: context.workspaceId,
+        } as unknown as DerivedResearchIdempotency,
+        ["fact:create"],
+        malformedWrite,
+      ),
+    ).rejects.toMatchObject({ extensions: { code: "VALIDATION_FAILED" } });
+    expect(malformedWrite).not.toHaveBeenCalled();
+
+    const expired = derivedInput(context, {
+      expiresAt: new Date(Date.now() + 20),
+      idempotencyKey: "fact-create-expired",
+      operation: "fact.create",
+      requestMaterial,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await expect(
+      runIdempotentResearchWrite(context, expired, ["fact:create"], createFact),
+    ).rejects.toMatchObject({ extensions: { code: "VALIDATION_FAILED" } });
+
+    await expect(
+      runIdempotentResearchWrite(
+        context,
+        derivedInput(context, {
+          idempotencyKey: "fact-create-foreign",
+          operation: "fact.create",
+          requestMaterial: {
+            definitionId: foreignDefinitionId,
+            personId: foreignPerson.resource.id,
+            value: { text: "cross-tenant" },
+          },
+        }),
+        ["fact:create"],
+        async (scoped) => {
+          const result = await createFactsService(scoped).create({
+            personId: foreignPerson.resource!.id,
+            definitionId: foreignDefinitionId,
+            value: { text: "cross-tenant" },
+          });
+          return { factId: result.resource?.id ?? null };
+        },
+      ),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+
+    expect(
+      await fixture.database
+        .select({ id: facts.id })
+        .from(facts)
+        .where(eq(facts.workspaceId, actor.workspaceId)),
+    ).toHaveLength(2);
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "fact.create")),
+    ).toHaveLength(2);
+    expect(
+      await fixture.database
+        .select({ id: idempotencyKeys.id })
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId)),
+    ).toHaveLength(2);
+    expect(
+      await fixture.database
+        .select({ id: facts.id })
+        .from(facts)
+        .where(eq(facts.workspaceId, foreign.workspaceId)),
+    ).toHaveLength(0);
   });
 
   it("rejects invalid live audit attribution before a composed write", async () => {
