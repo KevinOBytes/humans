@@ -83,6 +83,11 @@ export async function runJobsContinuously(input: {
       }
       if (input.signal?.aborted) return;
       try {
+        // Keep the marker present between bounded passes as well as during
+        // active work. This lets the container healthcheck distinguish a
+        // healthy worker backing off for a dependency outage from a dead
+        // process, while still failing closed if the marker cannot refresh.
+        await input.heartbeat?.refresh();
         await sleep(waitMs, input.signal);
       } catch (error) {
         if (input.signal?.aborted) return;
