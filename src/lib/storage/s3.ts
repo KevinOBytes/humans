@@ -128,12 +128,12 @@ export class S3ObjectStore implements ObjectStore {
   }
 
   async createDownload(input: DownloadRequest): Promise<SignedObjectRequest> {
-    validateFileName(input.fileName);
+    const fileName = validateFileName(input.fileName);
     const expiresAt = new Date(Date.now() + this.downloadTtlSeconds * 1_000);
     const command = new GetObjectCommand({
       Bucket: this.bucket,
       Key: storageObjectKey(input.workspaceId, input.key),
-      ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(input.fileName)}`,
+      ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
       ResponseContentType: "application/octet-stream",
     });
 

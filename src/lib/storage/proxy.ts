@@ -91,15 +91,34 @@ function validateKey(key: string): string {
   return key;
 }
 
+const fileNameControlOrBidi =
+  /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
+const windowsDeviceName = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
+
+/**
+ * Normalize the display-only filename used by a forced attachment download.
+ * Storage object keys are separately server controlled; this value must never
+ * be able to create a response-header, path, or bidirectional-text ambiguity.
+ */
 export function validateFileName(fileName: string): string {
+  if (typeof fileName !== "string") {
+    throw new TypeError("Invalid file name");
+  }
+  const normalized = fileName.normalize("NFKC").trim();
   if (
-    fileName.length === 0 ||
-    Buffer.byteLength(fileName, "utf8") > 255 ||
-    /[\u0000-\u001f\u007f]/u.test(fileName)
+    normalized.length === 0 ||
+    Buffer.byteLength(normalized, "utf8") > 255 ||
+    normalized.startsWith(".") ||
+    normalized.endsWith(".") ||
+    normalized.endsWith(" ") ||
+    normalized.includes("/") ||
+    normalized.includes("\\") ||
+    fileNameControlOrBidi.test(normalized) ||
+    windowsDeviceName.test(normalized)
   ) {
     throw new TypeError("Invalid file name");
   }
-  return fileName;
+  return normalized;
 }
 
 export function validateUpload(input: UploadRequest): UploadRequest {
@@ -206,7 +225,7 @@ function parseGrant(value: string): StorageGrant {
     } else if (typeof candidate.fileName !== "string") {
       throw new TypeError("Invalid file name");
     } else {
-      validateFileName(candidate.fileName);
+      candidate.fileName = validateFileName(candidate.fileName);
     }
   } catch {
     throw new ProxyRequestError(403);
@@ -434,7 +453,7 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
             ...(result.ContentLength == null
               ? {}
               : { "content-length": String(result.ContentLength) }),
-            "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(grant.fileName)}`,
+            "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(validateFileName(grant.fileName))}`,
             "cache-control": "private, no-store",
             "x-content-type-options": "nosniff",
           },
@@ -505,7 +524,7 @@ export class ApplicationProxyObjectStore implements ObjectStore {
   async createDownload(input: DownloadRequest): Promise<SignedObjectRequest> {
     validateWorkspaceId(input.workspaceId);
     validateKey(input.key);
-    validateFileName(input.fileName);
+    const fileName = validateFileName(input.fileName);
     const expiresAt = new Date(this.now() + this.downloadTtlSeconds * 1_000);
     const grant: DownloadGrant = {
       version: 1,
@@ -513,7 +532,7 @@ export class ApplicationProxyObjectStore implements ObjectStore {
       workspaceId: input.workspaceId,
       key: input.key,
       expiresAt: expiresAt.getTime(),
-      fileName: input.fileName,
+      fileName,
       nonce: crypto.randomUUID().replaceAll("-", ""),
     };
     return {
