@@ -246,7 +246,11 @@ export function createExtractionService(
         }
         await transaction
           .update(files)
-          .set({ extractionState: "pending" })
+          .set({
+            extractionState: "pending",
+            updatedAt: new Date(),
+            version: file.version + 1,
+          })
           .where(
             and(
               eq(files.workspaceId, context.workspaceId),

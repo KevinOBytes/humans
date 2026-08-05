@@ -69,16 +69,34 @@ export function createExtractionHandler(input: {
     )
       return { resultReferences: [row.run.id] };
     if (row.run.state === "pending") {
-      const [claimed] = await input.database
-        .update(extractionRuns)
-        .set({ state: "processing", startedAt: new Date() })
-        .where(
-          and(
-            eq(extractionRuns.id, row.run.id),
-            eq(extractionRuns.state, "pending"),
-          ),
-        )
-        .returning({ id: extractionRuns.id });
+      const claimed = await input.database.transaction(async (transaction) => {
+        const [updated] = await transaction
+          .update(extractionRuns)
+          .set({ state: "processing", startedAt: new Date() })
+          .where(
+            and(
+              eq(extractionRuns.workspaceId, context.job.workspaceId),
+              eq(extractionRuns.id, row.run.id),
+              eq(extractionRuns.state, "pending"),
+            ),
+          )
+          .returning({ id: extractionRuns.id });
+        if (!updated) return null;
+        await transaction
+          .update(files)
+          .set({
+            extractionState: "processing",
+            updatedAt: new Date(),
+            version: row.file.version + 1,
+          })
+          .where(
+            and(
+              eq(files.workspaceId, context.job.workspaceId),
+              eq(files.id, row.file.id),
+            ),
+          );
+        return updated;
+      });
       if (!claimed) return { resultReferences: [row.run.id] };
     }
     try {
