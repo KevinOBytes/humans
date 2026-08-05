@@ -3,6 +3,7 @@ import {
   asc,
   desc,
   eq,
+  getTableColumns,
   inArray,
   isNull,
   lt,
@@ -11,11 +12,13 @@ import {
   type SQL,
 } from "drizzle-orm";
 
-import { people } from "@/db/schema/people";
+import { people, personEvents, personNames } from "@/db/schema/people";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 
 export type PersonRow = typeof people.$inferSelect;
 export type NewPersonRow = typeof people.$inferInsert;
+export type PersonNameRow = typeof personNames.$inferSelect;
+export type PersonEventRow = typeof personEvents.$inferSelect;
 
 export function createPeopleRepository(database: Database) {
   return {
@@ -126,6 +129,88 @@ export function createPeopleRepository(database: Database) {
           ),
         )
         .orderBy(desc(people.updatedAt), desc(people.id))
+        .limit(input.limit);
+    },
+
+    async listNames(input: {
+      workspaceId: string;
+      personId: string;
+      limit: number;
+      cursor?: { createdAt: Date; id: string } | null;
+      visibility?: SQL;
+      personVisibility?: SQL;
+    }): Promise<PersonNameRow[]> {
+      return database
+        .select(getTableColumns(personNames))
+        .from(personNames)
+        .innerJoin(
+          people,
+          and(
+            eq(people.workspaceId, input.workspaceId),
+            eq(people.id, personNames.personId),
+            isNull(people.deletedAt),
+            input.personVisibility,
+          ),
+        )
+        .where(
+          and(
+            eq(personNames.workspaceId, input.workspaceId),
+            eq(personNames.personId, input.personId),
+            isNull(personNames.deletedAt),
+            input.visibility,
+            input.cursor
+              ? or(
+                  lt(personNames.createdAt, input.cursor.createdAt),
+                  and(
+                    eq(personNames.createdAt, input.cursor.createdAt),
+                    lt(personNames.id, input.cursor.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(personNames.createdAt), desc(personNames.id))
+        .limit(input.limit);
+    },
+
+    async listEvents(input: {
+      workspaceId: string;
+      personId: string;
+      limit: number;
+      cursor?: { createdAt: Date; id: string } | null;
+      visibility?: SQL;
+      personVisibility?: SQL;
+    }): Promise<PersonEventRow[]> {
+      return database
+        .select(getTableColumns(personEvents))
+        .from(personEvents)
+        .innerJoin(
+          people,
+          and(
+            eq(people.workspaceId, input.workspaceId),
+            eq(people.id, personEvents.personId),
+            isNull(people.deletedAt),
+            input.personVisibility,
+          ),
+        )
+        .where(
+          and(
+            eq(personEvents.workspaceId, input.workspaceId),
+            eq(personEvents.personId, input.personId),
+            isNull(personEvents.deletedAt),
+            input.visibility,
+            input.cursor
+              ? or(
+                  lt(personEvents.createdAt, input.cursor.createdAt),
+                  and(
+                    eq(personEvents.createdAt, input.cursor.createdAt),
+                    lt(personEvents.id, input.cursor.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(personEvents.createdAt), desc(personEvents.id))
         .limit(input.limit);
     },
 

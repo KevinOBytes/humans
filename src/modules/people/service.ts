@@ -37,7 +37,12 @@ import {
 } from "@/db/schema/people";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
-import { createPeopleRepository, type PersonRow } from "./repository";
+import {
+  createPeopleRepository,
+  type PersonEventRow,
+  type PersonNameRow,
+  type PersonRow,
+} from "./repository";
 
 export type MutationOutcome<T> = {
   resource: T | null;
@@ -81,6 +86,8 @@ function sortValue(row: PersonRow): string {
 }
 
 const RECENT_PEOPLE_CURSOR_ORDER = "dashboard-people-updated-desc";
+const PERSON_NAMES_CURSOR_ORDER = "person-names-created-desc";
+const PERSON_EVENTS_CURSOR_ORDER = "person-events-created-desc";
 
 function encodeRecentCursor(row: Pick<PersonRow, "id" | "updatedAt">): string {
   return Buffer.from(
@@ -88,6 +95,21 @@ function encodeRecentCursor(row: Pick<PersonRow, "id" | "updatedAt">): string {
       v: 1,
       o: RECENT_PEOPLE_CURSOR_ORDER,
       t: row.updatedAt.toISOString(),
+      i: row.id,
+    }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function encodeDateCursor(
+  order: string,
+  row: Pick<PersonNameRow | PersonEventRow, "id" | "createdAt">,
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      v: 1,
+      o: order,
+      t: row.createdAt.toISOString(),
       i: row.id,
     }),
     "utf8",
@@ -302,6 +324,82 @@ export function createPeopleService(context: ResearchServiceContext) {
           hasNextPage: rows.length > page.first,
           endCursor:
             nodes.length === 0 ? null : encodeRecentCursor(nodes.at(-1)!),
+        },
+      };
+    },
+
+    async listNames(input: {
+      personId: string;
+      first?: number | null;
+      after?: string | null;
+    }): Promise<Connection<PersonNameRow>> {
+      const page = normalizePagination(input);
+      const decoded = decodeResearchCursor(
+        page.after,
+        PERSON_NAMES_CURSOR_ORDER,
+      );
+      const cursor = decoded
+        ? { createdAt: new Date(String(decoded.t)), id: String(decoded.i) }
+        : null;
+      const rows = await repository.listNames({
+        workspaceId: context.workspaceId,
+        personId: input.personId,
+        cursor,
+        limit: page.first + 1,
+        visibility: resourceVisibilitySql(context, {
+          resourceKind: "person_name",
+          id: personNames.id,
+          sensitivity: personNames.sensitivity,
+        }),
+        personVisibility: visibility,
+      });
+      const nodes = rows.slice(0, page.first);
+      const last = nodes.at(-1);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > page.first,
+          endCursor: last
+            ? encodeDateCursor(PERSON_NAMES_CURSOR_ORDER, last)
+            : null,
+        },
+      };
+    },
+
+    async listEvents(input: {
+      personId: string;
+      first?: number | null;
+      after?: string | null;
+    }): Promise<Connection<PersonEventRow>> {
+      const page = normalizePagination(input);
+      const decoded = decodeResearchCursor(
+        page.after,
+        PERSON_EVENTS_CURSOR_ORDER,
+      );
+      const cursor = decoded
+        ? { createdAt: new Date(String(decoded.t)), id: String(decoded.i) }
+        : null;
+      const rows = await repository.listEvents({
+        workspaceId: context.workspaceId,
+        personId: input.personId,
+        cursor,
+        limit: page.first + 1,
+        visibility: resourceVisibilitySql(context, {
+          resourceKind: "person_event",
+          id: personEvents.id,
+          sensitivity: personEvents.sensitivity,
+        }),
+        personVisibility: visibility,
+      });
+      const nodes = rows.slice(0, page.first);
+      const last = nodes.at(-1);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > page.first,
+          endCursor: last
+            ? encodeDateCursor(PERSON_EVENTS_CURSOR_ORDER, last)
+            : null,
         },
       };
     },

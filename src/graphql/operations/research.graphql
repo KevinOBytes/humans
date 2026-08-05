@@ -102,6 +102,77 @@ query PersonHeader($id: UUID!) {
   }
 }
 
+fragment PersonNameSummary on PersonName {
+  id
+  personId
+  kind
+  fullName
+  givenName
+  middleName
+  familyName
+  prefix
+  suffix
+  script
+  language
+  validFrom
+  validUntil
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}
+
+fragment PersonEventSummary on PersonEvent {
+  id
+  personId
+  eventKind
+  title
+  description
+  placeId
+  earliestAt
+  latestAt
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}
+
+query PersonNamesAndEvents(
+  $id: UUID!
+  $namesFirst: Int
+  $namesAfter: String
+  $eventsFirst: Int
+  $eventsAfter: String
+) {
+  person(id: $id) {
+    id
+    names(first: $namesFirst, after: $namesAfter) {
+      nodes {
+        ...PersonNameSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+    events(first: $eventsFirst, after: $eventsAfter) {
+      nodes {
+        ...PersonEventSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
 query PersonFacts($id: UUID!, $first: Int, $after: String) {
   person(id: $id) {
     id
