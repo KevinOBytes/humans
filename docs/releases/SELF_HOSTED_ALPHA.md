@@ -139,6 +139,21 @@ fencing, and diagnostic secret/private-data leakage checks. This is local
 self-hosted evidence only; it does not close the hosted Vercel, external
 provider, or remaining whole-product requirements.
 
+## Current conventions-contract evidence
+
+`tests/integration/conventions-contract.test.ts` is a bounded `HUM-NFR-003`
+contract. It checks UUIDv7 generation and ordering, representative
+workspace-leading composite references across people, facts, locations, files,
+and relationships, and UTC actor/version/soft-delete schema metadata. When
+`TEST_DATABASE_URL` and `ALLOW_TEST_DATABASE_RESET=true` are supplied for an
+eligible disposable PostgreSQL database, it resets that database
+and additionally proves a cross-workspace relationship reference is rejected,
+representative metadata columns are `timestamptz`, a stale person update returns
+no row, and an archived file is hidden from current repository reads. It does
+not establish conventions for every domain, GraphQL input enforcement,
+append-only revisions, or deletion-policy completeness; `HUM-NFR-003` and its
+TODO remain open.
+
 ## Current optional Ollama evidence
 
 The optional Ollama profile was exercised against the production image on
