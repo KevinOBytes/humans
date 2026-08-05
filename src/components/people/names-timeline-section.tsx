@@ -10,7 +10,8 @@ import {
   PageDetailsFragmentDoc,
   PersonEventSummaryFragmentDoc,
   PersonNameSummaryFragmentDoc,
-  PersonNamesAndEventsDocument,
+  PersonEventsDocument,
+  PersonNamesDocument,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
 import { cursorParam, type SearchState } from "@/lib/person-profile-params";
@@ -32,28 +33,33 @@ export async function NamesTimelineSection({
 }) {
   const namesAfter = cursorParam(search, "nameAfter");
   const eventsAfter = cursorParam(search, "eventAfter");
-  const data = await executeServerGraphQL(PersonNamesAndEventsDocument, {
-    id: personId,
-    namesFirst: 12,
-    namesAfter,
-    eventsFirst: 12,
-    eventsAfter,
-  });
-  if (!data.person) notFound();
+  const [namesData, eventsData] = await Promise.all([
+    executeServerGraphQL(PersonNamesDocument, {
+      id: personId,
+      first: 5,
+      after: namesAfter,
+    }),
+    executeServerGraphQL(PersonEventsDocument, {
+      id: personId,
+      first: 5,
+      after: eventsAfter,
+    }),
+  ]);
+  if (!namesData.person || !eventsData.person) notFound();
 
-  const names = (data.person.names?.nodes ?? [])
+  const names = (namesData.person.names?.nodes ?? [])
     .filter(Boolean)
     .map((node) => readFragment(PersonNameSummaryFragmentDoc, node));
-  const events = (data.person.events?.nodes ?? [])
+  const events = (eventsData.person.events?.nodes ?? [])
     .filter(Boolean)
     .map((node) => readFragment(PersonEventSummaryFragmentDoc, node));
   const namesPage = readFragment(
     PageDetailsFragmentDoc,
-    data.person.names?.pageInfo,
+    namesData.person.names?.pageInfo,
   );
   const eventsPage = readFragment(
     PageDetailsFragmentDoc,
-    data.person.events?.pageInfo,
+    eventsData.person.events?.pageInfo,
   );
 
   return (

@@ -5,6 +5,8 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { factDefinitions, factRevisions, facts } from "@/db/schema/facts";
+import { files } from "@/db/schema/files";
+import { PersonHeaderDocument } from "@/graphql/generated/graphql";
 import {
   evidenceItems,
   factEvidence,
@@ -13,10 +15,11 @@ import {
   tags,
 } from "@/db/schema/evidence";
 import { auditEvents } from "@/db/schema/operations";
-import { people } from "@/db/schema/people";
+import { people, personNames } from "@/db/schema/people";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 
+import { expectGraphQLError } from "../support/graphql";
 import { PEOPLE_QUERY, ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -59,6 +62,247 @@ liveDescribe("research API", () => {
     expect(result.body?.data?.createPerson?.person?.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
     );
+  });
+
+  it("HUM-FR-008 selects and clears presentation pointers with full contract guards", async () => {
+    const owner = await fixture.createActor();
+    const foreignOwner = await fixture.createActor();
+    const subject = await fixture.createPerson(owner, {
+      displayName: "Presentation subject",
+    });
+    const other = await fixture.createPerson(owner, {
+      displayName: "Other presentation subject",
+    });
+    const foreign = await fixture.createPerson(foreignOwner, {
+      displayName: "Foreign presentation subject",
+    });
+    const subjectId = required(subject.body?.data?.createPerson?.person?.id);
+    const otherId = required(other.body?.data?.createPerson?.person?.id);
+    const foreignId = required(foreign.body?.data?.createPerson?.person?.id);
+
+    const subjectNameId = newId();
+    const otherNameId = newId();
+    const foreignNameId = newId();
+    await fixture.database.insert(personNames).values([
+      {
+        id: subjectNameId,
+        workspaceId: owner.workspaceId,
+        personId: subjectId,
+        kind: "preferred",
+        fullName: "Presentation Subject Preferred",
+        sensitivity: "internal",
+        state: "verified",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      },
+      {
+        id: otherNameId,
+        workspaceId: owner.workspaceId,
+        personId: otherId,
+        kind: "preferred",
+        fullName: "Other Preferred",
+        sensitivity: "internal",
+        state: "verified",
+        createdBy: owner.principalId,
+        updatedBy: owner.principalId,
+      },
+      {
+        id: foreignNameId,
+        workspaceId: foreignOwner.workspaceId,
+        personId: foreignId,
+        kind: "preferred",
+        fullName: "Foreign Preferred",
+        sensitivity: "internal",
+        state: "verified",
+        createdBy: foreignOwner.principalId,
+        updatedBy: foreignOwner.principalId,
+      },
+    ]);
+
+    const checksum = `sha256:${"b".repeat(64)}`;
+    const makeFile = (input: {
+      id: string;
+      workspaceId: string;
+      userId: string;
+      quarantineState: string;
+      scanState: string;
+    }) => ({
+      id: input.id,
+      workspaceId: input.workspaceId,
+      storageProvider: "minio",
+      storageBucket: "humans-private",
+      storageKey: `presentation/${input.id}.jpg`,
+      originalName: `${input.id}.jpg`,
+      mediaType: "image/jpeg",
+      byteSize: 128,
+      checksum,
+      quarantineState: input.quarantineState,
+      scanState: input.scanState,
+      ocrState: "not_requested",
+      extractionState: "not_requested",
+      sensitivity: "internal" as const,
+      uploadedBy: input.userId,
+      createdBy: input.userId,
+      updatedBy: input.userId,
+    });
+    const availableFileId = newId();
+    const quarantinedFileId = newId();
+    const foreignFileId = newId();
+    await fixture.database.insert(files).values([
+      makeFile({
+        id: availableFileId,
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        quarantineState: "available",
+        scanState: "clean",
+      }),
+      makeFile({
+        id: quarantinedFileId,
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        quarantineState: "quarantined",
+        scanState: "pending",
+      }),
+      makeFile({
+        id: foreignFileId,
+        workspaceId: foreignOwner.workspaceId,
+        userId: foreignOwner.userId,
+        quarantineState: "available",
+        scanState: "clean",
+      }),
+    ]);
+
+    const SELECT_PRESENTATION = /* GraphQL */ `
+      mutation ($input: SelectPersonPresentationInput!) {
+        selectPersonPresentation(input: $input) {
+          code
+          currentVersion
+          person {
+            id
+            primaryNameId
+            primaryPhotoFileId
+            mergedIntoPersonId
+            version
+          }
+          issues {
+            code
+            path
+          }
+        }
+      }
+    `;
+    type PresentationResult = {
+      selectPersonPresentation: {
+        code: string | null;
+        currentVersion: number | null;
+        person: {
+          id: string;
+          primaryNameId: string | null;
+          primaryPhotoFileId: string | null;
+          mergedIntoPersonId: string | null;
+          version: number;
+        } | null;
+        issues: Array<{ code: string; path: string[] }>;
+      };
+    };
+    const select = (input: Record<string, unknown>) =>
+      fixture.execute<PresentationResult>({
+        jar: owner.jar,
+        query: SELECT_PRESENTATION,
+        variables: { input },
+      });
+
+    const applied = await select({
+      personId: subjectId,
+      expectedVersion: 1,
+      primaryNameId: subjectNameId,
+      primaryPhotoFileId: availableFileId,
+    });
+    expect(applied.body?.errors).toBeUndefined();
+    expect(applied.body?.data?.selectPersonPresentation).toMatchObject({
+      person: {
+        id: subjectId,
+        primaryNameId: subjectNameId,
+        primaryPhotoFileId: availableFileId,
+        mergedIntoPersonId: null,
+        version: 2,
+      },
+      issues: [],
+    });
+
+    const header = await fixture.execute<{
+      person: {
+        id: string;
+        primaryNameId: string | null;
+        primaryPhotoFileId: string | null;
+        mergedIntoPersonId: string | null;
+        version: number;
+      } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonHeaderDocument,
+      variables: { id: subjectId },
+    });
+    expect(header.body?.data?.person).toMatchObject({
+      id: subjectId,
+      primaryNameId: subjectNameId,
+      primaryPhotoFileId: availableFileId,
+      mergedIntoPersonId: null,
+      version: 2,
+    });
+
+    const crossPersonName = await select({
+      personId: subjectId,
+      expectedVersion: 2,
+      primaryNameId: otherNameId,
+    });
+    expectGraphQLError(crossPersonName, "VALIDATION_FAILED");
+    const foreignName = await select({
+      personId: subjectId,
+      expectedVersion: 2,
+      primaryNameId: foreignNameId,
+    });
+    expectGraphQLError(foreignName, "VALIDATION_FAILED");
+    const foreignPhoto = await select({
+      personId: subjectId,
+      expectedVersion: 2,
+      primaryPhotoFileId: foreignFileId,
+    });
+    expectGraphQLError(foreignPhoto, "VALIDATION_FAILED");
+    const unavailablePhoto = await select({
+      personId: subjectId,
+      expectedVersion: 2,
+      primaryPhotoFileId: quarantinedFileId,
+    });
+    expectGraphQLError(unavailablePhoto, "VALIDATION_FAILED");
+
+    const stale = await select({
+      personId: subjectId,
+      expectedVersion: 1,
+      primaryNameId: subjectNameId,
+    });
+    expect(stale.body?.data?.selectPersonPresentation).toMatchObject({
+      code: "CONFLICT",
+      currentVersion: null,
+      person: null,
+    });
+
+    const cleared = await select({
+      personId: subjectId,
+      expectedVersion: 2,
+      primaryNameId: null,
+      primaryPhotoFileId: null,
+    });
+    expect(cleared.body?.errors).toBeUndefined();
+    expect(cleared.body?.data?.selectPersonPresentation).toMatchObject({
+      person: {
+        id: subjectId,
+        primaryNameId: null,
+        primaryPhotoFileId: null,
+        version: 3,
+      },
+      issues: [],
+    });
   });
 
   it("uses deterministic bounded keyset pagination without leaking another workspace", async () => {

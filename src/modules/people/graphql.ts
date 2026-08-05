@@ -85,7 +85,7 @@ const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
     kind: t.field({
       type: PersonNameKind,
       nullable: false,
-      resolve: (row) => row.kind as never,
+      resolve: (row) => row.kind.toUpperCase() as never,
     }),
     fullName: t.exposeString("fullName", { nullable: false }),
     givenName: t.exposeString("givenName", { nullable: true }),
@@ -109,12 +109,12 @@ const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
     temporalSemantics: t.field({
       type: PersonTemporalSemantics,
       nullable: false,
-      resolve: (row) => row.temporalSemantics as never,
+      resolve: (row) => row.temporalSemantics.toUpperCase() as never,
     }),
     temporalPrecision: t.field({
       type: PersonTemporalPrecision,
       nullable: false,
-      resolve: (row) => row.temporalPrecision as never,
+      resolve: (row) => row.temporalPrecision.toUpperCase() as never,
     }),
     confidence: t.float({
       nullable: false,
@@ -127,7 +127,7 @@ const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
     state: t.field({
       type: PersonRecordState,
       nullable: false,
-      resolve: (row) => row.state as never,
+      resolve: (row) => row.state.toUpperCase() as never,
     }),
     version: t.exposeInt("version", { nullable: false }),
     createdAt: t.field({
@@ -164,12 +164,12 @@ const PersonEvent = builder.objectRef<PersonEventRow>("PersonEvent").implement({
     temporalSemantics: t.field({
       type: PersonTemporalSemantics,
       nullable: false,
-      resolve: (row) => row.temporalSemantics as never,
+      resolve: (row) => row.temporalSemantics.toUpperCase() as never,
     }),
     temporalPrecision: t.field({
       type: PersonTemporalPrecision,
       nullable: false,
-      resolve: (row) => row.temporalPrecision as never,
+      resolve: (row) => row.temporalPrecision.toUpperCase() as never,
     }),
     confidence: t.float({
       nullable: false,
@@ -182,7 +182,7 @@ const PersonEvent = builder.objectRef<PersonEventRow>("PersonEvent").implement({
     state: t.field({
       type: PersonRecordState,
       nullable: false,
-      resolve: (row) => row.state as never,
+      resolve: (row) => row.state.toUpperCase() as never,
     }),
     version: t.exposeInt("version", { nullable: false }),
     createdAt: t.field({
@@ -227,7 +227,10 @@ const PersonNameConnection = builder
   )
   .implement({
     fields: (t) => ({
-      nodes: t.expose("nodes", { type: [PersonName] }),
+      nodes: t.expose("nodes", {
+        type: [PersonName],
+        complexity: { field: 0, multiplier: 1 },
+      }),
       pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
     }),
   });
@@ -238,7 +241,10 @@ const PersonEventConnection = builder
   )
   .implement({
     fields: (t) => ({
-      nodes: t.expose("nodes", { type: [PersonEvent] }),
+      nodes: t.expose("nodes", {
+        type: [PersonEvent],
+        complexity: { field: 0, multiplier: 1 },
+      }),
       pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
     }),
   });
