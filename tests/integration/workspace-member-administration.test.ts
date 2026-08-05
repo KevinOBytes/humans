@@ -6,6 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   CancelWorkspaceInvitationDocument,
   IssueWorkspaceInvitationDocument,
+  RemoveWorkspaceMemberDocument,
+  SettingsWorkspaceDirectoryDocument,
   UpdateWorkspaceMemberRoleDocument,
 } from "@/graphql/generated/graphql";
 import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
@@ -26,37 +28,6 @@ import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
-const DIRECTORY = /* GraphQL */ `
-  query Directory {
-    settingsWorkspaceDirectory {
-      actorRole
-      invitations {
-        actionId
-        email
-        role
-        status
-      }
-      members {
-        nodes {
-          actionId
-          email
-          role
-          isSelf
-        }
-        total
-      }
-    }
-  }
-`;
-const REMOVE = /* GraphQL */ `
-  mutation Remove($input: WorkspaceInvitationActionInput!) {
-    removeWorkspaceMember(input: $input) {
-      actionId
-      code
-      requestId
-    }
-  }
-`;
 const appOrigin = new URL(testAdminEnv.NEXT_PUBLIC_APP_URL).origin;
 
 liveDescribe("workspace member administration transactions", () => {
@@ -512,7 +483,8 @@ liveDescribe("workspace member administration transactions", () => {
     expect(updated.body?.data?.updateWorkspaceMemberRole?.code).toBe("APPLIED");
     const viewerDirectory = await fixture.execute({
       jar: viewer.jar,
-      query: DIRECTORY,
+      operationName: "SettingsWorkspaceDirectory",
+      query: SettingsWorkspaceDirectoryDocument,
     });
     expectGraphQLError(viewerDirectory, "FORBIDDEN");
     const [membership] = await fixture.database
@@ -525,7 +497,8 @@ liveDescribe("workspace member administration transactions", () => {
       removeWorkspaceMember?: { code?: string };
     }>({
       jar: owner.jar,
-      query: REMOVE,
+      operationName: "RemoveWorkspaceMember",
+      query: RemoveWorkspaceMemberDocument,
       variables: {
         input: {
           actionId: viewer.memberId,
