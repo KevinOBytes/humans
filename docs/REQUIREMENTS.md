@@ -76,11 +76,17 @@ Bounded HUM-NFR-008 people, fact, evidence, file-upload, webhook, and settings e
 The bounded NFR-007 tranche adds `tests/unit/nfr007-redaction-contract.test.ts`,
 which exercises an allowlisted audit metadata projection and a runtime
 security-event sink that drops accidental secret-bearing fields, malformed
-correlation values, and unknown event shapes. The two-factor component suite
-also proves the QR/manual secret and backup-code presentation is wiped after
-explicit finish. These additions strengthen the existing live
-`auth-security`/AES-GCM and browser leakage evidence; the whole-product
-redaction, provider, and storage matrix remains incomplete.
+correlation values, and unknown event shapes. Durable worker paths allowlist
+job failure codes before jobs/audit persistence, extraction workers before
+`errorSummary` persistence, and extraction cancellation now uses the same
+sanitizer; `tests/integration/jobs-executor.test.ts` and
+`tests/integration/extraction-worker.test.ts` prove unknown/secret-bearing
+codes collapse safely while stable cancellation remains observable. The
+two-factor component suite also proves the QR/manual secret and backup-code
+presentation is wiped after explicit finish. These additions strengthen the
+existing live `auth-security`/AES-GCM and browser leakage evidence; the
+whole-product redaction, provider, storage, and 2FA matrix remains
+incomplete.
 
 ### NFR-008 bounded settings tranche evidence
 

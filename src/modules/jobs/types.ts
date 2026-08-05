@@ -203,6 +203,7 @@ const safeJobFailureCodes = new Set([
   "dependency_unavailable",
   "execution_failed",
   "extraction_failed",
+  "extraction_cancelled",
   "extraction_file_unavailable",
   "extraction_input_too_large",
   "extraction_malformed_input",

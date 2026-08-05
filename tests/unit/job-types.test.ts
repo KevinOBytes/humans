@@ -22,6 +22,9 @@ describe("AI durable job protocol", () => {
   it("allows only stable worker failure codes into durable state", () => {
     expect(safeJobFailureCode("validation_failed")).toBe("validation_failed");
     expect(safeJobFailureCode("cancelled")).toBe("cancelled");
+    expect(safeJobFailureCode("extraction_cancelled")).toBe(
+      "extraction_cancelled",
+    );
     expect(safeJobFailureCode("PROVIDER_UNAVAILABLE")).toBe(
       "provider_unavailable",
     );

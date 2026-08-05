@@ -7,6 +7,7 @@ import {
   type ResearchServiceContext,
 } from "@/modules/audit/service";
 import { createJobsService } from "@/modules/jobs/service";
+import { safeJobFailureCode } from "@/modules/jobs/types";
 import { newId } from "@/db/id";
 import type { ObjectStore } from "@/lib/storage/types";
 
@@ -146,7 +147,9 @@ export function createExtractionService(
             .update(extractionRuns)
             .set({
               state: "cancelled",
-              errorSummary: { code: "extraction_cancelled" },
+              errorSummary: {
+                code: safeJobFailureCode("extraction_cancelled"),
+              },
               completedAt: new Date(),
             })
             .where(
