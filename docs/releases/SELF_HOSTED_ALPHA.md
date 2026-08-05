@@ -176,6 +176,16 @@ transactional service lifecycle. A typed `ObjectReadLimitError` prevents a
 provider stream-limit exception from being recorded as an opaque internal
 failure.
 
+## Current provider-adapter architecture evidence
+
+On 2026-08-05, `pnpm test:unit` included the deterministic
+`tests/unit/provider-adapter-contract.test.ts` suite. It scans production
+sources to keep concrete Redis and S3 SDK imports at the declared adapter entry
+points, prohibits AI SDK imports because the AI adapter uses raw HTTP, and
+verifies local/Upstash Redis and MinIO/R2/generic-S3 configuration selection.
+This is a source-level architecture contract; it does not claim hosted-provider
+runtime acceptance.
+
 ## Current saved-query and graph-view evidence
 
 On 2026-08-05, the live PostgreSQL generated-GraphQL lifecycle acceptance
