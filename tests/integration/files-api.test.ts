@@ -19,6 +19,7 @@ import {
 import type { ObjectStore } from "@/lib/storage/types";
 import { archivedFileCleanupIdempotencyKey } from "@/modules/files/cleanup";
 import { createFilesService } from "@/modules/files/service";
+import type { FileScanner } from "@/modules/files/scanner";
 import { decodeJobPayload } from "@/modules/jobs/service";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
 
@@ -114,6 +115,7 @@ async function fileServiceFor(
   actor: SessionActor,
   store: MemoryObjectStore,
   role: "admin" | "analyst" | "contributor" | "owner" | "viewer" = "owner",
+  scanner?: FileScanner,
 ) {
   const [session] = await fixture.database
     .select({ id: sessions.id })
@@ -148,6 +150,7 @@ async function fileServiceFor(
       deploymentMode: "docker",
       encryptionKey: "31".repeat(32),
       objectStore: store,
+      scanner,
       storageBucket: "private",
       storageProvider: "minio",
     },
@@ -292,6 +295,68 @@ liveDescribe("file service", () => {
     ).resolves.toMatchObject({
       file: { id: completed.file.id },
     });
+  });
+
+  it("fails closed for unavailable and infected scanners, preventing download grants", async () => {
+    const actor = await fixture.createActor("owner");
+    const body = new TextEncoder().encode("scanner-bound evidence");
+    const checksum = createHash("sha256").update(body).digest("hex");
+    const vectors: Array<{
+      expected: { availability: "quarantined" | "rejected"; scan: string };
+      scanner: FileScanner;
+    }> = [
+      {
+        expected: { availability: "quarantined", scan: "error" },
+        scanner: {
+          async scan() {
+            throw new Error("scanner transport unavailable");
+          },
+        },
+      },
+      {
+        expected: { availability: "rejected", scan: "infected" },
+        scanner: {
+          async scan() {
+            return { state: "infected", code: "EICAR" };
+          },
+        },
+      },
+    ];
+
+    for (const { expected, scanner } of vectors) {
+      const service = await fileServiceFor(
+        fixture,
+        actor,
+        store,
+        "owner",
+        scanner,
+      );
+      const created = await service.createUploadSession({
+        byteSize: body.byteLength,
+        checksumSha256: checksum,
+        claimedMediaType: "text/plain",
+        originalName: `scanner-${expected.scan}.txt`,
+        purpose: "EVIDENCE",
+      });
+      store.objects.set(
+        `${actor.workspaceId}:${created.session.objectKey}`,
+        body,
+      );
+
+      const completed = await service.completeUpload(created.session.id);
+      expect(completed.file).toMatchObject({
+        quarantineState: expected.availability,
+        scanState: expected.scan,
+      });
+      await expect(
+        service.createDownload(completed.file.id),
+      ).rejects.toMatchObject({
+        extensions: { code: "PRECONDITION_FAILED" },
+      });
+      expect(
+        store.objects.has(`${actor.workspaceId}:${created.session.objectKey}`),
+      ).toBe(expected.availability !== "rejected");
+    }
   });
 
   it("archives an authorized file with optimistic versioning and enqueues durable cleanup", async () => {

@@ -154,6 +154,20 @@ not establish conventions for every domain, GraphQL input enforcement,
 append-only revisions, or deletion-policy completeness; `HUM-NFR-003` and its
 TODO remain open.
 
+## Current representative security-control evidence
+
+On 2026-08-05, focused unit and live-PostgreSQL tests exercised the middleware
+browser envelope, sealed storage-proxy download boundary, file lifecycle, and
+GraphQL full-text input path. They verify restrictive CSP/frame ancestors,
+DENY framing, nosniff and no-store behavior, forced attachment disposition
+with normalized safe filenames, rejection of header/path/bidi/device filename
+tricks, checksum/type/size/active-content upload rejection, and fail-closed
+unavailable or infected scanner outcomes that cannot receive download grants.
+Injection-shaped text search values stayed parameterized and returned no
+cross-workspace data. This is representative regression evidence only:
+`HUM-NFR-006` remains incomplete pending whole-browser and upload coverage,
+external S3/R2 behavior, and an operator-provisioned live malware scanner.
+
 ## Current optional Ollama evidence
 
 The optional Ollama profile was exercised against the production image on

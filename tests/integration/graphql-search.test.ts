@@ -283,6 +283,25 @@ liveDescribe("Task 12 GraphQL search", () => {
     }
   });
 
+  it("treats injection-shaped text search input as a parameter, never a query scope", async () => {
+    const actor = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    await fixture.createPerson(actor, { displayName: "Scoped Needle" });
+    await fixture.createPerson(foreign, {
+      displayName: "Foreign Needle Must Not Leak",
+    });
+
+    for (const query of ["Needle'; SELECT * FROM people; --", "' OR 1=1 --"]) {
+      const result = await fixture.execute<SearchResult>({
+        jar: actor.jar,
+        query: SEARCH,
+        variables: { input: textInput(query) },
+      });
+      expect(result.body?.errors).toBeUndefined();
+      expect(result.body?.data?.search.nodes).toEqual([]);
+    }
+  });
+
   it("uses the GIN index in the natural actual-query plan after branch authorization", async () => {
     const actor = await fixture.createActor();
     const generatedAt = new Date("2026-08-03T08:00:00.000Z");
