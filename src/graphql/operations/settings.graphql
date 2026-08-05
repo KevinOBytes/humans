@@ -25,6 +25,7 @@ query SettingsAuditEvents(
 query SettingsPolicyPosture {
   settingsPolicyPosture {
     workspace {
+      version
       name
       locale
       timezone
@@ -33,10 +34,24 @@ query SettingsPolicyPosture {
       storageEnabled
     }
     accessPolicies {
+      id
+      version
       name
       state
       sensitivityCeiling
       resourceKinds
+    }
+    resourceGrants {
+      id
+      policyId
+      resourceId
+      resourceKind
+      memberId
+      role
+      state
+      validFrom
+      validUntil
+      version
     }
     retentionPolicies {
       resourceKind
@@ -158,6 +173,42 @@ mutation UpdateWorkspaceMemberRole($input: UpdateWorkspaceMemberRoleInput!) {
 mutation RemoveWorkspaceMember($input: WorkspaceInvitationActionInput!) {
   removeWorkspaceMember(input: $input) {
     actionId
+    code
+    requestId
+  }
+}
+
+mutation UpdateWorkspaceDefaults($input: UpdateWorkspaceDefaultsInput!) {
+  updateWorkspaceDefaults(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation CreateAccessPolicy($input: AccessPolicyInput!) {
+  createAccessPolicy(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation CreateResourceGrant($input: CreateResourceGrantInput!) {
+  createResourceGrant(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation ArchiveResourceGrant($id: UUID!, $expectedVersion: Int!) {
+  archiveResourceGrant(id: $id, expectedVersion: $expectedVersion) {
+    id
+    version
     code
     requestId
   }

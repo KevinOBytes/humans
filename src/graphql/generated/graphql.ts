@@ -8,6 +8,14 @@ export type Incremental<T> =
       [P in keyof T]?: P extends " $fragmentName" | "__typename" ? T[P] : never;
     };
 import type { DocumentTypeDecoration } from "@graphql-typed-document-node/core";
+export type AccessPolicyInput = {
+  name: string;
+  resourceKinds: Array<string>;
+  roleBindings: unknown;
+  sensitivityCeiling: Sensitivity;
+  state: PolicyState;
+};
+
 export type ActorKind = "API_KEY" | "LEGACY" | "SYSTEM" | "USER";
 
 export type AiAnalysisScopeInput = {
@@ -275,6 +283,16 @@ export type CreateRelationshipTypeInput = {
   state?: LifecycleState | null | undefined;
 };
 
+export type CreateResourceGrantInput = {
+  memberId?: string | null | undefined;
+  policyId: string;
+  resourceId: string;
+  resourceKind: string;
+  role?: WorkspaceAdministrationRole | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
+};
+
 export type CreateSavedQueryInput = {
   name: string;
   queryAst: unknown;
@@ -489,6 +507,8 @@ export type PersonFilterInput = {
 
 export type PersonStatus =
   "ACTIVE" | "ARCHIVED" | "DECEASED" | "MERGED" | "MISSING" | "UNKNOWN";
+
+export type PolicyState = "ACTIVE" | "ARCHIVED" | "DISABLED" | "DRAFT";
 
 export type PrepareImportInput = {
   fileId: string;
@@ -758,6 +778,15 @@ export type UpdateSavedQueryInput = {
   name?: string | null | undefined;
   queryAst?: unknown;
   sharing?: SavedQuerySharing | null | undefined;
+};
+
+export type UpdateWorkspaceDefaultsInput = {
+  aiEnabled?: boolean | null | undefined;
+  expectedVersion: number;
+  locale?: string | null | undefined;
+  retentionDays?: number | null | undefined;
+  storageEnabled?: boolean | null | undefined;
+  timezone?: string | null | undefined;
 };
 
 export type UpdateWorkspaceMemberRoleInput = {
@@ -3256,6 +3285,7 @@ export type SettingsPolicyPostureQueryVariables = Exact<{
 export type SettingsPolicyPostureQuery = {
   settingsPolicyPosture: {
     workspace: {
+      version: number;
       name: string;
       locale: string;
       timezone: string;
@@ -3264,10 +3294,24 @@ export type SettingsPolicyPostureQuery = {
       storageEnabled: boolean;
     };
     accessPolicies: Array<{
+      id: string;
+      version: number;
       name: string;
       state: string;
       sensitivityCeiling: string;
       resourceKinds: Array<string>;
+    }>;
+    resourceGrants: Array<{
+      id: string;
+      policyId: string;
+      resourceId: string;
+      resourceKind: string;
+      memberId: string | null;
+      role: string | null;
+      state: string;
+      validFrom: string | null;
+      validUntil: string | null;
+      version: number;
     }>;
     retentionPolicies: Array<{
       resourceKind: string;
@@ -3431,6 +3475,59 @@ export type RemoveWorkspaceMemberMutation = {
     actionId: string | null;
     code: string;
     requestId: string;
+  };
+};
+
+export type UpdateWorkspaceDefaultsMutationVariables = Exact<{
+  input: UpdateWorkspaceDefaultsInput;
+}>;
+
+export type UpdateWorkspaceDefaultsMutation = {
+  updateWorkspaceDefaults: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type CreateAccessPolicyMutationVariables = Exact<{
+  input: AccessPolicyInput;
+}>;
+
+export type CreateAccessPolicyMutation = {
+  createAccessPolicy: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type CreateResourceGrantMutationVariables = Exact<{
+  input: CreateResourceGrantInput;
+}>;
+
+export type CreateResourceGrantMutation = {
+  createResourceGrant: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type ArchiveResourceGrantMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+}>;
+
+export type ArchiveResourceGrantMutation = {
+  archiveResourceGrant: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
   };
 };
 
@@ -7414,6 +7511,7 @@ export const SettingsPolicyPostureDocument = new TypedDocumentString(
     query SettingsPolicyPosture {
   settingsPolicyPosture {
     workspace {
+      version
       name
       locale
       timezone
@@ -7422,10 +7520,24 @@ export const SettingsPolicyPostureDocument = new TypedDocumentString(
       storageEnabled
     }
     accessPolicies {
+      id
+      version
       name
       state
       sensitivityCeiling
       resourceKinds
+    }
+    resourceGrants {
+      id
+      policyId
+      resourceId
+      resourceKind
+      memberId
+      role
+      state
+      validFrom
+      validUntil
+      version
     }
     retentionPolicies {
       resourceKind
@@ -7436,7 +7548,7 @@ export const SettingsPolicyPostureDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:cd6c4829707011adea231de3c275ca7b6dcc288073672f1194978b6abc76914c",
+    hash: "sha256:cbcd51bf1d849c2c2edfa552795baa06b53b0304f13082d9e8a676ccca9ff386",
   },
 ) as unknown as TypedDocumentString<
   SettingsPolicyPostureQuery,
@@ -7648,6 +7760,78 @@ export const RemoveWorkspaceMemberDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   RemoveWorkspaceMemberMutation,
   RemoveWorkspaceMemberMutationVariables
+>;
+export const UpdateWorkspaceDefaultsDocument = new TypedDocumentString(
+  `
+    mutation UpdateWorkspaceDefaults($input: UpdateWorkspaceDefaultsInput!) {
+  updateWorkspaceDefaults(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:c6547025ce6d40bfa4b66aba1352d2167d509df6d43418fcffadf0f8c59a2d19",
+  },
+) as unknown as TypedDocumentString<
+  UpdateWorkspaceDefaultsMutation,
+  UpdateWorkspaceDefaultsMutationVariables
+>;
+export const CreateAccessPolicyDocument = new TypedDocumentString(
+  `
+    mutation CreateAccessPolicy($input: AccessPolicyInput!) {
+  createAccessPolicy(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:a7da95a8514b509667510012164817943feee9fc3b3991f84e667516da1fdb8e",
+  },
+) as unknown as TypedDocumentString<
+  CreateAccessPolicyMutation,
+  CreateAccessPolicyMutationVariables
+>;
+export const CreateResourceGrantDocument = new TypedDocumentString(
+  `
+    mutation CreateResourceGrant($input: CreateResourceGrantInput!) {
+  createResourceGrant(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:29bbe5bb274dd13ec222343385d6808b147b8edf2f4e1968765eeed2b29e4475",
+  },
+) as unknown as TypedDocumentString<
+  CreateResourceGrantMutation,
+  CreateResourceGrantMutationVariables
+>;
+export const ArchiveResourceGrantDocument = new TypedDocumentString(
+  `
+    mutation ArchiveResourceGrant($id: UUID!, $expectedVersion: Int!) {
+  archiveResourceGrant(id: $id, expectedVersion: $expectedVersion) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:dbaefd6c8a0b3f1ee65b841aca8a03d2c3f0d233731a4edb0179edafb7cb3c59",
+  },
+) as unknown as TypedDocumentString<
+  ArchiveResourceGrantMutation,
+  ArchiveResourceGrantMutationVariables
 >;
 export const ViewerDocument = new TypedDocumentString(
   `
