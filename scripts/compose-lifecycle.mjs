@@ -70,6 +70,7 @@ const environment = {
   ADMIN_DISPLAY_NAME: "Humans Administrator",
   ADMIN_PASSWORD: `A!${secret(16)}`,
   RESEND_API_KEY: `re_test_${secret(16)}`,
+  CRON_SECRET: secret(32),
   WORKER_DRAIN_IDEMPOTENCY_KEY: `task15b-active-drain-${suffix}`,
 };
 
@@ -349,6 +350,34 @@ async function runSmoke() {
   await compose(["up", "--detach", "postgres", "minio"]);
   await compose(["run", "--rm", "bootstrap-admin"]);
   await compose(["up", "--detach", "--wait", "app", "worker"]);
+  const unauthorized = await appRequest("/api/jobs/run", {
+    method: "GET",
+  });
+  assert(
+    unauthorized.status === 401,
+    `Built app bounded jobs route accepted invalid auth (${unauthorized.status})`,
+  );
+  const authorizedWithSecret = await fetch(
+    new URL("/api/jobs/run", appBaseUrl),
+    {
+      headers: {
+        authorization: `Bearer ${environment.CRON_SECRET}`,
+        origin: appBaseUrl,
+        "sec-fetch-site": "same-origin",
+      },
+    },
+  );
+  assert(
+    authorizedWithSecret.status === 200,
+    `Built app bounded jobs route failed authorized execution (${authorizedWithSecret.status})`,
+  );
+  const routeBody = await authorizedWithSecret.json();
+  assert(
+    routeBody?.success === true &&
+      Number.isSafeInteger(routeBody.summary?.claimed) &&
+      Number.isSafeInteger(routeBody.summary?.completed),
+    "Built app bounded jobs route returned an invalid summary",
+  );
   await compose(["run", "--rm", "smoke"]);
   await assertRuntimeState();
   await assertProcessTree("app", "server.js");
