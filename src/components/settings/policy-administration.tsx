@@ -15,6 +15,7 @@ export function PolicyAdministration({
   timezone: initialTimezone,
   retentionDays: initialRetentionDays,
   aiEnabled: initialAiEnabled,
+  retainRestrictedAiPrompts: initialRetainRestrictedAiPrompts,
   storageEnabled: initialStorageEnabled,
 }: {
   version: number;
@@ -22,6 +23,7 @@ export function PolicyAdministration({
   timezone: string;
   retentionDays: number | null;
   aiEnabled: boolean;
+  retainRestrictedAiPrompts: boolean;
   storageEnabled: boolean;
 }) {
   const router = useRouter();
@@ -31,6 +33,9 @@ export function PolicyAdministration({
     initialRetentionDays == null ? "" : String(initialRetentionDays),
   );
   const [aiEnabled, setAiEnabled] = useState(initialAiEnabled);
+  const [retainRestrictedAiPrompts, setRetainRestrictedAiPrompts] = useState(
+    initialRetainRestrictedAiPrompts,
+  );
   const [storageEnabled, setStorageEnabled] = useState(initialStorageEnabled);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -60,6 +65,7 @@ export function PolicyAdministration({
           timezone: timezone.trim(),
           retentionDays: parsedRetention,
           aiEnabled,
+          retainRestrictedAiPrompts,
           storageEnabled,
         },
       },
@@ -118,6 +124,17 @@ export function PolicyAdministration({
           disabled={busy}
         />
         Enable workspace AI analysis
+      </label>
+      <label className="flex items-center gap-3 text-sm">
+        <input
+          type="checkbox"
+          checked={retainRestrictedAiPrompts}
+          onChange={(event) =>
+            setRetainRestrictedAiPrompts(event.target.checked)
+          }
+          disabled={busy}
+        />
+        Retain prompts scoped to restricted records
       </label>
       <label className="flex items-center gap-3 text-sm">
         <input

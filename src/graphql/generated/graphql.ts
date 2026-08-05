@@ -856,6 +856,7 @@ export type UpdateWorkspaceDefaultsInput = {
   aiEnabled?: boolean | null | undefined;
   expectedVersion: number;
   locale?: string | null | undefined;
+  retainRestrictedAiPrompts?: boolean | null | undefined;
   retentionDays?: number | null | undefined;
   storageEnabled?: boolean | null | undefined;
   timezone?: string | null | undefined;
@@ -3672,6 +3673,7 @@ export type SettingsPolicyPostureQuery = {
       timezone: string;
       defaultRetentionDays: number | null;
       aiEnabled: boolean;
+      retainRestrictedAiPrompts: boolean;
       storageEnabled: boolean;
     };
     accessPolicies: Array<{
@@ -8437,6 +8439,7 @@ export const SettingsPolicyPostureDocument = new TypedDocumentString(
       timezone
       defaultRetentionDays
       aiEnabled
+      retainRestrictedAiPrompts
       storageEnabled
     }
     accessPolicies {
@@ -8468,7 +8471,7 @@ export const SettingsPolicyPostureDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:cbcd51bf1d849c2c2edfa552795baa06b53b0304f13082d9e8a676ccca9ff386",
+    hash: "sha256:5794f168ee54c52de0a08c03267aa980f5858fd6358c6920dba0cdc34dd81599",
   },
 ) as unknown as TypedDocumentString<
   SettingsPolicyPostureQuery,

@@ -211,6 +211,7 @@ const UpdateWorkspaceDefaultsInput = builder.inputType(
       timezone: t.string(),
       retentionDays: t.int(),
       aiEnabled: t.boolean(),
+      retainRestrictedAiPrompts: t.boolean(),
       storageEnabled: t.boolean(),
     }),
   },
@@ -458,6 +459,9 @@ const SettingsWorkspaceDefaults = builder
         nullable: true,
       }),
       aiEnabled: t.exposeBoolean("aiEnabled", { nullable: false }),
+      retainRestrictedAiPrompts: t.exposeBoolean("retainRestrictedAiPrompts", {
+        nullable: false,
+      }),
       storageEnabled: t.exposeBoolean("storageEnabled", { nullable: false }),
     }),
   });
@@ -493,6 +497,9 @@ const WorkspacePolicySummary = builder
         nullable: true,
       }),
       aiEnabled: t.exposeBoolean("aiEnabled", { nullable: false }),
+      retainRestrictedAiPrompts: t.exposeBoolean("retainRestrictedAiPrompts", {
+        nullable: false,
+      }),
       storageEnabled: t.exposeBoolean("storageEnabled", { nullable: false }),
     }),
   });

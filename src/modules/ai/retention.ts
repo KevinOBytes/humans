@@ -1,12 +1,40 @@
 import { and, eq, isNull, not, sql } from "drizzle-orm";
 
-import { aiRuns, aiThreads } from "@/db/schema/ai";
+import { aiEphemeralInputs, aiRuns, aiThreads } from "@/db/schema/ai";
 import { auditEvents } from "@/db/schema/operations";
 import { legalHolds, workspaceSettings } from "@/db/schema/workspaces";
 import { newId } from "@/db/id";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 
 const MAX_RETENTION_BATCH = 500;
+
+export async function purgeExpiredAiEphemeralInputs(input: {
+  database: Database;
+  limit?: number;
+  now?: Date;
+}): Promise<number> {
+  const limit = input.limit ?? MAX_RETENTION_BATCH;
+  if (
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > MAX_RETENTION_BATCH
+  ) {
+    throw new TypeError("Invalid AI ephemeral-input batch size");
+  }
+  const now = input.now ?? new Date();
+  const expired = await input.database.execute(
+    sql`delete from ${aiEphemeralInputs}
+        where ${aiEphemeralInputs.id} in (
+          select ${aiEphemeralInputs.id}
+          from ${aiEphemeralInputs}
+          where ${aiEphemeralInputs.expiresAt} <= ${now.toISOString()}::timestamptz
+          order by ${aiEphemeralInputs.expiresAt}, ${aiEphemeralInputs.id}
+          limit ${limit}
+        )
+        returning ${aiEphemeralInputs.id}`,
+  );
+  return expired.length;
+}
 
 /**
  * Permanently removes expired private AI threads after honoring workspace and

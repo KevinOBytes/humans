@@ -168,6 +168,7 @@ export function createPolicyMutationService(input: {
       timezone?: string | null;
       retentionDays?: number | null;
       aiEnabled?: boolean | null;
+      retainRestrictedAiPrompts?: boolean | null;
       storageEnabled?: boolean | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
@@ -184,6 +185,11 @@ export function createPolicyMutationService(input: {
           ...(inputValue.aiEnabled == null
             ? {}
             : { aiEnabled: inputValue.aiEnabled }),
+          ...(inputValue.retainRestrictedAiPrompts == null
+            ? {}
+            : {
+                retainRestrictedAiPrompts: inputValue.retainRestrictedAiPrompts,
+              }),
           ...(inputValue.storageEnabled == null
             ? {}
             : { storageEnabled: inputValue.storageEnabled }),

@@ -1,7 +1,13 @@
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
-import { aiCitations, aiMessages, aiRuns, aiToolCalls } from "@/db/schema/ai";
+import {
+  aiCitations,
+  aiEphemeralInputs,
+  aiMessages,
+  aiRuns,
+  aiToolCalls,
+} from "@/db/schema/ai";
 import { auditEvents, jobs } from "@/db/schema/operations";
 import {
   openSealedEnvelope,
@@ -16,6 +22,7 @@ import {
   MAX_AI_PROVIDER_BOUNDARIES,
   MAX_AI_TOOL_CALLS,
   equalAiDigest,
+  isOmittedAiUserMessage,
   isAiStableErrorCode,
   parseStoredAiUserMessage,
   prefixedAiPersistenceHmac,
@@ -125,7 +132,55 @@ export function createAiWorkerRepository(
         !equalAiDigest(
           message.contentHash,
           prefixedAiPersistenceHmac(runtime, "user-content", plaintext),
-        ) ||
+        )
+      ) {
+        return null;
+      }
+      if (isOmittedAiUserMessage(plaintext)) {
+        const [ephemeral] = await transaction
+          .select()
+          .from(aiEphemeralInputs)
+          .where(
+            and(
+              eq(aiEphemeralInputs.workspaceId, run.workspaceId),
+              eq(aiEphemeralInputs.threadId, run.threadId),
+              eq(aiEphemeralInputs.aiRunId, run.id),
+              gt(aiEphemeralInputs.expiresAt, sql`clock_timestamp()`),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!ephemeral) return null;
+        const ephemeralPlaintext = openSealedEnvelope({
+          key: runtime.encryptionKey,
+          purpose: "ai-ephemeral-input",
+          token: ephemeral.encryptedContent,
+        });
+        if (
+          !equalAiDigest(
+            ephemeral.contentHash,
+            prefixedAiPersistenceHmac(
+              runtime,
+              "ephemeral-input",
+              ephemeralPlaintext,
+            ),
+          ) ||
+          !equalAiDigest(
+            run.promptHash,
+            prefixedAiPersistenceHmac(runtime, "prompt", ephemeralPlaintext),
+          )
+        ) {
+          return null;
+        }
+        await transaction
+          .update(aiEphemeralInputs)
+          .set({
+            claimedAt: sql`coalesce(${aiEphemeralInputs.claimedAt}, clock_timestamp())`,
+          })
+          .where(eq(aiEphemeralInputs.id, ephemeral.id));
+        return parseStoredAiUserMessage(ephemeralPlaintext);
+      }
+      if (
         !equalAiDigest(
           run.promptHash,
           prefixedAiPersistenceHmac(runtime, "prompt", plaintext),
@@ -560,6 +615,15 @@ export function createAiWorkerRepository(
             )
             .returning({ id: aiRuns.id });
           if (!completed) return false;
+          await transaction
+            .delete(aiEphemeralInputs)
+            .where(
+              and(
+                eq(aiEphemeralInputs.workspaceId, input.workspaceId),
+                eq(aiEphemeralInputs.threadId, run.threadId),
+                eq(aiEphemeralInputs.aiRunId, input.runId),
+              ),
+            );
           await transaction.insert(auditEvents).values({
             id: newId(),
             workspaceId: input.workspaceId,
@@ -611,6 +675,15 @@ export function createAiWorkerRepository(
             )
             .returning({ id: aiRuns.id });
           if (!failed) return false;
+          await transaction
+            .delete(aiEphemeralInputs)
+            .where(
+              and(
+                eq(aiEphemeralInputs.workspaceId, input.workspaceId),
+                eq(aiEphemeralInputs.threadId, run.threadId),
+                eq(aiEphemeralInputs.aiRunId, input.runId),
+              ),
+            );
           await transaction.insert(auditEvents).values({
             id: newId(),
             workspaceId: input.workspaceId,

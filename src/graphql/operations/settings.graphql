@@ -31,6 +31,7 @@ query SettingsPolicyPosture {
       timezone
       defaultRetentionDays
       aiEnabled
+      retainRestrictedAiPrompts
       storageEnabled
     }
     accessPolicies {

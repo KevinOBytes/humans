@@ -30,6 +30,7 @@ export type PolicySettingsReadModel = {
     timezone: string;
     defaultRetentionDays: number | null;
     aiEnabled: boolean;
+    retainRestrictedAiPrompts: boolean;
     storageEnabled: boolean;
   };
   accessPolicies: readonly {
@@ -62,6 +63,7 @@ export type PolicySettingsReadModel = {
 export type WorkspacePolicySummaryReadModel = {
   defaultRetentionDays: number | null;
   aiEnabled: boolean;
+  retainRestrictedAiPrompts: boolean;
   storageEnabled: boolean;
 };
 
@@ -350,6 +352,8 @@ export function createSettingsRepository(database: Database) {
           timezone: workspaceSettings.timezone,
           defaultRetentionDays: workspaceSettings.retentionDays,
           aiEnabled: workspaceSettings.aiEnabled,
+          retainRestrictedAiPrompts:
+            workspaceSettings.retainRestrictedAiPrompts,
           storageEnabled: workspaceSettings.storageEnabled,
         })
         .from(workspaces)
@@ -433,6 +437,8 @@ export function createSettingsRepository(database: Database) {
         .select({
           defaultRetentionDays: workspaceSettings.retentionDays,
           aiEnabled: workspaceSettings.aiEnabled,
+          retainRestrictedAiPrompts:
+            workspaceSettings.retainRestrictedAiPrompts,
           storageEnabled: workspaceSettings.storageEnabled,
         })
         .from(workspaces)

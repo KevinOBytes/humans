@@ -1,0 +1,1 @@
+ALTER TABLE "ai_ephemeral_inputs" ADD CONSTRAINT "ai_ephemeral_inputs_lifecycle_check" CHECK ("ai_ephemeral_inputs"."expires_at" > "ai_ephemeral_inputs"."created_at" AND ("ai_ephemeral_inputs"."claimed_at" IS NULL OR "ai_ephemeral_inputs"."claimed_at" >= "ai_ephemeral_inputs"."created_at"));
