@@ -182,11 +182,40 @@ describe("auth request client-address boundary", () => {
     expect(failure.headers.get("x-request-id")).toBe(id);
     expect(await failure.json()).toEqual({
       code: "RATE_LIMITED",
+      message: "Authentication request failed.",
       requestId: id,
     });
     expect(await malformedShape.json()).toEqual({
       code: "AUTH_REQUEST_FAILED",
+      message: "Authentication request failed.",
       requestId: id,
     });
+  });
+
+  it("projects upstream auth errors to a closed, secret-free shape", async () => {
+    const id = "a4e128f2-c057-43e9-bf32-7b0e30cc2cf1";
+    const response = await decorateAuthBoundaryResponse(
+      Response.json(
+        {
+          code: "PROVIDER_FAILURE_WITH_TOKEN",
+          message: "provider token sk-live-secret",
+          password: "correct horse battery staple",
+          prompt: "private prompt",
+          stack: "at auth provider",
+        },
+        { status: 502 },
+      ),
+      id,
+    );
+
+    const serialized = await response.clone().text();
+    expect(JSON.parse(serialized)).toEqual({
+      code: "AUTH_REQUEST_FAILED",
+      message: "Authentication request failed.",
+      requestId: id,
+    });
+    expect(serialized).not.toMatch(
+      /sk-live-secret|correct horse battery staple|private prompt|auth provider/iu,
+    );
   });
 });

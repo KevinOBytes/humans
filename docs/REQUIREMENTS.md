@@ -88,6 +88,19 @@ existing live `auth-security`/AES-GCM and browser leakage evidence; the
 whole-product redaction, provider, storage, and 2FA matrix remains
 incomplete.
 
+### Current auth-boundary security evidence
+
+`decorateAuthBoundaryResponse` now projects every non-success authentication
+response to an allowlisted route code, the generic message
+`Authentication request failed.`, and the current request ID. It no longer
+spreads upstream JSON fields, so provider messages, stack traces, passwords,
+tokens, and prompts cannot cross the direct-route response boundary.
+`tests/unit/auth-request-boundary.test.ts` and the live
+`tests/integration/auth-security.test.ts` assert this with secret-bearing
+upstream payloads. This is bounded NFR-005/006/007 evidence; the broader
+browser, provider, upload, audit, and whole-product matrices remain
+incomplete.
+
 ### NFR-008 bounded settings tranche evidence
 
 `settings-policy-administration.test.ts` adds generated GraphQL
