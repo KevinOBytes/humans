@@ -460,10 +460,20 @@ liveDescribe(
         "invitation action ID",
       );
       const initialDeliveryIntents = await fixture.database
-        .select({ id: authEmailOutbox.id, state: authEmailOutbox.state })
+        .select({
+          encryptedPayload: authEmailOutbox.encryptedPayload,
+          id: authEmailOutbox.id,
+          state: authEmailOutbox.state,
+        })
         .from(authEmailOutbox)
         .where(eq(authEmailOutbox.invitationId, invitationId));
       expect(initialDeliveryIntents).toHaveLength(1);
+      expect(initialDeliveryIntents[0]?.encryptedPayload).toEqual(
+        expect.any(String),
+      );
+      expect(JSON.stringify(initialDeliveryIntents)).not.toContain(
+        invitationEmail,
+      );
 
       const createdKey = await fixture.execute<{
         createOrganizationApiKey: {
@@ -635,10 +645,22 @@ liveDescribe(
         code: "APPLIED",
       });
       const resentDeliveryIntents = await fixture.database
-        .select({ id: authEmailOutbox.id, state: authEmailOutbox.state })
+        .select({
+          encryptedPayload: authEmailOutbox.encryptedPayload,
+          id: authEmailOutbox.id,
+          state: authEmailOutbox.state,
+        })
         .from(authEmailOutbox)
         .where(eq(authEmailOutbox.invitationId, invitationId));
       expect(resentDeliveryIntents).toHaveLength(2);
+      expect(
+        resentDeliveryIntents.every(
+          (intent) => intent.encryptedPayload.length > 0,
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(resentDeliveryIntents)).not.toContain(
+        invitationEmail,
+      );
       expect(resentDeliveryIntents.map((intent) => intent.id)).toEqual(
         expect.arrayContaining([initialDeliveryIntents[0].id]),
       );
@@ -675,6 +697,15 @@ liveDescribe(
         query: SettingsWorkspaceDirectoryDocument,
         variables: { offset: 0 },
       });
+      expect(afterCancelDirectory.body?.errors).toBeUndefined();
+      expect(
+        afterCancelDirectory.body?.data?.settingsWorkspaceDirectory,
+      ).toEqual(
+        expect.objectContaining({
+          invitations: expect.any(Array),
+          members: expect.objectContaining({ nodes: expect.any(Array) }),
+        }),
+      );
       expect(
         afterCancelDirectory.body?.data?.settingsWorkspaceDirectory.invitations,
       ).not.toEqual(
@@ -710,6 +741,14 @@ liveDescribe(
         query: SettingsWorkspaceDirectoryDocument,
         variables: { offset: 0 },
       });
+      expect(afterRemovalDirectory.body?.errors).toBeUndefined();
+      expect(
+        afterRemovalDirectory.body?.data?.settingsWorkspaceDirectory,
+      ).toEqual(
+        expect.objectContaining({
+          members: expect.objectContaining({ nodes: expect.any(Array) }),
+        }),
+      );
       expect(
         afterRemovalDirectory.body?.data?.settingsWorkspaceDirectory.members
           .nodes,
@@ -719,12 +758,24 @@ liveDescribe(
         ]),
       );
 
-      const foreignDirectory = await fixture.execute({
+      const foreignDirectory = await fixture.execute<{
+        settingsWorkspaceDirectory: {
+          invitations: Array<{ actionId: string }>;
+          members: { nodes: Array<{ actionId: string }> };
+        };
+      }>({
         jar: foreign.jar,
         operationName: "SettingsWorkspaceDirectory",
         query: SettingsWorkspaceDirectoryDocument,
         variables: { offset: 0 },
       });
+      expect(foreignDirectory.body?.errors).toBeUndefined();
+      expect(foreignDirectory.body?.data?.settingsWorkspaceDirectory).toEqual(
+        expect.objectContaining({
+          invitations: expect.any(Array),
+          members: expect.objectContaining({ nodes: expect.any(Array) }),
+        }),
+      );
       const serialized = JSON.stringify({
         audit: audit.body,
         directory: directory.body,
@@ -733,10 +784,11 @@ liveDescribe(
         logs: fixture.capturedLogs,
       });
       expect(serialized).not.toContain(key.secret ?? "unavailable-secret");
-      expect(JSON.stringify(foreignDirectory.body)).not.toContain(
-        invitationEmail,
-      );
-      expect(JSON.stringify(foreignDirectory.body)).not.toContain(
+      const serializedForeignDirectory = JSON.stringify(foreignDirectory.body);
+      expect(serializedForeignDirectory).not.toContain(invitationEmail);
+      expect(serializedForeignDirectory).not.toContain(invitationId);
+      expect(serializedForeignDirectory).not.toContain(viewer.memberId);
+      expect(serializedForeignDirectory).not.toContain(
         key.actionId ?? "unavailable-action",
       );
       expect(serialized).not.toContain(owner.workspaceId);
