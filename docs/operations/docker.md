@@ -231,6 +231,11 @@ the evidence for the optional Ollama/model portion of `HUM-FR-037` and
 - The heartbeat refreshes independently during healthy work, stops immediately
   on drain or deadline, and disappears when the worker or its private tmpfs
   exits. Startup or heartbeat failures exit nonzero.
+- The Compose lifecycle acceptance deliberately stops Redis while the app and
+  worker remain running: liveness must stay `200`, readiness must return a
+  credential-free `503` identifying only Redis as failed, and the worker's
+  independent heartbeat must remain healthy. Redis restoration must return
+  readiness to `200` before the persistence and drain checks continue.
 
 Inspect `docker compose ps --all` and narrowly scoped `docker compose logs`.
 Never export raw production logs without redaction. Alert on app/worker

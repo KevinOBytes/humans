@@ -713,6 +713,48 @@ async function runPersistenceAndRestore() {
     "-c",
     'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli flushdb >/dev/null',
   ]);
+  // Exercise the dependency-failure contract while the worker is still
+  // running: liveness must remain available, readiness must fail closed, and
+  // the independent heartbeat must keep the worker healthy. Restoring Redis
+  // must allow the same app/worker processes to become ready again.
+  await compose(["stop", "redis"]);
+  const livenessDuringRedisOutage = await appRequest("/api/health/live", {
+    method: "GET",
+  });
+  assert(
+    livenessDuringRedisOutage.status === 200,
+    `Liveness failed during Redis outage (${livenessDuringRedisOutage.status})`,
+  );
+  const readinessDuringRedisOutage = await appRequest("/api/health/ready", {
+    method: "GET",
+  });
+  const readinessBody = await readinessDuringRedisOutage.json();
+  assert(
+    readinessDuringRedisOutage.status === 503 &&
+      readinessBody?.status === "unavailable" &&
+      readinessBody?.dependencies?.redis === "failed",
+    `Readiness did not fail closed during Redis outage (${JSON.stringify(readinessBody)})`,
+  );
+  const workerDuringRedisOutage = await compose(
+    ["ps", "--all", "--format", "json", "worker"],
+    { capture: true },
+  );
+  const workerOutageState = JSON.parse(
+    workerDuringRedisOutage.stdout.toString("utf8").trim(),
+  );
+  assert(
+    workerOutageState.State === "running" &&
+      workerOutageState.Health === "healthy",
+    `Worker heartbeat was not independent of Redis outage (${JSON.stringify(workerOutageState)})`,
+  );
+  await compose(["up", "--detach", "--wait", "redis"]);
+  const readinessAfterRedisRecovery = await appRequest("/api/health/ready", {
+    method: "GET",
+  });
+  assert(
+    readinessAfterRedisRecovery.status === 200,
+    `Readiness did not recover after Redis restart (${readinessAfterRedisRecovery.status})`,
+  );
   await compose(["restart", "redis"]);
   await compose(["up", "--detach", "--wait", "app", "worker"]);
 
