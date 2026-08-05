@@ -49,10 +49,18 @@ export function createWebhookDeliveryHandler(input: {
     if (!row) {
       throw new JobExecutionError("webhook_delivery_not_found", "permanent");
     }
-    // Delivery rows are immutable attempts. A completed row may be replayed by
-    // a recovered queue, but must never issue a duplicate outbound request.
-    // This also safely retires rows migrated from pre-payload versions.
-    if (row.delivery.completedAt) {
+    // A completed delivery is terminal unless it has a scheduled retry. A
+    // retryable HTTP/transport failure records completion for the attempt but
+    // must still allow the worker's next attempt to progress; a duplicate
+    // queue message for the same attempt must remain side-effect free.
+    const hasScheduledRetry =
+      row.delivery.completedAt !== null &&
+      row.delivery.nextRetryAt !== null &&
+      row.delivery.redactedError !== null;
+    if (
+      row.delivery.completedAt &&
+      (!hasScheduledRetry || context.job.attemptCount <= row.delivery.attempt)
+    ) {
       return { resultReferences: [row.delivery.id] };
     }
     if (row.webhook.state !== "active" || row.webhook.deletedAt) {

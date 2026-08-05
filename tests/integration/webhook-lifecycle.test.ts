@@ -298,6 +298,91 @@ liveDescribe("webhook lifecycle acceptance", () => {
     expect(disabledWebhook?.deletedAt).toBeInstanceOf(Date);
   });
 
+  it("advances the same delivery through a retry attempt after a provider failure", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/retry",
+        },
+      },
+    });
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "retry webhook ID",
+    );
+    const queued = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId } },
+    });
+    const deliveryId = required(
+      queued.body?.data?.sendWebhookTestEvent.deliveryId,
+      "retry delivery ID",
+    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response("upstream unavailable", { status: 502 }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const handler = createWebhookDeliveryHandler({
+      database: fixture.database,
+      encryptionKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+    });
+
+    await expect(
+      handler(
+        { deliveryId, webhookId },
+        { job: { attemptCount: 1 }, signal: new AbortController().signal },
+      ),
+    ).rejects.toMatchObject({
+      code: "webhook_http_502",
+      failureKind: "retryable",
+    });
+    await expect(
+      handler(
+        { deliveryId, webhookId },
+        { job: { attemptCount: 1 }, signal: new AbortController().signal },
+      ),
+    ).resolves.toEqual({ resultReferences: [deliveryId] });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(
+      handler(
+        { deliveryId, webhookId },
+        { job: { attemptCount: 2 }, signal: new AbortController().signal },
+      ),
+    ).resolves.toEqual({ resultReferences: [deliveryId] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const [delivery] = await fixture.database
+      .select({
+        attempt: webhookDeliveries.attempt,
+        completedAt: webhookDeliveries.completedAt,
+        nextRetryAt: webhookDeliveries.nextRetryAt,
+        redactedError: webhookDeliveries.redactedError,
+        responseStatus: webhookDeliveries.responseStatus,
+      })
+      .from(webhookDeliveries)
+      .where(eq(webhookDeliveries.id, deliveryId));
+    expect(delivery).toMatchObject({
+      attempt: 2,
+      responseStatus: 204,
+      redactedError: null,
+      nextRetryAt: null,
+    });
+    expect(delivery?.completedAt).toBeInstanceOf(Date);
+  });
+
   it("keeps webhook administration bound to the active actor workspace before ordering", async () => {
     const owner = await fixture.createSessionActor({ name: "Webhook owner" });
     const foreign = await fixture.createSessionActor({
