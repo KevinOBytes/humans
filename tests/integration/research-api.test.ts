@@ -327,6 +327,84 @@ liveDescribe("research API", () => {
       expect.objectContaining({ id: availableFileId }),
     ]);
 
+    const pagedFileId = newId();
+    await fixture.database.insert(files).values(
+      makeFile({
+        id: pagedFileId,
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        quarantineState: "available",
+        scanState: "clean",
+      }),
+    );
+    const pagedDefinition = await fixture.execute<{
+      createFactDefinition: { factDefinition: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CreateFactDefinitionDocument,
+      operationName: "CreateFactDefinition",
+      variables: {
+        input: {
+          allowedValueType: "FILE_REFERENCE",
+          fieldKey: "paged_file_fact",
+          label: "Paged file fact",
+          namespace: "person",
+        },
+      },
+    });
+    const pagedDefinitionId = required(
+      pagedDefinition.body?.data?.createFactDefinition.factDefinition?.id,
+    );
+    const pagedFact = await fixture.execute({
+      jar: owner.jar,
+      query: CreateFactDocument,
+      operationName: "CreateFact",
+      variables: {
+        input: {
+          definitionId: pagedDefinitionId,
+          personId: subjectId,
+          value: { fileId: pagedFileId },
+        },
+      },
+    });
+    expect(pagedFact.body?.errors).toBeUndefined();
+    const firstFilePage = await fixture.execute<{
+      person: {
+        files: {
+          nodes: Array<{ id: string }>;
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        };
+      } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 1, id: subjectId },
+    });
+    const firstPageInfo = firstFilePage.body?.data?.person?.files.pageInfo;
+    expect(firstPageInfo?.hasNextPage).toBe(true);
+    expect(firstPageInfo?.endCursor).toEqual(expect.any(String));
+    const secondFilePage = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: {
+        first: 1,
+        after: firstPageInfo?.endCursor,
+        id: subjectId,
+      },
+    });
+    expect(secondFilePage.body?.errors).toBeUndefined();
+    expect(secondFilePage.body?.data?.person?.files.nodes).toHaveLength(1);
+    expect(
+      new Set([
+        firstFilePage.body?.data?.person?.files.nodes[0]?.id,
+        secondFilePage.body?.data?.person?.files.nodes[0]?.id,
+      ]),
+    ).toEqual(new Set([availableFileId, pagedFileId]));
+
     const header = await fixture.execute<{
       person: {
         id: string;
@@ -409,7 +487,9 @@ liveDescribe("research API", () => {
       variables: { first: 10, id: subjectId },
     });
     expect(clearedFiles.body?.errors).toBeUndefined();
-    expect(clearedFiles.body?.data?.person?.files.nodes).toEqual([]);
+    expect(clearedFiles.body?.data?.person?.files.nodes).toEqual([
+      expect.objectContaining({ id: pagedFileId }),
+    ]);
 
     const merged = await fixture.execute({
       jar: owner.jar,
