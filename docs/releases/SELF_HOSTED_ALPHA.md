@@ -50,7 +50,9 @@ The following evidence or capability remains open:
 
 - a verified Vercel deployment at the intended public hostname and parity
   evidence using Neon, Upstash Redis, R2/S3, Resend, and an external AI
-  provider;
+  provider, including an attended one-shot administrator-bootstrap and recovery
+  record that excludes bootstrap secrets (local PostgreSQL coverage alone does
+  not establish this hosted evidence);
 - external Resend delivery and recipient acceptance, external object-storage
   acceptance, external OpenAI-compatible provider smoke, and optional Ollama
   model smoke;

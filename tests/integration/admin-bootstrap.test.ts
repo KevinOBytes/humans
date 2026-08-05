@@ -15,6 +15,7 @@ import {
 
 import { accounts, users } from "@/db/schema/auth";
 import { createHumansAuth } from "@/lib/auth/config";
+import { parseBootstrapAdminEnv } from "@/lib/env/server-schema";
 import { bootstrapAdmin } from "@/modules/auth/bootstrap-admin";
 import {
   CookieJar,
@@ -93,6 +94,63 @@ liveDescribe("administrator bootstrap", () => {
         .from(accounts)
         .where(eq(accounts.userId, first.userId)),
     ).toHaveLength(1);
+  });
+
+  it("uses validated environment values to recover a missing credential without retaining its password", async () => {
+    const bootstrapEnv = parseBootstrapAdminEnv({
+      NODE_ENV: "test",
+      ADMIN_EMAIL: "  Recovered.Admin@Example.test  ",
+      ADMIN_USERNAME: "  recovered-admin  ",
+      ADMIN_DISPLAY_NAME: "  Recovered Administrator  ",
+      ADMIN_PASSWORD: "Bootstrap recovery password! 2026",
+    });
+    const first = await bootstrapAdmin(database!, bootstrapEnv);
+    const second = await bootstrapAdmin(database!, bootstrapEnv);
+
+    await database!.delete(accounts).where(eq(accounts.userId, first.userId));
+
+    const recovered = await bootstrapAdmin(database!, bootstrapEnv);
+    const [user] = await database!
+      .select()
+      .from(users)
+      .where(eq(users.id, first.userId));
+    const credentials = await database!
+      .select()
+      .from(accounts)
+      .where(eq(accounts.userId, first.userId));
+    const observable = JSON.stringify({
+      first,
+      second,
+      recovered,
+      user,
+      credentials,
+    });
+
+    expect(second).toEqual({
+      userId: first.userId,
+      created: false,
+      reconciled: false,
+    });
+    expect(recovered).toEqual({
+      userId: first.userId,
+      created: false,
+      reconciled: true,
+    });
+    expect(user).toMatchObject({
+      email: "recovered.admin@example.test",
+      username: "recovered-admin",
+      displayUsername: "recovered-admin",
+      name: "Recovered Administrator",
+      role: "admin",
+    });
+    expect(credentials).toHaveLength(1);
+    await expect(
+      verifyPassword({
+        hash: credentials[0]!.password!,
+        password: bootstrapEnv.ADMIN_PASSWORD,
+      }),
+    ).resolves.toBe(true);
+    expect(observable).not.toContain(bootstrapEnv.ADMIN_PASSWORD);
   });
 
   it("converges two concurrent calls on one user and one credential", async () => {
