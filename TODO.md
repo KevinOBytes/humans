@@ -31,7 +31,6 @@ recovery.
 ## Non-functional
 
 - [ ] `HUM-NFR-002` Verify authoritative storage and provider adapter contracts, including external R2/generic-S3/Upstash acceptance. The bounded provider contract suite now exercises every RedisStore operation through local and Upstash-shaped adapters and signed S3-compatible lifecycle/isolation against CI MinIO; real hosted R2, generic S3, and Upstash REST credentials remain required.
-- [ ] `HUM-NFR-003` Enforce identifier, tenancy, timestamp, version, and deletion conventions.
 - [ ] `HUM-NFR-004` Complete the whole-MVP actor/tenant bypass suite beyond Task 12 authorization-before-ranking and current-authority saved-query/graph reads.
 - [ ] `HUM-NFR-005` Complete cookie and whole-MVP GraphQL security controls beyond the Task 12A limiter foundation and Task 12 argument-costed search/snapshot/analysis operation budgets. A bounded live matrix now covers malformed origins/session cookies/API-key headers/JSON and a Redis-backed `graph.read` denial before resolver work; the whole-MVP browser/provider/operation matrix remains open.
 - [ ] `HUM-NFR-006` Add input, browser-header, and upload security controls.
