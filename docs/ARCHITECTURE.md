@@ -74,6 +74,16 @@ same no-store generic `503` and emit only a redacted correlated infrastructure
 event. Public lifecycle events are correlated, structured,
 and omit identifiers, credentials, tokens, TOTP secrets, and backup codes.
 
+GraphQL consumers share one public error normalizer. It accepts only the
+allowlisted error codes, masks unknown codes and unexpected exception text as
+`INTERNAL`, and treats the `x-request-id` response header as authoritative over
+an extension value. This keeps browser and server callers on the same
+support-correlation boundary while preserving actionable messages for known
+validation and authorization failures in the GraphQL response contract. The
+browser and server convenience clients intentionally use bounded public copy;
+field-level issues remain available in typed mutation payloads. The whole-product
+failure matrix remains open in `TODO.md`.
+
 Invitation links reach the browser as fragments and are scrubbed synchronously.
 The client exchanges the identifier for a short-lived AES-GCM handoff stored in
 an HTTP-only, SameSite=Strict cookie. Authentication return paths therefore

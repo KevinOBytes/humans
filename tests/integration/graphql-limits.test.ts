@@ -15,6 +15,7 @@ import {
   createSyntheticGraphQLSchema,
   expectGraphQLError,
 } from "../support/graphql";
+import { GRAPHQL_ERROR_CODES, publicErrorMessage } from "@/graphql/errors";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -364,6 +365,27 @@ liveDescribe("GraphQL request and operation limits", () => {
       variables: { secret: secretVariable },
     });
     expect(JSON.stringify(fixture.capturedLogs)).not.toContain(key.key);
+  });
+
+  it("returns every stable code with the same request correlation and redacts internals", async () => {
+    const actor = await fixture.createSessionActor();
+    const requestId = "01984e93-7644-72c6-82d0-fda7f590580e";
+    const secret = "synthetic-provider-key-and-private-prompt";
+
+    for (const code of GRAPHQL_ERROR_CODES) {
+      const result = await fixture.execute({
+        headers: { "x-request-id": requestId },
+        jar: actor.jar,
+        query: `query ErrorProbe($code: String!, $secret: String!) {
+          errorProbe(code: $code, secret: $secret)
+        }`,
+        variables: { code, secret },
+      });
+      expectGraphQLError(result, code);
+      expect(result.requestId).toBe(requestId);
+      expect(result.body?.errors?.[0]?.message).toBe(publicErrorMessage(code));
+      expect(JSON.stringify(result.body)).not.toContain(secret);
+    }
   });
 
   it("returns private no-store responses and preserves valid caller request IDs", async () => {
