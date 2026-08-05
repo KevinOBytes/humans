@@ -19,7 +19,6 @@ recovery.
 - [ ] `HUM-FR-004` Complete the recipient acceptance, administrator-role, resend/removal, responsive/RTL/zoom, provider-failure, and cancel/acceptance race matrix for the implemented workspace invitation and member-management boundary.
 - [ ] `HUM-FR-005` Complete live policy/grant/hold/deletion/consent acceptance, retention-worker enforcement, and the full role/resource matrix for the now-implemented audited mutation boundary.
 - [ ] `HUM-FR-006` Replace the Better Auth enabled-insert/application staging gap with a fully atomic activation protocol; the current locked lifecycle withholds secrets and performs bounded known-ID cleanup on finalization failure but cannot prove disablement if the first staging write irrecoverably fails.
-- [ ] `HUM-FR-008` Complete explicit full-contract acceptance for the implemented stable person records and presentation selections, including merge-target and accepted name/photo behavior.
 - [ ] `HUM-FR-010` Complete live identity-candidate, merge/unmerge, tag-collision, external-record, and conflict-matrix acceptance for the bounded reversible reconciliation workflow (implementation now moves non-colliding tags and reversibly fences candidate rows).
 - [ ] `HUM-FR-018` Complete live extraction-run acceptance for object-store reads, parser output contracts, retries, cancellation, and malformed/oversized input handling beyond the implemented bounded JSON/CSV parser, tenant-scoped terminal states, and retry/cancel mutations.
 - [ ] `HUM-FR-019` Complete optional embedding support and final release/Compose proof beyond the implemented Task 12 transactional PostgreSQL full-text, structured, and protected-exact search slice.
@@ -33,7 +32,6 @@ recovery.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, and bounded signal drain.
 - [ ] `HUM-FR-035` Build and verify the parity Vercel deployment path.
 - [ ] `HUM-FR-036` Complete cross-mode worker-contract and Redis lease-concurrency runtime evidence for the implemented shared durable executor, continuous Docker worker, and bounded scheduled route.
-- [ ] `HUM-FR-037` Run the opt-in Ollama service/model initialization smoke with an operator-provisioned model image and record the runtime evidence.
 
 ## Non-functional
 
@@ -48,6 +46,5 @@ recovery.
 - [ ] `HUM-NFR-009` Complete responsive and whole-product accessibility acceptance beyond the tested Task 12 search and graph-analysis controls/results.
 - [ ] `HUM-NFR-011` Complete the remaining whole-product PostgreSQL, Redis, storage, GraphQL, browser, and CI matrix beyond the Task 12 foundation and Task 18 live upgrade/concurrency/browser/Compose suite.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage.
-- [ ] `HUM-NFR-013` Complete the optional Ollama/model smoke beyond the implemented isolated production-image base-stack smoke and lifecycle drills.
 - [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence.
 - [ ] `HUM-NFR-020` Meet and continuously verify the production latency, concurrency, graph-frame-rate, Web Vitals, and bundle budgets beyond Task 12 bounds and indexed-plan evidence.
