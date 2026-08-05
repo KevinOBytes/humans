@@ -31,7 +31,11 @@ import type { Connection, MutationOutcome } from "@/modules/people/service";
 import { createRelationshipsRepository } from "@/modules/relationships/repository";
 import {
   applySearchIndexMaintenance,
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
   withResearchWriteTransaction,
+  type CanonicalRequestMaterial,
+  type ResearchResponseReference,
 } from "@/modules/audit/transactions";
 
 import {
@@ -100,6 +104,80 @@ function versionIssue(value: number): ValidationIssue[] {
           message: "A positive version is required.",
         },
       ];
+}
+
+const EVIDENCE_CREATE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const EVIDENCE_REFERENCE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+type EvidenceCreateOutcome = MutationOutcome<EvidenceItemRow>;
+type EvidenceCreateResponseReference = ResearchResponseReference & {
+  readonly evidenceId: string | null;
+  readonly outcome?: string;
+};
+
+function evidenceCreateRequestMaterial(input: {
+  sourceId: string;
+  fileId?: string | null;
+  externalLocator?: string | null;
+  extractedText?: string | null;
+  capturedAt?: string | null;
+  checksum: string;
+  reviewState?: string | null;
+  sensitivity?: string | null;
+}): Readonly<Record<string, CanonicalRequestMaterial>> {
+  return {
+    capturedAt: input.capturedAt ?? null,
+    checksum: input.checksum,
+    extractedText: input.extractedText ?? null,
+    externalLocator: input.externalLocator ?? null,
+    fileId: input.fileId ?? null,
+    reviewState: input.reviewState ?? null,
+    sensitivity: input.sensitivity ?? null,
+    sourceId: input.sourceId,
+  };
+}
+
+function encodeEvidenceCreateOutcome(result: EvidenceCreateOutcome): string {
+  return JSON.stringify({
+    code: result.code,
+    currentVersion: result.currentVersion ?? null,
+    issues: result.issues,
+  });
+}
+
+function decodeEvidenceCreateOutcome(value: string): EvidenceCreateOutcome {
+  try {
+    const parsed = JSON.parse(value) as {
+      code?: unknown;
+      currentVersion?: unknown;
+      issues?: unknown;
+    };
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.issues) ||
+      (parsed.code !== null && typeof parsed.code !== "string") ||
+      (parsed.currentVersion !== null &&
+        parsed.currentVersion !== undefined &&
+        !Number.isInteger(parsed.currentVersion))
+    ) {
+      throw new Error("invalid outcome");
+    }
+    return {
+      resource: null,
+      issues: parsed.issues as ValidationIssue[],
+      code: parsed.code as EvidenceCreateOutcome["code"],
+      ...(parsed.currentVersion === undefined || parsed.currentVersion === null
+        ? {}
+        : { currentVersion: parsed.currentVersion as number }),
+    };
+  } catch {
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "The stored evidence mutation result is invalid.",
+    );
+  }
 }
 
 export function createEvidenceService(context: ResearchServiceContext) {
@@ -734,7 +812,69 @@ export function createEvidenceService(context: ResearchServiceContext) {
       checksum: string;
       reviewState?: string | null;
       sensitivity?: string | null;
+      /** Optional for backwards compatibility; supplied keys are durable. */
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<EvidenceItemRow>> {
+      const idempotencyKey = input.idempotencyKey;
+      if (idempotencyKey != null) {
+        if (!context.idempotencyHmacKey) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Evidence idempotency is not configured.",
+          );
+        }
+        const createInput = { ...input };
+        delete createInput.idempotencyKey;
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + EVIDENCE_CREATE_IDEMPOTENCY_TTL_MS),
+          idempotencyKey,
+          operation: "evidence.create.graphql",
+          requestMaterial: evidenceCreateRequestMaterial(createInput),
+          secret: context.idempotencyHmacKey,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["evidence:create", "source:read"],
+          async (scopedContext): Promise<EvidenceCreateResponseReference> => {
+            const result =
+              await createEvidenceService(scopedContext).createEvidence(
+                createInput,
+              );
+            if (!result.resource) {
+              return {
+                evidenceId: null,
+                outcome: encodeEvidenceCreateOutcome(result),
+              };
+            }
+            return { evidenceId: result.resource.id };
+          },
+        );
+        const reference = executed.responseReference;
+        if (typeof reference.outcome === "string") {
+          return decodeEvidenceCreateOutcome(reference.outcome);
+        }
+        if (
+          typeof reference.evidenceId !== "string" ||
+          !EVIDENCE_REFERENCE_UUID.test(reference.evidenceId)
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored evidence mutation result is invalid.",
+          );
+        }
+        const evidence = await repository.getEvidence({
+          id: reference.evidenceId,
+          workspaceId: context.workspaceId,
+        });
+        if (!evidence || !(await visible("evidence", evidence))) {
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        }
+        return { resource: evidence, issues: [], code: null };
+      }
       await requireSource(input.sourceId);
       const file = input.fileId
         ? await requireAvailableFile(input.fileId)

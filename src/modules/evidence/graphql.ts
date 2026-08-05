@@ -480,6 +480,8 @@ const ArchiveSourceInput = builder.inputType("ArchiveSourceInput", {
 });
 const CreateEvidenceItemInput = builder.inputType("CreateEvidenceItemInput", {
   fields: (t) => ({
+    /** Optional for backwards compatibility; supplied keys are durable. */
+    idempotencyKey: t.string(),
     sourceId: t.field({ type: "UUID", required: true }),
     fileId: t.field({ type: "UUID" }),
     externalLocator: t.string(),
