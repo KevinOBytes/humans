@@ -10,7 +10,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(async (hostname: string) =>
@@ -28,7 +28,12 @@ import {
   WorkspaceWebhooksDocument,
 } from "@/graphql/generated/graphql";
 import { lookup } from "node:dns/promises";
-import { webhookDeliveries, webhooks } from "@/db/schema/operations";
+import {
+  idempotencyKeys,
+  jobs,
+  webhookDeliveries,
+  webhooks,
+} from "@/db/schema/operations";
 import { verifyWebhookSignature } from "@/modules/webhooks/signature";
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 
@@ -381,6 +386,232 @@ liveDescribe("webhook lifecycle acceptance", () => {
       nextRetryAt: null,
     });
     expect(delivery?.completedAt).toBeInstanceOf(Date);
+  });
+
+  it("replays test-event enqueue references with expiry, malformed, concurrency, and tenant fencing", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/idempotency",
+        },
+      },
+    });
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "idempotent webhook ID",
+    );
+
+    const first = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: {
+        input: { id: webhookId, idempotencyKey: "webhook-replay-v1" },
+      },
+    });
+    expect(first.body?.errors).toBeUndefined();
+    const firstDeliveryId = required(
+      first.body?.data?.sendWebhookTestEvent.deliveryId,
+      "first delivery ID",
+    );
+    const replay = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: {
+        input: { id: webhookId, idempotencyKey: "webhook-replay-v1" },
+      },
+    });
+    expect(replay.body?.errors).toBeUndefined();
+    expect(replay.body?.data?.sendWebhookTestEvent.deliveryId).toBe(
+      firstDeliveryId,
+    );
+    const [replayDeliveryCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(webhookDeliveries)
+      .where(
+        and(
+          eq(webhookDeliveries.workspaceId, owner.workspaceId),
+          eq(webhookDeliveries.webhookId, webhookId),
+        ),
+      );
+    expect(Number(replayDeliveryCount?.count)).toBe(1);
+
+    const concurrent = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        fixture.execute<{
+          sendWebhookTestEvent: { deliveryId: string | null };
+        }>({
+          jar: owner.jar,
+          operationName: "SendWorkspaceWebhookTestEvent",
+          query: SendWorkspaceWebhookTestEventDocument,
+          variables: {
+            input: { id: webhookId, idempotencyKey: "webhook-concurrent-v1" },
+          },
+        }),
+      ),
+    );
+    expect(concurrent.every((result) => !result.body?.errors)).toBe(true);
+    const concurrentDeliveryIds = concurrent.map((result) =>
+      required(
+        result.body?.data?.sendWebhookTestEvent.deliveryId,
+        "concurrent delivery ID",
+      ),
+    );
+    expect(concurrentDeliveryIds[0]).toBe(concurrentDeliveryIds[1]);
+    const [concurrentDeliveryCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(webhookDeliveries)
+      .where(
+        and(
+          eq(webhookDeliveries.workspaceId, owner.workspaceId),
+          eq(webhookDeliveries.webhookId, webhookId),
+        ),
+      );
+    expect(Number(concurrentDeliveryCount?.count)).toBe(2);
+    const [concurrentJobCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.workspaceId, owner.workspaceId),
+          eq(jobs.kind, "webhook_delivery"),
+        ),
+      );
+    expect(Number(concurrentJobCount?.count)).toBe(2);
+
+    const malformedKey = "webhook-malformed-v1";
+    const malformed = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId, idempotencyKey: malformedKey } },
+    });
+    expect(malformed.body?.errors).toBeUndefined();
+    const [malformedClaim] = await fixture.database
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, owner.workspaceId),
+          eq(idempotencyKeys.operation, "webhook.test-event.send"),
+        ),
+      )
+      .orderBy(sql`${idempotencyKeys.createdAt} desc`)
+      .limit(1);
+    if (!malformedClaim) throw new Error("Missing malformed-reference claim");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { deliveryId: ["invalid"] } })
+      .where(eq(idempotencyKeys.id, malformedClaim.id));
+    const malformedReplay = await fixture.execute({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId, idempotencyKey: malformedKey } },
+    });
+    expectGraphQLError(malformedReplay, "VALIDATION_FAILED");
+
+    const expiryKey = "webhook-expiry-v1";
+    const expiryFirst = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId, idempotencyKey: expiryKey } },
+    });
+    const expiryFirstDeliveryId = required(
+      expiryFirst.body?.data?.sendWebhookTestEvent.deliveryId,
+      "expiry first delivery ID",
+    );
+    const [expiryClaim] = await fixture.database
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, owner.workspaceId),
+          eq(idempotencyKeys.operation, "webhook.test-event.send"),
+        ),
+      )
+      .orderBy(sql`${idempotencyKeys.createdAt} desc`)
+      .limit(1);
+    if (!expiryClaim) throw new Error("Missing expiry claim");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(idempotencyKeys.id, expiryClaim.id));
+    const expiryTakeover = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId, idempotencyKey: expiryKey } },
+    });
+    const expiryTakeoverDeliveryId = required(
+      expiryTakeover.body?.data?.sendWebhookTestEvent.deliveryId,
+      "expiry takeover delivery ID",
+    );
+    expect(expiryTakeoverDeliveryId).not.toBe(expiryFirstDeliveryId);
+
+    const foreign = await fixture.createActor();
+    const foreignCreated = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/foreign-idempotency",
+        },
+      },
+    });
+    const foreignWebhookId = required(
+      foreignCreated.body?.data?.createWebhook.id,
+      "foreign webhook ID",
+    );
+    const foreignResult = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: {
+        input: { id: foreignWebhookId, idempotencyKey: "webhook-replay-v1" },
+      },
+    });
+    expect(foreignResult.body?.errors).toBeUndefined();
+    const foreignDeliveryId = required(
+      foreignResult.body?.data?.sendWebhookTestEvent.deliveryId,
+      "foreign delivery ID",
+    );
+    expect(foreignDeliveryId).not.toBe(firstDeliveryId);
+    const [foreignClaim] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.operation, "webhook.test-event.send"),
+          eq(idempotencyKeys.workspaceId, foreign.workspaceId),
+        ),
+      );
+    expect(Number(foreignClaim?.count)).toBe(1);
   });
 
   it("keeps webhook administration bound to the active actor workspace before ordering", async () => {

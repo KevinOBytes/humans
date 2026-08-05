@@ -340,7 +340,10 @@ function createServices(input: {
       actor: input.context.actor,
       database: input.database,
       encryptionKey: input.searchRuntime.encryptionKey ?? "00".repeat(32),
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
+      permissions: input.context.permissions,
       requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
       workspaceId: input.context.workspaceId,
     }),
   };

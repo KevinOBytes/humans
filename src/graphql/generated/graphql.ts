@@ -702,6 +702,11 @@ export type SelectPersonPresentationInput = {
   primaryPhotoFileId?: string | null | undefined;
 };
 
+export type SendWebhookTestEventInput = {
+  id: string;
+  idempotencyKey?: string | null | undefined;
+};
+
 export type Sensitivity = "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
 export type StartAiAnalysisInput = {
@@ -4008,7 +4013,7 @@ export type DisableWorkspaceWebhookMutation = {
 };
 
 export type SendWorkspaceWebhookTestEventMutationVariables = Exact<{
-  input: WebhookIdInput;
+  input: SendWebhookTestEventInput;
 }>;
 
 export type SendWorkspaceWebhookTestEventMutation = {
@@ -8903,7 +8908,7 @@ export const DisableWorkspaceWebhookDocument = new TypedDocumentString(
 >;
 export const SendWorkspaceWebhookTestEventDocument = new TypedDocumentString(
   `
-    mutation SendWorkspaceWebhookTestEvent($input: WebhookIdInput!) {
+    mutation SendWorkspaceWebhookTestEvent($input: SendWebhookTestEventInput!) {
   sendWebhookTestEvent(input: $input) {
     id
     deliveryId
@@ -8913,7 +8918,7 @@ export const SendWorkspaceWebhookTestEventDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:8e90efe0459be314333bc799d5f199803e19296a7d443ac5a8d628bdcf9a5294",
+    hash: "sha256:741a363509843d75b701f5b4c6444a117aeba47e8566d54248c97e19130f69c4",
   },
 ) as unknown as TypedDocumentString<
   SendWorkspaceWebhookTestEventMutation,
