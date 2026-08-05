@@ -177,6 +177,29 @@ optimized runtime-image and Compose acceptance, Vercel deployment, performance,
 and whole-MVP production readiness remain unproven and stay incomplete in their
 broader requirement rows.
 
+## Current production-completion tranche
+
+The production branch now includes the following implementation seams while
+their provider- and release-gated acceptance rows remain explicitly tracked:
+
+- Policy administration writes workspace defaults, access policies, resource
+  grants, retention rules, legal holds, consent records, and deletion requests
+  in audited, optimistic-versioned transactions. The policies settings route
+  exposes workspace-default editing and posture projections.
+- Webhooks have an application-owned GraphQL lifecycle, sealed secrets and
+  payloads, HMAC-SHA256 signatures, delivery retry state, delivery-time
+  destination checks, and an administrator settings route.
+- Uploaded text/JSON/CSV files can queue bounded extraction runs through the
+  shared durable worker. Run state and redacted errors are queryable through
+  generated GraphQL operations.
+- Optional embedding persistence and cosine ranking are available through an
+  injected provider-neutral service; embeddings are not a deployment
+  prerequisite and PostgreSQL full-text remains the default search path.
+
+These additions do not close rows whose verification explicitly requires live
+Vercel/DNS/provider credentials, the complete browser matrix, or measured
+production performance evidence.
+
 ## Traceability rules
 
 - Every incomplete requirement appears exactly once in root `TODO.md`.
