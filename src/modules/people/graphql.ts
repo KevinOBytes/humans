@@ -4,7 +4,7 @@ import { invalidateVisibilityDependentLoaders } from "@/graphql/loaders";
 import { normalizePagination } from "@/graphql/limits";
 import { ActorAttribution } from "@/modules/audit/attribution-graphql";
 
-import type { PersonRow } from "./repository";
+import type { PersonEventRow, PersonNameRow, PersonRow } from "./repository";
 import type { InferSelectModel } from "drizzle-orm";
 import { identityCandidates } from "@/db/schema/people";
 import type { MutationOutcome, PageInfo as PageInfoShape } from "./service";
@@ -29,6 +29,175 @@ export const PersonStatus = builder.enumType("PersonStatus", {
   } as const,
 });
 
+const PersonNameKind = builder.enumType("PersonNameKind", {
+  values: [
+    "LEGAL",
+    "PREFERRED",
+    "BIRTH",
+    "MARRIED",
+    "FORMER",
+    "ALIAS",
+    "TRANSLITERATION",
+    "OTHER",
+  ] as const,
+});
+
+const PersonRecordState = builder.enumType("PersonRecordState", {
+  values: [
+    "ASSERTED",
+    "VERIFIED",
+    "DISPUTED",
+    "SUPERSEDED",
+    "UNKNOWN",
+  ] as const,
+});
+
+const PersonTemporalSemantics = builder.enumType("PersonTemporalSemantics", {
+  values: [
+    "EXACT",
+    "APPROXIMATE",
+    "BEFORE",
+    "AFTER",
+    "BETWEEN",
+    "YEAR_ONLY",
+    "UNKNOWN",
+  ] as const,
+});
+
+const PersonTemporalPrecision = builder.enumType("PersonTemporalPrecision", {
+  values: [
+    "INSTANT",
+    "SECOND",
+    "MINUTE",
+    "HOUR",
+    "DAY",
+    "MONTH",
+    "YEAR",
+    "RANGE",
+    "UNKNOWN",
+  ] as const,
+});
+
+const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
+  fields: (t) => ({
+    id: t.expose("id", { type: "UUID", nullable: false }),
+    personId: t.expose("personId", { type: "UUID", nullable: false }),
+    kind: t.field({
+      type: PersonNameKind,
+      nullable: false,
+      resolve: (row) => row.kind as never,
+    }),
+    fullName: t.exposeString("fullName", { nullable: false }),
+    givenName: t.exposeString("givenName", { nullable: true }),
+    middleName: t.exposeString("middleName", { nullable: true }),
+    familyName: t.exposeString("familyName", { nullable: true }),
+    prefix: t.exposeString("prefix", { nullable: true }),
+    suffix: t.exposeString("suffix", { nullable: true }),
+    script: t.exposeString("script", { nullable: true }),
+    language: t.exposeString("language", { nullable: true }),
+    normalizedForm: t.exposeString("normalizedForm", { nullable: true }),
+    validFrom: t.field({
+      type: "DateTime",
+      nullable: true,
+      resolve: (row) => row.validFrom?.toISOString() ?? null,
+    }),
+    validUntil: t.field({
+      type: "DateTime",
+      nullable: true,
+      resolve: (row) => row.validUntil?.toISOString() ?? null,
+    }),
+    temporalSemantics: t.field({
+      type: PersonTemporalSemantics,
+      nullable: false,
+      resolve: (row) => row.temporalSemantics as never,
+    }),
+    temporalPrecision: t.field({
+      type: PersonTemporalPrecision,
+      nullable: false,
+      resolve: (row) => row.temporalPrecision as never,
+    }),
+    confidence: t.float({
+      nullable: false,
+      resolve: (row) => Number(row.confidence),
+    }),
+    sensitivity: t.expose("sensitivity", {
+      type: Sensitivity,
+      nullable: false,
+    }),
+    state: t.field({
+      type: PersonRecordState,
+      nullable: false,
+      resolve: (row) => row.state as never,
+    }),
+    version: t.exposeInt("version", { nullable: false }),
+    createdAt: t.field({
+      type: "DateTime",
+      nullable: false,
+      resolve: (row) => row.createdAt.toISOString(),
+    }),
+    updatedAt: t.field({
+      type: "DateTime",
+      nullable: false,
+      resolve: (row) => row.updatedAt.toISOString(),
+    }),
+  }),
+});
+
+const PersonEvent = builder.objectRef<PersonEventRow>("PersonEvent").implement({
+  fields: (t) => ({
+    id: t.expose("id", { type: "UUID", nullable: false }),
+    personId: t.expose("personId", { type: "UUID", nullable: false }),
+    eventKind: t.exposeString("eventKind", { nullable: false }),
+    title: t.exposeString("title", { nullable: false }),
+    description: t.exposeString("description", { nullable: true }),
+    placeId: t.expose("placeId", { type: "UUID", nullable: true }),
+    earliestAt: t.field({
+      type: "DateTime",
+      nullable: true,
+      resolve: (row) => row.earliestAt?.toISOString() ?? null,
+    }),
+    latestAt: t.field({
+      type: "DateTime",
+      nullable: true,
+      resolve: (row) => row.latestAt?.toISOString() ?? null,
+    }),
+    temporalSemantics: t.field({
+      type: PersonTemporalSemantics,
+      nullable: false,
+      resolve: (row) => row.temporalSemantics as never,
+    }),
+    temporalPrecision: t.field({
+      type: PersonTemporalPrecision,
+      nullable: false,
+      resolve: (row) => row.temporalPrecision as never,
+    }),
+    confidence: t.float({
+      nullable: false,
+      resolve: (row) => Number(row.confidence),
+    }),
+    sensitivity: t.expose("sensitivity", {
+      type: Sensitivity,
+      nullable: false,
+    }),
+    state: t.field({
+      type: PersonRecordState,
+      nullable: false,
+      resolve: (row) => row.state as never,
+    }),
+    version: t.exposeInt("version", { nullable: false }),
+    createdAt: t.field({
+      type: "DateTime",
+      nullable: false,
+      resolve: (row) => row.createdAt.toISOString(),
+    }),
+    updatedAt: t.field({
+      type: "DateTime",
+      nullable: false,
+      resolve: (row) => row.updatedAt.toISOString(),
+    }),
+  }),
+});
+
 export const ValidationIssue = builder
   .objectRef<{
     path: string[];
@@ -51,6 +220,28 @@ export const PageInfo = builder.objectRef<PageInfoShape>("PageInfo").implement({
     endCursor: t.exposeString("endCursor", { nullable: true }),
   }),
 });
+
+const PersonNameConnection = builder
+  .objectRef<{ nodes: PersonNameRow[]; pageInfo: PageInfoShape }>(
+    "PersonNameConnection",
+  )
+  .implement({
+    fields: (t) => ({
+      nodes: t.expose("nodes", { type: [PersonName] }),
+      pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
+    }),
+  });
+
+const PersonEventConnection = builder
+  .objectRef<{ nodes: PersonEventRow[]; pageInfo: PageInfoShape }>(
+    "PersonEventConnection",
+  )
+  .implement({
+    fields: (t) => ({
+      nodes: t.expose("nodes", { type: [PersonEvent] }),
+      pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
+    }),
+  });
 
 export const Person = builder.objectRef<PersonRow>("Person").implement({
   fields: (t) => ({
@@ -281,6 +472,37 @@ function dashboardConnectionComplexity(first: number | null | undefined) {
 }
 
 export function registerPeopleGraphQL(): void {
+  builder.objectFields(Person, (t) => ({
+    names: t.field({
+      type: PersonNameConnection,
+      args: { first: t.arg.int(), after: t.arg.string() },
+      complexity: (args) => connectionComplexity(args.first),
+      resolve: (person, args, context) => {
+        requirePermission(context, "person", "read");
+        normalizePagination(args);
+        return context.services.people.listNames({
+          personId: person.id,
+          first: args.first,
+          after: args.after,
+        });
+      },
+    }),
+    events: t.field({
+      type: PersonEventConnection,
+      args: { first: t.arg.int(), after: t.arg.string() },
+      complexity: (args) => connectionComplexity(args.first),
+      resolve: (person, args, context) => {
+        requirePermission(context, "person", "read");
+        normalizePagination(args);
+        return context.services.people.listEvents({
+          personId: person.id,
+          first: args.first,
+          after: args.after,
+        });
+      },
+    }),
+  }));
+
   builder.queryFields((t) => ({
     people: t.field({
       type: PersonConnection,
