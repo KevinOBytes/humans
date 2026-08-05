@@ -3980,6 +3980,19 @@ export type DisableWorkspaceWebhookMutation = {
   };
 };
 
+export type SendWorkspaceWebhookTestEventMutationVariables = Exact<{
+  input: WebhookIdInput;
+}>;
+
+export type SendWorkspaceWebhookTestEventMutation = {
+  sendWebhookTestEvent: {
+    id: string | null;
+    deliveryId: string | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
 export class TypedDocumentString<TResult, TVariables>
   extends String
   implements DocumentTypeDecoration<TResult, TVariables>
@@ -8841,4 +8854,22 @@ export const DisableWorkspaceWebhookDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   DisableWorkspaceWebhookMutation,
   DisableWorkspaceWebhookMutationVariables
+>;
+export const SendWorkspaceWebhookTestEventDocument = new TypedDocumentString(
+  `
+    mutation SendWorkspaceWebhookTestEvent($input: WebhookIdInput!) {
+  sendWebhookTestEvent(input: $input) {
+    id
+    deliveryId
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:8e90efe0459be314333bc799d5f199803e19296a7d443ac5a8d628bdcf9a5294",
+  },
+) as unknown as TypedDocumentString<
+  SendWorkspaceWebhookTestEventMutation,
+  SendWorkspaceWebhookTestEventMutationVariables
 >;
