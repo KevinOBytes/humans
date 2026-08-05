@@ -1280,4 +1280,189 @@ liveDescribe("research write transactions", () => {
       reviewReason: "operator-review",
     });
   });
+
+  it("lists and reviews identity candidates inside one workspace with optimistic conflict fencing", async () => {
+    const actor = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+      "person:merge",
+    ]);
+    const foreignContext = await serviceContext(fixture, foreign, [
+      "person:create",
+      "person:read",
+      "person:merge",
+    ]);
+    const peopleService = createPeopleService(context);
+    const foreignPeopleService = createPeopleService(foreignContext);
+    const first = await peopleService.create({ displayName: "Candidate One" });
+    const second = await peopleService.create({ displayName: "Candidate Two" });
+    const foreignFirst = await foreignPeopleService.create({
+      displayName: "Foreign Candidate One",
+    });
+    const foreignSecond = await foreignPeopleService.create({
+      displayName: "Foreign Candidate Two",
+    });
+    if (
+      !first.resource ||
+      !second.resource ||
+      !foreignFirst.resource ||
+      !foreignSecond.resource
+    ) {
+      throw new Error("Expected identity-candidate people to be created.");
+    }
+
+    const candidateId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96d11";
+    const foreignCandidateId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96d12";
+    await fixture.database.insert(identityCandidates).values([
+      {
+        id: candidateId,
+        workspaceId: actor.workspaceId,
+        firstPersonId: first.resource.id,
+        secondPersonId: second.resource.id,
+        matchSignals: {
+          exactIdentifier: true,
+          sharedName: true,
+          sourceCount: 2,
+        },
+        score: "0.875",
+        createdBy: actor.principalId,
+        updatedBy: actor.principalId,
+      },
+      {
+        id: foreignCandidateId,
+        workspaceId: foreign.workspaceId,
+        firstPersonId: foreignFirst.resource.id,
+        secondPersonId: foreignSecond.resource.id,
+        matchSignals: { sharedName: true },
+        score: "0.990",
+        createdBy: foreign.principalId,
+        updatedBy: foreign.principalId,
+      },
+    ]);
+
+    const visible = await peopleService.listIdentityCandidates({ limit: 10 });
+    expect(visible).toHaveLength(1);
+    expect(visible[0]).toMatchObject({
+      id: candidateId,
+      firstPersonId: first.resource.id,
+      secondPersonId: second.resource.id,
+      score: "0.875",
+      state: "pending",
+      matchSignals: {
+        exactIdentifier: true,
+        sharedName: true,
+        sourceCount: 2,
+      },
+    });
+
+    const reviewed = await peopleService.reviewIdentityCandidate({
+      id: candidateId,
+      expectedVersion: 1,
+      state: "accepted",
+      reason: "Two independent identifiers agree.",
+    });
+    expect(reviewed).toMatchObject({
+      id: candidateId,
+      state: "accepted",
+      reviewReason: "Two independent identifiers agree.",
+      version: 2,
+      reviewedBy: actor.principalId,
+    });
+
+    await expect(
+      peopleService.reviewIdentityCandidate({
+        id: candidateId,
+        expectedVersion: 1,
+        state: "rejected",
+        reason: "Stale review must not overwrite the accepted decision.",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+
+    const afterConflict = await peopleService.listIdentityCandidates();
+    expect(afterConflict[0]).toMatchObject({
+      id: candidateId,
+      state: "accepted",
+      reviewReason: "Two independent identifiers agree.",
+      version: 2,
+    });
+
+    const foreignVisible = await foreignPeopleService.listIdentityCandidates({
+      limit: 10,
+    });
+    expect(foreignVisible).toHaveLength(1);
+    expect(foreignVisible[0]?.id).toBe(foreignCandidateId);
+    await expect(
+      foreignPeopleService.reviewIdentityCandidate({
+        id: candidateId,
+        expectedVersion: 2,
+        state: "rejected",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+  });
+
+  it("fences repeated merge and unmerge attempts without changing the restored ownership", async () => {
+    const actor = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+      "person:merge",
+    ]);
+    const peopleService = createPeopleService(context);
+    const winner = await peopleService.create({ displayName: "Stable Winner" });
+    const loser = await peopleService.create({ displayName: "Stable Loser" });
+    if (!winner.resource || !loser.resource) {
+      throw new Error("Expected merge-conflict people to be created.");
+    }
+
+    const merged = await peopleService.merge({
+      winnerPersonId: winner.resource.id,
+      loserPersonId: loser.resource.id,
+      reason: "Conflict matrix merge.",
+    });
+    expect(merged.resource?.id).toBe(winner.resource.id);
+    const [mergedRow] = await fixture.database
+      .select({ status: people.status, version: people.version })
+      .from(people)
+      .where(eq(people.id, loser.resource.id));
+    expect(mergedRow).toMatchObject({ status: "merged", version: 2 });
+
+    await expect(
+      peopleService.merge({
+        winnerPersonId: winner.resource.id,
+        loserPersonId: loser.resource.id,
+        reason: "A second merge must be fenced.",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+
+    const restored = await peopleService.unmerge({
+      loserPersonId: loser.resource.id,
+      expectedVersion: mergedRow!.version,
+    });
+    expect(restored.resource).toMatchObject({
+      id: loser.resource.id,
+      status: "active",
+      mergedIntoPersonId: null,
+      version: 3,
+    });
+
+    await expect(
+      peopleService.unmerge({
+        loserPersonId: loser.resource.id,
+        expectedVersion: mergedRow!.version,
+      }),
+    ).resolves.toMatchObject({ resource: null, code: "CONFLICT" });
+    const [finalLoser] = await fixture.database
+      .select({
+        status: people.status,
+        mergedIntoPersonId: people.mergedIntoPersonId,
+      })
+      .from(people)
+      .where(eq(people.id, loser.resource.id));
+    expect(finalLoser).toMatchObject({
+      status: "active",
+      mergedIntoPersonId: null,
+    });
+  });
 });
