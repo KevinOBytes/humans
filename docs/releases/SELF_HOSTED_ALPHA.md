@@ -186,6 +186,17 @@ verifies local/Upstash Redis and MinIO/R2/generic-S3 configuration selection.
 This is a source-level architecture contract; it does not claim hosted-provider
 runtime acceptance.
 
+## Current reconciliation collision evidence
+
+On 2026-08-05, the live PostgreSQL reconciliation transaction acceptance
+verified that a cross-workspace actor cannot merge foreign people; a colliding
+tag remains linked to the fenced loser, while a loser-only tag and external
+record move to the winner. A current-version unmerge restored the loser’s
+active state, both tag and external-record ownership, and the identity
+candidate’s prior review state. This is a bounded service-level acceptance and
+does not close the remaining identity, conflict, or browser matrices for
+`HUM-FR-010`.
+
 ## Current saved-query and graph-view evidence
 
 On 2026-08-05, the live PostgreSQL generated-GraphQL lifecycle acceptance

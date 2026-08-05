@@ -15,7 +15,11 @@ import { members, sessions } from "@/db/schema/auth";
 import { personTags, tags } from "@/db/schema/evidence";
 import { factDefinitions, facts } from "@/db/schema/facts";
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
-import { identityCandidates, people } from "@/db/schema/people";
+import {
+  externalRecords,
+  identityCandidates,
+  people,
+} from "@/db/schema/people";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { ensureUserPrincipal } from "@/modules/auth/workspaces";
@@ -1076,5 +1080,204 @@ liveDescribe("research write transactions", () => {
       .where(eq(identityCandidates.id, candidateId));
     expect(restoredTag?.personId).toBe(loser.resource!.id);
     expect(restoredCandidate?.state).toBe("pending");
+  });
+
+  it("preserves colliding tags and restores external ownership after a fenced merge", async () => {
+    const actor = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+      "person:merge",
+    ]);
+    const peopleService = createPeopleService(context);
+    const winner = await peopleService.create({
+      displayName: "Collision Winner",
+    });
+    const loser = await peopleService.create({
+      displayName: "Collision Loser",
+    });
+    if (!winner.resource || !loser.resource) {
+      throw new Error("Expected reconciliation people to be created.");
+    }
+
+    const sharedTagId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96c01";
+    const loserOnlyTagId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96c02";
+    const winnerSharedTagLinkId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96c03";
+    const loserSharedTagLinkId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96c04";
+    const loserOnlyTagLinkId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96c05";
+    const externalRecordId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96c06";
+    const candidateId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96c07";
+    await fixture.database.insert(tags).values([
+      {
+        id: sharedTagId,
+        workspaceId: actor.workspaceId,
+        name: "Shared reconciliation tag",
+        normalizedName: "shared-reconciliation-tag",
+        createdBy: actor.principalId,
+        updatedBy: actor.principalId,
+      },
+      {
+        id: loserOnlyTagId,
+        workspaceId: actor.workspaceId,
+        name: "Loser-only reconciliation tag",
+        normalizedName: "loser-only-reconciliation-tag",
+        createdBy: actor.principalId,
+        updatedBy: actor.principalId,
+      },
+    ]);
+    await fixture.database.insert(personTags).values([
+      {
+        id: winnerSharedTagLinkId,
+        workspaceId: actor.workspaceId,
+        personId: winner.resource.id,
+        tagId: sharedTagId,
+        createdBy: actor.principalId,
+      },
+      {
+        id: loserSharedTagLinkId,
+        workspaceId: actor.workspaceId,
+        personId: loser.resource.id,
+        tagId: sharedTagId,
+        createdBy: actor.principalId,
+      },
+      {
+        id: loserOnlyTagLinkId,
+        workspaceId: actor.workspaceId,
+        personId: loser.resource.id,
+        tagId: loserOnlyTagId,
+        createdBy: actor.principalId,
+      },
+    ]);
+    await fixture.database.insert(externalRecords).values({
+      id: externalRecordId,
+      workspaceId: actor.workspaceId,
+      sourceSystem: "reconciliation-test",
+      externalType: "person",
+      externalId: "collision-loser",
+      personId: loser.resource.id,
+      lastSeenAt: new Date(),
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
+    await fixture.database.insert(identityCandidates).values({
+      id: candidateId,
+      workspaceId: actor.workspaceId,
+      firstPersonId: loser.resource.id,
+      secondPersonId: winner.resource.id,
+      score: "0.910",
+      state: "reviewing",
+      reviewReason: "operator-review",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
+
+    await expect(
+      createPeopleService(
+        await serviceContext(fixture, foreign, ["person:merge"]),
+      ).merge({
+        winnerPersonId: winner.resource.id,
+        loserPersonId: loser.resource.id,
+        reason: "must remain isolated",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+
+    await peopleService.merge({
+      winnerPersonId: winner.resource.id,
+      loserPersonId: loser.resource.id,
+      reason: "same verified identity",
+    });
+
+    const [
+      mergedLoser,
+      mergedSharedLink,
+      movedLoserOnlyLink,
+      movedExternal,
+      fencedCandidate,
+    ] = await Promise.all([
+      fixture.database
+        .select({
+          status: people.status,
+          mergedIntoPersonId: people.mergedIntoPersonId,
+          version: people.version,
+        })
+        .from(people)
+        .where(eq(people.id, loser.resource.id)),
+      fixture.database
+        .select({ personId: personTags.personId })
+        .from(personTags)
+        .where(eq(personTags.id, loserSharedTagLinkId)),
+      fixture.database
+        .select({ personId: personTags.personId })
+        .from(personTags)
+        .where(eq(personTags.id, loserOnlyTagLinkId)),
+      fixture.database
+        .select({ personId: externalRecords.personId })
+        .from(externalRecords)
+        .where(eq(externalRecords.id, externalRecordId)),
+      fixture.database
+        .select({ state: identityCandidates.state })
+        .from(identityCandidates)
+        .where(eq(identityCandidates.id, candidateId)),
+    ]);
+    expect(mergedLoser[0]).toMatchObject({
+      status: "merged",
+      mergedIntoPersonId: winner.resource.id,
+    });
+    expect(mergedSharedLink[0]?.personId).toBe(loser.resource.id);
+    expect(movedLoserOnlyLink[0]?.personId).toBe(winner.resource.id);
+    expect(movedExternal[0]?.personId).toBe(winner.resource.id);
+    expect(fencedCandidate[0]?.state).toBe("cancelled");
+
+    const restored = await peopleService.unmerge({
+      loserPersonId: loser.resource.id,
+      expectedVersion: mergedLoser[0]!.version,
+    });
+    expect(restored.resource?.id).toBe(loser.resource.id);
+    const [
+      restoredLoser,
+      restoredSharedLink,
+      restoredLoserOnlyLink,
+      restoredExternal,
+      restoredCandidate,
+    ] = await Promise.all([
+      fixture.database
+        .select({
+          status: people.status,
+          mergedIntoPersonId: people.mergedIntoPersonId,
+        })
+        .from(people)
+        .where(eq(people.id, loser.resource.id)),
+      fixture.database
+        .select({ personId: personTags.personId })
+        .from(personTags)
+        .where(eq(personTags.id, loserSharedTagLinkId)),
+      fixture.database
+        .select({ personId: personTags.personId })
+        .from(personTags)
+        .where(eq(personTags.id, loserOnlyTagLinkId)),
+      fixture.database
+        .select({ personId: externalRecords.personId })
+        .from(externalRecords)
+        .where(eq(externalRecords.id, externalRecordId)),
+      fixture.database
+        .select({
+          state: identityCandidates.state,
+          reviewReason: identityCandidates.reviewReason,
+        })
+        .from(identityCandidates)
+        .where(eq(identityCandidates.id, candidateId)),
+    ]);
+    expect(restoredLoser[0]).toMatchObject({
+      status: "active",
+      mergedIntoPersonId: null,
+    });
+    expect(restoredSharedLink[0]?.personId).toBe(loser.resource.id);
+    expect(restoredLoserOnlyLink[0]?.personId).toBe(loser.resource.id);
+    expect(restoredExternal[0]?.personId).toBe(loser.resource.id);
+    expect(restoredCandidate[0]).toMatchObject({
+      state: "reviewing",
+      reviewReason: "operator-review",
+    });
   });
 });
