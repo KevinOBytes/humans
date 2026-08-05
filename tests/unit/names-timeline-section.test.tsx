@@ -32,8 +32,10 @@ vi.mock("next/link", () => ({
 import { NamesTimelineSection } from "@/components/people/names-timeline-section";
 
 const personId = "018f5f39-9ca7-7b67-a2f1-b8a82ca894d0";
-const nameCursor = `names-${"a".repeat(64)}`;
-const eventCursor = `events-${"b".repeat(64)}`;
+const nameAfter = `names-${"a".repeat(64)}`;
+const eventAfter = `events-${"b".repeat(64)}`;
+const nextNameCursor = `next-names-${"c".repeat(64)}`;
+const nextEventCursor = `next-events-${"d".repeat(64)}`;
 
 function pageInfo(endCursor: string) {
   return { hasNextPage: true, endCursor };
@@ -56,7 +58,7 @@ function response() {
             validUntil: null,
           },
         ],
-        pageInfo: pageInfo(nameCursor),
+        pageInfo: pageInfo(nextNameCursor),
       },
       events: {
         nodes: [
@@ -70,7 +72,7 @@ function response() {
             state: "DISPUTED",
           },
         ],
-        pageInfo: pageInfo(eventCursor),
+        pageInfo: pageInfo(nextEventCursor),
       },
     },
   };
@@ -111,19 +113,19 @@ describe("NamesTimelineSection", () => {
     render(
       await NamesTimelineSection({
         personId,
-        search: { nameAfter: nameCursor, eventAfter: eventCursor },
+        search: { nameAfter, eventAfter },
       }),
     );
 
     expect(screen.getByRole("link", { name: "More names" })).toHaveAttribute(
       "href",
-      `/people/${personId}?view=names&nameAfter=${nameCursor}&eventAfter=${eventCursor}`,
+      `/people/${personId}?view=names&nameAfter=${nextNameCursor}&eventAfter=${eventAfter}`,
     );
     expect(
       screen.getByRole("link", { name: "More timeline events" }),
     ).toHaveAttribute(
       "href",
-      `/people/${personId}?view=names&nameAfter=${nameCursor}&eventAfter=${eventCursor}`,
+      `/people/${personId}?view=names&nameAfter=${nameAfter}&eventAfter=${nextEventCursor}`,
     );
   });
 });
