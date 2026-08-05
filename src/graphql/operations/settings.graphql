@@ -197,6 +197,15 @@ mutation CreateAccessPolicy($input: AccessPolicyInput!) {
   }
 }
 
+mutation UpdateAccessPolicy($input: UpdateAccessPolicyInput!) {
+  updateAccessPolicy(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
 mutation CreateResourceGrant($input: CreateResourceGrantInput!) {
   createResourceGrant(input: $input) {
     id
