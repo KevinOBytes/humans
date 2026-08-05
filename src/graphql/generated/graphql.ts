@@ -9,6 +9,7 @@ export type Incremental<T> =
     };
 import type { DocumentTypeDecoration } from "@graphql-typed-document-node/core";
 export type AccessPolicyInput = {
+  idempotencyKey?: string | null | undefined;
   name: string;
   resourceKinds: Array<string>;
   roleBindings: unknown;
@@ -287,6 +288,7 @@ export type CreateRelationshipTypeInput = {
 };
 
 export type CreateResourceGrantInput = {
+  idempotencyKey?: string | null | undefined;
   memberId?: string | null | undefined;
   policyId: string;
   resourceId: string;
@@ -868,6 +870,15 @@ export type UpdateRelationshipInput = {
   strength?: number | null | undefined;
   temporalPrecision?: RelationshipTemporalPrecision | null | undefined;
   temporalSemantics?: RelationshipTemporalSemantics | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
+};
+
+export type UpdateResourceGrantInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+  state?: PolicyState | null | undefined;
   validFrom?: string | null | undefined;
   validUntil?: string | null | undefined;
 };
@@ -3975,9 +3986,38 @@ export type CreateResourceGrantMutation = {
   };
 };
 
+export type UpdateResourceGrantMutationVariables = Exact<{
+  input: UpdateResourceGrantInput;
+}>;
+
+export type UpdateResourceGrantMutation = {
+  updateResourceGrant: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type ArchiveAccessPolicyMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
+}>;
+
+export type ArchiveAccessPolicyMutation = {
+  archiveAccessPolicy: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
 export type ArchiveResourceGrantMutationVariables = Exact<{
   id: string;
   expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type ArchiveResourceGrantMutation = {
@@ -8872,10 +8912,10 @@ export const CreateResourceGrantDocument = new TypedDocumentString(
   CreateResourceGrantMutation,
   CreateResourceGrantMutationVariables
 >;
-export const ArchiveResourceGrantDocument = new TypedDocumentString(
+export const UpdateResourceGrantDocument = new TypedDocumentString(
   `
-    mutation ArchiveResourceGrant($id: UUID!, $expectedVersion: Int!) {
-  archiveResourceGrant(id: $id, expectedVersion: $expectedVersion) {
+    mutation UpdateResourceGrant($input: UpdateResourceGrantInput!) {
+  updateResourceGrant(input: $input) {
     id
     version
     code
@@ -8884,7 +8924,51 @@ export const ArchiveResourceGrantDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:dbaefd6c8a0b3f1ee65b841aca8a03d2c3f0d233731a4edb0179edafb7cb3c59",
+    hash: "sha256:bc4f7b01d619d55e5e61c0169d26825598e84f9e5b28b82f6554e045e8ea64d1",
+  },
+) as unknown as TypedDocumentString<
+  UpdateResourceGrantMutation,
+  UpdateResourceGrantMutationVariables
+>;
+export const ArchiveAccessPolicyDocument = new TypedDocumentString(
+  `
+    mutation ArchiveAccessPolicy($id: UUID!, $expectedVersion: Int!, $idempotencyKey: String) {
+  archiveAccessPolicy(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:19346a8dc2ff6f9fa26cf98c4119316c4857ba1267184b85cf1a46a65b65e02b",
+  },
+) as unknown as TypedDocumentString<
+  ArchiveAccessPolicyMutation,
+  ArchiveAccessPolicyMutationVariables
+>;
+export const ArchiveResourceGrantDocument = new TypedDocumentString(
+  `
+    mutation ArchiveResourceGrant($id: UUID!, $expectedVersion: Int!, $idempotencyKey: String) {
+  archiveResourceGrant(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:e45aea9b50a2bef8b2e0322171971e75089ad55b40391dc7471abd1935025eac",
   },
 ) as unknown as TypedDocumentString<
   ArchiveResourceGrantMutation,
