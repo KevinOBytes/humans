@@ -23,6 +23,7 @@ import {
 } from "@/db/schema/evidence";
 import { relationshipEvidence } from "@/db/schema/evidence";
 import { relationships } from "@/db/schema/relationships";
+import { addresses, contactPoints } from "@/db/schema/locations";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 
 export type PersonRow = typeof people.$inferSelect;
@@ -238,7 +239,112 @@ export function createPeopleRepository(database: Database) {
       factVisibility?: SQL;
       evidenceVisibility?: SQL;
       relationshipVisibility?: SQL;
+      contactVisibility?: SQL;
+      addressVisibility?: SQL;
+      contactResourceVisibility?: SQL;
+      addressResourceVisibility?: SQL;
     }): Promise<PersonFileRow[]> {
+      const rows = await database
+        .select(getTableColumns(files))
+        .from(files)
+        .innerJoin(
+          people,
+          and(
+            eq(people.workspaceId, input.workspaceId),
+            eq(people.id, input.personId),
+            isNull(people.deletedAt),
+            input.personVisibility,
+          ),
+        )
+        .where(
+          and(
+            eq(files.workspaceId, input.workspaceId),
+            isNull(files.deletedAt),
+            input.visibility,
+            input.cursor
+              ? or(
+                  lt(files.createdAt, input.cursor.createdAt),
+                  and(
+                    eq(files.createdAt, input.cursor.createdAt),
+                    lt(files.id, input.cursor.id),
+                  ),
+                )
+              : undefined,
+            sql`(
+              ${files.id} = ${people.primaryPhotoFileId}
+              OR EXISTS (
+                SELECT 1 FROM ${facts}
+                WHERE ${facts.workspaceId} = ${input.workspaceId}::uuid
+                  AND ${facts.personId} = ${input.personId}::uuid
+                  AND ${facts.fileId} = ${files.id}
+                  AND ${facts.deletedAt} IS NULL
+                  AND ${input.factVisibility}
+              )
+              OR EXISTS (
+                SELECT 1 FROM ${factEvidence}
+                INNER JOIN ${facts} ON ${facts.workspaceId} = ${factEvidence.workspaceId}
+                  AND ${facts.id} = ${factEvidence.factId}
+                INNER JOIN ${evidenceItems} ON ${evidenceItems.workspaceId} = ${factEvidence.workspaceId}
+                  AND ${evidenceItems.id} = ${factEvidence.evidenceItemId}
+                WHERE ${factEvidence.workspaceId} = ${input.workspaceId}::uuid
+                  AND ${facts.personId} = ${input.personId}::uuid
+                  AND ${evidenceItems.fileId} = ${files.id}
+                  AND ${facts.deletedAt} IS NULL
+                  AND ${evidenceItems.deletedAt} IS NULL
+                  AND ${input.factVisibility}
+                  AND ${input.evidenceVisibility}
+              )
+              OR EXISTS (
+                SELECT 1 FROM ${relationshipEvidence}
+                INNER JOIN ${relationships} ON ${relationships.workspaceId} = ${relationshipEvidence.workspaceId}
+                  AND ${relationships.id} = ${relationshipEvidence.relationshipId}
+                INNER JOIN ${evidenceItems} ON ${evidenceItems.workspaceId} = ${relationshipEvidence.workspaceId}
+                  AND ${evidenceItems.id} = ${relationshipEvidence.evidenceItemId}
+                WHERE ${relationshipEvidence.workspaceId} = ${input.workspaceId}::uuid
+                  AND (${relationships.sourcePersonId} = ${input.personId}::uuid OR ${relationships.targetPersonId} = ${input.personId}::uuid)
+                  AND ${evidenceItems.fileId} = ${files.id}
+                  AND ${relationships.deletedAt} IS NULL
+                  AND ${evidenceItems.deletedAt} IS NULL
+                  AND ${input.relationshipVisibility}
+                  AND ${input.evidenceVisibility}
+              )
+              OR EXISTS (
+                SELECT 1 FROM ${personContactPoints}
+                INNER JOIN ${contactPoints} ON ${contactPoints.workspaceId} = ${personContactPoints.workspaceId}
+                  AND ${contactPoints.id} = ${personContactPoints.contactPointId}
+                INNER JOIN ${evidenceItems} ON ${evidenceItems.workspaceId} = ${personContactPoints.workspaceId}
+                  AND ${evidenceItems.id} = ${personContactPoints.evidenceId}
+                WHERE ${personContactPoints.workspaceId} = ${input.workspaceId}::uuid
+                  AND ${personContactPoints.personId} = ${input.personId}::uuid
+                  AND ${evidenceItems.fileId} = ${files.id}
+                  AND ${personContactPoints.deletedAt} IS NULL
+                  AND ${evidenceItems.deletedAt} IS NULL
+                  AND ${input.contactVisibility}
+                  AND ${input.contactResourceVisibility}
+                  AND ${input.evidenceVisibility}
+              )
+              OR EXISTS (
+                SELECT 1 FROM ${personAddresses}
+                INNER JOIN ${addresses} ON ${addresses.workspaceId} = ${personAddresses.workspaceId}
+                  AND ${addresses.id} = ${personAddresses.addressId}
+                INNER JOIN ${evidenceItems} ON ${evidenceItems.workspaceId} = ${personAddresses.workspaceId}
+                  AND ${evidenceItems.id} = ${personAddresses.evidenceId}
+                WHERE ${personAddresses.workspaceId} = ${input.workspaceId}::uuid
+                  AND ${personAddresses.personId} = ${input.personId}::uuid
+                  AND ${evidenceItems.fileId} = ${files.id}
+                  AND ${personAddresses.deletedAt} IS NULL
+                  AND ${evidenceItems.deletedAt} IS NULL
+                  AND ${input.addressVisibility}
+                  AND ${input.addressResourceVisibility}
+                  AND ${input.evidenceVisibility}
+              )
+            )`,
+          ),
+        )
+        .orderBy(desc(files.createdAt), desc(files.id))
+        .limit(input.limit);
+      if (rows.length === 0) return [];
+      const fileIds = rows.map((row) => row.id);
       const [
         primaryPhotoRefs,
         factRefs,
@@ -256,28 +362,19 @@ export function createPeopleRepository(database: Database) {
               eq(people.id, input.personId),
               isNull(people.deletedAt),
               input.personVisibility,
-              sql`${people.primaryPhotoFileId} IS NOT NULL`,
+              inArray(people.primaryPhotoFileId, fileIds),
             ),
           ),
         database
           .select({ fileId: facts.fileId })
           .from(facts)
-          .innerJoin(
-            people,
-            and(
-              eq(people.workspaceId, input.workspaceId),
-              eq(people.id, facts.personId),
-              isNull(people.deletedAt),
-              input.personVisibility,
-            ),
-          )
           .where(
             and(
               eq(facts.workspaceId, input.workspaceId),
               eq(facts.personId, input.personId),
               isNull(facts.deletedAt),
               input.factVisibility,
-              sql`${facts.fileId} IS NOT NULL`,
+              inArray(facts.fileId, fileIds),
             ),
           ),
         database
@@ -305,7 +402,7 @@ export function createPeopleRepository(database: Database) {
           .where(
             and(
               eq(factEvidence.workspaceId, input.workspaceId),
-              sql`${evidenceItems.fileId} IS NOT NULL`,
+              inArray(evidenceItems.fileId, fileIds),
             ),
           ),
         database
@@ -336,12 +433,20 @@ export function createPeopleRepository(database: Database) {
           .where(
             and(
               eq(relationshipEvidence.workspaceId, input.workspaceId),
-              sql`${evidenceItems.fileId} IS NOT NULL`,
+              inArray(evidenceItems.fileId, fileIds),
             ),
           ),
         database
           .select({ fileId: evidenceItems.fileId })
           .from(personContactPoints)
+          .innerJoin(
+            contactPoints,
+            and(
+              eq(contactPoints.workspaceId, input.workspaceId),
+              eq(contactPoints.id, personContactPoints.contactPointId),
+              input.contactResourceVisibility,
+            ),
+          )
           .innerJoin(
             evidenceItems,
             and(
@@ -355,13 +460,22 @@ export function createPeopleRepository(database: Database) {
               eq(personContactPoints.workspaceId, input.workspaceId),
               eq(personContactPoints.personId, input.personId),
               isNull(personContactPoints.deletedAt),
+              input.contactVisibility,
               input.evidenceVisibility,
-              sql`${evidenceItems.fileId} IS NOT NULL`,
+              inArray(evidenceItems.fileId, fileIds),
             ),
           ),
         database
           .select({ fileId: evidenceItems.fileId })
           .from(personAddresses)
+          .innerJoin(
+            addresses,
+            and(
+              eq(addresses.workspaceId, input.workspaceId),
+              eq(addresses.id, personAddresses.addressId),
+              input.addressResourceVisibility,
+            ),
+          )
           .innerJoin(
             evidenceItems,
             and(
@@ -375,8 +489,9 @@ export function createPeopleRepository(database: Database) {
               eq(personAddresses.workspaceId, input.workspaceId),
               eq(personAddresses.personId, input.personId),
               isNull(personAddresses.deletedAt),
+              input.addressVisibility,
               input.evidenceVisibility,
-              sql`${evidenceItems.fileId} IS NOT NULL`,
+              inArray(evidenceItems.fileId, fileIds),
             ),
           ),
       ]);
@@ -400,41 +515,6 @@ export function createPeopleRepository(database: Database) {
       addRefs(relationshipEvidenceRefs, "evidence");
       addRefs(contactEvidenceRefs, "evidence");
       addRefs(addressEvidenceRefs, "evidence");
-      const fileIds = [...rolesByFile.keys()];
-      if (fileIds.length === 0) return [];
-
-      const rows = await database
-        .select(getTableColumns(files))
-        .from(files)
-        .innerJoin(
-          people,
-          and(
-            eq(people.workspaceId, input.workspaceId),
-            eq(people.id, input.personId),
-            isNull(people.deletedAt),
-            input.personVisibility,
-          ),
-        )
-        .where(
-          and(
-            eq(files.workspaceId, input.workspaceId),
-            inArray(files.id, fileIds),
-            isNull(files.deletedAt),
-            input.visibility,
-            input.cursor
-              ? or(
-                  lt(files.createdAt, input.cursor.createdAt),
-                  and(
-                    eq(files.createdAt, input.cursor.createdAt),
-                    lt(files.id, input.cursor.id),
-                  ),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(desc(files.createdAt), desc(files.id))
-        .limit(input.limit);
-
       return rows.map((row) => ({
         ...row,
         roles: [...(rolesByFile.get(row.id) ?? [])].sort(),

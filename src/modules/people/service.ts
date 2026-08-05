@@ -20,6 +20,7 @@ import {
 import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
 import { facts, personFieldSelections } from "@/db/schema/facts";
+import { addresses, contactPoints } from "@/db/schema/locations";
 import {
   evidenceItems,
   notes,
@@ -447,21 +448,47 @@ export function createPeopleService(context: ResearchServiceContext) {
           sensitivity: files.sensitivity,
         }),
         personVisibility: visibility,
-        factVisibility: resourceVisibilitySql(context, {
-          resourceKind: "fact",
-          id: facts.id,
-          sensitivity: facts.sensitivity,
-        }),
-        evidenceVisibility: resourceVisibilitySql(context, {
-          resourceKind: "evidence",
-          id: evidenceItems.id,
-          sensitivity: evidenceItems.sensitivity,
-        }),
-        relationshipVisibility: resourceVisibilitySql(context, {
-          resourceKind: "relationship",
-          id: relationships.id,
-          sensitivity: relationships.sensitivity,
-        }),
+        factVisibility: context.permissions.has("fact:read")
+          ? resourceVisibilitySql(context, {
+              resourceKind: "fact",
+              id: facts.id,
+              sensitivity: facts.sensitivity,
+            })
+          : sql`false`,
+        evidenceVisibility: context.permissions.has("evidence:read")
+          ? resourceVisibilitySql(context, {
+              resourceKind: "evidence",
+              id: evidenceItems.id,
+              sensitivity: evidenceItems.sensitivity,
+            })
+          : sql`false`,
+        relationshipVisibility: context.permissions.has("relationship:read")
+          ? resourceVisibilitySql(context, {
+              resourceKind: "relationship",
+              id: relationships.id,
+              sensitivity: relationships.sensitivity,
+            })
+          : sql`false`,
+        contactVisibility: context.permissions.has("contactPoint:read")
+          ? sql`true`
+          : sql`false`,
+        addressVisibility: context.permissions.has("address:read")
+          ? sql`true`
+          : sql`false`,
+        contactResourceVisibility: context.permissions.has("contactPoint:read")
+          ? resourceVisibilitySql(context, {
+              resourceKind: "contactPoint",
+              id: contactPoints.id,
+              sensitivity: contactPoints.sensitivity,
+            })
+          : sql`false`,
+        addressResourceVisibility: context.permissions.has("address:read")
+          ? resourceVisibilitySql(context, {
+              resourceKind: "address",
+              id: addresses.id,
+              sensitivity: addresses.sensitivity,
+            })
+          : sql`false`,
       });
       const nodes = rows.slice(0, page.first);
       const last = nodes.at(-1);
