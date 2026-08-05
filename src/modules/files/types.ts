@@ -40,6 +40,8 @@ export type UploadValidationInput = {
   checksumSha256: string;
   purpose: UploadPurpose;
   sensitivity?: Sensitivity | null;
+  /** Optional client key for durable create-session replay. */
+  idempotencyKey?: string | null;
 };
 
 export type ValidatedUpload = UploadValidationInput & {
