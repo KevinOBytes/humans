@@ -20,6 +20,29 @@ const targetFields = new Map([
   ["/api/auth/request-password-reset", "email"],
 ]);
 
+const stableAuthResponseCodes = new Set([
+  "AUTH_API_KEY_INTERACTIVE_FORBIDDEN",
+  "AUTH_ADMINISTRATION_DISABLED",
+  "AUTH_LIFECYCLE_WRAPPER_REQUIRED",
+  "AUTH_METHOD_NOT_ALLOWED",
+  "AUTH_REQUEST_FAILED",
+  "AUTH_SERVICE_UNAVAILABLE",
+  "FORBIDDEN",
+  "INVALID_INPUT",
+  "INVITATION_UNAVAILABLE",
+  "RATE_LIMITED",
+  "SECURITY_CHANGE_REJECTED",
+  "SECURITY_CHANGE_UNAVAILABLE",
+  "UNAUTHORIZED",
+]);
+const AUTH_RESPONSE_FAILURE_MESSAGE = "Authentication request failed.";
+
+function safeAuthResponseCode(value: unknown): string {
+  return typeof value === "string" && stableAuthResponseCodes.has(value)
+    ? value
+    : "AUTH_REQUEST_FAILED";
+}
+
 function trustedPrefixAddress(prefix: string): string {
   return prefix.slice(0, prefix.lastIndexOf("/"));
 }
@@ -99,7 +122,11 @@ export async function decorateAuthBoundaryResponse(
   ) {
     headers.set("content-type", "application/json");
     return new Response(
-      JSON.stringify({ code: "AUTH_REQUEST_FAILED", requestId }),
+      JSON.stringify({
+        code: "AUTH_REQUEST_FAILED",
+        message: AUTH_RESPONSE_FAILURE_MESSAGE,
+        requestId,
+      }),
       { headers, status: response.status, statusText: response.statusText },
     );
   }
@@ -108,19 +135,32 @@ export async function decorateAuthBoundaryResponse(
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return new Response(
-        JSON.stringify({ code: "AUTH_REQUEST_FAILED", requestId }),
+        JSON.stringify({
+          code: "AUTH_REQUEST_FAILED",
+          message: AUTH_RESPONSE_FAILURE_MESSAGE,
+          requestId,
+        }),
         { headers, status: response.status, statusText: response.statusText },
       );
     }
+    const code = safeAuthResponseCode((parsed as Record<string, unknown>).code);
     headers.set("content-type", "application/json");
     return new Response(
-      JSON.stringify({ ...(parsed as Record<string, unknown>), requestId }),
+      JSON.stringify({
+        code,
+        message: AUTH_RESPONSE_FAILURE_MESSAGE,
+        requestId,
+      }),
       { headers, status: response.status, statusText: response.statusText },
     );
   } catch {
     headers.set("content-type", "application/json");
     return new Response(
-      JSON.stringify({ code: "AUTH_REQUEST_FAILED", requestId }),
+      JSON.stringify({
+        code: "AUTH_REQUEST_FAILED",
+        message: AUTH_RESPONSE_FAILURE_MESSAGE,
+        requestId,
+      }),
       {
         headers,
         status: response.status,
