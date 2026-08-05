@@ -24,6 +24,7 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 
 export type PolicySettingsReadModel = {
   workspace: {
+    version: number;
     name: string;
     locale: string;
     timezone: string;
@@ -344,6 +345,7 @@ export function createSettingsRepository(database: Database) {
       const defaults = await database
         .select({
           name: workspaces.name,
+          version: workspaceSettings.version,
           locale: workspaceSettings.locale,
           timezone: workspaceSettings.timezone,
           defaultRetentionDays: workspaceSettings.retentionDays,

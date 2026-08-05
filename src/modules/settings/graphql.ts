@@ -437,6 +437,7 @@ const SettingsWorkspaceDefaults = builder
   .objectRef<WorkspaceDefaults>("SettingsWorkspaceDefaults")
   .implement({
     fields: (t) => ({
+      version: t.exposeInt("version", { nullable: false }),
       name: t.exposeString("name", { nullable: false }),
       locale: t.exposeString("locale", { nullable: false }),
       timezone: t.exposeString("timezone", { nullable: false }),
