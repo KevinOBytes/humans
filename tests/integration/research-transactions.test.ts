@@ -12,9 +12,10 @@ import {
 import { count, eq } from "drizzle-orm";
 
 import { members, sessions } from "@/db/schema/auth";
+import { personTags, tags } from "@/db/schema/evidence";
 import { factDefinitions, facts } from "@/db/schema/facts";
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
-import { people } from "@/db/schema/people";
+import { identityCandidates, people } from "@/db/schema/people";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { ensureUserPrincipal } from "@/modules/auth/workspaces";
@@ -997,5 +998,83 @@ liveDescribe("research write transactions", () => {
         }),
       ).toThrow();
     }
+  });
+
+  it("moves person tags and fences identity candidates across reversible merges", async () => {
+    const actor = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+      "person:merge",
+    ]);
+    const peopleService = createPeopleService(context);
+    const winner = await peopleService.create({ displayName: "Winner" });
+    const loser = await peopleService.create({ displayName: "Loser" });
+    expect(winner.resource?.id).toBeTruthy();
+    expect(loser.resource?.id).toBeTruthy();
+    const tagId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf6";
+    const tagLinkId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf7";
+    const candidateId = "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf8";
+    await fixture.database.insert(tags).values({
+      id: tagId,
+      workspaceId: actor.workspaceId,
+      name: "Research",
+      normalizedName: "research",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
+    await fixture.database.insert(personTags).values({
+      id: tagLinkId,
+      workspaceId: actor.workspaceId,
+      personId: loser.resource!.id,
+      tagId,
+      createdBy: actor.principalId,
+    });
+    await fixture.database.insert(identityCandidates).values({
+      id: candidateId,
+      workspaceId: actor.workspaceId,
+      firstPersonId: loser.resource!.id,
+      secondPersonId: winner.resource!.id,
+      score: "0.900",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
+
+    const merged = await peopleService.merge({
+      winnerPersonId: winner.resource!.id,
+      loserPersonId: loser.resource!.id,
+      reason: "same verified identity",
+    });
+    expect(merged.resource?.id).toBe(winner.resource!.id);
+    const [movedTag] = await fixture.database
+      .select({ personId: personTags.personId })
+      .from(personTags)
+      .where(eq(personTags.id, tagLinkId));
+    const [cancelledCandidate] = await fixture.database
+      .select({ state: identityCandidates.state })
+      .from(identityCandidates)
+      .where(eq(identityCandidates.id, candidateId));
+    expect(movedTag?.personId).toBe(winner.resource!.id);
+    expect(cancelledCandidate?.state).toBe("cancelled");
+
+    const [mergedLoser] = await fixture.database
+      .select({ version: people.version })
+      .from(people)
+      .where(eq(people.id, loser.resource!.id));
+    const restored = await peopleService.unmerge({
+      loserPersonId: loser.resource!.id,
+      expectedVersion: mergedLoser!.version,
+    });
+    expect(restored.resource?.id).toBe(loser.resource!.id);
+    const [restoredTag] = await fixture.database
+      .select({ personId: personTags.personId })
+      .from(personTags)
+      .where(eq(personTags.id, tagLinkId));
+    const [restoredCandidate] = await fixture.database
+      .select({ state: identityCandidates.state })
+      .from(identityCandidates)
+      .where(eq(identityCandidates.id, candidateId));
+    expect(restoredTag?.personId).toBe(loser.resource!.id);
+    expect(restoredCandidate?.state).toBe("pending");
   });
 });

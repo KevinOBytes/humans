@@ -196,8 +196,10 @@ Configure exactly one server-side provider in `.env.local`:
   the Docker operations runbook.
 
 Prompts and answers are sealed with `DATA_ENCRYPTION_KEY`; searchable request
-identity uses domain-separated HMAC material. Every tool call and final write
-rechecks current workspace authority. Local focused evidence on 2026-08-04 is
+identity uses domain-separated HMAC material. New private AI threads inherit the
+workspace retention window, and the worker purges completed expired threads
+unless an active legal hold applies. Every tool call and final write rechecks
+current workspace authority. Local focused evidence on 2026-08-04 is
 8 passing component tests and 2 passing Chromium tests (including axe,
 reduced-motion, mobile/reflow, cancellation, and leakage checks). This is not
 external-provider smoke, deployment proof, or production-readiness evidence.

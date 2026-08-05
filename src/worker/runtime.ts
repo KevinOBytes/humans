@@ -27,6 +27,7 @@ import {
 } from "@/worker/handlers/import";
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 import { createExtractionHandler } from "@/worker/handlers/extraction";
+import { purgeExpiredAiThreads } from "@/modules/ai/retention";
 import { createJobRegistry } from "@/worker/registry";
 import { runJobsOnce } from "@/worker/run-once";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
@@ -177,6 +178,12 @@ export function createRuntimeJobRunner(input: {
           encryptionKey: input.env.AUTH_ENCRYPTION_KEY,
           limit: 1,
         });
+    if (!options.signal?.aborted) {
+      await purgeExpiredAiThreads({
+        database: input.database,
+        limit: 100,
+      });
+    }
     const jobSummary = await runJobsOnce({
       database: input.database,
       encryptionKey: input.env.DATA_ENCRYPTION_KEY,

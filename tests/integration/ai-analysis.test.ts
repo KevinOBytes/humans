@@ -20,6 +20,7 @@ import { workspacePrincipals } from "@/db/schema/principals";
 import {
   accessPolicies,
   resourceGrants,
+  workspaceSettings,
   workspaces,
 } from "@/db/schema/workspaces";
 import { openSealedEnvelope } from "@/lib/security/sealed-envelope";
@@ -33,6 +34,7 @@ import { createJobsRepository } from "@/modules/jobs/repository";
 import { decodeJobPayload } from "@/modules/jobs/service";
 import { createAiRepository } from "@/modules/ai/repository";
 import { createAiAnalysisService } from "@/modules/ai/service";
+import { purgeExpiredAiThreads } from "@/modules/ai/retention";
 
 import { ResearchFixture } from "../support/research-fixture";
 import type { SessionActor } from "../support/graphql";
@@ -534,6 +536,45 @@ liveDescribe("atomic AI analysis persistence", () => {
     expect(
       await fixture.database.select().from(locationMutationIdempotency),
     ).toHaveLength(0);
+  });
+
+  it("inherits workspace AI retention and purges only completed expired threads", async () => {
+    const owner = await fixture.createActor();
+    await fixture.database
+      .update(workspaceSettings)
+      .set({ retentionDays: 7 })
+      .where(eq(workspaceSettings.workspaceId, owner.workspaceId));
+    const context = await userContext(owner);
+    const run = await service(context).startAiAnalysis({
+      question: "Retention test",
+      idempotencyKey: "retention-test",
+    });
+    const [runRow] = await fixture.database
+      .select({ threadId: aiRuns.threadId })
+      .from(aiRuns)
+      .where(eq(aiRuns.id, run.id));
+    expect(runRow?.threadId).toBeTruthy();
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1_000);
+    const [storedThread] = await fixture.database
+      .select({ id: aiThreads.id, retentionDays: aiThreads.retentionDays })
+      .from(aiThreads)
+      .where(eq(aiThreads.id, runRow!.threadId));
+    expect(storedThread).toMatchObject({ retentionDays: 7 });
+    await fixture.database
+      .update(aiThreads)
+      .set({ updatedAt: old })
+      .where(eq(aiThreads.id, storedThread!.id));
+    await fixture.database
+      .update(aiRuns)
+      .set({ state: "completed", completedAt: old })
+      .where(eq(aiRuns.id, run.id));
+    await expect(
+      purgeExpiredAiThreads({
+        database: fixture.database,
+        now: new Date(),
+      }),
+    ).resolves.toBe(1);
+    expect(await fixture.database.select().from(aiThreads)).toHaveLength(0);
   });
 
   it("revalidates live authority before enqueue, read, and cancel", async () => {

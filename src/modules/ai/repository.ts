@@ -9,6 +9,7 @@ import {
   aiToolCalls,
 } from "@/db/schema/ai";
 import { auditEvents, jobs } from "@/db/schema/operations";
+import { workspaceSettings } from "@/db/schema/workspaces";
 import {
   openSealedEnvelope,
   sealEnvelope,
@@ -262,12 +263,18 @@ export function createAiRepository(
       const runId = newId();
       const plaintext = canonicalAiUserMessage(input.question, input.scope);
       const now = new Date();
+      const [settings] = await database
+        .select({ retentionDays: workspaceSettings.retentionDays })
+        .from(workspaceSettings)
+        .where(eq(workspaceSettings.workspaceId, workspaceId))
+        .limit(1);
       await database.insert(aiThreads).values({
         id: threadId,
         workspaceId,
         ownerId: principalId,
         title: "AI analysis",
         sharing: "private",
+        retentionDays: settings?.retentionDays ?? null,
         createdAt: now,
         createdBy: principalId,
         updatedAt: now,
