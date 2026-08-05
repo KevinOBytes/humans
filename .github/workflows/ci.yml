@@ -112,6 +112,11 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql://humans:synthetic-ci-database-password@127.0.0.1:5432/humans_test
       ALLOW_TEST_DATABASE_RESET: "true"
+      TEST_STORAGE_ENDPOINT: http://127.0.0.1:9000
+      TEST_STORAGE_REGION: us-east-1
+      TEST_STORAGE_BUCKET: humans-ci-extraction
+      TEST_STORAGE_ACCESS_KEY_ID: synthetic-ci-minio-user
+      TEST_STORAGE_SECRET_ACCESS_KEY: synthetic-ci-minio-password
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -133,9 +138,29 @@ jobs:
       - name: Install dependencies
         timeout-minutes: 8
         run: corepack pnpm install --frozen-lockfile
+      - name: Start disposable MinIO
+        timeout-minutes: 5
+        run: |
+          docker run --detach --name humans-ci-minio \
+            --publish 9000:9000 \
+            --env MINIO_ROOT_USER=synthetic-ci-minio-user \
+            --env MINIO_ROOT_PASSWORD=synthetic-ci-minio-password \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            server /data --console-address :9001
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs humans-ci-minio
+          exit 1
       - name: Run real PostgreSQL integration seam
         timeout-minutes: 15
         run: corepack pnpm test:db
+      - name: Stop disposable MinIO
+        if: always()
+        run: docker rm --force humans-ci-minio
 
   production-build:
     name: production-build

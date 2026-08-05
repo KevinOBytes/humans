@@ -26,6 +26,14 @@ export interface ObjectRead {
   contentType?: string;
 }
 
+/** Raised by an object-store stream when the caller's byte budget is exceeded. */
+export class ObjectReadLimitError extends Error {
+  constructor() {
+    super("Object read limit exceeded");
+    this.name = "ObjectReadLimitError";
+  }
+}
+
 export interface SignedObjectRequest {
   method: "GET" | "PUT";
   url: string;

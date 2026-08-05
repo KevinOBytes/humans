@@ -164,3 +164,14 @@ local and Upstash-shaped adapters. The previously recorded full lifecycle pass
 also covers PostgreSQL/Redis restart recovery and active-claim SIGTERM fencing;
 these checks are the current cross-mode evidence for the shared bounded and
 continuous executor.
+
+## Current extraction evidence
+
+The PostgreSQL integration job now starts a disposable MinIO service and passes
+its endpoint and credentials only to the database-test process. The extraction
+worker acceptance uses the real S3-compatible object-store adapter for JSON
+reads, malformed JSON, and an object larger than the bounded 8 MiB extraction
+budget; the same suite keeps cancellation and retry assertions on the
+transactional service lifecycle. A typed `ObjectReadLimitError` prevents a
+provider stream-limit exception from being recorded as an opaque internal
+failure.

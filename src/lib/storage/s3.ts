@@ -17,14 +17,15 @@ import {
   validateFileName,
   validateUpload,
 } from "@/lib/storage/proxy";
-import type {
-  DownloadRequest,
-  ObjectMetadata,
-  ObjectRead,
-  ObjectReference,
-  ObjectStore,
-  SignedObjectRequest,
-  UploadRequest,
+import {
+  ObjectReadLimitError,
+  type DownloadRequest,
+  type ObjectMetadata,
+  type ObjectRead,
+  type ObjectReference,
+  type ObjectStore,
+  type SignedObjectRequest,
+  type UploadRequest,
 } from "@/lib/storage/types";
 
 export type ObjectStoreProvider = "minio" | "r2" | "s3";
@@ -197,7 +198,7 @@ export class S3ObjectStore implements ObjectStore {
           for await (const raw of source) {
             const chunk = new Uint8Array(raw);
             bytes += chunk.byteLength;
-            if (bytes > maxBytes) throw new Error("Object read limit exceeded");
+            if (bytes > maxBytes) throw new ObjectReadLimitError();
             yield chunk;
           }
         })(),

@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { extractionRuns, files } from "@/db/schema/files";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { JobExecutionError } from "@/modules/jobs/types";
-import type { ObjectStore } from "@/lib/storage/types";
+import { ObjectReadLimitError, type ObjectStore } from "@/lib/storage/types";
 import { parseExtractionContent } from "@/modules/files/extraction-parser";
 
 const MAX_EXTRACTED_BYTES = 8 * 1024 * 1024;
@@ -21,14 +21,21 @@ async function readText(
     throw new JobExecutionError("extraction_source_missing", "permanent");
   const chunks: Buffer[] = [];
   let bytes = 0;
-  for await (const chunk of read.body) {
-    if (signal.aborted)
-      throw new JobExecutionError("worker_draining", "retryable");
-    bytes += chunk.byteLength;
-    if (bytes > MAX_EXTRACTED_BYTES) {
+  try {
+    for await (const chunk of read.body) {
+      if (signal.aborted)
+        throw new JobExecutionError("worker_draining", "retryable");
+      bytes += chunk.byteLength;
+      if (bytes > MAX_EXTRACTED_BYTES) {
+        throw new JobExecutionError("extraction_input_too_large", "permanent");
+      }
+      chunks.push(Buffer.from(chunk));
+    }
+  } catch (error) {
+    if (error instanceof ObjectReadLimitError) {
       throw new JobExecutionError("extraction_input_too_large", "permanent");
     }
-    chunks.push(Buffer.from(chunk));
+    throw error;
   }
   return { text: Buffer.concat(chunks).toString("utf8"), bytes };
 }
