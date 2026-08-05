@@ -459,6 +459,15 @@ export function createAiRepository(
           .returning({ id: aiRuns.id });
         if (!updated) return { transitioned: false };
         await transaction
+          .delete(aiEphemeralInputs)
+          .where(
+            and(
+              eq(aiEphemeralInputs.workspaceId, input.context.workspaceId),
+              eq(aiEphemeralInputs.threadId, row.run.threadId),
+              eq(aiEphemeralInputs.aiRunId, input.runId),
+            ),
+          );
+        await transaction
           .update(jobs)
           .set({
             state: "dead_letter",

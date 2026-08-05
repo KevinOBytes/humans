@@ -987,6 +987,65 @@ liveDescribe("atomic AI analysis persistence", () => {
     expect((await service(context).readAiRun(run.id))?.answer).toBeNull();
   });
 
+  it("deletes a restricted run's ephemeral prompt during the successful cancel transition", async () => {
+    const owner = await fixture.createActor();
+    const context = await userContext(owner);
+    const personId = newId();
+    await fixture.database.insert(people).values({
+      id: personId,
+      workspaceId: owner.workspaceId,
+      displayName: "Restricted cancellation scope",
+      sensitivity: "restricted",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    const policyId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: owner.workspaceId,
+      name: "Restricted cancellation readers",
+      sensitivityCeiling: "restricted",
+      resourceKinds: ["person"],
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      policyId,
+      memberId: owner.memberId,
+      resourceId: personId,
+      resourceKind: "person",
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    const run = await service(context).startAiAnalysis({
+      question: "Cancel this restricted prompt",
+      idempotencyKey: "cancel-restricted-ephemeral",
+      scope: { personIds: [personId] },
+    });
+    expect(
+      await fixture.database
+        .select({ id: aiEphemeralInputs.id })
+        .from(aiEphemeralInputs)
+        .where(eq(aiEphemeralInputs.aiRunId, run.id)),
+    ).toHaveLength(1);
+    await expect(service(context).cancelAiRun(run.id)).resolves.toMatchObject({
+      state: "cancelled",
+    });
+    await expect(service(context).cancelAiRun(run.id)).resolves.toMatchObject({
+      state: "cancelled",
+    });
+    expect(
+      await fixture.database
+        .select({ id: aiEphemeralInputs.id })
+        .from(aiEphemeralInputs)
+        .where(eq(aiEphemeralInputs.aiRunId, run.id)),
+    ).toHaveLength(0);
+  });
+
   it("requires a current database lease and generation for tool recording and exactly-once finalization", async () => {
     const owner = await fixture.createActor();
     const context = await userContext(owner);
