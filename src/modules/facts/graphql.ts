@@ -13,7 +13,6 @@ import type {
   MutationOutcome,
   PageInfo as PageInfoShape,
 } from "@/modules/people/service";
-
 import type {
   FactDefinitionRow,
   FactRelationshipRow,
@@ -567,6 +566,8 @@ const UpdateFactDefinitionInput = builder.inputType(
 );
 const CreateFactInput = builder.inputType("CreateFactInput", {
   fields: (t) => ({
+    /** Optional for backwards compatibility; supplied keys are durable. */
+    idempotencyKey: t.string(),
     personId: t.field({ type: "UUID", required: true }),
     definitionId: t.field({ type: "UUID", required: true }),
     value: t.field({ type: FactValueInput, required: true }),
@@ -655,6 +656,7 @@ const FactPayload = builder
       currentVersion: t.exposeInt("currentVersion", { nullable: true }),
     }),
   });
+
 type SelectionPayloadShape = MutationOutcome<PersonFieldSelectionRow> & {
   selection: PersonFieldSelectionRow | null;
 };
@@ -877,7 +879,13 @@ export function registerFactsGraphQL(): void {
       resolve: async (_r, args, context) => {
         requirePermission(context, "fact", "create");
         requirePermission(context, "person", "read");
-        const result = await context.services.facts.create(args.input);
+        const result =
+          typeof args.input.idempotencyKey === "string"
+            ? await context.services.facts.createIdempotent({
+                ...args.input,
+                idempotencyKey: args.input.idempotencyKey,
+              })
+            : await context.services.facts.create(args.input);
         if (result.resource) {
           context.loaders.fact.prime(result.resource.id, result.resource);
           context.loaders.factsByPerson.clearAll();
