@@ -243,6 +243,7 @@ const CreateUploadSessionInput = builder.inputType("CreateUploadSessionInput", {
     checksumSha256: t.string({ required: true }),
     purpose: t.field({ type: UploadPurpose, required: true }),
     sensitivity: t.field({ type: Sensitivity }),
+    idempotencyKey: t.string(),
   }),
 });
 
@@ -388,6 +389,7 @@ export function registerFilesGraphQL(): void {
         return context.services.files.createUploadSession({
           ...args.input,
           sensitivity: args.input.sensitivity,
+          idempotencyKey: args.input.idempotencyKey,
         });
       },
     }),

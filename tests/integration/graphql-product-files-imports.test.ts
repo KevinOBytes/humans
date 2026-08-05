@@ -3,8 +3,10 @@
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { idempotencyKeys } from "@/db/schema/operations";
 import {
   CompleteWorkspaceUploadDocument,
   CreateWorkspaceUploadDocument,
@@ -285,6 +287,135 @@ liveDescribe("generated files and imports product inventory", () => {
     expect(JSON.stringify(foreignFiles.body)).not.toContain(file.id);
     expect(JSON.stringify(fixture.capturedLogs)).not.toContain(
       "generated evidence body",
+    );
+  });
+
+  it("replays create-session references, converges concurrent callers, and fences expiry, corruption, and tenants", async () => {
+    const owner = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const body = new TextEncoder().encode("idempotent upload body");
+    const input = {
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      claimedMediaType: "text/plain",
+      originalName: "idempotent-upload.txt",
+      purpose: "EVIDENCE",
+      idempotencyKey: "file-session-replay-v1",
+    };
+    const [first, replay] = await Promise.all([
+      fixture.execute<{
+        createUploadSession: { session: { id: string }; grant: unknown };
+      }>({
+        jar: owner.jar,
+        operationName: "CreateWorkspaceUpload",
+        query: CreateWorkspaceUploadDocument,
+        variables: { input },
+      }),
+      fixture.execute<{
+        createUploadSession: { session: { id: string }; grant: unknown };
+      }>({
+        jar: owner.jar,
+        operationName: "CreateWorkspaceUpload",
+        query: CreateWorkspaceUploadDocument,
+        variables: { input },
+      }),
+    ]);
+    expect(first.body?.errors).toBeUndefined();
+    expect(replay.body?.errors).toBeUndefined();
+    const firstSessionId = required(
+      first.body?.data?.createUploadSession.session.id,
+      "first idempotent upload session",
+    );
+    expect(replay.body?.data?.createUploadSession.session.id).toBe(
+      firstSessionId,
+    );
+    const sessions = await fixture.database
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.actorId, owner.userId),
+          eq(idempotencyKeys.operation, "file.upload.session.create"),
+        ),
+      );
+    expect(sessions).toHaveLength(1);
+    const [claim] = await fixture.database
+      .select()
+      .from(idempotencyKeys)
+      .where(eq(idempotencyKeys.id, required(sessions[0]?.id, "claim")));
+    expect(claim?.responseReference).toEqual({
+      uploadSessionId: firstSessionId,
+    });
+
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { uploadSessionId: "not-a-uuid" } })
+      .where(eq(idempotencyKeys.id, required(claim?.id, "claim id")));
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateWorkspaceUpload",
+        query: CreateWorkspaceUploadDocument,
+        variables: { input },
+      }),
+      "PRECONDITION_FAILED",
+    );
+
+    const takeoverInput = {
+      ...input,
+      idempotencyKey: "file-session-expiry-v1",
+    };
+    const beforeExpiry = await fixture.execute<{
+      createUploadSession: { session: { id: string } };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceUpload",
+      query: CreateWorkspaceUploadDocument,
+      variables: { input: takeoverInput },
+    });
+    const beforeExpiryId = required(
+      beforeExpiry.body?.data?.createUploadSession.session.id,
+      "pre-expiry upload session",
+    );
+    const takeoverClaims = await fixture.database
+      .select()
+      .from(idempotencyKeys)
+      .where(eq(idempotencyKeys.operation, "file.upload.session.create"));
+    const takeoverClaim = takeoverClaims.find(
+      (row) =>
+        (row.responseReference as { uploadSessionId?: unknown } | null)
+          ?.uploadSessionId === beforeExpiryId,
+    );
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(
+        eq(idempotencyKeys.id, required(takeoverClaim?.id, "takeover claim")),
+      );
+    const takeover = await fixture.execute<{
+      createUploadSession: { session: { id: string } };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceUpload",
+      query: CreateWorkspaceUploadDocument,
+      variables: { input: takeoverInput },
+    });
+    expect(takeover.body?.errors).toBeUndefined();
+    expect(takeover.body?.data?.createUploadSession.session.id).not.toBe(
+      beforeExpiryId,
+    );
+
+    const foreignUpload = await fixture.execute<{
+      createUploadSession: { session: { id: string } };
+    }>({
+      jar: foreign.jar,
+      operationName: "CreateWorkspaceUpload",
+      query: CreateWorkspaceUploadDocument,
+      variables: { input },
+    });
+    expect(foreignUpload.body?.errors).toBeUndefined();
+    expect(foreignUpload.body?.data?.createUploadSession.session.id).not.toBe(
+      firstSessionId,
     );
   });
 
