@@ -219,6 +219,10 @@ export const aiEphemeralInputs = pgTable(
       columns: [table.workspaceId, table.threadId, table.aiRunId],
       foreignColumns: [aiRuns.workspaceId, aiRuns.threadId, aiRuns.id],
     }).onDelete("cascade"),
+    check(
+      "ai_ephemeral_inputs_lifecycle_check",
+      sql`${table.expiresAt} > ${table.createdAt} AND (${table.claimedAt} IS NULL OR ${table.claimedAt} >= ${table.createdAt})`,
+    ),
   ],
 );
 

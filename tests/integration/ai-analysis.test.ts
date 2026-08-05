@@ -759,12 +759,21 @@ liveDescribe("atomic AI analysis persistence", () => {
       idempotencyKey: "restricted-expired",
       scope: { personIds: [restrictedPersonId] },
     });
+    const [expiringInput] = await fixture.database
+      .select({ createdAt: aiEphemeralInputs.createdAt })
+      .from(aiEphemeralInputs)
+      .where(eq(aiEphemeralInputs.aiRunId, expired.id));
+    const expiresAt = new Date(required(expiringInput).createdAt.getTime() + 1);
     await fixture.database
       .update(aiEphemeralInputs)
-      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .set({ expiresAt })
       .where(eq(aiEphemeralInputs.aiRunId, expired.id));
     await expect(
-      purgeExpiredAiEphemeralInputs({ database: fixture.database, limit: 1 }),
+      purgeExpiredAiEphemeralInputs({
+        database: fixture.database,
+        limit: 1,
+        now: new Date(expiresAt.getTime() + 1),
+      }),
     ).resolves.toBe(1);
     expect(
       await fixture.database
