@@ -88,6 +88,33 @@ liveDescribe("settings policy administration", () => {
       version: 2,
     });
 
+    const sameRequestRetry = await fixture.execute<{
+      updateAccessPolicy: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      headers: { "x-request-id": requestId },
+      jar: owner.jar,
+      operationName: "UpdateAccessPolicy",
+      query: UpdateAccessPolicyDocument,
+      variables: {
+        input: {
+          expectedVersion: 1,
+          id: policyId,
+          name: "Updated policy name",
+          state: "ACTIVE",
+        },
+      },
+    });
+    expect(sameRequestRetry.body?.errors).toBeUndefined();
+    expect(sameRequestRetry.body?.data?.updateAccessPolicy).toMatchObject({
+      code: "CONFLICT",
+      id: null,
+      version: null,
+    });
+
     const viewerDenied = await fixture.execute({
       jar: viewer.jar,
       operationName: "UpdateAccessPolicy",
