@@ -14,6 +14,12 @@ describe("middleware security envelope", () => {
     expect(response.headers.get("content-security-policy")).toContain(
       "object-src 'none'",
     );
+    expect(response.headers.get("content-security-policy")).toContain(
+      "frame-ancestors 'none'",
+    );
+    expect(response.headers.get("content-security-policy")).toContain(
+      "base-uri 'self'",
+    );
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -65,5 +71,23 @@ describe("middleware security envelope", () => {
     expect(response.headers.get("content-security-policy")).toContain(
       "upgrade-insecure-requests",
     );
+  });
+
+  it("keeps security policy on ordinary routes while API responses avoid a public cache directive", () => {
+    const page = proxy(
+      new NextRequest("https://humans.example.test/sign-in?returnTo=%2Fpeople"),
+    );
+    const api = proxy(
+      new NextRequest("https://humans.example.test/api/storage/objects"),
+    );
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-security-policy")).toContain(
+      "form-action 'self'",
+    );
+    expect(page.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+    expect(page.headers.get("permissions-policy")).toContain("camera=()");
+    expect(api.headers.get("cache-control")).toBeNull();
+    expect(api.headers.get("x-frame-options")).toBe("DENY");
   });
 });

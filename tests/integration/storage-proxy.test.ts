@@ -9,7 +9,10 @@ vi.mock("server-only", () => ({}));
 import { createStorageProxyHandlers } from "@/app/api/storage/objects/[...path]/route";
 import { parseServerEnv } from "@/lib/env/server-schema";
 import { createObjectStore } from "@/lib/storage/s3";
-import { ApplicationProxyObjectStore } from "@/lib/storage/proxy";
+import {
+  ApplicationProxyObjectStore,
+  validateFileName,
+} from "@/lib/storage/proxy";
 import type { SignedObjectRequest } from "@/lib/storage/types";
 
 const baseEnv = parseServerEnv({
@@ -186,6 +189,31 @@ describe("local storage proxy", () => {
     expect(downloadResponse.headers.get("content-disposition")).toContain(
       "research%20notes.txt",
     );
+    expect(downloadResponse.headers.get("content-disposition")).toMatch(
+      /^attachment; filename\*=UTF-8''/u,
+    );
+  });
+
+  it("rejects header, path, bidi, and device filename tricks before signing a download", async () => {
+    const store = createObjectStore(baseEnv);
+    for (const fileName of [
+      "report.txt\r\nX-Injected: yes",
+      "../report.txt",
+      "report\\copy.txt",
+      "report\u202Etxt.exe",
+      "CON.txt",
+      ".hidden.txt",
+    ]) {
+      expect(() => validateFileName(fileName)).toThrow(/file name/i);
+      await expect(
+        store.createDownload({
+          workspaceId: "workspace-a",
+          key: "evidence/file.txt",
+          fileName,
+        }),
+      ).rejects.toThrow(/file name/i);
+    }
+    expect(validateFileName("  report.txt  ")).toBe("report.txt");
   });
 
   it("rejects method, scope, expiry, size, type, and checksum tampering", async () => {
