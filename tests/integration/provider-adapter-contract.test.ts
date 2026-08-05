@@ -14,7 +14,11 @@ import {
   UpstashRedisStore,
   type RedisStore,
 } from "@/lib/redis";
-import { s3ClientConfig, S3ObjectStore } from "@/lib/storage/s3";
+import {
+  s3ClientConfig,
+  S3ObjectStore,
+  type ObjectStoreProvider,
+} from "@/lib/storage/s3";
 
 /**
  * The production Redis boundary is intentionally exercised with both client
@@ -147,13 +151,18 @@ const storageSecretAccessKey = process.env.TEST_STORAGE_SECRET_ACCESS_KEY;
 const runStorage = Boolean(
   storageEndpoint && storageAccessKeyId && storageSecretAccessKey,
 );
+const configuredStorageProvider = process.env.TEST_STORAGE_PROVIDER;
+const storageProvider: ObjectStoreProvider =
+  configuredStorageProvider === "r2" || configuredStorageProvider === "s3"
+    ? configuredStorageProvider
+    : "minio";
 
 describe.runIf(runStorage)("S3-compatible provider adapter contract", () => {
   const bucket = process.env.TEST_STORAGE_BUCKET ?? "humans-provider-contract";
   const client = new S3Client({
     ...s3ClientConfig({
       endpoint: storageEndpoint!,
-      provider: process.env.TEST_STORAGE_PROVIDER === "s3" ? "s3" : "minio",
+      provider: storageProvider,
     }),
     region: process.env.TEST_STORAGE_REGION ?? "us-east-1",
     credentials: {
