@@ -145,7 +145,8 @@ provider, or remaining whole-product requirements.
 contract. It checks UUIDv7 generation and ordering, representative
 workspace-leading composite references across people, facts, locations, files,
 and relationships, and UTC actor/version/soft-delete schema metadata. When
-`TEST_DATABASE_URL` is supplied, it resets the disposable PostgreSQL database
+`TEST_DATABASE_URL` and `ALLOW_TEST_DATABASE_RESET=true` are supplied for an
+eligible disposable PostgreSQL database, it resets that database
 and additionally proves a cross-workspace relationship reference is rejected,
 representative metadata columns are `timestamptz`, a stale person update returns
 no row, and an archived file is hidden from current repository reads. It does

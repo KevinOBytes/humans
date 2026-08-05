@@ -78,6 +78,34 @@ describe("HUM-NFR-003 representative source conventions", () => {
     });
   });
 
+  it("declares workspace-leading identity uniqueness, no database ID defaults, and organization-scoped workspace binding", () => {
+    for (const [table, uniqueName] of [
+      [schema.people, "people_workspace_id_unique"],
+      [schema.facts, "facts_workspace_id_unique"],
+      [schema.places, "places_workspace_id_unique"],
+      [schema.files, "files_workspace_id_unique"],
+      [schema.relationships, "relationships_workspace_id_unique"],
+    ] as const) {
+      const unique = getTableConfig(table).uniqueConstraints.find(
+        (constraint) => constraint.name === uniqueName,
+      );
+      expect(unique?.columns.map((column) => column.name)).toEqual([
+        "workspace_id",
+        "id",
+      ]);
+      expect(
+        (table as unknown as { id: { default?: unknown } }).id.default,
+      ).toBeUndefined();
+    }
+    expect(
+      foreignKey(schema.apiKeys, "api_keys_workspace_organization_fk"),
+    ).toEqual({
+      columns: ["workspace_id", "reference_id"],
+      foreignColumns: ["id", "organization_id"],
+      foreignTable: "workspaces",
+    });
+  });
+
   it("declares UTC metadata, actors, versions, and soft deletion on representative mutable records", () => {
     for (const table of [
       schema.people,
@@ -103,6 +131,12 @@ describe("HUM-NFR-003 representative source conventions", () => {
       expect(columns.deletedAt.withTimezone).toBe(true);
       expect(columns.createdBy.notNull).toBe(true);
       expect(columns.updatedBy.notNull).toBe(true);
+      expect(
+        getTableConfig(table).checks.some(
+          (constraint) =>
+            constraint.name === `${getTableName(table)}_version_check`,
+        ),
+      ).toBe(true);
     }
   });
 });
@@ -129,6 +163,7 @@ liveDescribe("HUM-NFR-003 representative PostgreSQL conventions", () => {
   const personB = newId();
   const fileA = newId();
   const relationshipTypeA = newId();
+  const memberA = `member-${newId()}`;
 
   beforeAll(async () => {
     await resetTestDatabase(connection!);
@@ -150,8 +185,16 @@ liveDescribe("HUM-NFR-003 representative PostgreSQL conventions", () => {
       `;
     }
     await connection!`
-      INSERT INTO workspace_principals (id, workspace_id, principal_type, user_id)
-      VALUES (${newId()}, ${workspaceA}, 'user', ${userId})
+      INSERT INTO members (
+        id, organization_id, user_id, role, created_at, workspace_id
+      ) VALUES (
+        ${memberA}, ${organizationA}, ${userId}, 'owner', now(), ${workspaceA}
+      )
+    `;
+    await connection!`
+      INSERT INTO workspace_principals (
+        id, workspace_id, principal_type, user_id, member_id_snapshot
+      ) VALUES (${newId()}, ${workspaceA}, 'user', ${userId}, ${memberA})
     `;
     await connection!`
       INSERT INTO people (id, workspace_id, display_name, created_by, updated_by)
@@ -213,6 +256,13 @@ liveDescribe("HUM-NFR-003 representative PostgreSQL conventions", () => {
   });
 
   it("rejects stale optimistic writes and hides archived rows from current repositories", async () => {
+    await expect(
+      connection!`
+        UPDATE people SET version = 0
+        WHERE workspace_id = ${workspaceA} AND id = ${personA}
+      `,
+    ).rejects.toMatchObject({ code: "23514" });
+
     const updated = await peopleRepository!.updateIfVersion({
       workspaceId: workspaceA,
       id: personA,
