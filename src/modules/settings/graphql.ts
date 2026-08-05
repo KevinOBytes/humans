@@ -207,6 +207,7 @@ const UpdateWorkspaceDefaultsInput = builder.inputType(
   {
     fields: (t) => ({
       expectedVersion: t.int({ required: true }),
+      idempotencyKey: t.string(),
       locale: t.string(),
       timezone: t.string(),
       retentionDays: t.int(),

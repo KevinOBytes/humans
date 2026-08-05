@@ -397,6 +397,7 @@ export function createPolicyMutationService(input: {
   return {
     updateWorkspaceDefaults(inputValue: {
       expectedVersion: number;
+      idempotencyKey?: string | null;
       locale?: string | null;
       timezone?: string | null;
       retentionDays?: number | null;
@@ -405,66 +406,84 @@ export function createPolicyMutationService(input: {
       storageEnabled?: boolean | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const patch = {
-          ...(inputValue.locale == null
-            ? {}
-            : { locale: inputValue.locale.trim().slice(0, 64) }),
-          ...(inputValue.timezone == null
-            ? {}
-            : { timezone: inputValue.timezone.trim().slice(0, 64) }),
-          ...(inputValue.retentionDays === undefined
-            ? {}
-            : { retentionDays: inputValue.retentionDays }),
-          ...(inputValue.aiEnabled == null
-            ? {}
-            : { aiEnabled: inputValue.aiEnabled }),
-          ...(inputValue.retainRestrictedAiPrompts == null
-            ? {}
-            : {
-                retainRestrictedAiPrompts: inputValue.retainRestrictedAiPrompts,
-              }),
-          ...(inputValue.storageEnabled == null
-            ? {}
-            : { storageEnabled: inputValue.storageEnabled }),
-          version: sql`${workspaceSettings.version} + 1`,
-          updatedAt: new Date(),
-          updatedBy: actor.id,
-        };
-        const updated = await transaction
-          .update(workspaceSettings)
-          .set(patch)
-          .where(
-            and(
-              eq(workspaceSettings.workspaceId, input.workspaceId),
-              eq(workspaceSettings.version, inputValue.expectedVersion),
-            ),
-          )
-          .returning({
-            id: workspaceSettings.id,
-            version: workspaceSettings.version,
-          });
-        const row = updated[0];
-        if (!row)
-          return {
-            id: null,
-            version: null,
-            code: "CONFLICT",
-            requestId: input.requestId,
-          };
-        await audit(transaction, {
+        return idempotentMutation({
           actor,
-          action: "workspace.policy.update",
-          requestId: input.requestId,
-          resourceId: row.id,
-          resourceKind: "workspace_settings",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            aiEnabled: inputValue.aiEnabled,
+            expectedVersion: inputValue.expectedVersion,
+            locale: inputValue.locale,
+            retainRestrictedAiPrompts: inputValue.retainRestrictedAiPrompts,
+            retentionDays: inputValue.retentionDays,
+            storageEnabled: inputValue.storageEnabled,
+            timezone: inputValue.timezone,
+          },
+          operation: "workspace.defaults.update",
+          transaction,
+          run: async () => {
+            const patch = {
+              ...(inputValue.locale == null
+                ? {}
+                : { locale: inputValue.locale.trim().slice(0, 64) }),
+              ...(inputValue.timezone == null
+                ? {}
+                : { timezone: inputValue.timezone.trim().slice(0, 64) }),
+              ...(inputValue.retentionDays === undefined
+                ? {}
+                : { retentionDays: inputValue.retentionDays }),
+              ...(inputValue.aiEnabled == null
+                ? {}
+                : { aiEnabled: inputValue.aiEnabled }),
+              ...(inputValue.retainRestrictedAiPrompts == null
+                ? {}
+                : {
+                    retainRestrictedAiPrompts:
+                      inputValue.retainRestrictedAiPrompts,
+                  }),
+              ...(inputValue.storageEnabled == null
+                ? {}
+                : { storageEnabled: inputValue.storageEnabled }),
+              version: sql`${workspaceSettings.version} + 1`,
+              updatedAt: new Date(),
+              updatedBy: actor.id,
+            };
+            const updated = await transaction
+              .update(workspaceSettings)
+              .set(patch)
+              .where(
+                and(
+                  eq(workspaceSettings.workspaceId, input.workspaceId),
+                  eq(workspaceSettings.version, inputValue.expectedVersion),
+                ),
+              )
+              .returning({
+                id: workspaceSettings.id,
+                version: workspaceSettings.version,
+              });
+            const row = updated[0];
+            if (!row)
+              return {
+                id: null,
+                version: null,
+                code: "CONFLICT",
+                requestId: input.requestId,
+              };
+            await audit(transaction, {
+              actor,
+              action: "workspace.policy.update",
+              requestId: input.requestId,
+              resourceId: row.id,
+              resourceKind: "workspace_settings",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id: row.id,
+              version: row.version,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return {
-          id: row.id,
-          version: row.version,
-          code: "APPLIED",
-          requestId: input.requestId,
-        };
       });
     },
     createAccessPolicy(inputValue: {
