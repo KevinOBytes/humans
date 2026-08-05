@@ -42,11 +42,21 @@ const FileScanState = builder.enumType("FileScanState", {
     ERROR: { value: "error" },
   } as const,
 });
+const FileExtractionState = builder.enumType("FileExtractionState", {
+  values: {
+    PENDING: { value: "pending" },
+    PROCESSING: { value: "processing" },
+    COMPLETED: { value: "completed" },
+    NOT_REQUESTED: { value: "not_requested" },
+    ERROR: { value: "error" },
+    CANCELLED: { value: "cancelled" },
+  } as const,
+});
 const GrantMethod = builder.enumType("FileGrantMethod", {
   values: ["GET", "PUT"] as const,
 });
 const ExtractionRunState = builder.enumType("ExtractionRunState", {
-  values: ["PENDING", "PROCESSING", "COMPLETED", "ERROR"] as const,
+  values: ["PENDING", "PROCESSING", "COMPLETED", "ERROR", "CANCELLED"] as const,
 });
 type ExtractionRunRow = InferSelectModel<typeof extractionRuns>;
 const ExtractionRun = builder
@@ -61,7 +71,7 @@ const ExtractionRun = builder
         type: ExtractionRunState,
         resolve: (row) =>
           row.state.toUpperCase() as
-            "PENDING" | "PROCESSING" | "COMPLETED" | "ERROR",
+            "PENDING" | "PROCESSING" | "COMPLETED" | "ERROR" | "CANCELLED",
       }),
       structuredOutput: t.field({
         type: "JSON",
@@ -127,6 +137,17 @@ export const File = builder.objectRef<FileRow>("File").implement({
       resolve: (row) =>
         row.scanState as
           "pending" | "clean" | "not_required" | "infected" | "error",
+    }),
+    extractionState: t.field({
+      type: FileExtractionState,
+      resolve: (row) =>
+        row.extractionState as
+          | "pending"
+          | "processing"
+          | "completed"
+          | "not_requested"
+          | "error"
+          | "cancelled",
     }),
     sensitivity: t.field({
       type: Sensitivity,
@@ -442,6 +463,32 @@ export function registerFilesGraphQL(): void {
           configuration: args.configuration,
         });
         const runs = await context.services.extraction.list(args.fileId);
+        const run = runs.find((item) => item.id === queued.runId);
+        if (!run) throw new Error("Extraction run was not persisted");
+        return run;
+      },
+    }),
+    cancelExtraction: t.field({
+      type: ExtractionRun,
+      args: { runId: t.arg({ type: "UUID", required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "file", "update");
+        if (!context.services.extraction) {
+          throw new Error("Extraction storage is not configured");
+        }
+        return context.services.extraction.cancel(args.runId);
+      },
+    }),
+    retryExtraction: t.field({
+      type: ExtractionRun,
+      args: { runId: t.arg({ type: "UUID", required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "file", "update");
+        if (!context.services.extraction) {
+          throw new Error("Extraction storage is not configured");
+        }
+        const queued = await context.services.extraction.retry(args.runId);
+        const runs = await context.services.extraction.list(queued.fileId);
         const run = runs.find((item) => item.id === queued.runId);
         if (!run) throw new Error("Extraction run was not persisted");
         return run;
