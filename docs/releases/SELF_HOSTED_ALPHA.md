@@ -282,11 +282,16 @@ On 2026-08-05, the live PostgreSQL generated-GraphQL acceptance passed webhook
 create, secret rotation, test-event enqueue, and disable. Its deterministic
 outbound edge verifies the delivered body’s timestamped HMAC against the
 rotated secret, records a redacted HTTP 503 retry state, and verifies that a
-replayed completed delivery makes no second outbound call. It does not claim a
-live destination, DNS-rebinding defense, retry progression, upgrade migration,
-or external provider-failure matrix; `HUM-FR-024` remains incomplete.
+replayed completed delivery makes no second outbound call. A separate
+deterministic provider-502 fixture advances the same delivery from attempt one
+to a successful attempt two. It does not claim a live destination, complete
+DNS-rebinding defense, upgrade migration, or an external provider-failure
+matrix; `HUM-FR-024` remains incomplete.
 
-The same live suite now covers the webhook tenant boundary: a foreign webhook
+The same live suite now covers deterministic retry progression: a provider 502
+marks attempt one retryable, the same delivery succeeds on attempt two, and the
+terminal row clears `nextRetryAt` without an additional duplicate call. The
+suite also covers the webhook tenant boundary: a foreign webhook
 with an earlier URL sort key is absent before the owner list is ordered, a
 caller-controlled workspace header cannot substitute the active actor tenant,
 foreign rotate/disable/send attempts produce neutral outcomes without
