@@ -379,7 +379,7 @@ liveDescribe("research API", () => {
       workspaceId: owner.workspaceId,
       kind: "archive",
       title: "Restricted evidence source",
-      sensitivity: "restricted",
+      sensitivity: "internal",
       createdBy: owner.principalId,
       updatedBy: owner.principalId,
     });
@@ -400,6 +400,22 @@ liveDescribe("research API", () => {
       evidenceItemId: sourceOnlyEvidenceId,
       createdBy: owner.principalId,
     });
+    const sourceVisibleFiles = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(sourceVisibleFiles.body?.errors).toBeUndefined();
+    expect(
+      sourceVisibleFiles.body?.data?.person?.files.nodes.map((node) => node.id),
+    ).toContain(sourceOnlyFileId);
+    await fixture.database
+      .update(sources)
+      .set({ sensitivity: "restricted" })
+      .where(eq(sources.id, restrictedSourceId));
     const sourceDeniedFiles = await fixture.execute<{
       person: { files: { nodes: Array<{ id: string }> } } | null;
     }>({
@@ -411,6 +427,24 @@ liveDescribe("research API", () => {
     expect(sourceDeniedFiles.body?.errors).toBeUndefined();
     expect(
       sourceDeniedFiles.body?.data?.person?.files.nodes.map((node) => node.id),
+    ).not.toContain(sourceOnlyFileId);
+    await fixture.database
+      .update(sources)
+      .set({ deletedAt: new Date(), deletedBy: owner.principalId })
+      .where(eq(sources.id, restrictedSourceId));
+    const sourceArchivedFiles = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(sourceArchivedFiles.body?.errors).toBeUndefined();
+    expect(
+      sourceArchivedFiles.body?.data?.person?.files.nodes.map(
+        (node) => node.id,
+      ),
     ).not.toContain(sourceOnlyFileId);
 
     const pagedFileId = newId();

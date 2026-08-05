@@ -295,6 +295,7 @@ export function createPeopleRepository(database: Database) {
                   AND ${evidenceItems.fileId} = ${files.id}
                   AND ${facts.deletedAt} IS NULL
                   AND ${evidenceItems.deletedAt} IS NULL
+                  AND ${sources.deletedAt} IS NULL
                   AND ${input.factVisibility}
                   AND ${input.evidenceVisibility}
                   AND ${input.sourceVisibility}
@@ -312,6 +313,7 @@ export function createPeopleRepository(database: Database) {
                   AND ${evidenceItems.fileId} = ${files.id}
                   AND ${relationships.deletedAt} IS NULL
                   AND ${evidenceItems.deletedAt} IS NULL
+                  AND ${sources.deletedAt} IS NULL
                   AND ${input.relationshipVisibility}
                   AND ${input.evidenceVisibility}
                   AND ${input.sourceVisibility}
@@ -329,6 +331,8 @@ export function createPeopleRepository(database: Database) {
                   AND ${evidenceItems.fileId} = ${files.id}
                   AND ${personContactPoints.deletedAt} IS NULL
                   AND ${evidenceItems.deletedAt} IS NULL
+                  AND ${contactPoints.deletedAt} IS NULL
+                  AND ${sources.deletedAt} IS NULL
                   AND ${input.contactVisibility}
                   AND ${input.contactResourceVisibility}
                   AND ${input.evidenceVisibility}
@@ -347,6 +351,8 @@ export function createPeopleRepository(database: Database) {
                   AND ${evidenceItems.fileId} = ${files.id}
                   AND ${personAddresses.deletedAt} IS NULL
                   AND ${evidenceItems.deletedAt} IS NULL
+                  AND ${addresses.deletedAt} IS NULL
+                  AND ${sources.deletedAt} IS NULL
                   AND ${input.addressVisibility}
                   AND ${input.addressResourceVisibility}
                   AND ${input.evidenceVisibility}
@@ -418,6 +424,7 @@ export function createPeopleRepository(database: Database) {
             and(
               eq(sources.workspaceId, input.workspaceId),
               eq(sources.id, evidenceItems.sourceId),
+              isNull(sources.deletedAt),
               input.sourceVisibility,
             ),
           )
@@ -457,6 +464,7 @@ export function createPeopleRepository(database: Database) {
             and(
               eq(sources.workspaceId, input.workspaceId),
               eq(sources.id, evidenceItems.sourceId),
+              isNull(sources.deletedAt),
               input.sourceVisibility,
             ),
           )
@@ -474,6 +482,7 @@ export function createPeopleRepository(database: Database) {
             and(
               eq(contactPoints.workspaceId, input.workspaceId),
               eq(contactPoints.id, personContactPoints.contactPointId),
+              isNull(contactPoints.deletedAt),
               input.contactResourceVisibility,
             ),
           )
@@ -490,6 +499,7 @@ export function createPeopleRepository(database: Database) {
             and(
               eq(sources.workspaceId, input.workspaceId),
               eq(sources.id, evidenceItems.sourceId),
+              isNull(sources.deletedAt),
               input.sourceVisibility,
             ),
           )
@@ -511,6 +521,7 @@ export function createPeopleRepository(database: Database) {
             and(
               eq(addresses.workspaceId, input.workspaceId),
               eq(addresses.id, personAddresses.addressId),
+              isNull(addresses.deletedAt),
               input.addressResourceVisibility,
             ),
           )
@@ -527,6 +538,7 @@ export function createPeopleRepository(database: Database) {
             and(
               eq(sources.workspaceId, input.workspaceId),
               eq(sources.id, evidenceItems.sourceId),
+              isNull(sources.deletedAt),
               input.sourceVisibility,
             ),
           )
