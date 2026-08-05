@@ -24,6 +24,18 @@ const ROLE = /^(owner|admin|analyst|contributor|viewer)$/u;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
+function normalizePolicyName(value: string): string {
+  const name = value.normalize("NFKC").trim();
+  if (
+    name.length < 1 ||
+    name.length > 120 ||
+    Buffer.byteLength(name, "utf8") > 512
+  ) {
+    throw createGraphQLError("VALIDATION_FAILED", "Policy name is invalid.");
+  }
+  return name;
+}
+
 export type PolicyMutationResult = {
   id: string | null;
   version: number | null;
@@ -242,12 +254,7 @@ export function createPolicyMutationService(input: {
       state: "draft" | "active" | "disabled" | "archived";
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const name = inputValue.name.normalize("NFKC").trim();
-        if (name.length < 1 || name.length > 120)
-          throw createGraphQLError(
-            "VALIDATION_FAILED",
-            "Policy name is invalid.",
-          );
+        const name = normalizePolicyName(inputValue.name);
         const id = newId();
         await transaction.insert(accessPolicies).values({
           id,
@@ -288,7 +295,7 @@ export function createPolicyMutationService(input: {
             ...(inputValue.name == null
               ? {}
               : {
-                  name: inputValue.name.normalize("NFKC").trim().slice(0, 120),
+                  name: normalizePolicyName(inputValue.name),
                 }),
             ...(inputValue.sensitivityCeiling == null
               ? {}

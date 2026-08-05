@@ -126,6 +126,7 @@
   "sha256:00c53359642ac3d7da563eb499f7b11f32b2ed00ff723010fe8ea425c493317a": "mutation RemoveWorkspaceMember($input: WorkspaceInvitationActionInput!) { removeWorkspaceMember(input: $input) { actionId code requestId } }",
   "sha256:c6547025ce6d40bfa4b66aba1352d2167d509df6d43418fcffadf0f8c59a2d19": "mutation UpdateWorkspaceDefaults($input: UpdateWorkspaceDefaultsInput!) { updateWorkspaceDefaults(input: $input) { code id requestId version } }",
   "sha256:a7da95a8514b509667510012164817943feee9fc3b3991f84e667516da1fdb8e": "mutation CreateAccessPolicy($input: AccessPolicyInput!) { createAccessPolicy(input: $input) { code id requestId version } }",
+  "sha256:a69d777360746491cb811e17391eec5e63b1fec7d21911ee52b2c2a34ff6faa5": "mutation UpdateAccessPolicy($input: UpdateAccessPolicyInput!) { updateAccessPolicy(input: $input) { code id requestId version } }",
   "sha256:29bbe5bb274dd13ec222343385d6808b147b8edf2f4e1968765eeed2b29e4475": "mutation CreateResourceGrant($input: CreateResourceGrantInput!) { createResourceGrant(input: $input) { code id requestId version } }",
   "sha256:dbaefd6c8a0b3f1ee65b841aca8a03d2c3f0d233731a4edb0179edafb7cb3c59": "mutation ArchiveResourceGrant($expectedVersion: Int!, $id: UUID!) { archiveResourceGrant(id: $id, expectedVersion: $expectedVersion) { code id requestId version } }",
   "sha256:914d3bbffa388283841e86303dd4dd44ffbedf27a18db54e4cc73c99daf3dc4d": "query Viewer { viewer { actorType id permissions role workspace { id name organizationId } } workspace { id name organizationId } }",
