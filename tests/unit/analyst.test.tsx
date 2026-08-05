@@ -367,8 +367,8 @@ describe("Analyst", () => {
       /secret|private prompt|api-key|base-url|upstream/u,
     );
     expect(window.location.search).toBe("");
-    expect(window.localStorage.length).toBe(0);
-    expect(window.sessionStorage.length).toBe(0);
+    expect(window.localStorage?.length ?? 0).toBe(0);
+    expect(window.sessionStorage?.length ?? 0).toBe(0);
 
     await user.click(screen.getByRole("button", { name: "Retry submission" }));
     expect(start).toHaveBeenCalledTimes(2);

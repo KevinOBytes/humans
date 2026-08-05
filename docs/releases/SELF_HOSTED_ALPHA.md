@@ -120,3 +120,14 @@ GitHub Actions remains the release evidence for the PostgreSQL integration,
 Compose lifecycle, dependency, secret, image and security jobs. A source-only
 checkout or this document by itself is not proof that those jobs passed for a
 particular release commit.
+
+## Latest local runtime evidence
+
+On 2026-08-04, the isolated `pnpm test:compose:lifecycle` run built the
+production image and passed the health-gated PostgreSQL, authenticated Redis,
+private MinIO, migration, application, and continuous-worker stack. The run
+also exercised the GraphQL research and file-upload paths, PostgreSQL/object
+storage/Redis restart recovery, SHA-256 backup restore, active-job shutdown
+fencing, and diagnostic secret/private-data leakage checks. This is local
+self-hosted evidence only; it does not close the hosted Vercel, external
+provider, optional Ollama-model, or remaining whole-product requirements.

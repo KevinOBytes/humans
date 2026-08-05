@@ -3,7 +3,7 @@
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 
-import { proxy } from "@/proxy";
+import { routeProxy as proxy } from "@/route-proxy";
 
 describe("password reset token rendering boundary", () => {
   it("moves the action token to a client-only fragment before rendering", async () => {

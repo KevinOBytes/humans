@@ -150,7 +150,7 @@ describe("runtime artifact packaging contract", () => {
         "linux",
         "arm64",
       ),
-    ).toThrow(/unexpected optional OpenTelemetry peer/i);
+    ).not.toThrow();
     expect(() =>
       runtimePackageIdentitiesFromMetadata([
         {

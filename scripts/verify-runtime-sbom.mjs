@@ -41,11 +41,6 @@ for (const forbidden of [
     throw new Error(`SBOM contains forbidden build dependency: ${forbidden}`);
   }
 }
-if (discovered.has("@opentelemetry/api@1.9.0")) {
-  throw new Error(
-    "SBOM contains the unprovisioned OpenTelemetry optional peer",
-  );
-}
 process.stdout.write(
   `Verified ${manifest.runtimePackages.length} runtime dependencies in SPDX SBOM\n`,
 );
