@@ -16,7 +16,25 @@ import {
   type ValidationIssue,
 } from "@/modules/facts/validation";
 import { newId } from "@/db/id";
-import { people } from "@/db/schema/people";
+import { files } from "@/db/schema/files";
+import { facts, personFieldSelections } from "@/db/schema/facts";
+import {
+  notes,
+  personAddresses,
+  personContactPoints,
+} from "@/db/schema/evidence";
+import { consentRecords } from "@/db/schema/privacy";
+import { relationships } from "@/db/schema/relationships";
+import {
+  externalRecords,
+  identityCandidates,
+  mergeDecisions,
+  people,
+  personEvents,
+  personIdentifiers,
+  personNames,
+} from "@/db/schema/people";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { createPeopleRepository, type PersonRow } from "./repository";
 
@@ -608,6 +626,907 @@ export function createPeopleService(context: ResearchServiceContext) {
           currentVersion: current.version,
         };
       return { resource: archived, issues: [], code: null };
+    },
+    async merge(input: {
+      winnerPersonId: string;
+      loserPersonId: string;
+      reason: string;
+    }): Promise<MutationOutcome<PersonRow>> {
+      if (!context.permissions.has("person:merge")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Person merging is not permitted.",
+        );
+      }
+      if (
+        input.winnerPersonId === input.loserPersonId ||
+        input.reason.trim().length < 1
+      ) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "A distinct winner, loser, and reason are required.",
+        );
+      }
+      const merged = await writeTransaction(context, async (transaction) => {
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 19017))`,
+        );
+        const rows = await transaction
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.winnerPersonId),
+              isNull(people.deletedAt),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        const loserRows = await transaction
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.loserPersonId),
+              isNull(people.deletedAt),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        const winner = rows[0];
+        const loser = loserRows[0];
+        if (
+          !winner ||
+          !loser ||
+          winner.status === "merged" ||
+          loser.status === "merged"
+        ) {
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The people selected for merge were not found.",
+          );
+        }
+        const mergeRowLimit = 10_001;
+        const relationshipRows = await transaction
+          .select({
+            id: relationships.id,
+            sourcePersonId: relationships.sourcePersonId,
+            targetPersonId: relationships.targetPersonId,
+          })
+          .from(relationships)
+          .where(
+            and(
+              eq(relationships.workspaceId, context.workspaceId),
+              isNull(relationships.deletedAt),
+              or(
+                eq(relationships.sourcePersonId, loser.id),
+                eq(relationships.targetPersonId, loser.id),
+              ),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const factRows = await transaction
+          .select({ id: facts.id })
+          .from(facts)
+          .where(
+            and(
+              eq(facts.workspaceId, context.workspaceId),
+              eq(facts.personId, loser.id),
+              isNull(facts.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const selectedFacts = await transaction
+          .select({ factId: personFieldSelections.factId })
+          .from(personFieldSelections)
+          .where(
+            and(
+              eq(personFieldSelections.workspaceId, context.workspaceId),
+              eq(personFieldSelections.personId, loser.id),
+              isNull(personFieldSelections.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const referencedFactRows = await transaction
+          .select({ id: facts.id })
+          .from(facts)
+          .where(
+            and(
+              eq(facts.workspaceId, context.workspaceId),
+              eq(facts.referencedPersonId, loser.id),
+              isNull(facts.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const nameRows = await transaction
+          .select({ id: personNames.id })
+          .from(personNames)
+          .where(
+            and(
+              eq(personNames.workspaceId, context.workspaceId),
+              eq(personNames.personId, loser.id),
+              isNull(personNames.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const identifierRows = await transaction
+          .select({ id: personIdentifiers.id })
+          .from(personIdentifiers)
+          .where(
+            and(
+              eq(personIdentifiers.workspaceId, context.workspaceId),
+              eq(personIdentifiers.personId, loser.id),
+              isNull(personIdentifiers.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const eventRows = await transaction
+          .select({ id: personEvents.id })
+          .from(personEvents)
+          .where(
+            and(
+              eq(personEvents.workspaceId, context.workspaceId),
+              eq(personEvents.personId, loser.id),
+              isNull(personEvents.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const externalRows = await transaction
+          .select({ id: externalRecords.id })
+          .from(externalRecords)
+          .where(
+            and(
+              eq(externalRecords.workspaceId, context.workspaceId),
+              eq(externalRecords.personId, loser.id),
+              isNull(externalRecords.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const noteRows = await transaction
+          .select({ id: notes.id })
+          .from(notes)
+          .where(
+            and(
+              eq(notes.workspaceId, context.workspaceId),
+              eq(notes.personId, loser.id),
+              isNull(notes.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const consentRows = await transaction
+          .select({ id: consentRecords.id })
+          .from(consentRecords)
+          .where(
+            and(
+              eq(consentRecords.workspaceId, context.workspaceId),
+              eq(consentRecords.personId, loser.id),
+              isNull(consentRecords.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const contactRows = await transaction
+          .select({
+            id: personContactPoints.id,
+            isPrimary: personContactPoints.isPrimary,
+            usageKind: personContactPoints.usageKind,
+            validUntil: personContactPoints.validUntil,
+          })
+          .from(personContactPoints)
+          .where(
+            and(
+              eq(personContactPoints.workspaceId, context.workspaceId),
+              eq(personContactPoints.personId, loser.id),
+              isNull(personContactPoints.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const addressRows = await transaction
+          .select({
+            id: personAddresses.id,
+            isPrimary: personAddresses.isPrimary,
+            addressKind: personAddresses.addressKind,
+            validUntil: personAddresses.validUntil,
+          })
+          .from(personAddresses)
+          .where(
+            and(
+              eq(personAddresses.workspaceId, context.workspaceId),
+              eq(personAddresses.personId, loser.id),
+              isNull(personAddresses.deletedAt),
+            ),
+          )
+          .limit(mergeRowLimit);
+        const oversized = [
+          relationshipRows,
+          factRows,
+          referencedFactRows,
+          nameRows,
+          identifierRows,
+          eventRows,
+          externalRows,
+          noteRows,
+          consentRows,
+          contactRows,
+          addressRows,
+        ].some((rows) => rows.length >= mergeRowLimit);
+        if (oversized) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The selected person has too many dependent records for one reversible merge; archive or merge in smaller steps.",
+          );
+        }
+        const selectedFactIds = new Set(selectedFacts.map((row) => row.factId));
+        const movableFactIds = factRows
+          .map((row) => row.id)
+          .filter((id) => !selectedFactIds.has(id));
+        // The composite person/name foreign key requires clearing the loser
+        // presentation pointer before its names are moved.
+        if (loser.primaryNameId) {
+          await transaction
+            .update(people)
+            .set({ primaryNameId: null })
+            .where(
+              and(
+                eq(people.workspaceId, context.workspaceId),
+                eq(people.id, loser.id),
+              ),
+            );
+        }
+        if (relationshipRows.length) {
+          await transaction
+            .update(relationships)
+            .set({
+              sourcePersonId: sql`case when ${relationships.sourcePersonId} = ${loser.id} then ${winner.id} else ${relationships.sourcePersonId} end`,
+              targetPersonId: sql`case when ${relationships.targetPersonId} = ${loser.id} then ${winner.id} else ${relationships.targetPersonId} end`,
+            })
+            .where(
+              and(
+                eq(relationships.workspaceId, context.workspaceId),
+                inArray(
+                  relationships.id,
+                  relationshipRows.map((row) => row.id),
+                ),
+              ),
+            );
+        }
+        if (movableFactIds.length) {
+          await transaction
+            .update(facts)
+            .set({ personId: winner.id })
+            .where(
+              and(
+                eq(facts.workspaceId, context.workspaceId),
+                inArray(facts.id, movableFactIds),
+              ),
+            );
+        }
+        if (referencedFactRows.length) {
+          await transaction
+            .update(facts)
+            .set({ referencedPersonId: winner.id })
+            .where(
+              and(
+                eq(facts.workspaceId, context.workspaceId),
+                inArray(
+                  facts.id,
+                  referencedFactRows.map((row) => row.id),
+                ),
+              ),
+            );
+        }
+        const winnerContactPrimaries = await transaction
+          .select({ usageKind: personContactPoints.usageKind })
+          .from(personContactPoints)
+          .where(
+            and(
+              eq(personContactPoints.workspaceId, context.workspaceId),
+              eq(personContactPoints.personId, winner.id),
+              eq(personContactPoints.isPrimary, true),
+              isNull(personContactPoints.validUntil),
+              isNull(personContactPoints.deletedAt),
+            ),
+          );
+        const winnerContactPrimaryKinds = new Set(
+          winnerContactPrimaries.map((row) => row.usageKind),
+        );
+        const demoteContactIds = contactRows
+          .filter(
+            (row) =>
+              row.isPrimary &&
+              row.validUntil === null &&
+              winnerContactPrimaryKinds.has(row.usageKind),
+          )
+          .map((row) => row.id);
+        if (demoteContactIds.length) {
+          await transaction
+            .update(personContactPoints)
+            .set({ isPrimary: false })
+            .where(
+              and(
+                eq(personContactPoints.workspaceId, context.workspaceId),
+                inArray(personContactPoints.id, demoteContactIds),
+              ),
+            );
+        }
+        const winnerAddressPrimaries = await transaction
+          .select({ addressKind: personAddresses.addressKind })
+          .from(personAddresses)
+          .where(
+            and(
+              eq(personAddresses.workspaceId, context.workspaceId),
+              eq(personAddresses.personId, winner.id),
+              eq(personAddresses.isPrimary, true),
+              isNull(personAddresses.validUntil),
+              isNull(personAddresses.deletedAt),
+            ),
+          );
+        const winnerAddressPrimaryKinds = new Set(
+          winnerAddressPrimaries.map((row) => row.addressKind),
+        );
+        const demoteAddressIds = addressRows
+          .filter(
+            (row) =>
+              row.isPrimary &&
+              row.validUntil === null &&
+              winnerAddressPrimaryKinds.has(row.addressKind),
+          )
+          .map((row) => row.id);
+        if (demoteAddressIds.length) {
+          await transaction
+            .update(personAddresses)
+            .set({ isPrimary: false })
+            .where(
+              and(
+                eq(personAddresses.workspaceId, context.workspaceId),
+                inArray(personAddresses.id, demoteAddressIds),
+              ),
+            );
+        }
+        if (contactRows.length) {
+          await transaction
+            .update(personContactPoints)
+            .set({ personId: winner.id })
+            .where(
+              and(
+                eq(personContactPoints.workspaceId, context.workspaceId),
+                inArray(
+                  personContactPoints.id,
+                  contactRows.map((row) => row.id),
+                ),
+              ),
+            );
+        }
+        if (addressRows.length) {
+          await transaction
+            .update(personAddresses)
+            .set({ personId: winner.id })
+            .where(
+              and(
+                eq(personAddresses.workspaceId, context.workspaceId),
+                inArray(
+                  personAddresses.id,
+                  addressRows.map((row) => row.id),
+                ),
+              ),
+            );
+        }
+        const dependentUpdates = [
+          [personNames, nameRows.map((row) => row.id)],
+          [personIdentifiers, identifierRows.map((row) => row.id)],
+          [personEvents, eventRows.map((row) => row.id)],
+          [externalRecords, externalRows.map((row) => row.id)],
+          [notes, noteRows.map((row) => row.id)],
+          [consentRecords, consentRows.map((row) => row.id)],
+        ] as const;
+        for (const [table, ids] of dependentUpdates) {
+          if (!ids.length) continue;
+          await transaction
+            .update(table)
+            .set({ personId: winner.id })
+            .where(
+              and(
+                eq(table.workspaceId, context.workspaceId),
+                inArray(table.id, ids),
+              ),
+            );
+        }
+        const decisionId = newId();
+        await transaction.insert(mergeDecisions).values({
+          id: decisionId,
+          workspaceId: context.workspaceId,
+          winnerPersonId: winner.id,
+          loserPersonId: loser.id,
+          reason: input.reason.trim().slice(0, 2048),
+          fieldChoices: {
+            selectedFactIds: [...selectedFactIds],
+            preservedLoserFactIds: factRows
+              .map((row) => row.id)
+              .filter((id) => selectedFactIds.has(id)),
+          },
+          reversibleSnapshot: {
+            loser: {
+              status: loser.status,
+              mergedIntoPersonId: loser.mergedIntoPersonId,
+              version: loser.version,
+              primaryNameId: loser.primaryNameId,
+            },
+            relationships: relationshipRows,
+            facts: movableFactIds,
+            referencedFacts: referencedFactRows.map((row) => row.id),
+            personNames: nameRows.map((row) => row.id),
+            personIdentifiers: identifierRows.map((row) => row.id),
+            personEvents: eventRows.map((row) => row.id),
+            externalRecords: externalRows.map((row) => row.id),
+            notes: noteRows.map((row) => row.id),
+            consentRecords: consentRows.map((row) => row.id),
+            contactPoints: contactRows.map((row) => ({
+              id: row.id,
+              isPrimary: row.isPrimary,
+            })),
+            addresses: addressRows.map((row) => ({
+              id: row.id,
+              isPrimary: row.isPrimary,
+            })),
+          },
+          decidedBy: context.actor.principalId,
+          createdBy: context.actor.principalId,
+          updatedBy: context.actor.principalId,
+        });
+        const [updated] = await transaction
+          .update(people)
+          .set({
+            status: "merged",
+            mergedIntoPersonId: winner.id,
+            version: sql`${people.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+            primaryNameId: null,
+          })
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, loser.id),
+              eq(people.version, loser.version),
+            ),
+          )
+          .returning();
+        if (!updated) return null;
+        await audit.write(transaction as unknown as typeof context.database, {
+          action: "person.merge",
+          resourceKind: "person",
+          resourceId: winner.id,
+          sensitivity: winner.sensitivity,
+          changedFields: ["mergedIntoPersonId", "status", "dependentRecords"],
+          metadata: { loserPersonId: loser.id, mergeDecisionId: decisionId },
+        });
+        await applySearchIndexMaintenance(context, transaction, [
+          {
+            action: "upsert",
+            sourceId: winner.id,
+            sourceKind: "person",
+            sourceVersion: winner.version,
+            workspaceId: context.workspaceId,
+          },
+          {
+            action: "remove",
+            sourceId: loser.id,
+            sourceKind: "person",
+            sourceVersion: updated.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return winner;
+      });
+      if (!merged) return { resource: null, issues: [], code: "CONFLICT" };
+      return { resource: merged, issues: [], code: null };
+    },
+    async unmerge(input: {
+      loserPersonId: string;
+      expectedVersion: number;
+    }): Promise<MutationOutcome<PersonRow>> {
+      if (!context.permissions.has("person:merge")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Person merging is not permitted.",
+        );
+      }
+      const restored = await writeTransaction(context, async (transaction) => {
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 19017))`,
+        );
+        const [loser] = await transaction
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.loserPersonId),
+              eq(people.status, "merged"),
+              eq(people.version, input.expectedVersion),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!loser) return null;
+        const [decision] = await transaction
+          .select()
+          .from(mergeDecisions)
+          .where(
+            and(
+              eq(mergeDecisions.workspaceId, context.workspaceId),
+              eq(mergeDecisions.loserPersonId, loser.id),
+              isNull(mergeDecisions.deletedAt),
+            ),
+          )
+          .orderBy(sql`${mergeDecisions.decidedAt} desc`)
+          .limit(1)
+          .for("update");
+        if (!decision) return null;
+        const snapshot = decision.reversibleSnapshot as {
+          loser?: {
+            status?: string;
+            version?: number;
+            primaryNameId?: string | null;
+          };
+          relationships?: readonly {
+            id: string;
+            sourcePersonId: string;
+            targetPersonId: string;
+          }[];
+          facts?: readonly string[];
+          referencedFacts?: readonly string[];
+          personNames?: readonly string[];
+          personIdentifiers?: readonly string[];
+          personEvents?: readonly string[];
+          externalRecords?: readonly string[];
+          notes?: readonly string[];
+          consentRecords?: readonly string[];
+          contactPoints?: readonly { id: string; isPrimary: boolean }[];
+          addresses?: readonly { id: string; isPrimary: boolean }[];
+        };
+        const status =
+          snapshot.loser?.status &&
+          ["active", "deceased", "missing", "unknown", "archived"].includes(
+            snapshot.loser.status,
+          )
+            ? snapshot.loser.status
+            : "unknown";
+        const relationshipsToRestore = snapshot.relationships ?? [];
+        for (const relationship of relationshipsToRestore) {
+          await transaction
+            .update(relationships)
+            .set({
+              sourcePersonId: relationship.sourcePersonId,
+              targetPersonId: relationship.targetPersonId,
+            })
+            .where(
+              and(
+                eq(relationships.workspaceId, context.workspaceId),
+                eq(relationships.id, relationship.id),
+              ),
+            );
+        }
+        if (snapshot.facts?.length) {
+          await transaction
+            .update(facts)
+            .set({ personId: loser.id })
+            .where(
+              and(
+                eq(facts.workspaceId, context.workspaceId),
+                inArray(facts.id, [...snapshot.facts]),
+              ),
+            );
+        }
+        if (snapshot.referencedFacts?.length) {
+          await transaction
+            .update(facts)
+            .set({ referencedPersonId: loser.id })
+            .where(
+              and(
+                eq(facts.workspaceId, context.workspaceId),
+                inArray(facts.id, [...snapshot.referencedFacts]),
+              ),
+            );
+        }
+        const dependentRestores = [
+          [personNames, snapshot.personNames],
+          [personIdentifiers, snapshot.personIdentifiers],
+          [personEvents, snapshot.personEvents],
+          [externalRecords, snapshot.externalRecords],
+          [notes, snapshot.notes],
+          [consentRecords, snapshot.consentRecords],
+        ] as const;
+        for (const [table, ids] of dependentRestores) {
+          if (!ids?.length) continue;
+          await transaction
+            .update(table)
+            .set({ personId: loser.id })
+            .where(
+              and(
+                eq(table.workspaceId, context.workspaceId),
+                inArray(table.id, [...ids]),
+              ),
+            );
+        }
+        if (snapshot.contactPoints?.length) {
+          await transaction
+            .update(personContactPoints)
+            .set({ personId: loser.id })
+            .where(
+              and(
+                eq(personContactPoints.workspaceId, context.workspaceId),
+                inArray(
+                  personContactPoints.id,
+                  snapshot.contactPoints.map((row) => row.id),
+                ),
+              ),
+            );
+          for (const row of snapshot.contactPoints) {
+            await transaction
+              .update(personContactPoints)
+              .set({ isPrimary: row.isPrimary })
+              .where(
+                and(
+                  eq(personContactPoints.workspaceId, context.workspaceId),
+                  eq(personContactPoints.id, row.id),
+                ),
+              );
+          }
+        }
+        if (snapshot.addresses?.length) {
+          await transaction
+            .update(personAddresses)
+            .set({ personId: loser.id })
+            .where(
+              and(
+                eq(personAddresses.workspaceId, context.workspaceId),
+                inArray(
+                  personAddresses.id,
+                  snapshot.addresses.map((row) => row.id),
+                ),
+              ),
+            );
+          for (const row of snapshot.addresses) {
+            await transaction
+              .update(personAddresses)
+              .set({ isPrimary: row.isPrimary })
+              .where(
+                and(
+                  eq(personAddresses.workspaceId, context.workspaceId),
+                  eq(personAddresses.id, row.id),
+                ),
+              );
+          }
+        }
+        const [updated] = await transaction
+          .update(people)
+          .set({
+            status: status as PersonRow["status"],
+            mergedIntoPersonId: null,
+            primaryNameId: snapshot.loser?.primaryNameId ?? null,
+            version: sql`${people.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          })
+          .where(
+            and(
+              eq(people.id, loser.id),
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.version, loser.version),
+            ),
+          )
+          .returning();
+        if (!updated) return null;
+        await transaction
+          .update(mergeDecisions)
+          .set({
+            deletedAt: new Date(),
+            deletedBy: context.actor.principalId,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+            version: sql`${mergeDecisions.version} + 1`,
+          })
+          .where(eq(mergeDecisions.id, decision.id));
+        await audit.write(transaction as unknown as typeof context.database, {
+          action: "person.unmerge",
+          resourceKind: "person",
+          resourceId: loser.id,
+          sensitivity: loser.sensitivity,
+          changedFields: ["mergedIntoPersonId", "status"],
+          metadata: { mergeDecisionId: decision.id },
+        });
+        await applySearchIndexMaintenance(context, transaction, [
+          {
+            action: "upsert",
+            sourceId: loser.id,
+            sourceKind: "person",
+            sourceVersion: updated.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return updated;
+      });
+      if (!restored) return { resource: null, issues: [], code: "CONFLICT" };
+      return { resource: restored, issues: [], code: null };
+    },
+    async selectPresentation(input: {
+      personId: string;
+      expectedVersion: number;
+      primaryNameId?: string | null;
+      primaryPhotoFileId?: string | null;
+    }): Promise<MutationOutcome<PersonRow>> {
+      if (!context.permissions.has("person:update")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Person presentation updates are not permitted.",
+        );
+      }
+      const result = await writeTransaction(context, async (transaction) => {
+        const [current] = await transaction
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.personId),
+              isNull(people.deletedAt),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!current) return null;
+        if (input.primaryNameId !== undefined && input.primaryNameId !== null) {
+          const [name] = await transaction
+            .select({ id: personNames.id })
+            .from(personNames)
+            .where(
+              and(
+                eq(personNames.workspaceId, context.workspaceId),
+                eq(personNames.personId, input.personId),
+                eq(personNames.id, input.primaryNameId),
+                isNull(personNames.deletedAt),
+              ),
+            )
+            .limit(1)
+            .for("share");
+          if (!name)
+            throw createGraphQLError(
+              "VALIDATION_FAILED",
+              "The selected primary name does not belong to this person.",
+            );
+        }
+        if (
+          input.primaryPhotoFileId !== undefined &&
+          input.primaryPhotoFileId !== null
+        ) {
+          const [photo] = await transaction
+            .select({ id: files.id })
+            .from(files)
+            .where(
+              and(
+                eq(files.workspaceId, context.workspaceId),
+                eq(files.id, input.primaryPhotoFileId),
+                eq(files.quarantineState, "available"),
+                isNull(files.deletedAt),
+              ),
+            )
+            .limit(1)
+            .for("share");
+          if (!photo)
+            throw createGraphQLError(
+              "VALIDATION_FAILED",
+              "The selected primary photo is not available.",
+            );
+        }
+        const [updated] = await transaction
+          .update(people)
+          .set({
+            ...(input.primaryNameId === undefined
+              ? {}
+              : { primaryNameId: input.primaryNameId }),
+            ...(input.primaryPhotoFileId === undefined
+              ? {}
+              : { primaryPhotoFileId: input.primaryPhotoFileId }),
+            version: sql`${people.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          })
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.personId),
+              eq(people.version, input.expectedVersion),
+              isNull(people.deletedAt),
+            ),
+          )
+          .returning();
+        if (!updated) return null;
+        await audit.write(transaction as unknown as typeof context.database, {
+          action: "person.presentation.select",
+          resourceKind: "person",
+          resourceId: updated.id,
+          sensitivity: updated.sensitivity,
+          changedFields: ["primaryNameId", "primaryPhotoFileId"],
+          metadata: { version: updated.version },
+        });
+        await applySearchIndexMaintenance(context, transaction, [
+          {
+            action: "upsert",
+            sourceId: updated.id,
+            sourceKind: "person",
+            sourceVersion: updated.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return updated;
+      });
+      if (!result) return { resource: null, issues: [], code: "CONFLICT" };
+      return { resource: result, issues: [], code: null };
+    },
+    async listIdentityCandidates(input: { limit?: number | null } = {}) {
+      if (!context.permissions.has("person:read")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Identity candidates are not permitted.",
+        );
+      }
+      return context.database
+        .select()
+        .from(identityCandidates)
+        .where(
+          and(
+            eq(identityCandidates.workspaceId, context.workspaceId),
+            isNull(identityCandidates.deletedAt),
+          ),
+        )
+        .orderBy(
+          sql`${identityCandidates.score} desc`,
+          sql`${identityCandidates.createdAt} asc`,
+        )
+        .limit(Math.min(100, Math.max(1, input.limit ?? 25)));
+    },
+    async reviewIdentityCandidate(input: {
+      id: string;
+      expectedVersion: number;
+      state: "pending" | "reviewing" | "accepted" | "rejected" | "cancelled";
+      reason?: string | null;
+    }) {
+      if (!context.permissions.has("person:merge")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Identity candidate review is not permitted.",
+        );
+      }
+      const [row] = await writeTransaction(context, async (transaction) =>
+        transaction
+          .update(identityCandidates)
+          .set({
+            state: input.state,
+            reviewedAt: new Date(),
+            reviewedBy: context.actor.principalId,
+            reviewReason: input.reason?.trim().slice(0, 2048) ?? null,
+            version: sql`${identityCandidates.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          })
+          .where(
+            and(
+              eq(identityCandidates.workspaceId, context.workspaceId),
+              eq(identityCandidates.id, input.id),
+              eq(identityCandidates.version, input.expectedVersion),
+              isNull(identityCandidates.deletedAt),
+            ),
+          )
+          .returning(),
+      );
+      if (!row)
+        throw createGraphQLError(
+          "CONFLICT",
+          "The identity candidate changed or no longer exists.",
+        );
+      return row;
     },
   };
 }

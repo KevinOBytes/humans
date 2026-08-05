@@ -117,4 +117,27 @@ describe("AI durable job protocol", () => {
       importExecute,
     );
   });
+
+  it("keeps extraction jobs closed, canonical, and registry-dispatched", () => {
+    const payload = {
+      kind: "extraction_execute" as const,
+      extractionRunId: runId,
+      fileId: "019cc7c4-6ed2-7e0a-aed8-e5d451c96bf4",
+    };
+    const extractionExecute = vi.fn(async () => undefined);
+    const registry = createJobRegistry({
+      aiExecute: vi.fn(async () => undefined),
+      fileCleanup: vi.fn(async () => undefined),
+      importExecute: vi.fn(async () => undefined),
+      extractionExecute,
+    });
+    expect(parseJobPayload(payload)).toEqual(payload);
+    expect(canonicalJobPayload(payload)).toBe(
+      `{"extractionRunId":"${runId}","fileId":"019cc7c4-6ed2-7e0a-aed8-e5d451c96bf4","kind":"extraction_execute"}`,
+    );
+    expect(registry.get(payload)).toBe(extractionExecute);
+    expect(() => parseJobPayload({ ...payload, extra: true })).toThrow(
+      "Invalid job payload",
+    );
+  });
 });

@@ -336,6 +336,14 @@ and observability failures cannot change product behavior.
 
 `DEPLOYMENT_MODE` discriminates `vercel` and `docker`, while application-level database, Redis, storage, email, auth, administrator, and AI variables stay consistent. Docker Compose includes `app`, `migrate`, `worker`, `postgres`, `redis`, `minio`, and `minio-init`; Ollama is an optional profile. The Docker worker runs continuously. Vercel uses managed equivalents and invokes the same bounded runtime through the `CRON_SECRET`-protected `/api/jobs/run` route. The committed five-minute schedule requires Vercel Pro or Enterprise; Hobby deployments must use a daily schedule under current Vercel limits.
 
+The durable executor also handles `extraction_execute` and `webhook_delivery`
+jobs. Extraction runs are workspace-scoped records linked to an uploaded file;
+the built-in text/JSON/CSV extractor reads through the object-store adapter,
+stores bounded structured output, and records redacted terminal errors. Webhook
+payloads and signing secrets are sealed at rest, deliveries use HMAC-SHA256
+headers, and retry state is persisted with the delivery row. Delivery resolves
+the destination immediately before sending and rejects private-address targets.
+
 Client-address trust is deployment-discriminated too. `none` trusts no
 forwarding header. GraphQL limiters deliberately share their `unknown` client
 bucket; authentication uses the target-bound fallback described above. `vercel`

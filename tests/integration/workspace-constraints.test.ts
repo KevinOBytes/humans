@@ -832,7 +832,7 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
 
   it("rejects cross-workspace operations references", async () => {
     await expectForeignKeyViolation(
-      db()`INSERT INTO webhook_deliveries (id, workspace_id, webhook_id, event_id, attempt, signature_algorithm) VALUES (${newId()}, ${workspaceA}, ${ids.webhookB}, ${newId()}, 1, 'hmac-sha256')`,
+      db()`INSERT INTO webhook_deliveries (id, workspace_id, webhook_id, event_id, encrypted_payload, payload_hash, attempt, signature_algorithm) VALUES (${newId()}, ${workspaceA}, ${ids.webhookB}, ${newId()}, 'sealed:test', ${"sha256:" + "0".repeat(64)}, 1, 'hmac-sha256')`,
     );
   });
 

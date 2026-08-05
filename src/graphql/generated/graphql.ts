@@ -8,6 +8,14 @@ export type Incremental<T> =
       [P in keyof T]?: P extends " $fragmentName" | "__typename" ? T[P] : never;
     };
 import type { DocumentTypeDecoration } from "@graphql-typed-document-node/core";
+export type AccessPolicyInput = {
+  name: string;
+  resourceKinds: Array<string>;
+  roleBindings: unknown;
+  sensitivityCeiling: Sensitivity;
+  state: PolicyState;
+};
+
 export type ActorKind = "API_KEY" | "LEGACY" | "SYSTEM" | "USER";
 
 export type AiAnalysisScopeInput = {
@@ -275,6 +283,16 @@ export type CreateRelationshipTypeInput = {
   state?: LifecycleState | null | undefined;
 };
 
+export type CreateResourceGrantInput = {
+  memberId?: string | null | undefined;
+  policyId: string;
+  resourceId: string;
+  resourceKind: string;
+  role?: WorkspaceAdministrationRole | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
+};
+
 export type CreateSavedQueryInput = {
   name: string;
   queryAst: unknown;
@@ -310,6 +328,14 @@ export type CreateUploadSessionInput = {
   purpose: UploadPurpose;
   sensitivity?: Sensitivity | null | undefined;
 };
+
+export type CreateWebhookInput = {
+  events: Array<string>;
+  url: string;
+};
+
+export type ExtractionRunState =
+  "COMPLETED" | "ERROR" | "PENDING" | "PROCESSING";
 
 export type FactCardinality = "MANY" | "ONE";
 
@@ -425,6 +451,9 @@ export type GraphViewLayoutSettingsInput = {
 
 export type GraphViewSharing = "PRIVATE" | "WORKSPACE";
 
+export type IdentityCandidateState =
+  "ACCEPTED" | "CANCELLED" | "PENDING" | "REJECTED" | "REVIEWING";
+
 export type ImportFormat = "CSV" | "JSON";
 
 export type ImportMode = "COMMIT" | "DRY_RUN";
@@ -462,6 +491,12 @@ export type LinkRelationshipEvidenceInput = {
   supportStrength?: number | null | undefined;
 };
 
+export type MergePersonInput = {
+  loserPersonId: string;
+  reason: string;
+  winnerPersonId: string;
+};
+
 export type NoteContentInput = {
   markdown?: string | null | undefined;
   plainText?: string | null | undefined;
@@ -484,6 +519,8 @@ export type PersonFilterInput = {
 
 export type PersonStatus =
   "ACTIVE" | "ARCHIVED" | "DECEASED" | "MERGED" | "MISSING" | "UNKNOWN";
+
+export type PolicyState = "ACTIVE" | "ARCHIVED" | "DISABLED" | "DRAFT";
 
 export type PrepareImportInput = {
   fileId: string;
@@ -524,6 +561,13 @@ export type ReplayGraphSnapshotInput = {
 export type RerunGraphAnalysisInput = {
   algorithm: GraphAnalysisAlgorithm;
   snapshotId: string;
+};
+
+export type ReviewIdentityCandidateInput = {
+  expectedVersion: number;
+  id: string;
+  reason?: string | null | undefined;
+  state: IdentityCandidateState;
 };
 
 export type ReviseFactInput = {
@@ -608,6 +652,13 @@ export type SelectPersonFieldInput = {
   selectionReason?: string | null | undefined;
 };
 
+export type SelectPersonPresentationInput = {
+  expectedVersion: number;
+  personId: string;
+  primaryNameId?: string | null | undefined;
+  primaryPhotoFileId?: string | null | undefined;
+};
+
 export type Sensitivity = "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
 export type StartAiAnalysisInput = {
@@ -644,6 +695,11 @@ export type TemporalSemantics =
   | "EXACT"
   | "UNKNOWN"
   | "YEAR_ONLY";
+
+export type UnmergePersonInput = {
+  expectedVersion: number;
+  loserPersonId: string;
+};
 
 export type UpdateGraphViewInput = {
   appearance?: GraphViewAppearanceInput | null | undefined;
@@ -755,6 +811,15 @@ export type UpdateSavedQueryInput = {
   sharing?: SavedQuerySharing | null | undefined;
 };
 
+export type UpdateWorkspaceDefaultsInput = {
+  aiEnabled?: boolean | null | undefined;
+  expectedVersion: number;
+  locale?: string | null | undefined;
+  retentionDays?: number | null | undefined;
+  storageEnabled?: boolean | null | undefined;
+  timezone?: string | null | undefined;
+};
+
 export type UpdateWorkspaceMemberRoleInput = {
   actionId: string;
   idempotencyKey: string;
@@ -770,6 +835,10 @@ export type UploadSessionState =
   | "PENDING"
   | "REJECTED"
   | "VERIFYING";
+
+export type WebhookIdInput = {
+  id: string;
+};
 
 export type WorkspaceAdministrationRole =
   "ADMIN" | "ANALYST" | "CONTRIBUTOR" | "VIEWER";
@@ -974,6 +1043,46 @@ export type PendingWorkspaceUploadsQuery = {
       expiresAt: string | null;
     }> | null;
     pageInfo: { hasNextPage: boolean; endCursor: string | null } | null;
+  } | null;
+};
+
+export type FileExtractionRunsQueryVariables = Exact<{
+  fileId: string;
+}>;
+
+export type FileExtractionRunsQuery = {
+  extractionRuns: Array<{
+    id: string | null;
+    fileId: string | null;
+    extractor: string | null;
+    extractorVersion: string | null;
+    state: ExtractionRunState | null;
+    structuredOutput: unknown;
+    errorSummary: unknown;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string | null;
+  }> | null;
+};
+
+export type RequestFileExtractionMutationVariables = Exact<{
+  fileId: string;
+  extractor?: string | null | undefined;
+  configuration?: unknown;
+}>;
+
+export type RequestFileExtractionMutation = {
+  requestExtraction: {
+    id: string | null;
+    fileId: string | null;
+    extractor: string | null;
+    extractorVersion: string | null;
+    state: ExtractionRunState | null;
+    structuredOutput: unknown;
+    errorSummary: unknown;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string | null;
   } | null;
 };
 
@@ -2707,6 +2816,92 @@ export type ArchivePersonMutation = {
   };
 };
 
+export type MergePersonMutationVariables = Exact<{
+  input: MergePersonInput;
+}>;
+
+export type MergePersonMutation = {
+  mergePerson: {
+    person: {
+      id: string;
+      displayName: string;
+      status: PersonStatus;
+      version: number;
+    } | null;
+    issues: Array<{ code: string; message: string; path: Array<string> }>;
+  };
+};
+
+export type UnmergePersonMutationVariables = Exact<{
+  input: UnmergePersonInput;
+}>;
+
+export type UnmergePersonMutation = {
+  unmergePerson: {
+    person: {
+      id: string;
+      displayName: string;
+      status: PersonStatus;
+      version: number;
+    } | null;
+    issues: Array<{ code: string; message: string; path: Array<string> }>;
+  };
+};
+
+export type SelectPersonPresentationMutationVariables = Exact<{
+  input: SelectPersonPresentationInput;
+}>;
+
+export type SelectPersonPresentationMutation = {
+  selectPersonPresentation: {
+    person: {
+      id: string;
+      displayName: string;
+      status: PersonStatus;
+      version: number;
+      primaryNameId: string | null;
+      primaryPhotoFileId: string | null;
+      mergedIntoPersonId: string | null;
+    } | null;
+    issues: Array<{ code: string; message: string; path: Array<string> }>;
+  };
+};
+
+export type IdentityCandidatesQueryVariables = Exact<{
+  limit?: number | null | undefined;
+}>;
+
+export type IdentityCandidatesQuery = {
+  identityCandidates: Array<{
+    id: string | null;
+    firstPersonId: string | null;
+    secondPersonId: string | null;
+    score: number | null;
+    matchSignals: unknown;
+    state: IdentityCandidateState | null;
+    reviewReason: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+  }> | null;
+};
+
+export type ReviewIdentityCandidateMutationVariables = Exact<{
+  input: ReviewIdentityCandidateInput;
+}>;
+
+export type ReviewIdentityCandidateMutation = {
+  reviewIdentityCandidate: {
+    id: string | null;
+    firstPersonId: string | null;
+    secondPersonId: string | null;
+    score: number | null;
+    state: IdentityCandidateState | null;
+    reviewReason: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+  };
+};
+
 export type CreateFactDefinitionMutationVariables = Exact<{
   input: CreateFactDefinitionInput;
 }>;
@@ -3247,6 +3442,7 @@ export type SettingsPolicyPostureQueryVariables = Exact<{
 export type SettingsPolicyPostureQuery = {
   settingsPolicyPosture: {
     workspace: {
+      version: number;
       name: string;
       locale: string;
       timezone: string;
@@ -3255,10 +3451,24 @@ export type SettingsPolicyPostureQuery = {
       storageEnabled: boolean;
     };
     accessPolicies: Array<{
+      id: string;
+      version: number;
       name: string;
       state: string;
       sensitivityCeiling: string;
       resourceKinds: Array<string>;
+    }>;
+    resourceGrants: Array<{
+      id: string;
+      policyId: string;
+      resourceId: string;
+      resourceKind: string;
+      memberId: string | null;
+      role: string | null;
+      state: string;
+      validFrom: string | null;
+      validUntil: string | null;
+      version: number;
     }>;
     retentionPolicies: Array<{
       resourceKind: string;
@@ -3425,6 +3635,59 @@ export type RemoveWorkspaceMemberMutation = {
   };
 };
 
+export type UpdateWorkspaceDefaultsMutationVariables = Exact<{
+  input: UpdateWorkspaceDefaultsInput;
+}>;
+
+export type UpdateWorkspaceDefaultsMutation = {
+  updateWorkspaceDefaults: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type CreateAccessPolicyMutationVariables = Exact<{
+  input: AccessPolicyInput;
+}>;
+
+export type CreateAccessPolicyMutation = {
+  createAccessPolicy: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type CreateResourceGrantMutationVariables = Exact<{
+  input: CreateResourceGrantInput;
+}>;
+
+export type CreateResourceGrantMutation = {
+  createResourceGrant: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type ArchiveResourceGrantMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+}>;
+
+export type ArchiveResourceGrantMutation = {
+  archiveResourceGrant: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
 export type ViewerQueryVariables = Exact<{ [key: string]: never }>;
 
 export type ViewerQuery = {
@@ -3436,6 +3699,61 @@ export type ViewerQuery = {
     workspace: { id: string; organizationId: string; name: string };
   };
   workspace: { id: string; organizationId: string; name: string };
+};
+
+export type WorkspaceWebhooksQueryVariables = Exact<{ [key: string]: never }>;
+
+export type WorkspaceWebhooksQuery = {
+  webhooks: {
+    nodes: Array<{
+      id: string | null;
+      url: string | null;
+      subscribedEvents: Array<string>;
+      state: string | null;
+      secretFingerprint: string | null;
+      version: number | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+    }>;
+  };
+};
+
+export type CreateWorkspaceWebhookMutationVariables = Exact<{
+  input: CreateWebhookInput;
+}>;
+
+export type CreateWorkspaceWebhookMutation = {
+  createWebhook: {
+    id: string | null;
+    code: string | null;
+    requestId: string | null;
+    secret: string | null;
+  };
+};
+
+export type RotateWorkspaceWebhookSecretMutationVariables = Exact<{
+  input: WebhookIdInput;
+}>;
+
+export type RotateWorkspaceWebhookSecretMutation = {
+  rotateWebhookSecret: {
+    id: string | null;
+    code: string | null;
+    requestId: string | null;
+    secret: string | null;
+  };
+};
+
+export type DisableWorkspaceWebhookMutationVariables = Exact<{
+  input: WebhookIdInput;
+}>;
+
+export type DisableWorkspaceWebhookMutation = {
+  disableWebhook: {
+    id: string | null;
+    code: string | null;
+    requestId: string | null;
+  };
 };
 
 export class TypedDocumentString<TResult, TVariables>
@@ -4054,6 +4372,58 @@ export const PendingWorkspaceUploadsDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   PendingWorkspaceUploadsQuery,
   PendingWorkspaceUploadsQueryVariables
+>;
+export const FileExtractionRunsDocument = new TypedDocumentString(
+  `
+    query FileExtractionRuns($fileId: UUID!) {
+  extractionRuns(fileId: $fileId) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:3868032ac4a028ab46d29b5e53bb4001d5bc8a9d13bfeef1881134ee4313d52d",
+  },
+) as unknown as TypedDocumentString<
+  FileExtractionRunsQuery,
+  FileExtractionRunsQueryVariables
+>;
+export const RequestFileExtractionDocument = new TypedDocumentString(
+  `
+    mutation RequestFileExtraction($fileId: UUID!, $extractor: String, $configuration: JSON) {
+  requestExtraction(
+    fileId: $fileId
+    extractor: $extractor
+    configuration: $configuration
+  ) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:b770d0a5eaf984bb54482aaba4daa1b48dd7110fba3e726ef59d6892c7cb9e38",
+  },
+) as unknown as TypedDocumentString<
+  RequestFileExtractionMutation,
+  RequestFileExtractionMutationVariables
 >;
 export const ImportHistoryDocument = new TypedDocumentString(
   `
@@ -6478,6 +6848,129 @@ export const ArchivePersonDocument = new TypedDocumentString(
   ArchivePersonMutation,
   ArchivePersonMutationVariables
 >;
+export const MergePersonDocument = new TypedDocumentString(
+  `
+    mutation MergePerson($input: MergePersonInput!) {
+  mergePerson(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:f4cdcd0c91d3a7660e6162a15b0898007ddeed921584d5e4506de2807bdb3e44",
+  },
+) as unknown as TypedDocumentString<
+  MergePersonMutation,
+  MergePersonMutationVariables
+>;
+export const UnmergePersonDocument = new TypedDocumentString(
+  `
+    mutation UnmergePerson($input: UnmergePersonInput!) {
+  unmergePerson(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:30e0d401d8a1ccd5bb4312d0844fc8a7ae0aea136c40c2c1af34a56922a030da",
+  },
+) as unknown as TypedDocumentString<
+  UnmergePersonMutation,
+  UnmergePersonMutationVariables
+>;
+export const SelectPersonPresentationDocument = new TypedDocumentString(
+  `
+    mutation SelectPersonPresentation($input: SelectPersonPresentationInput!) {
+  selectPersonPresentation(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+      primaryNameId
+      primaryPhotoFileId
+      mergedIntoPersonId
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:a4ea0cbca8ccfba0df75f39b894347fc05a32a9e657a78dca914988d7f977966",
+  },
+) as unknown as TypedDocumentString<
+  SelectPersonPresentationMutation,
+  SelectPersonPresentationMutationVariables
+>;
+export const IdentityCandidatesDocument = new TypedDocumentString(
+  `
+    query IdentityCandidates($limit: Int) {
+  identityCandidates(limit: $limit) {
+    id
+    firstPersonId
+    secondPersonId
+    score
+    matchSignals
+    state
+    reviewReason
+    reviewedAt
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:0e1ff74eca3177672fc907ab0ca75766eb5d7984631b8d90cff3f21838bbff14",
+  },
+) as unknown as TypedDocumentString<
+  IdentityCandidatesQuery,
+  IdentityCandidatesQueryVariables
+>;
+export const ReviewIdentityCandidateDocument = new TypedDocumentString(
+  `
+    mutation ReviewIdentityCandidate($input: ReviewIdentityCandidateInput!) {
+  reviewIdentityCandidate(input: $input) {
+    id
+    firstPersonId
+    secondPersonId
+    score
+    state
+    reviewReason
+    reviewedAt
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:2ca0b872ae40e40d5bc5eade2cb28d9f3d44a197ba2206e18f060bc1ee2de7b2",
+  },
+) as unknown as TypedDocumentString<
+  ReviewIdentityCandidateMutation,
+  ReviewIdentityCandidateMutationVariables
+>;
 export const CreateFactDefinitionDocument = new TypedDocumentString(
   `
     mutation CreateFactDefinition($input: CreateFactDefinitionInput!) {
@@ -7350,6 +7843,7 @@ export const SettingsPolicyPostureDocument = new TypedDocumentString(
     query SettingsPolicyPosture {
   settingsPolicyPosture {
     workspace {
+      version
       name
       locale
       timezone
@@ -7358,10 +7852,24 @@ export const SettingsPolicyPostureDocument = new TypedDocumentString(
       storageEnabled
     }
     accessPolicies {
+      id
+      version
       name
       state
       sensitivityCeiling
       resourceKinds
+    }
+    resourceGrants {
+      id
+      policyId
+      resourceId
+      resourceKind
+      memberId
+      role
+      state
+      validFrom
+      validUntil
+      version
     }
     retentionPolicies {
       resourceKind
@@ -7372,7 +7880,7 @@ export const SettingsPolicyPostureDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:cd6c4829707011adea231de3c275ca7b6dcc288073672f1194978b6abc76914c",
+    hash: "sha256:cbcd51bf1d849c2c2edfa552795baa06b53b0304f13082d9e8a676ccca9ff386",
   },
 ) as unknown as TypedDocumentString<
   SettingsPolicyPostureQuery,
@@ -7585,6 +8093,78 @@ export const RemoveWorkspaceMemberDocument = new TypedDocumentString(
   RemoveWorkspaceMemberMutation,
   RemoveWorkspaceMemberMutationVariables
 >;
+export const UpdateWorkspaceDefaultsDocument = new TypedDocumentString(
+  `
+    mutation UpdateWorkspaceDefaults($input: UpdateWorkspaceDefaultsInput!) {
+  updateWorkspaceDefaults(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:c6547025ce6d40bfa4b66aba1352d2167d509df6d43418fcffadf0f8c59a2d19",
+  },
+) as unknown as TypedDocumentString<
+  UpdateWorkspaceDefaultsMutation,
+  UpdateWorkspaceDefaultsMutationVariables
+>;
+export const CreateAccessPolicyDocument = new TypedDocumentString(
+  `
+    mutation CreateAccessPolicy($input: AccessPolicyInput!) {
+  createAccessPolicy(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:a7da95a8514b509667510012164817943feee9fc3b3991f84e667516da1fdb8e",
+  },
+) as unknown as TypedDocumentString<
+  CreateAccessPolicyMutation,
+  CreateAccessPolicyMutationVariables
+>;
+export const CreateResourceGrantDocument = new TypedDocumentString(
+  `
+    mutation CreateResourceGrant($input: CreateResourceGrantInput!) {
+  createResourceGrant(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:29bbe5bb274dd13ec222343385d6808b147b8edf2f4e1968765eeed2b29e4475",
+  },
+) as unknown as TypedDocumentString<
+  CreateResourceGrantMutation,
+  CreateResourceGrantMutationVariables
+>;
+export const ArchiveResourceGrantDocument = new TypedDocumentString(
+  `
+    mutation ArchiveResourceGrant($id: UUID!, $expectedVersion: Int!) {
+  archiveResourceGrant(id: $id, expectedVersion: $expectedVersion) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:dbaefd6c8a0b3f1ee65b841aca8a03d2c3f0d233731a4edb0179edafb7cb3c59",
+  },
+) as unknown as TypedDocumentString<
+  ArchiveResourceGrantMutation,
+  ArchiveResourceGrantMutationVariables
+>;
 export const ViewerDocument = new TypedDocumentString(
   `
     query Viewer {
@@ -7610,3 +8190,80 @@ export const ViewerDocument = new TypedDocumentString(
     hash: "sha256:914d3bbffa388283841e86303dd4dd44ffbedf27a18db54e4cc73c99daf3dc4d",
   },
 ) as unknown as TypedDocumentString<ViewerQuery, ViewerQueryVariables>;
+export const WorkspaceWebhooksDocument = new TypedDocumentString(
+  `
+    query WorkspaceWebhooks {
+  webhooks {
+    nodes {
+      id
+      url
+      subscribedEvents
+      state
+      secretFingerprint
+      version
+      createdAt
+      updatedAt
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:b3fa728323e514a4f5b1d59c9010b90b1c9698ef085d74d5d7708f431dfe2810",
+  },
+) as unknown as TypedDocumentString<
+  WorkspaceWebhooksQuery,
+  WorkspaceWebhooksQueryVariables
+>;
+export const CreateWorkspaceWebhookDocument = new TypedDocumentString(
+  `
+    mutation CreateWorkspaceWebhook($input: CreateWebhookInput!) {
+  createWebhook(input: $input) {
+    id
+    code
+    requestId
+    secret
+  }
+}
+    `,
+  {
+    hash: "sha256:6c786f5c2521027e813425f9c3fcc65d62b97b4b7bbb267f2e140c699cbd7757",
+  },
+) as unknown as TypedDocumentString<
+  CreateWorkspaceWebhookMutation,
+  CreateWorkspaceWebhookMutationVariables
+>;
+export const RotateWorkspaceWebhookSecretDocument = new TypedDocumentString(
+  `
+    mutation RotateWorkspaceWebhookSecret($input: WebhookIdInput!) {
+  rotateWebhookSecret(input: $input) {
+    id
+    code
+    requestId
+    secret
+  }
+}
+    `,
+  {
+    hash: "sha256:8330a47021846a6a42a3a3b4fba9c16efeb5ab09adcdb90a7def42a6cfff94e4",
+  },
+) as unknown as TypedDocumentString<
+  RotateWorkspaceWebhookSecretMutation,
+  RotateWorkspaceWebhookSecretMutationVariables
+>;
+export const DisableWorkspaceWebhookDocument = new TypedDocumentString(
+  `
+    mutation DisableWorkspaceWebhook($input: WebhookIdInput!) {
+  disableWebhook(input: $input) {
+    id
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:87f1dd44c64da868a38ec1d9d6157215559a39ecbf76cf451418b20f0f81831a",
+  },
+) as unknown as TypedDocumentString<
+  DisableWorkspaceWebhookMutation,
+  DisableWorkspaceWebhookMutationVariables
+>;

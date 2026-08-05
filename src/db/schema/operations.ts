@@ -244,6 +244,8 @@ export const webhookDeliveries = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     webhookId: uuid("webhook_id").notNull(),
     eventId: uuid("event_id").notNull(),
+    encryptedPayload: text("encrypted_payload").notNull(),
+    payloadHash: text("payload_hash").notNull(),
     attempt: integer("attempt").notNull(),
     signatureAlgorithm: text("signature_algorithm").notNull(),
     signatureKeyId: text("signature_key_id"),
@@ -275,6 +277,10 @@ export const webhookDeliveries = pgTable(
       foreignColumns: [webhooks.workspaceId, webhooks.id],
     }).onDelete("cascade"),
     check("webhook_deliveries_attempt_check", sql`${table.attempt} > 0`),
+    check(
+      "webhook_deliveries_payload_hash_check",
+      sql`${table.payloadHash} ~ '^sha256:[0-9a-f]{64}$'`,
+    ),
     check(
       "webhook_deliveries_status_check",
       sql`${table.responseStatus} IS NULL OR ${table.responseStatus} BETWEEN 100 AND 599`,

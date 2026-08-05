@@ -27,6 +27,7 @@ import {
 } from "@/modules/settings/workspace-members";
 
 import { createSettingsRepository } from "./repository";
+import { createPolicyMutationService } from "./policy-mutations";
 
 export function createSettingsService(input: {
   actor: GraphQLActor;
@@ -46,6 +47,12 @@ export function createSettingsService(input: {
   const members = createWorkspaceMemberAdministration({
     ...input,
     requestId,
+  });
+  const policyMutations = createPolicyMutationService({
+    actor: input.actor,
+    database: input.database,
+    requestId,
+    workspaceId: input.workspaceId,
   });
 
   async function authorizeAdministrator(): Promise<"admin" | "owner"> {
@@ -274,6 +281,7 @@ export function createSettingsService(input: {
     cancelInvitation: members.cancelInvitation,
     updateMemberRole: members.updateMemberRole,
     removeMember: members.removeMember,
+    policyMutations,
     async listOrganizationApiKeys(requestedOffset?: number | null) {
       await authorizeAdministrator();
       const offset = normalizeSettingsOffset(requestedOffset);

@@ -1,0 +1,40 @@
+query WorkspaceWebhooks {
+  webhooks {
+    nodes {
+      id
+      url
+      subscribedEvents
+      state
+      secretFingerprint
+      version
+      createdAt
+      updatedAt
+    }
+  }
+}
+
+mutation CreateWorkspaceWebhook($input: CreateWebhookInput!) {
+  createWebhook(input: $input) {
+    id
+    code
+    requestId
+    secret
+  }
+}
+
+mutation RotateWorkspaceWebhookSecret($input: WebhookIdInput!) {
+  rotateWebhookSecret(input: $input) {
+    id
+    code
+    requestId
+    secret
+  }
+}
+
+mutation DisableWorkspaceWebhook($input: WebhookIdInput!) {
+  disableWebhook(input: $input) {
+    id
+    code
+    requestId
+  }
+}

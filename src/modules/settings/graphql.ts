@@ -1,6 +1,7 @@
 import { builder } from "@/graphql/builder";
 import { requirePermission } from "@/graphql/context";
 import { createGraphQLError } from "@/graphql/errors";
+import { Sensitivity } from "@/modules/people/graphql";
 
 import type {
   PolicySettingsReadModel,
@@ -22,6 +23,40 @@ const WorkspaceAdministrationRole = builder.enumType(
     values: ["ADMIN", "ANALYST", "CONTRIBUTOR", "VIEWER"] as const,
   },
 );
+
+const PolicyState = builder.enumType("PolicyState", {
+  values: ["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] as const,
+});
+
+function parseResourceGrantState(
+  value: "DRAFT" | "ACTIVE" | "DISABLED" | "ARCHIVED" | null | undefined,
+): "active" | "inactive" | "archived" | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (value === "ACTIVE") return "active";
+  if (value === "DISABLED") return "inactive";
+  if (value === "ARCHIVED") return "archived";
+  throw createGraphQLError(
+    "VALIDATION_FAILED",
+    "A resource grant cannot be in draft state.",
+  );
+}
+const DeletionBehavior = builder.enumType("DeletionBehavior", {
+  values: ["REVIEW", "SOFT_DELETE", "HARD_DELETE", "ANONYMIZE"] as const,
+});
+const ConsentStatus = builder.enumType("ConsentStatus", {
+  values: ["GRANTED", "DENIED", "WITHDRAWN", "EXPIRED", "UNKNOWN"] as const,
+});
+const DeletionRequestState = builder.enumType("DeletionRequestState", {
+  values: [
+    "REVIEWING",
+    "APPROVED",
+    "REJECTED",
+    "EXPORTING",
+    "DELETING",
+    "COMPLETED",
+    "CANCELLED",
+  ] as const,
+});
 
 const SettingsDirectoryMember = builder
   .objectRef<SafeDirectoryMember>("SettingsDirectoryMember")
@@ -167,6 +202,113 @@ const RevokeOrganizationApiKeyInput = builder.inputType(
   },
 );
 
+const UpdateWorkspaceDefaultsInput = builder.inputType(
+  "UpdateWorkspaceDefaultsInput",
+  {
+    fields: (t) => ({
+      expectedVersion: t.int({ required: true }),
+      locale: t.string(),
+      timezone: t.string(),
+      retentionDays: t.int(),
+      aiEnabled: t.boolean(),
+      storageEnabled: t.boolean(),
+    }),
+  },
+);
+const AccessPolicyInput = builder.inputType("AccessPolicyInput", {
+  fields: (t) => ({
+    name: t.string({ required: true }),
+    sensitivityCeiling: t.field({ type: Sensitivity, required: true }),
+    resourceKinds: t.stringList({ required: true }),
+    roleBindings: t.field({ type: "JSON", required: true }),
+    state: t.field({ type: PolicyState, required: true }),
+  }),
+});
+const UpdateAccessPolicyInput = builder.inputType("UpdateAccessPolicyInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+    name: t.string(),
+    sensitivityCeiling: t.field({ type: Sensitivity }),
+    resourceKinds: t.stringList(),
+    roleBindings: t.field({ type: "JSON" }),
+    state: t.field({ type: PolicyState }),
+  }),
+});
+const UpsertRetentionPolicyInput = builder.inputType(
+  "UpsertRetentionPolicyInput",
+  {
+    fields: (t) => ({
+      resourceKind: t.string({ required: true }),
+      retentionDays: t.int({ required: true }),
+      deletionBehavior: t.field({ type: DeletionBehavior, required: true }),
+      legalBasis: t.string(),
+      expectedVersion: t.int(),
+    }),
+  },
+);
+const CreateLegalHoldInput = builder.inputType("CreateLegalHoldInput", {
+  fields: (t) => ({
+    resourceId: t.field({ type: "UUID", required: true }),
+    resourceKind: t.string({ required: true }),
+    reason: t.string({ required: true }),
+    authority: t.string({ required: true }),
+  }),
+});
+const CreateResourceGrantInput = builder.inputType("CreateResourceGrantInput", {
+  fields: (t) => ({
+    policyId: t.field({ type: "UUID", required: true }),
+    resourceId: t.field({ type: "UUID", required: true }),
+    resourceKind: t.string({ required: true }),
+    memberId: t.string(),
+    role: t.field({ type: WorkspaceAdministrationRole }),
+    validFrom: t.field({ type: "DateTime" }),
+    validUntil: t.field({ type: "DateTime" }),
+  }),
+});
+const UpdateResourceGrantInput = builder.inputType("UpdateResourceGrantInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+    validFrom: t.field({ type: "DateTime" }),
+    validUntil: t.field({ type: "DateTime" }),
+    state: t.field({ type: PolicyState }),
+  }),
+});
+const ReleaseLegalHoldInput = builder.inputType("ReleaseLegalHoldInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+    releaseReason: t.string({ required: true }),
+  }),
+});
+const CreateConsentInput = builder.inputType("CreateConsentInput", {
+  fields: (t) => ({
+    personId: t.field({ type: "UUID", required: true }),
+    purpose: t.string({ required: true }),
+    status: t.field({ type: ConsentStatus, required: true }),
+    source: t.string({ required: true }),
+    effectiveFrom: t.field({ type: "DateTime", required: true }),
+    effectiveUntil: t.field({ type: "DateTime" }),
+    evidenceId: t.field({ type: "UUID" }),
+  }),
+});
+const CreateDeletionRequestInput = builder.inputType(
+  "CreateDeletionRequestInput",
+  { fields: (t) => ({ scope: t.field({ type: "JSON", required: true }) }) },
+);
+const ReviewDeletionRequestInput = builder.inputType(
+  "ReviewDeletionRequestInput",
+  {
+    fields: (t) => ({
+      id: t.field({ type: "UUID", required: true }),
+      expectedVersion: t.int({ required: true }),
+      state: t.field({ type: DeletionRequestState, required: true }),
+      notes: t.string(),
+    }),
+  },
+);
+
 type AccessPolicy = PolicySettingsReadModel["accessPolicies"][number];
 type RetentionPolicy = PolicySettingsReadModel["retentionPolicies"][number];
 type WorkspaceDefaults = PolicySettingsReadModel["workspace"];
@@ -179,6 +321,22 @@ type ApiKeyLifecycleMutationResult = {
   requestId: string;
   secret?: string;
 };
+
+const SettingsPolicyMutationPayload = builder
+  .objectRef<{
+    id: string | null;
+    version: number | null;
+    code: string;
+    requestId: string;
+  }>("SettingsPolicyMutationPayload")
+  .implement({
+    fields: (t) => ({
+      id: t.exposeString("id", { nullable: true }),
+      version: t.exposeInt("version", { nullable: true }),
+      code: t.exposeString("code"),
+      requestId: t.exposeString("requestId"),
+    }),
+  });
 
 const SettingsApiKey = builder
   .objectRef<SafeApiKeySettings>("SettingsApiKey")
@@ -240,6 +398,8 @@ const SettingsAccessPolicy = builder
   .objectRef<AccessPolicy>("SettingsAccessPolicy")
   .implement({
     fields: (t) => ({
+      id: t.exposeString("id", { nullable: false }),
+      version: t.exposeInt("version", { nullable: false }),
       name: t.exposeString("name", { nullable: false }),
       state: t.exposeString("state", { nullable: false }),
       sensitivityCeiling: t.exposeString("sensitivityCeiling", {
@@ -247,6 +407,31 @@ const SettingsAccessPolicy = builder
       }),
       resourceKinds: t.exposeStringList("resourceKinds", {
         nullable: { items: false, list: false },
+      }),
+    }),
+  });
+
+const SettingsResourceGrant = builder
+  .objectRef<PolicySettingsReadModel["resourceGrants"][number]>(
+    "SettingsResourceGrant",
+  )
+  .implement({
+    fields: (t) => ({
+      id: t.exposeString("id", { nullable: false }),
+      policyId: t.exposeString("policyId", { nullable: false }),
+      resourceId: t.exposeString("resourceId", { nullable: false }),
+      resourceKind: t.exposeString("resourceKind", { nullable: false }),
+      memberId: t.exposeString("memberId", { nullable: true }),
+      role: t.exposeString("role", { nullable: true }),
+      state: t.exposeString("state", { nullable: false }),
+      version: t.exposeInt("version", { nullable: false }),
+      validFrom: t.string({
+        nullable: true,
+        resolve: (row) => row.validFrom?.toISOString() ?? null,
+      }),
+      validUntil: t.string({
+        nullable: true,
+        resolve: (row) => row.validUntil?.toISOString() ?? null,
       }),
     }),
   });
@@ -265,6 +450,7 @@ const SettingsWorkspaceDefaults = builder
   .objectRef<WorkspaceDefaults>("SettingsWorkspaceDefaults")
   .implement({
     fields: (t) => ({
+      version: t.exposeInt("version", { nullable: false }),
       name: t.exposeString("name", { nullable: false }),
       locale: t.exposeString("locale", { nullable: false }),
       timezone: t.exposeString("timezone", { nullable: false }),
@@ -290,6 +476,10 @@ const SettingsPolicyPosture = builder
       }),
       retentionPolicies: t.expose("retentionPolicies", {
         type: [SettingsRetentionPolicy],
+        nullable: { items: false, list: false },
+      }),
+      resourceGrants: t.expose("resourceGrants", {
+        type: [SettingsResourceGrant],
         nullable: { items: false, list: false },
       }),
     }),
@@ -486,6 +676,217 @@ export function registerSettingsGraphQL(): void {
             args.input.actionId,
           ),
         ),
+    }),
+    updateWorkspaceDefaults: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: UpdateWorkspaceDefaultsInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "update");
+        return context.services.settings.policyMutations.updateWorkspaceDefaults(
+          args.input,
+        );
+      },
+    }),
+    createAccessPolicy: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: { input: t.arg({ type: AccessPolicyInput, required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "accessPolicy", "create");
+        return context.services.settings.policyMutations.createAccessPolicy({
+          name: args.input.name,
+          resourceKinds: args.input.resourceKinds,
+          roleBindings: args.input.roleBindings,
+          sensitivityCeiling: args.input.sensitivityCeiling.toLowerCase() as
+            "public" | "internal" | "confidential" | "restricted",
+          state: args.input.state.toLowerCase() as
+            "draft" | "active" | "disabled" | "archived",
+        });
+      },
+    }),
+    updateAccessPolicy: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: { input: t.arg({ type: UpdateAccessPolicyInput, required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "accessPolicy", "update");
+        return context.services.settings.policyMutations.updateAccessPolicy({
+          ...args.input,
+          sensitivityCeiling: args.input.sensitivityCeiling
+            ? (args.input.sensitivityCeiling.toLowerCase() as
+                "public" | "internal" | "confidential" | "restricted")
+            : undefined,
+          state: args.input.state
+            ? (args.input.state.toLowerCase() as
+                "draft" | "active" | "disabled" | "archived")
+            : undefined,
+        });
+      },
+    }),
+    archiveAccessPolicy: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: {
+        id: t.arg({ type: "UUID", required: true }),
+        expectedVersion: t.arg.int({ required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "accessPolicy", "delete");
+        return context.services.settings.policyMutations.archiveAccessPolicy(
+          args.id,
+          args.expectedVersion,
+        );
+      },
+    }),
+    createResourceGrant: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: CreateResourceGrantInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "resourceGrant", "create");
+        return context.services.settings.policyMutations.createResourceGrant({
+          ...args.input,
+          memberId: args.input.memberId ?? undefined,
+          role: args.input.role?.toLowerCase(),
+          validFrom: args.input.validFrom
+            ? new Date(args.input.validFrom)
+            : undefined,
+          validUntil: args.input.validUntil
+            ? new Date(args.input.validUntil)
+            : undefined,
+        });
+      },
+    }),
+    updateResourceGrant: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: UpdateResourceGrantInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "resourceGrant", "update");
+        return context.services.settings.policyMutations.updateResourceGrant({
+          id: args.input.id,
+          expectedVersion: args.input.expectedVersion,
+          validFrom: args.input.validFrom
+            ? new Date(args.input.validFrom)
+            : undefined,
+          validUntil: args.input.validUntil
+            ? new Date(args.input.validUntil)
+            : undefined,
+          state: parseResourceGrantState(args.input.state),
+        });
+      },
+    }),
+    archiveResourceGrant: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: {
+        id: t.arg({ type: "UUID", required: true }),
+        expectedVersion: t.arg.int({ required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "resourceGrant", "delete");
+        return context.services.settings.policyMutations.archiveResourceGrant(
+          args.id,
+          args.expectedVersion,
+        );
+      },
+    }),
+    upsertRetentionPolicy: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: UpsertRetentionPolicyInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "update");
+        return context.services.settings.policyMutations.upsertRetentionPolicy({
+          ...args.input,
+          deletionBehavior: args.input.deletionBehavior.toLowerCase() as
+            "review" | "soft_delete" | "hard_delete" | "anonymize",
+        });
+      },
+    }),
+    createLegalHold: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: { input: t.arg({ type: CreateLegalHoldInput, required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "update");
+        return context.services.settings.policyMutations.createLegalHold(
+          args.input,
+        );
+      },
+    }),
+    releaseLegalHold: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: { input: t.arg({ type: ReleaseLegalHoldInput, required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "update");
+        return context.services.settings.policyMutations.releaseLegalHold(
+          args.input.id,
+          args.input.expectedVersion,
+          args.input.releaseReason,
+        );
+      },
+    }),
+    createConsentRecord: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: { input: t.arg({ type: CreateConsentInput, required: true }) },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        return context.services.settings.policyMutations.createConsent({
+          ...args.input,
+          status: args.input.status.toLowerCase() as
+            "granted" | "denied" | "withdrawn" | "expired" | "unknown",
+          effectiveFrom: new Date(args.input.effectiveFrom),
+          effectiveUntil: args.input.effectiveUntil
+            ? new Date(args.input.effectiveUntil)
+            : undefined,
+        });
+      },
+    }),
+    createDeletionRequest: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: CreateDeletionRequestInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "update");
+        return context.services.settings.policyMutations.createDeletionRequest({
+          scope: args.input.scope,
+        });
+      },
+    }),
+    reviewDeletionRequest: t.field({
+      type: SettingsPolicyMutationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: ReviewDeletionRequestInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "update");
+        return context.services.settings.policyMutations.reviewDeletionRequest({
+          ...args.input,
+          state: args.input.state.toLowerCase() as
+            | "reviewing"
+            | "approved"
+            | "rejected"
+            | "exporting"
+            | "deleting"
+            | "completed"
+            | "cancelled",
+        });
+      },
     }),
   }));
 }

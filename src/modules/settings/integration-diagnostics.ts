@@ -13,8 +13,12 @@ type DiagnosticEnvironment = Pick<
   | "STORAGE_PROVIDER"
 >;
 
+type DiagnosticEnvironmentWithAi = DiagnosticEnvironment & {
+  AI_PROVIDER?: string;
+};
+
 export function readIntegrationDiagnostics(
-  readEnvironment: () => DiagnosticEnvironment,
+  readEnvironment: () => DiagnosticEnvironmentWithAi,
 ) {
   const env = readEnvironment();
   return buildIntegrationDiagnostics({
@@ -23,7 +27,7 @@ export function readIntegrationDiagnostics(
     databaseConfigured: Boolean(env.DATABASE_URL),
     redisConfigured: Boolean(env.REDIS_URL),
     storageProvider: env.STORAGE_PROVIDER,
-    providerBackendAvailable: false,
+    providerBackendAvailable: Boolean(env.AI_PROVIDER),
   });
 }
 

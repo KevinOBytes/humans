@@ -1,10 +1,10 @@
 import { getAdministrativeSettingsContext } from "@/app/(app)/settings/settings-context";
 import {
   DefinitionList,
-  ReadOnlyAdministrationNotice,
   SettingsCard,
   SettingsHeader,
 } from "@/components/settings/settings-surface";
+import { PolicyAdministration } from "@/components/settings/policy-administration";
 import { Badge } from "@/components/ui/badge";
 import { SettingsPolicyPostureDocument } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
@@ -18,10 +18,19 @@ export default async function PoliciesSettingsPage() {
       <SettingsHeader
         eyebrow="Workspace settings"
         title="Policies"
-        description="Typed read-only workspace defaults, access posture, retention posture, and feature flags. Raw policy JSON is never exposed."
+        description="Manage workspace defaults and review access, grant, and retention posture. Raw policy JSON is never exposed."
       />
-      <ReadOnlyAdministrationNotice />
       <SettingsCard title="Workspace defaults">
+        <PolicyAdministration
+          version={settings.workspace.version}
+          locale={settings.workspace.locale}
+          timezone={settings.workspace.timezone}
+          retentionDays={settings.workspace.defaultRetentionDays}
+          aiEnabled={settings.workspace.aiEnabled}
+          storageEnabled={settings.workspace.storageEnabled}
+        />
+      </SettingsCard>
+      <SettingsCard title="Workspace posture">
         <DefinitionList
           items={[
             { label: "Workspace", value: settings.workspace.name },
@@ -47,14 +56,11 @@ export default async function PoliciesSettingsPage() {
       </SettingsCard>
       <SettingsCard
         title="Access-policy posture"
-        description="Role-binding JSON and grant identifiers stay server-side."
+        description="Role-binding JSON stays server-side while policy versions and grants remain auditable."
       >
         <ul className="grid gap-3">
           {settings.accessPolicies.map((policy) => (
-            <li
-              key={policy.name}
-              className="border-border rounded-xl border p-4"
-            >
+            <li key={policy.id} className="border-border rounded-xl border p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="font-medium">{policy.name}</p>
                 <Badge>{policy.state}</Badge>
@@ -99,7 +105,7 @@ export default async function PoliciesSettingsPage() {
             { label: "Organization deletion", value: "Disabled" },
             {
               label: "Provider configuration",
-              value: "Unavailable until Task 13",
+              value: "Configured through the deployment provider boundary",
             },
           ]}
         />

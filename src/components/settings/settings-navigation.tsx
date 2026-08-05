@@ -16,6 +16,7 @@ const administrationDestinations = [
   { href: "/settings/policies", label: "Policies" },
   { href: "/settings/audit", label: "Audit" },
   { href: "/settings/integrations", label: "Integrations" },
+  { href: "/settings/webhooks", label: "Webhooks" },
 ] as const;
 
 export function SettingsNavigation({
