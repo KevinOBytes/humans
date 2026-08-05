@@ -50,6 +50,12 @@ export type DerivedResearchIdempotency = Readonly<{
   [derivedResearchIdempotencyBrand]: true;
 }>;
 
+export type ResearchIdempotencyClaim = Readonly<{
+  claimId: string;
+  responseReference: ResearchResponseReference | null;
+  state: "new" | "pending" | "completed";
+}>;
+
 type InternalDerivedResearchIdempotency = DerivedResearchIdempotency & {
   readonly actorId: string;
   readonly expiresAtMs: number;
@@ -640,6 +646,155 @@ function validateResponseReference(value: unknown): ResearchResponseReference {
     );
   }
   return Object.fromEntries(entries) as ResearchResponseReference;
+}
+
+/**
+ * Claims a durable idempotency row without holding a PostgreSQL transaction
+ * across an external provider call. A pending claim is intentionally
+ * replayable by a concurrent caller after the domain mutation's row lock
+ * settles; request-hash mismatches still fail before any domain work.
+ */
+export async function claimIdempotentResearchWrite(
+  context: ResearchServiceContext,
+  input: DerivedResearchIdempotency,
+  requiredPermissions: readonly string[],
+): Promise<ResearchIdempotencyClaim> {
+  if (context.actor.type !== "user") return forbidden();
+  const metadata = derivedIdempotencyInputs.get(input as object);
+  const now = new Date();
+  if (
+    !metadata ||
+    metadata.actorId !== context.actor.id ||
+    metadata.workspaceId !== context.workspaceId ||
+    metadata.expiresAtMs <= now.getTime()
+  ) {
+    return invalidIdempotency();
+  }
+  return runResearchTransaction(
+    context,
+    { requiredPermissions },
+    async (scopedContext) => {
+      const identity = and(
+        eq(idempotencyKeys.workspaceId, scopedContext.workspaceId),
+        eq(idempotencyKeys.actorId, scopedContext.actor.id),
+        eq(idempotencyKeys.operation, metadata.operation),
+        eq(idempotencyKeys.keyHash, metadata.keyHash),
+      );
+      await scopedContext.database
+        .delete(idempotencyKeys)
+        .where(and(identity, lte(idempotencyKeys.expiresAt, now)));
+      const [inserted] = await scopedContext.database
+        .insert(idempotencyKeys)
+        .values({
+          id: newId(),
+          workspaceId: scopedContext.workspaceId,
+          actorId: scopedContext.actor.id,
+          operation: metadata.operation,
+          keyHash: metadata.keyHash,
+          requestHash: metadata.requestHash,
+          status: "pending",
+          expiresAt: new Date(metadata.expiresAtMs),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing({
+          target: [
+            idempotencyKeys.workspaceId,
+            idempotencyKeys.actorId,
+            idempotencyKeys.operation,
+            idempotencyKeys.keyHash,
+          ],
+        })
+        .returning({ id: idempotencyKeys.id });
+      const [claim] = await scopedContext.database
+        .select()
+        .from(idempotencyKeys)
+        .where(identity)
+        .for("update");
+      if (!claim) {
+        throw createGraphQLError(
+          "CONFLICT",
+          "The idempotent operation could not be claimed.",
+        );
+      }
+      if (claim.requestHash !== metadata.requestHash) {
+        throw createGraphQLError(
+          "CONFLICT",
+          "The idempotency key is already bound to another request.",
+        );
+      }
+      if (inserted) {
+        return { claimId: claim.id, responseReference: null, state: "new" };
+      }
+      if (claim.status === "completed" && claim.responseReference != null) {
+        return {
+          claimId: claim.id,
+          responseReference: validateResponseReference(claim.responseReference),
+          state: "completed",
+        };
+      }
+      return { claimId: claim.id, responseReference: null, state: "pending" };
+    },
+  );
+}
+
+/** Finalizes a claim made by claimIdempotentResearchWrite after provider work. */
+export async function finalizeIdempotentResearchWrite(
+  context: ResearchServiceContext,
+  input: DerivedResearchIdempotency,
+  claimId: string,
+  responseReference: ResearchResponseReference,
+  requiredPermissions: readonly string[],
+): Promise<void> {
+  if (context.actor.type !== "user") return forbidden();
+  const metadata = derivedIdempotencyInputs.get(input as object);
+  if (
+    !metadata ||
+    metadata.actorId !== context.actor.id ||
+    metadata.workspaceId !== context.workspaceId ||
+    !WORKER_UUID.test(claimId)
+  ) {
+    return invalidIdempotency();
+  }
+  const validatedReference = validateResponseReference(responseReference);
+  await runResearchTransaction(
+    context,
+    { requiredPermissions },
+    async (scopedContext) => {
+      const [updated] = await scopedContext.database
+        .update(idempotencyKeys)
+        .set({
+          responseReference: validatedReference,
+          status: "completed",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(idempotencyKeys.workspaceId, scopedContext.workspaceId),
+            eq(idempotencyKeys.actorId, scopedContext.actor.id),
+            eq(idempotencyKeys.id, claimId),
+            eq(idempotencyKeys.status, "pending"),
+          ),
+        )
+        .returning({ id: idempotencyKeys.id });
+      if (updated) return;
+      const [existing] = await scopedContext.database
+        .select({ status: idempotencyKeys.status })
+        .from(idempotencyKeys)
+        .where(
+          and(
+            eq(idempotencyKeys.workspaceId, scopedContext.workspaceId),
+            eq(idempotencyKeys.actorId, scopedContext.actor.id),
+            eq(idempotencyKeys.id, claimId),
+          ),
+        );
+      if (existing?.status === "completed") return;
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation could not be completed.",
+      );
+    },
+  );
 }
 
 /**
