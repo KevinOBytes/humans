@@ -82,6 +82,14 @@ explicit finish. These additions strengthen the existing live
 `auth-security`/AES-GCM and browser leakage evidence; the whole-product
 redaction, provider, and storage matrix remains incomplete.
 
+### NFR-008 bounded settings tranche evidence
+
+`settings-policy-administration.test.ts` adds generated GraphQL
+`UpdateAccessPolicy` response-reference replay, corrupted-reference rejection,
+serialized expiry takeover, concurrent convergence, optimistic-version
+preservation, redacted audit behavior, and workspace fencing. The broader
+settings/provider matrix remains incomplete.
+
 ## Current Task 17 auth/runtime hardening evidence
 
 Task 17 closes the public Better Auth administration bypass while leaving the
