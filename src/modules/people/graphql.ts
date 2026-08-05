@@ -4,7 +4,12 @@ import { invalidateVisibilityDependentLoaders } from "@/graphql/loaders";
 import { normalizePagination } from "@/graphql/limits";
 import { ActorAttribution } from "@/modules/audit/attribution-graphql";
 
-import type { PersonEventRow, PersonNameRow, PersonRow } from "./repository";
+import type {
+  PersonEventRow,
+  PersonFileRow,
+  PersonNameRow,
+  PersonRow,
+} from "./repository";
 import type { InferSelectModel } from "drizzle-orm";
 import { identityCandidates } from "@/db/schema/people";
 import type { MutationOutcome, PageInfo as PageInfoShape } from "./service";
@@ -198,6 +203,79 @@ const PersonEvent = builder.objectRef<PersonEventRow>("PersonEvent").implement({
   }),
 });
 
+const PersonFileRole = builder.enumType("PersonFileRole", {
+  values: {
+    PRIMARY_PHOTO: { value: "primary_photo" },
+    FACT: { value: "fact" },
+    EVIDENCE: { value: "evidence" },
+  } as const,
+});
+const PersonFileAvailability = builder.enumType("PersonFileAvailability", {
+  values: {
+    PENDING: { value: "pending" },
+    QUARANTINED: { value: "quarantined" },
+    AVAILABLE: { value: "available" },
+    REJECTED: { value: "rejected" },
+  } as const,
+});
+const PersonFileScanState = builder.enumType("PersonFileScanState", {
+  values: {
+    PENDING: { value: "pending" },
+    CLEAN: { value: "clean" },
+    NOT_REQUIRED: { value: "not_required" },
+    INFECTED: { value: "infected" },
+    ERROR: { value: "error" },
+  } as const,
+});
+const PersonFile = builder.objectRef<PersonFileRow>("PersonFile").implement({
+  fields: (t) => ({
+    id: t.expose("id", { type: "UUID", nullable: false }),
+    originalName: t.exposeString("originalName", { nullable: false }),
+    mediaType: t.exposeString("mediaType", { nullable: true }),
+    detectedType: t.exposeString("detectedType", { nullable: true }),
+    byteSize: t.float({ nullable: false, resolve: (row) => row.byteSize }),
+    availability: t.field({
+      type: PersonFileAvailability,
+      nullable: false,
+      resolve: (row) =>
+        row.quarantineState as
+          "pending" | "quarantined" | "available" | "rejected",
+    }),
+    scanState: t.field({
+      type: PersonFileScanState,
+      nullable: false,
+      resolve: (row) =>
+        row.scanState as
+          "pending" | "clean" | "not_required" | "infected" | "error",
+    }),
+    sensitivity: t.expose("sensitivity", {
+      type: Sensitivity,
+      nullable: false,
+    }),
+    version: t.exposeInt("version", { nullable: false }),
+    archivedAt: t.field({
+      type: "DateTime",
+      nullable: true,
+      resolve: (row) => row.deletedAt?.toISOString() ?? null,
+    }),
+    createdAt: t.field({
+      type: "DateTime",
+      nullable: false,
+      resolve: (row) => row.createdAt.toISOString(),
+    }),
+    updatedAt: t.field({
+      type: "DateTime",
+      nullable: false,
+      resolve: (row) => row.updatedAt.toISOString(),
+    }),
+    roles: t.field({
+      type: [PersonFileRole],
+      nullable: { items: false, list: false },
+      resolve: (row) => row.roles,
+    }),
+  }),
+});
+
 export const ValidationIssue = builder
   .objectRef<{
     path: string[];
@@ -243,6 +321,20 @@ const PersonEventConnection = builder
     fields: (t) => ({
       nodes: t.expose("nodes", {
         type: [PersonEvent],
+        complexity: { field: 0, multiplier: 1 },
+      }),
+      pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
+    }),
+  });
+
+const PersonFileConnection = builder
+  .objectRef<{ nodes: PersonFileRow[]; pageInfo: PageInfoShape }>(
+    "PersonFileConnection",
+  )
+  .implement({
+    fields: (t) => ({
+      nodes: t.expose("nodes", {
+        type: [PersonFile],
         complexity: { field: 0, multiplier: 1 },
       }),
       pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
@@ -502,6 +594,20 @@ export function registerPeopleGraphQL(): void {
         requirePermission(context, "person", "read");
         normalizePagination(args);
         return context.services.people.listEvents({
+          personId: person.id,
+          first: args.first,
+          after: args.after,
+        });
+      },
+    }),
+    files: t.field({
+      type: PersonFileConnection,
+      args: { first: t.arg.int(), after: t.arg.string() },
+      complexity: (args) => connectionComplexity(args.first),
+      resolve: (person, args, context) => {
+        requirePermission(context, "file", "read");
+        normalizePagination(args);
+        return context.services.people.listFiles({
           personId: person.id,
           first: args.first,
           after: args.after,

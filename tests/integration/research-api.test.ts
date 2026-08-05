@@ -7,8 +7,11 @@ import { newId } from "@/db/id";
 import { factDefinitions, factRevisions, facts } from "@/db/schema/facts";
 import { files } from "@/db/schema/files";
 import {
+  CreateFactDefinitionDocument,
+  CreateFactDocument,
   MergePersonDocument,
   PersonHeaderDocument,
+  PersonFilesDocument,
 } from "@/graphql/generated/graphql";
 import {
   evidenceItems,
@@ -233,6 +236,295 @@ liveDescribe("research API", () => {
       issues: [],
     });
 
+    const attachedFiles = await fixture.execute<{
+      person: {
+        files: {
+          nodes: Array<{
+            id: string;
+            originalName: string;
+            availability: string;
+            scanState: string;
+            roles: string[];
+          }>;
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        };
+      } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(attachedFiles.body?.errors).toBeUndefined();
+    expect(attachedFiles.body?.data?.person?.files).toMatchObject({
+      nodes: [
+        {
+          id: availableFileId,
+          availability: "AVAILABLE",
+          scanState: "CLEAN",
+          roles: ["PRIMARY_PHOTO"],
+        },
+      ],
+      pageInfo: { hasNextPage: false },
+    });
+    expect(JSON.stringify(attachedFiles.body)).not.toContain("storageKey");
+    expect(JSON.stringify(attachedFiles.body)).not.toContain("checksum");
+
+    const restrictedFileId = newId();
+    await fixture.database.insert(files).values(
+      makeFile({
+        id: restrictedFileId,
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        quarantineState: "available",
+        scanState: "clean",
+      }),
+    );
+    const definition = await fixture.execute<{
+      createFactDefinition: { factDefinition: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CreateFactDefinitionDocument,
+      operationName: "CreateFactDefinition",
+      variables: {
+        input: {
+          allowedValueType: "FILE_REFERENCE",
+          fieldKey: "restricted_file_fact",
+          label: "Restricted file fact",
+          namespace: "person",
+        },
+      },
+    });
+    const definitionId = required(
+      definition.body?.data?.createFactDefinition.factDefinition?.id,
+    );
+    const createdFact = await fixture.execute<{
+      createFact: { fact: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CreateFactDocument,
+      operationName: "CreateFact",
+      variables: {
+        input: {
+          definitionId,
+          personId: subjectId,
+          sensitivity: "RESTRICTED",
+          value: { fileId: restrictedFileId },
+        },
+      },
+    });
+    expect(createdFact.body?.data?.createFact.fact?.id).toBeTruthy();
+    const restrictedFiles = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(restrictedFiles.body?.errors).toBeUndefined();
+    expect(restrictedFiles.body?.data?.person?.files.nodes).toEqual([
+      expect.objectContaining({ id: availableFileId }),
+    ]);
+
+    const sourceOnlyFileId = newId();
+    await fixture.database.insert(files).values(
+      makeFile({
+        id: sourceOnlyFileId,
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        quarantineState: "available",
+        scanState: "clean",
+      }),
+    );
+    const sourceOnlyDefinition = await fixture.execute<{
+      createFactDefinition: { factDefinition: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CreateFactDefinitionDocument,
+      operationName: "CreateFactDefinition",
+      variables: {
+        input: {
+          allowedValueType: "TEXT",
+          fieldKey: "source_only_fact",
+          label: "Source-only fact",
+          namespace: "person",
+        },
+      },
+    });
+    const sourceOnlyDefinitionId = required(
+      sourceOnlyDefinition.body?.data?.createFactDefinition.factDefinition?.id,
+    );
+    const sourceOnlyFact = await fixture.execute<{
+      createFact: { fact: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CreateFactDocument,
+      operationName: "CreateFact",
+      variables: {
+        input: {
+          definitionId: sourceOnlyDefinitionId,
+          personId: subjectId,
+          value: { text: "Evidence source policy" },
+        },
+      },
+    });
+    const sourceOnlyFactId = required(
+      sourceOnlyFact.body?.data?.createFact.fact?.id,
+    );
+    const restrictedSourceId = newId();
+    const sourceOnlyEvidenceId = newId();
+    await fixture.database.insert(sources).values({
+      id: restrictedSourceId,
+      workspaceId: owner.workspaceId,
+      kind: "archive",
+      title: "Restricted evidence source",
+      sensitivity: "internal",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(evidenceItems).values({
+      id: sourceOnlyEvidenceId,
+      workspaceId: owner.workspaceId,
+      sourceId: restrictedSourceId,
+      fileId: sourceOnlyFileId,
+      checksum: `sha256:${"d".repeat(64)}`,
+      sensitivity: "internal",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(factEvidence).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      factId: sourceOnlyFactId,
+      evidenceItemId: sourceOnlyEvidenceId,
+      createdBy: owner.principalId,
+    });
+    const sourceVisibleFiles = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(sourceVisibleFiles.body?.errors).toBeUndefined();
+    expect(
+      sourceVisibleFiles.body?.data?.person?.files.nodes.map((node) => node.id),
+    ).toContain(sourceOnlyFileId);
+    await fixture.database
+      .update(sources)
+      .set({ sensitivity: "restricted" })
+      .where(eq(sources.id, restrictedSourceId));
+    const sourceDeniedFiles = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(sourceDeniedFiles.body?.errors).toBeUndefined();
+    expect(
+      sourceDeniedFiles.body?.data?.person?.files.nodes.map((node) => node.id),
+    ).not.toContain(sourceOnlyFileId);
+    await fixture.database
+      .update(sources)
+      .set({ deletedAt: new Date(), deletedBy: owner.principalId })
+      .where(eq(sources.id, restrictedSourceId));
+    const sourceArchivedFiles = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(sourceArchivedFiles.body?.errors).toBeUndefined();
+    expect(
+      sourceArchivedFiles.body?.data?.person?.files.nodes.map(
+        (node) => node.id,
+      ),
+    ).not.toContain(sourceOnlyFileId);
+
+    const pagedFileId = newId();
+    await fixture.database.insert(files).values(
+      makeFile({
+        id: pagedFileId,
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        quarantineState: "available",
+        scanState: "clean",
+      }),
+    );
+    const pagedDefinition = await fixture.execute<{
+      createFactDefinition: { factDefinition: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: CreateFactDefinitionDocument,
+      operationName: "CreateFactDefinition",
+      variables: {
+        input: {
+          allowedValueType: "FILE_REFERENCE",
+          fieldKey: "paged_file_fact",
+          label: "Paged file fact",
+          namespace: "person",
+        },
+      },
+    });
+    const pagedDefinitionId = required(
+      pagedDefinition.body?.data?.createFactDefinition.factDefinition?.id,
+    );
+    const pagedFact = await fixture.execute({
+      jar: owner.jar,
+      query: CreateFactDocument,
+      operationName: "CreateFact",
+      variables: {
+        input: {
+          definitionId: pagedDefinitionId,
+          personId: subjectId,
+          value: { fileId: pagedFileId },
+        },
+      },
+    });
+    expect(pagedFact.body?.errors).toBeUndefined();
+    const firstFilePage = await fixture.execute<{
+      person: {
+        files: {
+          nodes: Array<{ id: string }>;
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        };
+      } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 1, id: subjectId },
+    });
+    const firstPageInfo = firstFilePage.body?.data?.person?.files.pageInfo;
+    expect(firstPageInfo?.hasNextPage).toBe(true);
+    expect(firstPageInfo?.endCursor).toEqual(expect.any(String));
+    const secondFilePage = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: {
+        first: 1,
+        after: firstPageInfo?.endCursor,
+        id: subjectId,
+      },
+    });
+    expect(secondFilePage.body?.errors).toBeUndefined();
+    expect(secondFilePage.body?.data?.person?.files.nodes).toHaveLength(1);
+    expect(
+      new Set([
+        firstFilePage.body?.data?.person?.files.nodes[0]?.id,
+        secondFilePage.body?.data?.person?.files.nodes[0]?.id,
+      ]),
+    ).toEqual(new Set([availableFileId, pagedFileId]));
+
     const header = await fixture.execute<{
       person: {
         id: string;
@@ -306,6 +598,18 @@ liveDescribe("research API", () => {
       },
       issues: [],
     });
+    const clearedFiles = await fixture.execute<{
+      person: { files: { nodes: Array<{ id: string }> } } | null;
+    }>({
+      jar: owner.jar,
+      query: PersonFilesDocument,
+      operationName: "PersonFiles",
+      variables: { first: 10, id: subjectId },
+    });
+    expect(clearedFiles.body?.errors).toBeUndefined();
+    expect(clearedFiles.body?.data?.person?.files.nodes).toEqual([
+      expect.objectContaining({ id: pagedFileId }),
+    ]);
 
     const merged = await fixture.execute({
       jar: owner.jar,
