@@ -737,11 +737,22 @@ liveDescribe("import staging and durable start", () => {
       .set({ checksum: completed.file.checksum })
       .where(eq(filesTable.id, completed.file.id));
 
-    const queued = await service.startImport({
-      importId: prepared.import.id,
-      expectedVersion: prepared.import.version,
-      idempotencyKey: "run-people-v1",
-    });
+    const queuedResults = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        service.startImport({
+          importId: prepared.import.id,
+          expectedVersion: prepared.import.version,
+          idempotencyKey: "run-people-v1",
+        }),
+      ),
+    );
+    const queued = queuedResults[0]!;
+    expect(new Set(queuedResults.map((result) => result.job.id))).toEqual(
+      new Set([queued.job.id]),
+    );
+    expect(
+      new Set(queuedResults.map((result) => result.import.executionJobId)),
+    ).toEqual(new Set([queued.job.id]));
     expect(queued.import.state).toBe("queued");
     expect(
       createJobsService({ database: fixture.database, encryptionKey }).decode(
