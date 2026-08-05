@@ -100,7 +100,6 @@ workspace creates an isolated row. The service keeps source/file visibility,
 checksum, audit/search, and validation behavior inside the same transaction and
 accepts legacy calls without an idempotency key. Complete/upload evidence and
 the remaining settings/job matrix remain incomplete.
-
 ## Current Task 17 auth/runtime hardening evidence
 
 Task 17 closes the public Better Auth administration bypass while leaving the
