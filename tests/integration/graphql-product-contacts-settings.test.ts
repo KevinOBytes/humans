@@ -2,7 +2,10 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { eq } from "drizzle-orm";
+
 import {
+  CancelWorkspaceInvitationDocument,
   AddressEditProjectionDocument,
   ContactEditProjectionDocument,
   CreateOrganizationApiKeyDocument,
@@ -10,6 +13,8 @@ import {
   CreatePersonContactDocument,
   CreatePlaceDocument,
   IssueWorkspaceInvitationDocument,
+  RemoveWorkspaceMemberDocument,
+  ResendWorkspaceInvitationDocument,
   PersonLocationsDocument,
   SettingsAuditEventsDocument,
   SettingsOrganizationApiKeysDocument,
@@ -18,6 +23,7 @@ import {
   UpdatePersonContactDocument,
   UpdateWorkspaceMemberRoleDocument,
 } from "@/graphql/generated/graphql";
+import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
 
 import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
@@ -449,6 +455,15 @@ liveDescribe(
           }),
         ]),
       );
+      const invitationId = required(
+        invitation.body?.data?.issueWorkspaceInvitation.actionId,
+        "invitation action ID",
+      );
+      const initialDeliveryIntents = await fixture.database
+        .select({ id: authEmailOutbox.id, state: authEmailOutbox.state })
+        .from(authEmailOutbox)
+        .where(eq(authEmailOutbox.invitationId, invitationId));
+      expect(initialDeliveryIntents).toHaveLength(1);
 
       const createdKey = await fixture.execute<{
         createOrganizationApiKey: {
@@ -551,6 +566,157 @@ liveDescribe(
           },
         }),
         "FORBIDDEN",
+      );
+
+      const foreignResend = await fixture.execute<{
+        resendWorkspaceInvitation: { actionId: string | null; code: string };
+      }>({
+        jar: foreign.jar,
+        operationName: "ResendWorkspaceInvitation",
+        query: ResendWorkspaceInvitationDocument,
+        variables: {
+          input: {
+            actionId: invitationId,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        },
+      });
+      expect(foreignResend.body?.data?.resendWorkspaceInvitation).toEqual(
+        expect.objectContaining({ actionId: null, code: "UNCHANGED" }),
+      );
+      const foreignCancel = await fixture.execute<{
+        cancelWorkspaceInvitation: { actionId: string | null; code: string };
+      }>({
+        jar: foreign.jar,
+        operationName: "CancelWorkspaceInvitation",
+        query: CancelWorkspaceInvitationDocument,
+        variables: {
+          input: {
+            actionId: invitationId,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        },
+      });
+      expect(foreignCancel.body?.data?.cancelWorkspaceInvitation).toEqual(
+        expect.objectContaining({ actionId: null, code: "UNCHANGED" }),
+      );
+      const foreignRemoval = await fixture.execute<{
+        removeWorkspaceMember: { actionId: string | null; code: string };
+      }>({
+        jar: foreign.jar,
+        operationName: "RemoveWorkspaceMember",
+        query: RemoveWorkspaceMemberDocument,
+        variables: {
+          input: {
+            actionId: viewer.memberId,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        },
+      });
+      expect(foreignRemoval.body?.data?.removeWorkspaceMember).toEqual(
+        expect.objectContaining({ actionId: null, code: "FORBIDDEN" }),
+      );
+
+      const resent = await fixture.execute<{
+        resendWorkspaceInvitation: { actionId: string | null; code: string };
+      }>({
+        jar: owner.jar,
+        operationName: "ResendWorkspaceInvitation",
+        query: ResendWorkspaceInvitationDocument,
+        variables: {
+          input: {
+            actionId: invitationId,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        },
+      });
+      expect(resent.body?.data?.resendWorkspaceInvitation).toMatchObject({
+        actionId: invitationId,
+        code: "APPLIED",
+      });
+      const resentDeliveryIntents = await fixture.database
+        .select({ id: authEmailOutbox.id, state: authEmailOutbox.state })
+        .from(authEmailOutbox)
+        .where(eq(authEmailOutbox.invitationId, invitationId));
+      expect(resentDeliveryIntents).toHaveLength(2);
+      expect(resentDeliveryIntents.map((intent) => intent.id)).toEqual(
+        expect.arrayContaining([initialDeliveryIntents[0].id]),
+      );
+      expect(resentDeliveryIntents.map((intent) => intent.id)).not.toEqual([
+        initialDeliveryIntents[0].id,
+      ]);
+
+      const canceled = await fixture.execute<{
+        cancelWorkspaceInvitation: { actionId: string | null; code: string };
+      }>({
+        jar: owner.jar,
+        operationName: "CancelWorkspaceInvitation",
+        query: CancelWorkspaceInvitationDocument,
+        variables: {
+          input: {
+            actionId: invitationId,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        },
+      });
+      expect(canceled.body?.data?.cancelWorkspaceInvitation).toMatchObject({
+        actionId: invitationId,
+        code: "APPLIED",
+      });
+
+      const afterCancelDirectory = await fixture.execute<{
+        settingsWorkspaceDirectory: {
+          invitations: Array<{ actionId: string }>;
+          members: { nodes: Array<{ actionId: string }> };
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "SettingsWorkspaceDirectory",
+        query: SettingsWorkspaceDirectoryDocument,
+        variables: { offset: 0 },
+      });
+      expect(
+        afterCancelDirectory.body?.data?.settingsWorkspaceDirectory.invitations,
+      ).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ actionId: invitationId }),
+        ]),
+      );
+
+      const removed = await fixture.execute<{
+        removeWorkspaceMember: { actionId: string | null; code: string };
+      }>({
+        jar: owner.jar,
+        operationName: "RemoveWorkspaceMember",
+        query: RemoveWorkspaceMemberDocument,
+        variables: {
+          input: {
+            actionId: viewer.memberId,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        },
+      });
+      expect(removed.body?.data?.removeWorkspaceMember).toMatchObject({
+        actionId: viewer.memberId,
+        code: "APPLIED",
+      });
+      const afterRemovalDirectory = await fixture.execute<{
+        settingsWorkspaceDirectory: {
+          members: { nodes: Array<{ actionId: string }> };
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "SettingsWorkspaceDirectory",
+        query: SettingsWorkspaceDirectoryDocument,
+        variables: { offset: 0 },
+      });
+      expect(
+        afterRemovalDirectory.body?.data?.settingsWorkspaceDirectory.members
+          .nodes,
+      ).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ actionId: viewer.memberId }),
+        ]),
       );
 
       const foreignDirectory = await fixture.execute({
