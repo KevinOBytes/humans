@@ -27,7 +27,7 @@ recovery.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes. A focused live policy-settings matrix now covers owner access-policy success, administrator workspace-default success, viewer/foreign denial, optimistic retries, validation rollback, redacted audit output, and one durable `UpdateAccessPolicy` replay/concurrency boundary; provider and whole-settings coverage remain open.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search/graph envelopes and the centralized browser/server GraphQL error contract plus representative all-code/redaction matrix.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks; provider, browser, and interruption coverage remain open.
-- [ ] `HUM-FR-035` Build and verify the parity Vercel deployment path.
+- [ ] `HUM-FR-035` Build and verify the parity Vercel deployment path. Repository-local evidence now covers the Next/Node build contract, schema-only cron configuration, exact scheduled-job authentication, public/secret environment separation, and smoke skip/failure/local-boundary behavior in `tests/unit/vercel-deployment-contract.test.ts`; hosted URL, migration, and managed-provider acceptance remain required.
 
 ## Non-functional
 
@@ -41,5 +41,5 @@ recovery.
 - [ ] `HUM-NFR-009` Complete responsive and whole-product accessibility acceptance beyond the tested Task 12 search and graph-analysis controls/results. Profile semantic sections, keyboard tab activation, and RTL/200% zoom no-overflow/axe evidence are bounded additions; full responsive primary-journey coverage remains open.
 - [ ] `HUM-NFR-011` Complete the remaining whole-product PostgreSQL, Redis, storage, GraphQL, browser, and CI matrix beyond the Task 12 foundation and Task 18 live upgrade/concurrency/browser/Compose suite.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage.
-- [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence.
+- [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. The Vercel release-contract suite now records local configuration and smoke-input evidence, but the current-commit full matrix, hosted deployment/provider/runtime proof, and all remaining TODO rows are still outstanding.
 - [ ] `HUM-NFR-020` Meet and continuously verify the production latency, concurrency, graph-frame-rate, Web Vitals, and bundle budgets beyond Task 12 bounds and indexed-plan evidence.
