@@ -1,0 +1,1 @@
+ALTER TABLE "workspace_settings" ADD COLUMN "retain_restricted_ai_prompts" boolean DEFAULT false NOT NULL;

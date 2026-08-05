@@ -20,6 +20,7 @@ import { createJobsService } from "@/modules/jobs/service";
 import {
   aiPersistenceHmac,
   canonicalAiUserMessage,
+  omittedAiUserMessage,
   equalAiDigest,
   isAiStableErrorCode,
   prefixedAiPersistenceHmac,
@@ -261,13 +262,24 @@ export function createAiRepository(
       const threadId = newId();
       const messageId = newId();
       const runId = newId();
-      const plaintext = canonicalAiUserMessage(input.question, input.scope);
+      const canonicalMessage = canonicalAiUserMessage(
+        input.question,
+        input.scope,
+      );
       const now = new Date();
       const [settings] = await database
-        .select({ retentionDays: workspaceSettings.retentionDays })
+        .select({
+          retentionDays: workspaceSettings.retentionDays,
+          retainRestrictedAiPrompts:
+            workspaceSettings.retainRestrictedAiPrompts,
+        })
         .from(workspaceSettings)
         .where(eq(workspaceSettings.workspaceId, workspaceId))
         .limit(1);
+      const plaintext =
+        input.containsRestrictedScope && !settings?.retainRestrictedAiPrompts
+          ? omittedAiUserMessage()
+          : canonicalMessage;
       await database.insert(aiThreads).values({
         id: threadId,
         workspaceId,
@@ -308,7 +320,7 @@ export function createAiRepository(
       const promptHash = prefixedAiPersistenceHmac(
         runtime,
         "prompt",
-        plaintext,
+        canonicalMessage,
       );
       await database.insert(aiRuns).values({
         id: runId,

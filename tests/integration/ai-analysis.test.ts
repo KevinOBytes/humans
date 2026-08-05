@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import {
@@ -19,6 +19,7 @@ import { people } from "@/db/schema/people";
 import { workspacePrincipals } from "@/db/schema/principals";
 import {
   accessPolicies,
+  legalHolds,
   resourceGrants,
   workspaceSettings,
   workspaces,
@@ -575,6 +576,207 @@ liveDescribe("atomic AI analysis persistence", () => {
       }),
     ).resolves.toBe(1);
     expect(await fixture.database.select().from(aiThreads)).toHaveLength(0);
+  });
+
+  it("omits restricted scoped prompts by default and retains them only after explicit workspace policy", async () => {
+    const owner = await fixture.createActor();
+    const context = await userContext(owner);
+    const restrictedPersonId = newId();
+    await fixture.database.insert(people).values({
+      id: restrictedPersonId,
+      workspaceId: owner.workspaceId,
+      displayName: "Restricted AI scope",
+      sensitivity: "restricted",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    const policyId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: owner.workspaceId,
+      name: "Restricted AI scope readers",
+      sensitivityCeiling: "restricted",
+      resourceKinds: ["person"],
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      policyId,
+      memberId: owner.memberId,
+      resourceId: restrictedPersonId,
+      resourceKind: "person",
+      state: "active",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    const omittedQuestion = "Do not retain this restricted prompt";
+    const omitted = await service(context).startAiAnalysis({
+      question: omittedQuestion,
+      idempotencyKey: "restricted-omitted",
+      scope: { personIds: [restrictedPersonId] },
+    });
+    const [omittedMessage] = await fixture.database
+      .select({ encryptedContent: aiMessages.encryptedContent })
+      .from(aiMessages)
+      .innerJoin(aiRuns, eq(aiRuns.messageId, aiMessages.id))
+      .where(eq(aiRuns.id, omitted.id));
+    const omittedPlaintext = openSealedEnvelope({
+      key: encryptionKey,
+      purpose: "ai-user-message",
+      token: required(omittedMessage).encryptedContent,
+    });
+    expect(omittedPlaintext).not.toContain(omittedQuestion);
+    expect(omittedPlaintext).toBe(
+      JSON.stringify({
+        question: null,
+        scope: { evidenceIds: [], personIds: [] },
+        version: 1,
+      }),
+    );
+    expect(omitted).toMatchObject({
+      model: "research-model-1",
+      provider: "COMPATIBLE",
+      state: "pending",
+    });
+
+    await fixture.database
+      .update(workspaceSettings)
+      .set({ retainRestrictedAiPrompts: true })
+      .where(eq(workspaceSettings.workspaceId, owner.workspaceId));
+    const retainedQuestion = "This restricted prompt is retained by policy";
+    const retained = await service(context).startAiAnalysis({
+      question: retainedQuestion,
+      idempotencyKey: "restricted-retained",
+      scope: { personIds: [restrictedPersonId] },
+    });
+    const [retainedMessage] = await fixture.database
+      .select({ encryptedContent: aiMessages.encryptedContent })
+      .from(aiMessages)
+      .innerJoin(aiRuns, eq(aiRuns.messageId, aiMessages.id))
+      .where(eq(aiRuns.id, retained.id));
+    const retainedPlaintext = openSealedEnvelope({
+      key: encryptionKey,
+      purpose: "ai-user-message",
+      token: required(retainedMessage).encryptedContent,
+    });
+    expect(retainedPlaintext).toContain(retainedQuestion);
+    expect(retainedPlaintext).toContain(restrictedPersonId);
+  });
+
+  it("purges bounded completed threads while preserving active holds and in-flight work", async () => {
+    const owner = await fixture.createActor();
+    const context = await userContext(owner);
+    await fixture.database
+      .update(workspaceSettings)
+      .set({ retentionDays: 0 })
+      .where(eq(workspaceSettings.workspaceId, owner.workspaceId));
+    const completed = await service(context).startAiAnalysis({
+      question: "Completed and expired",
+      idempotencyKey: "retention-completed",
+    });
+    const held = await service(context).startAiAnalysis({
+      question: "Held and expired",
+      idempotencyKey: "retention-held",
+    });
+    const pending = await service(context).startAiAnalysis({
+      question: "Pending and expired",
+      idempotencyKey: "retention-pending",
+    });
+    const stale = new Date(Date.now() - 1_000);
+    const rows = await fixture.database
+      .select({ id: aiRuns.id, threadId: aiRuns.threadId })
+      .from(aiRuns)
+      .where(
+        and(
+          eq(aiRuns.workspaceId, owner.workspaceId),
+          eq(aiRuns.id, completed.id),
+        ),
+      );
+    const completedThreadId = required(rows[0]).threadId;
+    const [heldRow] = await fixture.database
+      .select({ threadId: aiRuns.threadId })
+      .from(aiRuns)
+      .where(eq(aiRuns.id, held.id));
+    const [pendingRow] = await fixture.database
+      .select({ threadId: aiRuns.threadId })
+      .from(aiRuns)
+      .where(eq(aiRuns.id, pending.id));
+    await fixture.database
+      .update(aiThreads)
+      .set({ updatedAt: stale })
+      .where(
+        and(
+          eq(aiThreads.workspaceId, owner.workspaceId),
+          eq(aiThreads.id, completedThreadId),
+        ),
+      );
+    await fixture.database
+      .update(aiThreads)
+      .set({ updatedAt: stale })
+      .where(eq(aiThreads.id, required(heldRow).threadId));
+    await fixture.database
+      .update(aiThreads)
+      .set({ updatedAt: stale })
+      .where(eq(aiThreads.id, required(pendingRow).threadId));
+    await fixture.database
+      .update(aiRuns)
+      .set({ state: "completed", completedAt: stale })
+      .where(inArray(aiRuns.id, [completed.id, held.id]));
+    const holdId = newId();
+    await fixture.database.insert(legalHolds).values({
+      id: holdId,
+      workspaceId: owner.workspaceId,
+      resourceId: required(heldRow).threadId,
+      resourceKind: "ai_thread",
+      reason: "Preserve for review",
+      authority: "test",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+
+    await expect(
+      purgeExpiredAiThreads({ database: fixture.database, limit: 1 }),
+    ).resolves.toBe(1);
+    expect(
+      await fixture.database
+        .select({ id: aiThreads.id })
+        .from(aiThreads)
+        .where(eq(aiThreads.id, required(heldRow).threadId)),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: aiThreads.id })
+        .from(aiThreads)
+        .where(eq(aiThreads.id, required(pendingRow).threadId)),
+    ).toHaveLength(1);
+
+    await fixture.database
+      .update(legalHolds)
+      .set({
+        state: "released",
+        releasedAt: new Date(),
+        releasedBy: owner.principalId,
+        releaseReason: "Review complete",
+      })
+      .where(eq(legalHolds.id, holdId));
+    await expect(
+      purgeExpiredAiThreads({ database: fixture.database, limit: 1 }),
+    ).resolves.toBe(1);
+    expect(
+      await fixture.database
+        .select({ id: aiThreads.id })
+        .from(aiThreads)
+        .where(eq(aiThreads.id, required(heldRow).threadId)),
+    ).toHaveLength(0);
+    expect(
+      await fixture.database
+        .select({ id: aiThreads.id })
+        .from(aiThreads)
+        .where(eq(aiThreads.id, required(pendingRow).threadId)),
+    ).toHaveLength(1);
   });
 
   it("revalidates live authority before enqueue, read, and cancel", async () => {

@@ -66,6 +66,9 @@ export const workspaceSettings = pgTable(
     privacyDefaults: jsonb("privacy_defaults").default({}).notNull(),
     graphDefaults: jsonb("graph_defaults").default({}).notNull(),
     aiEnabled: boolean("ai_enabled").default(false).notNull(),
+    retainRestrictedAiPrompts: boolean("retain_restricted_ai_prompts")
+      .default(false)
+      .notNull(),
     storageEnabled: boolean("storage_enabled").default(true).notNull(),
     version: integer("version").default(1).notNull(),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),

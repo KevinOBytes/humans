@@ -140,10 +140,11 @@ function validateRuntime(runtime: AiAnalysisRuntime): void {
 async function requireAuthorizedScope(
   context: ResearchServiceContext,
   scope: AiScope,
-): Promise<void> {
+): Promise<boolean> {
+  let containsRestrictedScope = false;
   if (scope.personIds.length) {
     const visible = await context.database
-      .select({ id: people.id })
+      .select({ id: people.id, sensitivity: people.sensitivity })
       .from(people)
       .where(
         and(
@@ -158,10 +159,13 @@ async function requireAuthorizedScope(
         ),
       );
     if (visible.length !== scope.personIds.length) return validationError();
+    containsRestrictedScope ||= visible.some(
+      (row) => row.sensitivity === "restricted",
+    );
   }
   if (scope.evidenceIds.length) {
     const visible = await context.database
-      .select({ id: evidenceItems.id })
+      .select({ id: evidenceItems.id, sensitivity: evidenceItems.sensitivity })
       .from(evidenceItems)
       .where(
         and(
@@ -176,7 +180,11 @@ async function requireAuthorizedScope(
         ),
       );
     if (visible.length !== scope.evidenceIds.length) return validationError();
+    containsRestrictedScope ||= visible.some(
+      (row) => row.sensitivity === "restricted",
+    );
   }
+  return containsRestrictedScope;
 }
 
 async function visibleResourceIds(
@@ -375,7 +383,10 @@ export function createAiAnalysisService(
         idempotency,
         requiredPermissions,
         async (scopedContext) => {
-          await requireAuthorizedScope(scopedContext, normalized.scope);
+          const containsRestrictedScope = await requireAuthorizedScope(
+            scopedContext,
+            normalized.scope,
+          );
           return createAiRepository(
             scopedContext.database,
             repositoryRuntime,
@@ -383,6 +394,7 @@ export function createAiAnalysisService(
             context: scopedContext,
             provider: runtime.provider.disclosure,
             baseUrlFingerprint: runtime.provider.baseUrlFingerprint,
+            containsRestrictedScope,
             question: normalized.question,
             scope: normalized.scope,
           });

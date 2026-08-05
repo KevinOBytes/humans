@@ -134,9 +134,20 @@ export type StartAiRowsInput = Readonly<{
   context: ResearchServiceContext;
   provider: AiProviderDisclosure;
   baseUrlFingerprint: string;
+  containsRestrictedScope: boolean;
   question: string;
   scope: AiScope;
 }>;
+
+const OMITTED_AI_USER_MESSAGE = JSON.stringify({
+  question: null,
+  scope: { evidenceIds: [], personIds: [] },
+  version: 1,
+});
+
+export function omittedAiUserMessage(): string {
+  return OMITTED_AI_USER_MESSAGE;
+}
 
 export function validateAiRepositoryRuntime(
   runtime: AiRepositoryRuntime,
