@@ -19,6 +19,9 @@ The self-hosted alpha includes:
 - session authentication, optional TOTP, an explicit administrator bootstrap,
   workspace creation/selection, workspace isolation, member administration,
   invitations, and provisioned API keys within their documented limitations;
+  focused live-PostgreSQL generated-GraphQL coverage verifies invitation resend
+  creates a distinct replacement delivery intent and authorized cancellation/removal
+  removes safe directory projections without cross-workspace mutation;
 - the canonical GraphQL Yoga endpoint and generated browser operations;
 - a role-aware research dashboard with recent visible people and imports,
   graph and principal-owned AI analysis history, exact authorized graph counts,
