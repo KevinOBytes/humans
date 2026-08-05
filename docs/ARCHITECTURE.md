@@ -369,6 +369,19 @@ Limiter keys HMAC the operation class, workspace, dimension, and subject under
 a separate key, so Redis never receives raw actor, API-key, workspace, or
 client-prefix identifiers.
 
+## Provider adapter contract evidence
+
+Domain services depend on the `RedisStore` and `ObjectStore` interfaces rather
+than concrete provider clients. The provider contract integration suite runs
+the same Redis lifecycle (values, counters, ownership-sensitive leases, and
+weighted token buckets) through both the local IORedis adapter and an
+Upstash-shaped client facade. When a configured S3-compatible endpoint is
+available, it performs a signed checksum-bound upload, workspace-isolated
+metadata/read/download, and deletion through `S3ObjectStore`. CI supplies an
+isolated MinIO endpoint for this path. R2, generic hosted S3, and real Upstash
+REST acceptance remain explicit credential-gated release checks; no local
+facade is presented as proof of those external services.
+
 Production readiness depends on successful migration before application readiness. Liveness checks process health; readiness checks validated configuration and dependency reachability without exposing credentials.
 
 ## Architectural decisions
