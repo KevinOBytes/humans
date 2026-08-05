@@ -4,6 +4,7 @@ import { extractionRuns, files } from "@/db/schema/files";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { JobExecutionError } from "@/modules/jobs/types";
 import type { ObjectStore } from "@/lib/storage/types";
+import { parseExtractionContent } from "@/modules/files/extraction-parser";
 
 const MAX_EXTRACTED_BYTES = 8 * 1024 * 1024;
 
@@ -61,19 +62,41 @@ export function createExtractionHandler(input: {
       .limit(1);
     if (!row)
       throw new JobExecutionError("extraction_run_not_found", "permanent");
-    if (row.run.state === "completed" || row.run.state === "error")
+    if (
+      row.run.state === "completed" ||
+      row.run.state === "error" ||
+      row.run.state === "cancelled"
+    )
       return { resultReferences: [row.run.id] };
     if (row.run.state === "pending") {
-      const [claimed] = await input.database
-        .update(extractionRuns)
-        .set({ state: "processing", startedAt: new Date() })
-        .where(
-          and(
-            eq(extractionRuns.id, row.run.id),
-            eq(extractionRuns.state, "pending"),
-          ),
-        )
-        .returning({ id: extractionRuns.id });
+      const claimed = await input.database.transaction(async (transaction) => {
+        const [updated] = await transaction
+          .update(extractionRuns)
+          .set({ state: "processing", startedAt: new Date() })
+          .where(
+            and(
+              eq(extractionRuns.workspaceId, context.job.workspaceId),
+              eq(extractionRuns.id, row.run.id),
+              eq(extractionRuns.state, "pending"),
+            ),
+          )
+          .returning({ id: extractionRuns.id });
+        if (!updated) return null;
+        await transaction
+          .update(files)
+          .set({
+            extractionState: "processing",
+            updatedAt: new Date(),
+            version: row.file.version + 1,
+          })
+          .where(
+            and(
+              eq(files.workspaceId, context.job.workspaceId),
+              eq(files.id, row.file.id),
+            ),
+          );
+        return updated;
+      });
       if (!claimed) return { resultReferences: [row.run.id] };
     }
     try {
@@ -93,15 +116,19 @@ export function createExtractionHandler(input: {
       )) {
         throw new JobExecutionError("extraction_type_unsupported", "permanent");
       }
+      const structuredOutput = parseExtractionContent({
+        bytes: result.bytes,
+        contentType,
+        extractor: row.run.extractor,
+        text: result.text,
+      });
       await input.database.transaction(async (transaction) => {
-        await transaction
+        const [completed] = await transaction
           .update(extractionRuns)
           .set({
             state: "completed",
             structuredOutput: {
-              text: result.text,
-              bytes: result.bytes,
-              contentType,
+              ...structuredOutput,
             },
             errorSummary: null,
             completedAt: new Date(),
@@ -111,7 +138,9 @@ export function createExtractionHandler(input: {
               eq(extractionRuns.id, row.run.id),
               eq(extractionRuns.state, "processing"),
             ),
-          );
+          )
+          .returning({ id: extractionRuns.id });
+        if (!completed) return;
         await transaction
           .update(files)
           .set({
@@ -119,7 +148,12 @@ export function createExtractionHandler(input: {
             updatedAt: new Date(),
             version: row.file.version + 1,
           })
-          .where(eq(files.id, row.file.id));
+          .where(
+            and(
+              eq(files.workspaceId, context.job.workspaceId),
+              eq(files.id, row.file.id),
+            ),
+          );
       });
       return { resultReferences: [row.run.id, row.file.id] };
     } catch (error) {
@@ -130,19 +164,37 @@ export function createExtractionHandler(input: {
         throw error;
       const failure =
         error instanceof JobExecutionError ? error.code : "extraction_failed";
-      await input.database
-        .update(extractionRuns)
-        .set({
-          state: "error",
-          errorSummary: { code: failure },
-          completedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(extractionRuns.id, row.run.id),
-            eq(extractionRuns.state, "processing"),
-          ),
-        );
+      await input.database.transaction(async (transaction) => {
+        const [failed] = await transaction
+          .update(extractionRuns)
+          .set({
+            state: "error",
+            errorSummary: { code: failure },
+            completedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(extractionRuns.workspaceId, context.job.workspaceId),
+              eq(extractionRuns.id, row.run.id),
+              eq(extractionRuns.state, "processing"),
+            ),
+          )
+          .returning({ id: extractionRuns.id });
+        if (!failed) return;
+        await transaction
+          .update(files)
+          .set({
+            extractionState: "error",
+            updatedAt: new Date(),
+            version: row.file.version + 1,
+          })
+          .where(
+            and(
+              eq(files.workspaceId, context.job.workspaceId),
+              eq(files.id, row.file.id),
+            ),
+          );
+      });
       if (error instanceof JobExecutionError) throw error;
       throw new JobExecutionError(failure, "permanent");
     }

@@ -1,0 +1,2 @@
+ALTER TABLE "files" DROP CONSTRAINT "files_extraction_state_check";--> statement-breakpoint
+ALTER TABLE "files" ADD CONSTRAINT "files_extraction_state_check" CHECK ("files"."extraction_state" IN ('pending', 'processing', 'completed', 'not_requested', 'error', 'cancelled'));

@@ -90,7 +90,7 @@ export const files = pgTable(
     ),
     check(
       "files_extraction_state_check",
-      sql`${table.extractionState} IN ('pending', 'processing', 'completed', 'not_requested', 'error')`,
+      sql`${table.extractionState} IN ('pending', 'processing', 'completed', 'not_requested', 'error', 'cancelled')`,
     ),
   ],
 );

@@ -6,6 +6,7 @@ fragment FileWorkspaceItem on File {
   byteSize
   availability
   scanState
+  extractionState
   sensitivity
   version
   createdAt
@@ -91,6 +92,36 @@ mutation RequestFileExtraction(
     extractor: $extractor
     configuration: $configuration
   ) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+
+mutation CancelFileExtraction($runId: UUID!) {
+  cancelExtraction(runId: $runId) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+
+mutation RetryFileExtraction($runId: UUID!) {
+  retryExtraction(runId: $runId) {
     id
     fileId
     extractor

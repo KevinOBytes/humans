@@ -335,7 +335,7 @@ export type CreateWebhookInput = {
 };
 
 export type ExtractionRunState =
-  "COMPLETED" | "ERROR" | "PENDING" | "PROCESSING";
+  "CANCELLED" | "COMPLETED" | "ERROR" | "PENDING" | "PROCESSING";
 
 export type FactCardinality = "MANY" | "ONE";
 
@@ -385,6 +385,14 @@ export type FactValueType =
   | "URI";
 
 export type FileAvailability = "AVAILABLE" | "QUARANTINED" | "REJECTED";
+
+export type FileExtractionState =
+  | "CANCELLED"
+  | "COMPLETED"
+  | "ERROR"
+  | "NOT_REQUESTED"
+  | "PENDING"
+  | "PROCESSING";
 
 export type FileGrantMethod = "GET" | "PUT";
 
@@ -981,6 +989,7 @@ export type FileWorkspaceItemFragment = {
   byteSize: number | null;
   availability: FileAvailability | null;
   scanState: FileScanState | null;
+  extractionState: FileExtractionState | null;
   sensitivity: Sensitivity | null;
   version: number | null;
   createdAt: string | null;
@@ -1073,6 +1082,44 @@ export type RequestFileExtractionMutationVariables = Exact<{
 
 export type RequestFileExtractionMutation = {
   requestExtraction: {
+    id: string | null;
+    fileId: string | null;
+    extractor: string | null;
+    extractorVersion: string | null;
+    state: ExtractionRunState | null;
+    structuredOutput: unknown;
+    errorSummary: unknown;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type CancelFileExtractionMutationVariables = Exact<{
+  runId: string;
+}>;
+
+export type CancelFileExtractionMutation = {
+  cancelExtraction: {
+    id: string | null;
+    fileId: string | null;
+    extractor: string | null;
+    extractorVersion: string | null;
+    state: ExtractionRunState | null;
+    structuredOutput: unknown;
+    errorSummary: unknown;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type RetryFileExtractionMutationVariables = Exact<{
+  runId: string;
+}>;
+
+export type RetryFileExtractionMutation = {
+  retryExtraction: {
     id: string | null;
     fileId: string | null;
     extractor: string | null;
@@ -3830,6 +3877,7 @@ export const FileWorkspaceItemFragmentDoc = new TypedDocumentString(
   byteSize
   availability
   scanState
+  extractionState
   sensitivity
   version
   createdAt
@@ -4326,6 +4374,7 @@ export const EvidenceFilesDocument = new TypedDocumentString(
   byteSize
   availability
   scanState
+  extractionState
   sensitivity
   version
   createdAt
@@ -4341,7 +4390,7 @@ export const EvidenceFilesDocument = new TypedDocumentString(
   }
 }`,
   {
-    hash: "sha256:07c89ac5aacbc0687e6499958f51b0e7b93e034e501503e69dcb8a105ad5e838",
+    hash: "sha256:be04f838454a9149073ed603f2b9257fa4b44b39ba56678765de5474ab4f0a15",
   },
 ) as unknown as TypedDocumentString<
   EvidenceFilesQuery,
@@ -4424,6 +4473,54 @@ export const RequestFileExtractionDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   RequestFileExtractionMutation,
   RequestFileExtractionMutationVariables
+>;
+export const CancelFileExtractionDocument = new TypedDocumentString(
+  `
+    mutation CancelFileExtraction($runId: UUID!) {
+  cancelExtraction(runId: $runId) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:f96e1ac1cd8ca2e9d7f19b6628566204f2133dd8df9ef5aebf0a49ac85298934",
+  },
+) as unknown as TypedDocumentString<
+  CancelFileExtractionMutation,
+  CancelFileExtractionMutationVariables
+>;
+export const RetryFileExtractionDocument = new TypedDocumentString(
+  `
+    mutation RetryFileExtraction($runId: UUID!) {
+  retryExtraction(runId: $runId) {
+    id
+    fileId
+    extractor
+    extractorVersion
+    state
+    structuredOutput
+    errorSummary
+    startedAt
+    completedAt
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:0c0a2c97bac7ea6fec3d2dcf63685eca7e244692abf0f1ef38c921b67c1bb14e",
+  },
+) as unknown as TypedDocumentString<
+  RetryFileExtractionMutation,
+  RetryFileExtractionMutationVariables
 >;
 export const ImportHistoryDocument = new TypedDocumentString(
   `
@@ -4573,6 +4670,7 @@ export const CompleteWorkspaceUploadDocument = new TypedDocumentString(
   byteSize
   availability
   scanState
+  extractionState
   sensitivity
   version
   createdAt
@@ -4588,7 +4686,7 @@ export const CompleteWorkspaceUploadDocument = new TypedDocumentString(
   }
 }`,
   {
-    hash: "sha256:03557546ff1ba05ced4bdb6a265a7cad7700588814919840291bd44812c39f99",
+    hash: "sha256:f480645b6a871dd3fa23880d1b151502ee44421111b0bc14b03e25bf3215aa98",
   },
 ) as unknown as TypedDocumentString<
   CompleteWorkspaceUploadMutation,
