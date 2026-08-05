@@ -252,6 +252,7 @@ liveDescribe("durable extraction worker", () => {
 
     const cancelled = await service.cancel(seeded.runId);
     expect(cancelled.state).toBe("cancelled");
+    expect(cancelled.errorSummary).toEqual({ code: "extraction_cancelled" });
     const [cancelledFile] = await fixture.database
       .select({ state: files.extractionState })
       .from(files)
