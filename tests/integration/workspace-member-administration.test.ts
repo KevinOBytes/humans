@@ -3,6 +3,11 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import {
+  CancelWorkspaceInvitationDocument,
+  IssueWorkspaceInvitationDocument,
+  UpdateWorkspaceMemberRoleDocument,
+} from "@/graphql/generated/graphql";
 import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
 import { invitations, members, sessions } from "@/db/schema/auth";
 import { auditEvents } from "@/db/schema/operations";
@@ -21,15 +26,6 @@ import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
-const ISSUE = /* GraphQL */ `
-  mutation Issue($input: IssueWorkspaceInvitationInput!) {
-    issueWorkspaceInvitation(input: $input) {
-      actionId
-      code
-      requestId
-    }
-  }
-`;
 const DIRECTORY = /* GraphQL */ `
   query Directory {
     settingsWorkspaceDirectory {
@@ -52,15 +48,6 @@ const DIRECTORY = /* GraphQL */ `
     }
   }
 `;
-const UPDATE = /* GraphQL */ `
-  mutation Update($input: UpdateWorkspaceMemberRoleInput!) {
-    updateWorkspaceMemberRole(input: $input) {
-      actionId
-      code
-      requestId
-    }
-  }
-`;
 const REMOVE = /* GraphQL */ `
   mutation Remove($input: WorkspaceInvitationActionInput!) {
     removeWorkspaceMember(input: $input) {
@@ -70,16 +57,6 @@ const REMOVE = /* GraphQL */ `
     }
   }
 `;
-const CANCEL = /* GraphQL */ `
-  mutation Cancel($input: WorkspaceInvitationActionInput!) {
-    cancelWorkspaceInvitation(input: $input) {
-      actionId
-      code
-      requestId
-    }
-  }
-`;
-
 const appOrigin = new URL(testAdminEnv.NEXT_PUBLIC_APP_URL).origin;
 
 liveDescribe("workspace member administration transactions", () => {
@@ -102,14 +79,16 @@ liveDescribe("workspace member administration transactions", () => {
     const [left, right] = await Promise.all([
       fixture.execute<{ issueWorkspaceInvitation?: { code?: string } }>({
         jar: owner.jar,
-        query: ISSUE,
+        operationName: "IssueWorkspaceInvitation",
+        query: IssueWorkspaceInvitationDocument,
         variables: {
           input: { email, role: "VIEWER", idempotencyKey: crypto.randomUUID() },
         },
       }),
       fixture.execute<{ issueWorkspaceInvitation?: { code?: string } }>({
         jar: owner.jar,
-        query: ISSUE,
+        operationName: "IssueWorkspaceInvitation",
+        query: IssueWorkspaceInvitationDocument,
         variables: {
           input: {
             email: email.toLowerCase(),
@@ -163,7 +142,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { code?: string };
     }>({
       jar: admin.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: "peer@example.test",
@@ -196,7 +176,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { actionId?: string; code?: string };
     }>({
       jar: owner.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: recipientEmail,
@@ -211,14 +192,19 @@ liveDescribe("workspace member administration transactions", () => {
 
     const handoff = createInvitationHandoffHandlers({
       encryptionKey: testAdminEnv.AUTH_ENCRYPTION_KEY,
-      getSession: async () => ({ user: { id: recipient.userId } }),
+      getSession: (headers) => fixture.runtime.api.getSession({ headers }),
       secureCookies: false,
       trustedOrigins: [appOrigin],
     });
+    const establishHeaders = new Headers({
+      "content-type": "application/json",
+      origin: appOrigin,
+    });
+    recipient.jar.apply(establishHeaders);
     const established = await handoff.POST(
       new Request(`${appOrigin}/api/account/invitations/handoff`, {
         body: JSON.stringify({ invitationId }),
-        headers: { "content-type": "application/json", origin: appOrigin },
+        headers: establishHeaders,
         method: "POST",
       }),
     );
@@ -228,9 +214,27 @@ liveDescribe("workspace member administration transactions", () => {
     expect(handoffCookie).toContain("SameSite=Strict");
     expect(handoffCookie).not.toContain(invitationId!);
 
+    const handoffCookiePair = handoffCookie!.split(";", 1)[0]!;
+    const unauthenticated = await handoff.GET(
+      new Request(`${appOrigin}/api/account/invitations/handoff`, {
+        headers: { cookie: handoffCookiePair },
+      }),
+    );
+    expect(unauthenticated.status).toBe(401);
+
+    const foreign = await fixture.createUser({
+      email: "foreign-recipient@example.test",
+      username: "ForeignRecipient",
+    });
+    const foreignHeaders = new Headers({ origin: appOrigin });
+    foreign.jar.apply(foreignHeaders);
+    foreignHeaders.set(
+      "cookie",
+      `${foreignHeaders.get("cookie")}; ${handoffCookiePair}`,
+    );
     const opened = await handoff.GET(
       new Request(`${appOrigin}/api/account/invitations/handoff`, {
-        headers: { cookie: handoffCookie!.split(";", 1)[0]! },
+        headers: foreignHeaders,
       }),
     );
     expect(opened.status).toBe(200);
@@ -238,15 +242,40 @@ liveDescribe("workspace member administration transactions", () => {
 
     const acceptance = createInvitationAcceptanceHandler({
       database: fixture.database,
-      getSession: async () => ({ user: { id: recipient.userId } }),
+      getSession: (headers) => fixture.runtime.api.getSession({ headers }),
       trustedOrigins: [appOrigin],
     });
+    const foreignAccepted = await acceptance(
+      new Request(`${appOrigin}/api/account/invitations/accept`, {
+        body: JSON.stringify({ invitationId }),
+        headers: {
+          "content-type": "application/json",
+          cookie: foreignHeaders.get("cookie")!,
+          origin: appOrigin,
+        },
+        method: "POST",
+      }),
+    );
+    expect(foreignAccepted.status).toBe(409);
+    await expect(foreignAccepted.json()).resolves.toMatchObject({
+      code: "INVITATION_UNAVAILABLE",
+    });
+    expect(
+      await fixture.database
+        .select({ userId: members.userId })
+        .from(members)
+        .where(eq(members.userId, foreign.userId)),
+    ).toEqual([]);
+
+    recipient.jar.capture(established);
+    const recipientHeaders = new Headers({ origin: appOrigin });
+    recipient.jar.apply(recipientHeaders);
     const accepted = await acceptance(
       new Request(`${appOrigin}/api/account/invitations/accept`, {
         body: JSON.stringify({ invitationId }),
         headers: {
           "content-type": "application/json",
-          cookie: handoffCookie!.split(";", 1)[0]!,
+          cookie: recipientHeaders.get("cookie")!,
           origin: appOrigin,
         },
         method: "POST",
@@ -288,7 +317,8 @@ liveDescribe("workspace member administration transactions", () => {
       updateWorkspaceMemberRole?: { actionId?: string | null; code?: string };
     }>({
       jar: owner.jar,
-      query: UPDATE,
+      operationName: "UpdateWorkspaceMemberRole",
+      query: UpdateWorkspaceMemberRoleDocument,
       variables: {
         input: {
           actionId: viewer.memberId,
@@ -307,7 +337,8 @@ liveDescribe("workspace member administration transactions", () => {
       updateWorkspaceMemberRole?: { actionId?: string | null; code?: string };
     }>({
       jar: admin.jar,
-      query: UPDATE,
+      operationName: "UpdateWorkspaceMemberRole",
+      query: UpdateWorkspaceMemberRoleDocument,
       variables: {
         input: {
           actionId: lowerMember.memberId,
@@ -325,7 +356,8 @@ liveDescribe("workspace member administration transactions", () => {
       updateWorkspaceMemberRole?: { actionId?: string | null; code?: string };
     }>({
       jar: admin.jar,
-      query: UPDATE,
+      operationName: "UpdateWorkspaceMemberRole",
+      query: UpdateWorkspaceMemberRoleDocument,
       variables: {
         input: {
           actionId: lowerMember.memberId,
@@ -342,7 +374,8 @@ liveDescribe("workspace member administration transactions", () => {
       updateWorkspaceMemberRole?: { actionId?: string | null; code?: string };
     }>({
       jar: admin.jar,
-      query: UPDATE,
+      operationName: "UpdateWorkspaceMemberRole",
+      query: UpdateWorkspaceMemberRoleDocument,
       variables: {
         input: {
           actionId: owner.memberId,
@@ -373,7 +406,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { actionId?: string; code?: string };
     }>({
       jar: owner.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: recipientEmail,
@@ -408,7 +442,8 @@ liveDescribe("workspace member administration transactions", () => {
       cancelWorkspaceInvitation?: { actionId?: string | null; code?: string };
     }>({
       jar: owner.jar,
-      query: CANCEL,
+      operationName: "CancelWorkspaceInvitation",
+      query: CancelWorkspaceInvitationDocument,
       variables: {
         input: { actionId: invitationId, idempotencyKey: crypto.randomUUID() },
       },
@@ -451,7 +486,8 @@ liveDescribe("workspace member administration transactions", () => {
       updateWorkspaceMemberRole?: { code?: string };
     }>({
       jar: owner.jar,
-      query: UPDATE,
+      operationName: "UpdateWorkspaceMemberRole",
+      query: UpdateWorkspaceMemberRoleDocument,
       variables: {
         input: {
           actionId: viewer.memberId,
@@ -504,7 +540,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { actionId?: string; code?: string };
     }>({
       jar: owner.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: "cancel@example.test",
@@ -523,7 +560,8 @@ liveDescribe("workspace member administration transactions", () => {
       cancelWorkspaceInvitation?: { code?: string };
     }>({
       jar: owner.jar,
-      query: CANCEL,
+      operationName: "CancelWorkspaceInvitation",
+      query: CancelWorkspaceInvitationDocument,
       variables: { input: { actionId, idempotencyKey: crypto.randomUUID() } },
     });
     expect(canceled.body?.data?.cancelWorkspaceInvitation?.code).toBe(
@@ -542,7 +580,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { actionId?: string };
     }>({
       jar: owner.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: "running@example.test",
@@ -567,7 +606,8 @@ liveDescribe("workspace member administration transactions", () => {
       cancelWorkspaceInvitation?: { code?: string; requestId?: string };
     }>({
       jar: owner.jar,
-      query: CANCEL,
+      operationName: "CancelWorkspaceInvitation",
+      query: CancelWorkspaceInvitationDocument,
       variables: { input: { actionId, idempotencyKey: crypto.randomUUID() } },
     });
     expect(canceled.body?.data?.cancelWorkspaceInvitation?.code).toBe(
@@ -605,7 +645,8 @@ liveDescribe("workspace member administration transactions", () => {
     const key = await fixture.provisionKey(owner, { invitation: ["create"] });
     const denied = await fixture.execute({
       apiKey: key.key,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: "key@example.test",
@@ -626,7 +667,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { code?: string };
     }>({
       jar: owner.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: "idempotent@example.test",
@@ -639,7 +681,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { code?: string };
     }>({
       jar: owner.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: "idempotent@example.test",
@@ -652,7 +695,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { code?: string; requestId?: string };
     }>({
       jar: owner.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: "different@example.test",
@@ -665,7 +709,8 @@ liveDescribe("workspace member administration transactions", () => {
       issueWorkspaceInvitation?: { code?: string };
     }>({
       jar: admin.jar,
-      query: ISSUE,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
       variables: {
         input: {
           email: "other-actor@example.test",
@@ -713,7 +758,8 @@ liveDescribe("workspace member administration transactions", () => {
     const results = await Promise.all([
       fixture.execute<{ updateWorkspaceMemberRole?: { code?: string } }>({
         jar: firstOwner.jar,
-        query: UPDATE,
+        operationName: "UpdateWorkspaceMemberRole",
+        query: UpdateWorkspaceMemberRoleDocument,
         variables: {
           input: {
             actionId: secondOwner.memberId,
@@ -724,7 +770,8 @@ liveDescribe("workspace member administration transactions", () => {
       }),
       fixture.execute<{ updateWorkspaceMemberRole?: { code?: string } }>({
         jar: secondOwner.jar,
-        query: UPDATE,
+        operationName: "UpdateWorkspaceMemberRole",
+        query: UpdateWorkspaceMemberRoleDocument,
         variables: {
           input: {
             actionId: firstOwner.memberId,
