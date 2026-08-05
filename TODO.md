@@ -31,7 +31,6 @@ recovery.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search and graph envelopes.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, and bounded signal drain.
 - [ ] `HUM-FR-035` Build and verify the parity Vercel deployment path.
-- [ ] `HUM-FR-036` Complete cross-mode worker-contract and Redis lease-concurrency runtime evidence for the implemented shared durable executor, continuous Docker worker, and bounded scheduled route.
 
 ## Non-functional
 

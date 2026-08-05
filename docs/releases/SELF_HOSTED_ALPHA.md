@@ -145,3 +145,22 @@ The smoke pulled the configured model, waited for the Ollama health gate,
 executed an OpenAI-compatible chat request through the application, and
 reported `Ollama smoke passed for model tinyllama:latest`. The default Compose
 stack remains Ollama-free and does not require a model download.
+
+## Current worker and lease evidence
+
+On 2026-08-05, the production-image Compose smoke exercised both unauthorized
+and authorized GET requests to `/api/jobs/run` after the application and
+continuous worker became healthy. The authorized route returned a bounded job
+summary, while the worker process-tree and health checks verified the Docker
+runtime entrypoint. The real Redis lease acceptance then passed with:
+
+```sh
+RUN_REDIS_LEASE_SMOKE=true REDIS_TEST_URL=redis://127.0.0.1:6381 \
+  pnpm vitest run tests/integration/redis-leases-real.test.ts
+```
+
+All 7 tests passed, including concurrent single-owner acquisition for both the
+local and Upstash-shaped adapters. The previously recorded full lifecycle pass
+also covers PostgreSQL/Redis restart recovery and active-claim SIGTERM fencing;
+these checks are the current cross-mode evidence for the shared bounded and
+continuous executor.
