@@ -13,7 +13,11 @@ import {
 } from "@/modules/audit/service";
 import {
   applySearchIndexMaintenance,
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
   withResearchWriteTransaction as writeTransaction,
+  type CanonicalRequestMaterial,
+  type ResearchResponseReference,
 } from "@/modules/audit/transactions";
 import type { Connection, MutationOutcome } from "@/modules/people/service";
 
@@ -42,12 +46,127 @@ import {
 type DefinitionOutcome = MutationOutcome<FactDefinitionRow>;
 type FactOutcome = MutationOutcome<FactRow>;
 
+export type FactServiceRuntime = Readonly<{
+  idempotencyHmacKey: string;
+}>;
+
+const FACT_CREATE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
 function invalid<T>(issues: ValidationIssue[]): MutationOutcome<T> {
   return { resource: null, issues, code: "VALIDATION_FAILED" };
 }
 
 function conflict<T>(currentVersion?: number): MutationOutcome<T> {
   return { resource: null, issues: [], code: "CONFLICT", currentVersion };
+}
+
+type FactCreateResponseReference = ResearchResponseReference & {
+  readonly factId: string | null;
+  readonly outcome?: string;
+};
+
+type FactCreateInput = {
+  personId: string;
+  definitionId: string;
+  value: FactValueInput;
+  state?: string | null;
+  confidence?: number | null;
+  confidenceMethod?: string | null;
+  confidenceExplanation?: string | null;
+  sensitivity?: string | null;
+  reviewState?: string | null;
+  temporalSemantics?: string | null;
+  temporalPrecision?: string | null;
+  validEarliestAt?: string | null;
+  validLatestAt?: string | null;
+  observedAt?: string | null;
+  supersedesFactId?: string | null;
+  language?: string | null;
+};
+
+function factCreateRequestMaterial(
+  input: FactCreateInput,
+): Readonly<Record<string, CanonicalRequestMaterial>> {
+  const date = (value: unknown): string | null =>
+    value instanceof Date
+      ? value.toISOString()
+      : typeof value === "string"
+        ? value
+        : null;
+  return {
+    confidence: input.confidence ?? null,
+    confidenceExplanation: input.confidenceExplanation ?? null,
+    confidenceMethod: input.confidenceMethod ?? null,
+    definitionId: input.definitionId,
+    language: input.language ?? null,
+    observedAt: input.observedAt ?? null,
+    personId: input.personId,
+    reviewState: input.reviewState ?? null,
+    sensitivity: input.sensitivity ?? null,
+    state: input.state ?? null,
+    supersedesFactId: input.supersedesFactId ?? null,
+    temporalPrecision: input.temporalPrecision ?? null,
+    temporalSemantics: input.temporalSemantics ?? null,
+    validEarliestAt: input.validEarliestAt ?? null,
+    validLatestAt: input.validLatestAt ?? null,
+    value: {
+      boolean: input.value.boolean ?? null,
+      dateEnd: date(input.value.dateEnd),
+      dateStart: date(input.value.dateStart),
+      decimal: input.value.decimal ?? null,
+      fileId: input.value.fileId ?? null,
+      json: (input.value.json ?? null) as CanonicalRequestMaterial,
+      placeId: input.value.placeId ?? null,
+      referencedPersonId: input.value.referencedPersonId ?? null,
+      text: input.value.text ?? null,
+      timestamp: date(input.value.timestamp),
+      unit: input.value.unit ?? null,
+    },
+  };
+}
+
+function encodeFactCreateOutcome(result: FactOutcome): string {
+  return JSON.stringify({
+    code: result.code,
+    currentVersion: result.currentVersion ?? null,
+    issues: result.issues,
+  });
+}
+
+function decodeFactCreateOutcome(value: string): FactOutcome {
+  try {
+    const parsed = JSON.parse(value) as {
+      code?: unknown;
+      currentVersion?: unknown;
+      issues?: unknown;
+    };
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.issues) ||
+      (parsed.code !== null && typeof parsed.code !== "string") ||
+      (parsed.currentVersion !== null &&
+        parsed.currentVersion !== undefined &&
+        !Number.isInteger(parsed.currentVersion))
+    ) {
+      throw new Error("invalid outcome");
+    }
+    return {
+      resource: null,
+      issues: parsed.issues as ValidationIssue[],
+      code: parsed.code as FactOutcome["code"],
+      ...(parsed.currentVersion === undefined || parsed.currentVersion === null
+        ? {}
+        : { currentVersion: parsed.currentVersion as number }),
+    };
+  } catch {
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "The stored fact mutation result is invalid.",
+    );
+  }
 }
 
 function versionIssues(value: number): ValidationIssue[] {
@@ -108,7 +227,10 @@ function factSnapshot(row: FactRow): Record<string, unknown> {
   };
 }
 
-export function createFactsService(context: ResearchServiceContext) {
+export function createFactsService(
+  context: ResearchServiceContext,
+  runtime?: FactServiceRuntime,
+) {
   const repository = createFactsRepository(context.database);
   const peopleRepository = createPeopleRepository(context.database);
   const audit = createAuditService(context);
@@ -894,24 +1016,7 @@ export function createFactsService(context: ResearchServiceContext) {
         },
       };
     },
-    async create(input: {
-      personId: string;
-      definitionId: string;
-      value: FactValueInput;
-      state?: string | null;
-      confidence?: number | null;
-      confidenceMethod?: string | null;
-      confidenceExplanation?: string | null;
-      sensitivity?: string | null;
-      reviewState?: string | null;
-      temporalSemantics?: string | null;
-      temporalPrecision?: string | null;
-      validEarliestAt?: string | null;
-      validLatestAt?: string | null;
-      observedAt?: string | null;
-      supersedesFactId?: string | null;
-      language?: string | null;
-    }): Promise<FactOutcome> {
+    async create(input: FactCreateInput): Promise<FactOutcome> {
       await requireVisiblePerson(input.personId);
       const definition = await repository.getDefinitionForUpdate({
         workspaceId: context.workspaceId,
@@ -1121,6 +1226,67 @@ export function createFactsService(context: ResearchServiceContext) {
         return created;
       });
       return { resource: row, issues: [], code: null };
+    },
+    async createIdempotent(
+      input: FactCreateInput & { idempotencyKey: string },
+    ): Promise<FactOutcome> {
+      if (!runtime?.idempotencyHmacKey) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "Fact idempotency is not configured.",
+        );
+      }
+      const createInput = {
+        ...input,
+      } as FactCreateInput & { idempotencyKey?: string };
+      delete createInput.idempotencyKey;
+      const derived = derivePrincipalResearchIdempotency(context, {
+        expiresAt: new Date(Date.now() + FACT_CREATE_IDEMPOTENCY_TTL_MS),
+        idempotencyKey: input.idempotencyKey,
+        operation: "fact.create.graphql",
+        requestMaterial: factCreateRequestMaterial(createInput),
+        secret: runtime.idempotencyHmacKey,
+      });
+      const executed = await runPrincipalIdempotentResearchWrite(
+        context,
+        derived,
+        ["fact:create", "person:read"],
+        async (scopedContext): Promise<FactCreateResponseReference> => {
+          const result =
+            await createFactsService(scopedContext).create(createInput);
+          if (!result.resource) {
+            return {
+              factId: null,
+              outcome: encodeFactCreateOutcome(result),
+            };
+          }
+          return { factId: result.resource.id };
+        },
+      );
+      const reference = executed.responseReference;
+      if (typeof reference.outcome === "string") {
+        return decodeFactCreateOutcome(reference.outcome);
+      }
+      if (
+        typeof reference.factId !== "string" ||
+        !UUID.test(reference.factId)
+      ) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "The stored fact mutation result is invalid.",
+        );
+      }
+      const fact = await repository.getFact({
+        id: reference.factId,
+        workspaceId: context.workspaceId,
+      });
+      if (!fact || !(await visibleFact(fact))) {
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      }
+      return { resource: fact, issues: [], code: null };
     },
     async revise(input: {
       id: string;

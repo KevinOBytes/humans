@@ -202,14 +202,17 @@ function createServices(input: {
       searchIndexMaintenance: input.searchIndexMaintenance,
       workspaceId: input.context.workspaceId,
     }),
-    facts: createFactsService({
-      actor: input.context.actor,
-      database: input.database,
-      permissions: input.context.permissions,
-      requestId: input.context.requestId,
-      searchIndexMaintenance: input.searchIndexMaintenance,
-      workspaceId: input.context.workspaceId,
-    }),
+    facts: createFactsService(
+      {
+        actor: input.context.actor,
+        database: input.database,
+        permissions: input.context.permissions,
+        requestId: input.context.requestId,
+        searchIndexMaintenance: input.searchIndexMaintenance,
+        workspaceId: input.context.workspaceId,
+      },
+      { idempotencyHmacKey: input.searchRuntime.protectedLookupHmacKey },
+    ),
     relationships: createRelationshipsService({
       actor: input.context.actor,
       database: input.database,
