@@ -1,6 +1,5 @@
 import { builder } from "@/graphql/builder";
 import { requirePermission } from "@/graphql/context";
-import { createGraphQLError } from "@/graphql/errors";
 
 import type { SafeWebhook, WebhookMutationResult } from "./service";
 
@@ -54,6 +53,16 @@ const WebhookIdInput = builder.inputType("WebhookIdInput", {
   fields: (t) => ({ id: t.field({ type: "UUID", required: true }) }),
 });
 
+const SendWebhookTestEventInput = builder.inputType(
+  "SendWebhookTestEventInput",
+  {
+    fields: (t) => ({
+      id: t.field({ type: "UUID", required: true }),
+      idempotencyKey: t.string(),
+    }),
+  },
+);
+
 export function registerWebhooksGraphQL(): void {
   builder.queryFields((t) => ({
     webhooks: t.field({
@@ -101,28 +110,14 @@ export function registerWebhooksGraphQL(): void {
       type: WebhookMutationPayload,
       nullable: false,
       args: {
-        input: t.arg({ type: WebhookIdInput, required: true }),
+        input: t.arg({ type: SendWebhookTestEventInput, required: true }),
       },
-      resolve: async (_root, args, context) => {
+      resolve: (_root, args, context) => {
         requirePermission(context, "webhook", "update");
-        const deliveryIds = await context.services.webhooks.enqueueEvent(
-          "webhook.test",
-          { message: "Humans webhook test" },
-          { webhookId: args.input.id },
+        return context.services.webhooks.sendTestEvent(
+          args.input.id,
+          args.input.idempotencyKey,
         );
-        const deliveryId = deliveryIds[0] ?? null;
-        if (!deliveryId) {
-          throw createGraphQLError(
-            "NOT_FOUND",
-            "The webhook is disabled or not subscribed to webhook.test.",
-          );
-        }
-        return {
-          id: args.input.id,
-          deliveryId,
-          code: "APPLIED" as const,
-          requestId: context.requestId,
-        };
       },
     }),
   }));
