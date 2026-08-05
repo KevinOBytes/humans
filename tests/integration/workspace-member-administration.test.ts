@@ -245,6 +245,19 @@ liveDescribe("workspace member administration transactions", () => {
       getSession: (headers) => fixture.runtime.api.getSession({ headers }),
       trustedOrigins: [appOrigin],
     });
+    const unauthenticatedAccepted = await acceptance(
+      new Request(`${appOrigin}/api/account/invitations/accept`, {
+        body: JSON.stringify({ invitationId }),
+        headers: {
+          "content-type": "application/json",
+          cookie: handoffCookiePair,
+          origin: appOrigin,
+        },
+        method: "POST",
+      }),
+    );
+    expect(unauthenticatedAccepted.status).toBe(401);
+
     const foreignAccepted = await acceptance(
       new Request(`${appOrigin}/api/account/invitations/accept`, {
         body: JSON.stringify({ invitationId }),
