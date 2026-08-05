@@ -49,6 +49,12 @@ export function createWebhookDeliveryHandler(input: {
     if (!row) {
       throw new JobExecutionError("webhook_delivery_not_found", "permanent");
     }
+    // Delivery rows are immutable attempts. A completed row may be replayed by
+    // a recovered queue, but must never issue a duplicate outbound request.
+    // This also safely retires rows migrated from pre-payload versions.
+    if (row.delivery.completedAt) {
+      return { resultReferences: [row.delivery.id] };
+    }
     if (row.webhook.state !== "active" || row.webhook.deletedAt) {
       return { resultReferences: [row.delivery.id] };
     }

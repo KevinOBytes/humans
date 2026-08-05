@@ -194,7 +194,10 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=16m
     pids_limit: 50
-    mem_limit: 128m
+    # The pinned Go-based mc image can briefly exceed 128 MiB while creating
+    # the bucket and applying policy. Keep the one-shot init bounded, but leave
+    # enough headroom for a reliable first-run on small self-hosted hosts.
+    mem_limit: 256m
     cpus: 0.5
     logging:
       driver: json-file
