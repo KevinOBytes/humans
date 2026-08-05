@@ -29,6 +29,7 @@ bucket.
 
 ```sh
 GRAPH_PERFORMANCE=1 \
+ALLOW_TEST_DATABASE_RESET=true \
 TEST_DATABASE_URL=postgresql://humans:humans_test@127.0.0.1:55441/humans_test \
 TEST_REDIS_URL=redis://127.0.0.1:6381 \
 TEST_STORAGE_ENDPOINT=http://127.0.0.1:9004 \

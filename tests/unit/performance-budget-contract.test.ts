@@ -51,6 +51,7 @@ describe("representative performance budget contract", () => {
       "MinIO",
       "8 physical CPU cores",
       "32 GiB RAM",
+      "ALLOW_TEST_DATABASE_RESET=true",
       "graph-api-performance.json",
       "graph-render-performance.json",
       "graph-route-javascript.json",
