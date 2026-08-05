@@ -34,6 +34,7 @@ describe("representative performance budget contract", () => {
   it("records the bounded evidence and does not misrepresent unmeasured upload or Web Vitals budgets", () => {
     const requirements = read("docs/REQUIREMENTS.md");
     const release = read("docs/releases/SELF_HOSTED_ALPHA.md");
+    const runbook = read("docs/releases/PERFORMANCE_RUNBOOK.md");
     const todo = read("TODO.md");
 
     expect(requirements).toContain("HUM-NFR-020");
@@ -43,6 +44,21 @@ describe("representative performance budget contract", () => {
     expect(release).toContain("Current representative performance harness");
     expect(release).toContain("upload-path latency");
     expect(release).toContain("Web Vitals");
+    expect(release).toMatch(/mutation p95 at or\s+below 750 ms/i);
+    for (const target of [
+      "PostgreSQL 18",
+      "Redis",
+      "MinIO",
+      "8 physical CPU cores",
+      "32 GiB RAM",
+      "graph-api-performance.json",
+      "graph-render-performance.json",
+      "graph-route-javascript.json",
+      "authenticated mutations",
+      "750 ms",
+    ]) {
+      expect(runbook).toContain(target);
+    }
     expect(todo).toMatch(/^- \[ \] `HUM-NFR-020`/m);
   });
 });

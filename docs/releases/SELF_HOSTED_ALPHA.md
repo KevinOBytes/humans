@@ -170,6 +170,11 @@ yet measure upload-path latency, public-route Web Vitals, or an externally
 hosted deployment. `HUM-NFR-020` remains incomplete until those measured
 artifacts are collected and continuously verified.
 
+Use [the representative performance runbook](PERFORMANCE_RUNBOOK.md) for the
+required isolated PostgreSQL/Redis/MinIO services, reference-desktop baseline,
+artifact locations, and review checklist. Authenticated mutation p95 at or
+below 750 ms under 20 concurrent users remains unmeasured.
+
 `tests/integration/conventions-contract.test.ts` is a bounded `HUM-NFR-003`
 contract. It checks UUIDv7 generation and ordering, representative
 workspace-leading composite references across people, facts, locations, files,
