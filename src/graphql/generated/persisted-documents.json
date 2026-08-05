@@ -111,5 +111,9 @@
   "sha256:28ca750859a68fb4314b4681af181d7b70228fef74efa8f810e51251cbb4d129": "mutation CancelWorkspaceInvitation($input: WorkspaceInvitationActionInput!) { cancelWorkspaceInvitation(input: $input) { actionId code requestId } }",
   "sha256:9086c3f3b017e7fd69cc579662141b7ed412e5ea16c7437b93d5c72c9ac863b1": "mutation UpdateWorkspaceMemberRole($input: UpdateWorkspaceMemberRoleInput!) { updateWorkspaceMemberRole(input: $input) { actionId code requestId } }",
   "sha256:00c53359642ac3d7da563eb499f7b11f32b2ed00ff723010fe8ea425c493317a": "mutation RemoveWorkspaceMember($input: WorkspaceInvitationActionInput!) { removeWorkspaceMember(input: $input) { actionId code requestId } }",
-  "sha256:914d3bbffa388283841e86303dd4dd44ffbedf27a18db54e4cc73c99daf3dc4d": "query Viewer { viewer { actorType id permissions role workspace { id name organizationId } } workspace { id name organizationId } }"
+  "sha256:914d3bbffa388283841e86303dd4dd44ffbedf27a18db54e4cc73c99daf3dc4d": "query Viewer { viewer { actorType id permissions role workspace { id name organizationId } } workspace { id name organizationId } }",
+  "sha256:b3fa728323e514a4f5b1d59c9010b90b1c9698ef085d74d5d7708f431dfe2810": "query WorkspaceWebhooks { webhooks { nodes { createdAt id secretFingerprint state subscribedEvents updatedAt url version } } }",
+  "sha256:6c786f5c2521027e813425f9c3fcc65d62b97b4b7bbb267f2e140c699cbd7757": "mutation CreateWorkspaceWebhook($input: CreateWebhookInput!) { createWebhook(input: $input) { code id requestId secret } }",
+  "sha256:8330a47021846a6a42a3a3b4fba9c16efeb5ab09adcdb90a7def42a6cfff94e4": "mutation RotateWorkspaceWebhookSecret($input: WebhookIdInput!) { rotateWebhookSecret(input: $input) { code id requestId secret } }",
+  "sha256:87f1dd44c64da868a38ec1d9d6157215559a39ecbf76cf451418b20f0f81831a": "mutation DisableWorkspaceWebhook($input: WebhookIdInput!) { disableWebhook(input: $input) { code id requestId } }"
 }

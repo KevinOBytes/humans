@@ -20,6 +20,9 @@ export function createJobRegistry(input: {
   aiExecute: JobHandler<Extract<JobPayload, { kind: "ai_execute" }>>;
   fileCleanup: JobHandler<Extract<JobPayload, { kind: "file_cleanup" }>>;
   importExecute: JobHandler<Extract<JobPayload, { kind: "import_execute" }>>;
+  webhookDelivery?: JobHandler<
+    Extract<JobPayload, { kind: "webhook_delivery" }>
+  >;
 }): JobRegistry {
   return {
     get(payload) {
@@ -30,6 +33,11 @@ export function createJobRegistry(input: {
           return input.importExecute as JobHandler;
         case "file_cleanup":
           return input.fileCleanup as JobHandler;
+        case "webhook_delivery":
+          if (!input.webhookDelivery) {
+            throw new Error("Webhook delivery handler is not configured");
+          }
+          return input.webhookDelivery as JobHandler;
       }
     },
   };

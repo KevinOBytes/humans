@@ -4,6 +4,7 @@ export const jobKinds = [
   "import_execute",
   "file_cleanup",
   "ai_execute",
+  "webhook_delivery",
 ] as const;
 export type JobKind = (typeof jobKinds)[number];
 
@@ -29,8 +30,17 @@ export type AiExecuteJobPayload = Readonly<{
   runId: string;
 }>;
 
+export type WebhookDeliveryJobPayload = Readonly<{
+  kind: "webhook_delivery";
+  deliveryId: string;
+  webhookId: string;
+}>;
+
 export type JobPayload =
-  ImportExecuteJobPayload | FileCleanupJobPayload | AiExecuteJobPayload;
+  | ImportExecuteJobPayload
+  | FileCleanupJobPayload
+  | AiExecuteJobPayload
+  | WebhookDeliveryJobPayload;
 
 export const MAX_JOB_ATTEMPTS = 5;
 export const JOB_LEASE_MS = 60_000;
@@ -81,6 +91,20 @@ export function parseJobPayload(value: unknown, kind?: JobKind): JobPayload {
       runId: record.runId.toLowerCase(),
     };
   }
+  if (record.kind === "webhook_delivery") {
+    if (
+      Object.keys(record).length !== 3 ||
+      !UUID.test(String(record.deliveryId ?? "")) ||
+      !UUID.test(String(record.webhookId ?? ""))
+    ) {
+      throw new TypeError("Invalid job payload");
+    }
+    return {
+      kind: record.kind,
+      deliveryId: String(record.deliveryId).toLowerCase(),
+      webhookId: String(record.webhookId).toLowerCase(),
+    };
+  }
   if (Object.keys(record).length !== 2)
     throw new TypeError("Invalid job payload");
   if (typeof record.fileId === "string" && UUID.test(record.fileId)) {
@@ -112,6 +136,12 @@ export function canonicalJobPayload(payload: JobPayload): string {
           });
     case "ai_execute":
       return JSON.stringify({ kind: parsed.kind, runId: parsed.runId });
+    case "webhook_delivery":
+      return JSON.stringify({
+        deliveryId: parsed.deliveryId,
+        kind: parsed.kind,
+        webhookId: parsed.webhookId,
+      });
   }
 }
 

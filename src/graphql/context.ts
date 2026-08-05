@@ -50,6 +50,7 @@ import {
   createAiAnalysisService,
   type AiAnalysisRuntime,
 } from "@/modules/ai/service";
+import { createWebhooksService } from "@/modules/webhooks/service";
 
 import { createGraphQLError } from "./errors";
 import {
@@ -314,6 +315,13 @@ function createServices(input: {
       },
       input.aiRuntime,
     ),
+    webhooks: createWebhooksService({
+      actor: input.context.actor,
+      database: input.database,
+      encryptionKey: input.searchRuntime.encryptionKey ?? "00".repeat(32),
+      requestId: input.context.requestId,
+      workspaceId: input.context.workspaceId,
+    }),
   };
 }
 

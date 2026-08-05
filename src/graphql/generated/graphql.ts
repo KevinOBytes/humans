@@ -311,6 +311,11 @@ export type CreateUploadSessionInput = {
   sensitivity?: Sensitivity | null | undefined;
 };
 
+export type CreateWebhookInput = {
+  events: Array<string>;
+  url: string;
+};
+
 export type FactCardinality = "MANY" | "ONE";
 
 export type FactDefinitionState =
@@ -770,6 +775,10 @@ export type UploadSessionState =
   | "PENDING"
   | "REJECTED"
   | "VERIFYING";
+
+export type WebhookIdInput = {
+  id: string;
+};
 
 export type WorkspaceAdministrationRole =
   "ADMIN" | "ANALYST" | "CONTRIBUTOR" | "VIEWER";
@@ -3436,6 +3445,61 @@ export type ViewerQuery = {
     workspace: { id: string; organizationId: string; name: string };
   };
   workspace: { id: string; organizationId: string; name: string };
+};
+
+export type WorkspaceWebhooksQueryVariables = Exact<{ [key: string]: never }>;
+
+export type WorkspaceWebhooksQuery = {
+  webhooks: {
+    nodes: Array<{
+      id: string | null;
+      url: string | null;
+      subscribedEvents: Array<string>;
+      state: string | null;
+      secretFingerprint: string | null;
+      version: number | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+    }>;
+  };
+};
+
+export type CreateWorkspaceWebhookMutationVariables = Exact<{
+  input: CreateWebhookInput;
+}>;
+
+export type CreateWorkspaceWebhookMutation = {
+  createWebhook: {
+    id: string | null;
+    code: string | null;
+    requestId: string | null;
+    secret: string | null;
+  };
+};
+
+export type RotateWorkspaceWebhookSecretMutationVariables = Exact<{
+  input: WebhookIdInput;
+}>;
+
+export type RotateWorkspaceWebhookSecretMutation = {
+  rotateWebhookSecret: {
+    id: string | null;
+    code: string | null;
+    requestId: string | null;
+    secret: string | null;
+  };
+};
+
+export type DisableWorkspaceWebhookMutationVariables = Exact<{
+  input: WebhookIdInput;
+}>;
+
+export type DisableWorkspaceWebhookMutation = {
+  disableWebhook: {
+    id: string | null;
+    code: string | null;
+    requestId: string | null;
+  };
 };
 
 export class TypedDocumentString<TResult, TVariables>
@@ -7610,3 +7674,80 @@ export const ViewerDocument = new TypedDocumentString(
     hash: "sha256:914d3bbffa388283841e86303dd4dd44ffbedf27a18db54e4cc73c99daf3dc4d",
   },
 ) as unknown as TypedDocumentString<ViewerQuery, ViewerQueryVariables>;
+export const WorkspaceWebhooksDocument = new TypedDocumentString(
+  `
+    query WorkspaceWebhooks {
+  webhooks {
+    nodes {
+      id
+      url
+      subscribedEvents
+      state
+      secretFingerprint
+      version
+      createdAt
+      updatedAt
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:b3fa728323e514a4f5b1d59c9010b90b1c9698ef085d74d5d7708f431dfe2810",
+  },
+) as unknown as TypedDocumentString<
+  WorkspaceWebhooksQuery,
+  WorkspaceWebhooksQueryVariables
+>;
+export const CreateWorkspaceWebhookDocument = new TypedDocumentString(
+  `
+    mutation CreateWorkspaceWebhook($input: CreateWebhookInput!) {
+  createWebhook(input: $input) {
+    id
+    code
+    requestId
+    secret
+  }
+}
+    `,
+  {
+    hash: "sha256:6c786f5c2521027e813425f9c3fcc65d62b97b4b7bbb267f2e140c699cbd7757",
+  },
+) as unknown as TypedDocumentString<
+  CreateWorkspaceWebhookMutation,
+  CreateWorkspaceWebhookMutationVariables
+>;
+export const RotateWorkspaceWebhookSecretDocument = new TypedDocumentString(
+  `
+    mutation RotateWorkspaceWebhookSecret($input: WebhookIdInput!) {
+  rotateWebhookSecret(input: $input) {
+    id
+    code
+    requestId
+    secret
+  }
+}
+    `,
+  {
+    hash: "sha256:8330a47021846a6a42a3a3b4fba9c16efeb5ab09adcdb90a7def42a6cfff94e4",
+  },
+) as unknown as TypedDocumentString<
+  RotateWorkspaceWebhookSecretMutation,
+  RotateWorkspaceWebhookSecretMutationVariables
+>;
+export const DisableWorkspaceWebhookDocument = new TypedDocumentString(
+  `
+    mutation DisableWorkspaceWebhook($input: WebhookIdInput!) {
+  disableWebhook(input: $input) {
+    id
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:87f1dd44c64da868a38ec1d9d6157215559a39ecbf76cf451418b20f0f81831a",
+  },
+) as unknown as TypedDocumentString<
+  DisableWorkspaceWebhookMutation,
+  DisableWorkspaceWebhookMutationVariables
+>;

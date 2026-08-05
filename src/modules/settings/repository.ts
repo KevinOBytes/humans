@@ -15,6 +15,7 @@ import { apiKeys, members } from "@/db/schema/auth";
 import { auditEvents } from "@/db/schema/operations";
 import {
   accessPolicies,
+  resourceGrants,
   retentionPolicies,
   workspaceSettings,
   workspaces,
@@ -31,10 +32,24 @@ export type PolicySettingsReadModel = {
     storageEnabled: boolean;
   };
   accessPolicies: readonly {
+    id: string;
+    version: number;
     name: string;
     state: string;
     sensitivityCeiling: string;
     resourceKinds: readonly string[];
+  }[];
+  resourceGrants: readonly {
+    id: string;
+    policyId: string;
+    resourceId: string;
+    resourceKind: string;
+    memberId: string | null;
+    role: string | null;
+    state: string;
+    validFrom: Date | null;
+    validUntil: Date | null;
+    version: number;
   }[];
   retentionPolicies: readonly {
     resourceKind: string;
@@ -354,6 +369,8 @@ export function createSettingsRepository(database: Database) {
       const [policies, retention] = await Promise.all([
         database
           .select({
+            id: accessPolicies.id,
+            version: accessPolicies.version,
             name: accessPolicies.name,
             state: accessPolicies.state,
             sensitivityCeiling: accessPolicies.sensitivityCeiling,
@@ -380,10 +397,31 @@ export function createSettingsRepository(database: Database) {
             ),
           ),
       ]);
+      const grants = await database
+        .select({
+          id: resourceGrants.id,
+          policyId: resourceGrants.policyId,
+          resourceId: resourceGrants.resourceId,
+          resourceKind: resourceGrants.resourceKind,
+          memberId: resourceGrants.memberId,
+          role: resourceGrants.role,
+          state: resourceGrants.state,
+          validFrom: resourceGrants.validFrom,
+          validUntil: resourceGrants.validUntil,
+          version: resourceGrants.version,
+        })
+        .from(resourceGrants)
+        .where(
+          and(
+            eq(resourceGrants.workspaceId, workspaceId),
+            isNull(resourceGrants.deletedAt),
+          ),
+        );
       return {
         workspace,
         accessPolicies: policies,
         retentionPolicies: retention,
+        resourceGrants: grants,
       };
     },
     async readWorkspacePolicySummary(

@@ -25,6 +25,7 @@ import {
   createImportExecuteHandler,
   createImportExecuteService,
 } from "@/worker/handlers/import";
+import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 import { createJobRegistry } from "@/worker/registry";
 import { runJobsOnce } from "@/worker/run-once";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
@@ -85,6 +86,10 @@ export function createRuntimeJobRegistry(input: {
         storageProvider: input.storageProvider,
       }),
     ),
+    webhookDelivery: createWebhookDeliveryHandler({
+      database: input.database,
+      encryptionKey: input.encryptionKey,
+    }),
   });
 }
 
