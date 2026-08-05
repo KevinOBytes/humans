@@ -13,6 +13,12 @@ import type { GraphQLActor } from "@/graphql/context";
 import { createGraphQLError } from "@/graphql/errors";
 import { sealEnvelope } from "@/lib/security/sealed-envelope";
 import type { Database } from "@/modules/auth/bootstrap-admin";
+import {
+  deriveResearchIdempotency,
+  runIdempotentResearchWrite,
+} from "@/modules/audit/transactions";
+import type { ResearchServiceContext } from "@/modules/audit/service";
+import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { createJobsService } from "@/modules/jobs/service";
 import { webhookPayloadHash } from "./signature";
 
@@ -23,6 +29,8 @@ type TransactionDatabase = Parameters<
 const EVENT_NAME = /^[a-z][a-z0-9_.-]{1,63}$/u;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const WEBHOOK_REFERENCE_UUID = UUID;
+const WEBHOOK_IDEMPOTENCY_TTL_MS = 10 * 60_000;
 
 function requireUser(
   actor: GraphQLActor,
@@ -115,14 +123,12 @@ export function createWebhooksService(input: {
   actor: GraphQLActor;
   database: Database;
   encryptionKey: string;
+  idempotencyHmacKey?: string;
+  permissions: ReadonlySet<string>;
   requestId: string;
+  searchIndexMaintenance: SearchIndexMaintenance;
   workspaceId: string;
 }) {
-  const jobs = createJobsService({
-    database: input.database,
-    encryptionKey: input.encryptionKey,
-  });
-
   async function requireAdmin() {
     const actor = requireUser(input.actor);
     const rows = await input.database
@@ -290,72 +296,172 @@ export function createWebhooksService(input: {
       payload: Record<string, unknown>,
       options: { webhookId?: string } = {},
     ): Promise<readonly string[]> {
-      const actor = input.actor.type === "user" ? input.actor : null;
-      if (!EVENT_NAME.test(event)) {
+      return input.database.transaction((transaction) =>
+        enqueueEventInDatabase(
+          transaction as unknown as Database,
+          event,
+          payload,
+          options,
+        ),
+      );
+    },
+    async sendTestEvent(
+      webhookId: string,
+      idempotencyKey?: string | null,
+    ): Promise<WebhookMutationResult> {
+      await requireAdmin();
+      const run = async (database: Database) => {
+        const deliveryIds = await enqueueEventInDatabase(
+          database,
+          "webhook.test",
+          { message: "Humans webhook test" },
+          { webhookId },
+        );
+        const deliveryId = deliveryIds[0] ?? null;
+        if (!deliveryId) {
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The webhook is disabled or not subscribed to webhook.test.",
+          );
+        }
+        return { webhookId, deliveryId };
+      };
+      if (idempotencyKey == null) {
+        const result = await input.database.transaction((transaction) =>
+          run(transaction as unknown as Database),
+        );
+        return {
+          id: result.webhookId,
+          deliveryId: result.deliveryId,
+          code: "APPLIED",
+          requestId: input.requestId,
+        };
+      }
+      const secret = input.idempotencyHmacKey;
+      if (!secret) {
         throw createGraphQLError(
-          "VALIDATION_FAILED",
-          "Webhook event payload is invalid.",
+          "PRECONDITION_FAILED",
+          "Idempotent webhook delivery is not configured.",
         );
       }
-      const rows = await input.database
-        .select()
-        .from(webhooks)
-        .where(
-          and(
-            eq(webhooks.workspaceId, input.workspaceId),
-            eq(webhooks.state, "active"),
-            isNull(webhooks.deletedAt),
-            ...(options.webhookId ? [eq(webhooks.id, options.webhookId)] : []),
-          ),
-        );
-      const payloadText = JSON.stringify({
-        data: payload,
-        event,
-        id: newId(),
-        occurredAt: new Date().toISOString(),
+      const actor = requireUser(input.actor);
+      const context: ResearchServiceContext = {
+        actor,
+        database: input.database,
+        idempotencyHmacKey: secret,
+        permissions: input.permissions,
+        requestId: input.requestId,
+        searchIndexMaintenance: input.searchIndexMaintenance,
+        workspaceId: input.workspaceId,
+      };
+      const derived = deriveResearchIdempotency(context, {
+        expiresAt: new Date(Date.now() + WEBHOOK_IDEMPOTENCY_TTL_MS),
+        idempotencyKey,
+        operation: "webhook.test-event.send",
+        requestMaterial: { webhookId },
+        secret,
       });
-      if (Buffer.byteLength(payloadText, "utf8") > 64 * 1024) {
+      const result = await runIdempotentResearchWrite(
+        context,
+        derived,
+        ["webhook:update"],
+        async (scopedContext) => run(scopedContext.database),
+      );
+      const responseWebhookId = result.responseReference.webhookId;
+      const responseDeliveryId = result.responseReference.deliveryId;
+      if (
+        typeof responseWebhookId !== "string" ||
+        !WEBHOOK_REFERENCE_UUID.test(responseWebhookId) ||
+        typeof responseDeliveryId !== "string" ||
+        !WEBHOOK_REFERENCE_UUID.test(responseDeliveryId)
+      ) {
         throw createGraphQLError(
           "VALIDATION_FAILED",
-          "Webhook event payload is invalid.",
+          "The operation response reference is invalid.",
         );
       }
-      const eventId = JSON.parse(payloadText).id as string;
-      const deliveries: string[] = [];
-      for (const webhook of rows.filter((row) =>
-        row.subscribedEvents.includes(event),
-      )) {
-        const deliveryId = newId();
-        await input.database.transaction(async (transaction) => {
-          await transaction.insert(webhookDeliveries).values({
-            id: deliveryId,
-            workspaceId: input.workspaceId,
-            webhookId: webhook.id,
-            eventId,
-            encryptedPayload: sealEnvelope({
-              key: input.encryptionKey,
-              plaintext: payloadText,
-              purpose: "webhook-payload",
-            }),
-            payloadHash: webhookPayloadHash(payloadText),
-            attempt: 1,
-            signatureAlgorithm: "hmac-sha256",
-          });
-          await jobs.enqueue({
-            createdBy: actor?.id ?? null,
-            principalId: actor ? null : undefined,
-            idempotencyKey: `webhook:${deliveryId}:1`,
-            payload: {
-              kind: "webhook_delivery",
-              deliveryId,
-              webhookId: webhook.id,
-            },
-            workspaceId: input.workspaceId,
-          });
-        });
-        deliveries.push(deliveryId);
-      }
-      return deliveries;
+      return {
+        id: responseWebhookId,
+        deliveryId: responseDeliveryId,
+        code: "APPLIED",
+        requestId: input.requestId,
+      };
     },
   };
+
+  async function enqueueEventInDatabase(
+    database: Database,
+    event: string,
+    payload: Record<string, unknown>,
+    options: { webhookId?: string } = {},
+  ): Promise<readonly string[]> {
+    const actor = input.actor.type === "user" ? input.actor : null;
+    if (!EVENT_NAME.test(event)) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "Webhook event payload is invalid.",
+      );
+    }
+    const rows = await database
+      .select()
+      .from(webhooks)
+      .where(
+        and(
+          eq(webhooks.workspaceId, input.workspaceId),
+          eq(webhooks.state, "active"),
+          isNull(webhooks.deletedAt),
+          ...(options.webhookId ? [eq(webhooks.id, options.webhookId)] : []),
+        ),
+      );
+    const payloadText = JSON.stringify({
+      data: payload,
+      event,
+      id: newId(),
+      occurredAt: new Date().toISOString(),
+    });
+    if (Buffer.byteLength(payloadText, "utf8") > 64 * 1024) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "Webhook event payload is invalid.",
+      );
+    }
+    const eventId = JSON.parse(payloadText).id as string;
+    const deliveries: string[] = [];
+    const scopedJobs = createJobsService({
+      database,
+      encryptionKey: input.encryptionKey,
+    });
+    for (const webhook of rows.filter((row) =>
+      row.subscribedEvents.includes(event),
+    )) {
+      const deliveryId = newId();
+      await database.insert(webhookDeliveries).values({
+        id: deliveryId,
+        workspaceId: input.workspaceId,
+        webhookId: webhook.id,
+        eventId,
+        encryptedPayload: sealEnvelope({
+          key: input.encryptionKey,
+          plaintext: payloadText,
+          purpose: "webhook-payload",
+        }),
+        payloadHash: webhookPayloadHash(payloadText),
+        attempt: 1,
+        signatureAlgorithm: "hmac-sha256",
+      });
+      await scopedJobs.enqueue({
+        createdBy: actor?.id ?? null,
+        principalId: actor ? null : undefined,
+        idempotencyKey: `webhook:${deliveryId}:1`,
+        payload: {
+          kind: "webhook_delivery",
+          deliveryId,
+          webhookId: webhook.id,
+        },
+        workspaceId: input.workspaceId,
+      });
+      deliveries.push(deliveryId);
+    }
+    return deliveries;
+  }
 }
