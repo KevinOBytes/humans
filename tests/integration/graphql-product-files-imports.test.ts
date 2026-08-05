@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
-import { files } from "@/db/schema/files";
+import { extractionRuns, files } from "@/db/schema/files";
 import { workspaceUsage } from "@/db/schema/workspaces";
 import {
   CompleteWorkspaceUploadDocument,
@@ -797,5 +797,121 @@ liveDescribe("generated files and imports product inventory", () => {
     const foreignSerialized = JSON.stringify(foreignHistory.body);
     expect(foreignSerialized).not.toContain(preparedImport.id);
     expect(foreignSerialized).not.toContain("Generated Valid");
+  });
+
+  it("keeps extraction runs and import mapping options scoped to the active workspace", async () => {
+    const owner = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const file = await uploadAndComplete({
+      actor: owner,
+      body: new TextEncoder().encode("workspace-scoped extraction input"),
+      mediaType: "text/plain",
+      name: "extraction-input.txt",
+      purpose: "EVIDENCE",
+    });
+
+    const saved = await fixture.execute<{
+      saveImportMapping: { mapping: { id: string } | null; issues: unknown[] };
+    }>({
+      jar: owner.jar,
+      operationName: "SaveWorkspaceImportMapping",
+      query: SaveWorkspaceImportMappingDocument,
+      variables: {
+        input: {
+          definition: {
+            defaults: {},
+            facts: [],
+            person: {
+              displayNameSource: "name",
+              fields: [],
+              primaryNameKind: "legal",
+            },
+            recordKind: "PERSON",
+            rowKeySource: "external_id",
+            version: 1,
+          },
+          format: "JSON",
+          name: "Owner-only mapping",
+        },
+      },
+    });
+    expect(saved.body?.errors).toBeUndefined();
+    expect(saved.body?.data?.saveImportMapping.issues).toEqual([]);
+    expect(saved.body?.data?.saveImportMapping.mapping?.id).toEqual(
+      expect.any(String),
+    );
+
+    const extractionRunId = crypto.randomUUID();
+    await fixture.database.insert(extractionRuns).values({
+      id: extractionRunId,
+      workspaceId: owner.workspaceId,
+      fileId: file.id,
+      extractor: "plain-text",
+      extractorVersion: "test-1",
+      state: "completed",
+      structuredOutput: { text: "workspace scoped" },
+      createdBy: owner.userId,
+    });
+
+    const extractionQuery = /* GraphQL */ `
+      query ExtractionRuns($fileId: UUID!) {
+        extractionRuns(fileId: $fileId) {
+          id
+          fileId
+          state
+          structuredOutput
+        }
+      }
+    `;
+    const ownerRuns = await fixture.execute<{
+      extractionRuns: Array<{ id: string; fileId: string; state: string }>;
+    }>({
+      jar: owner.jar,
+      query: extractionQuery,
+      variables: { fileId: file.id },
+    });
+    expect(ownerRuns.body?.errors).toBeUndefined();
+    expect(ownerRuns.body?.data?.extractionRuns).toEqual([
+      expect.objectContaining({
+        id: extractionRunId,
+        fileId: file.id,
+        state: "COMPLETED",
+      }),
+    ]);
+
+    const ownerMappings = await fixture.execute<{
+      importMappings: { nodes: Array<{ id: string }> };
+    }>({
+      jar: owner.jar,
+      operationName: "ImportMappingOptions",
+      query: ImportMappingOptionsDocument,
+    });
+    expect(ownerMappings.body?.errors).toBeUndefined();
+    expect(ownerMappings.body?.data?.importMappings.nodes).toEqual([
+      expect.objectContaining({
+        id: saved.body?.data?.saveImportMapping.mapping?.id,
+      }),
+    ]);
+
+    const foreignRuns = await fixture.execute({
+      jar: foreign.jar,
+      query: extractionQuery,
+      variables: { fileId: file.id },
+    });
+    expectGraphQLError(foreignRuns, "NOT_FOUND");
+    expect(JSON.stringify(foreignRuns.body)).not.toContain(extractionRunId);
+
+    const foreignMappings = await fixture.execute<{
+      importMappings: { nodes: unknown[] };
+    }>({
+      jar: foreign.jar,
+      operationName: "ImportMappingOptions",
+      query: ImportMappingOptionsDocument,
+    });
+    expect(foreignMappings.body?.errors).toBeUndefined();
+    expect(foreignMappings.body?.data?.importMappings.nodes).toEqual([]);
+    expect(JSON.stringify(foreignMappings.body)).not.toContain(
+      saved.body?.data?.saveImportMapping.mapping?.id,
+    );
   });
 });
