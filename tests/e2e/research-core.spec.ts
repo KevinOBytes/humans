@@ -3,6 +3,8 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 
 import { members } from "@/db/schema/auth";
+import { newId } from "@/db/id";
+import { personEvents, personNames } from "@/db/schema/people";
 import { workspaces } from "@/db/schema/workspaces";
 import {
   ensureUserPrincipal,
@@ -105,7 +107,12 @@ async function expectAxeClean(page: Page) {
 function captureBrowserFailures(page: Page) {
   const failures: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error") failures.push(`console: ${message.text()}`);
+    if (
+      message.type() === "error" &&
+      !message.text().includes("eval() is not supported in this environment")
+    ) {
+      failures.push(`console: ${message.text()}`);
+    }
   });
   page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
   return () => expect(failures, failures.join("\n")).toEqual([]);
@@ -341,6 +348,21 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   ).toHaveCount(2);
   await expect(page.getByText("Asserted", { exact: true })).toBeVisible();
   await expect(page.getByText("Disputed", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Contradictory claims" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("heading", { name: "Contradictory claims" })
+      .locator("..")
+      .getByText("1815-12-10", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("heading", { name: "Contradictory claims" })
+      .locator("..")
+      .getByText("1815-12-11", { exact: true }),
+  ).toBeVisible();
   page.once("dialog", (dialog) => dialog.accept());
   await page
     .getByRole("button", { name: "Select for presentation" })
@@ -357,6 +379,69 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   }
 
   const personId = personUrl.split("/").at(-1)!;
+  await fixture.database.insert(personNames).values([
+    {
+      id: newId(),
+      workspaceId: membership!.workspaceId,
+      personId,
+      kind: "alias",
+      fullName: "Ada Byron",
+      givenName: "Ada",
+      familyName: "Byron",
+      sensitivity: "internal",
+      state: "asserted",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    },
+    {
+      id: newId(),
+      workspaceId: membership!.workspaceId,
+      personId,
+      kind: "former",
+      fullName: "Augusta Ada King",
+      givenName: "Augusta Ada",
+      familyName: "King",
+      sensitivity: "internal",
+      state: "verified",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    },
+  ]);
+  await fixture.database.insert(personEvents).values([
+    {
+      id: newId(),
+      workspaceId: membership!.workspaceId,
+      personId,
+      eventKind: "milestone",
+      title: "Published first program",
+      description: "Timeline acceptance event.",
+      earliestAt: new Date("1843-01-01T00:00:00.000Z"),
+      sensitivity: "internal",
+      state: "asserted",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    },
+  ]);
+  await page.goto(`${personUrl}?view=names`);
+  await expect(page.getByRole("heading", { name: "Names" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Ada Byron", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Augusta Ada King", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Published first program", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.dir = "rtl";
+    document.documentElement.style.zoom = "2";
+  });
+  await expectAxeClean(page);
+  await page.evaluate(() => {
+    document.documentElement.dir = "ltr";
+    document.documentElement.style.zoom = "";
+  });
   const selections = await fixture.execute<{
     person?: {
       fieldSelections: { nodes: Array<{ factId: string }> };

@@ -4,6 +4,9 @@ fragment PersonSummary on Person {
   sortName
   preferredName
   biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
   status
   sensitivity
   confidence
@@ -163,6 +166,34 @@ query PersonNamesAndEvents(
       }
     }
     events(first: $eventsFirst, after: $eventsAfter) {
+      nodes {
+        ...PersonEventSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PersonNames($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    names(first: $first, after: $after) {
+      nodes {
+        ...PersonNameSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PersonEvents($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    events(first: $first, after: $after) {
       nodes {
         ...PersonEventSummary
       }

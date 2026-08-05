@@ -2358,6 +2358,9 @@ export type PersonSummaryFragment = {
   sortName: string | null;
   preferredName: string | null;
   biography: string | null;
+  primaryNameId: string | null;
+  primaryPhotoFileId: string | null;
+  mergedIntoPersonId: string | null;
   status: PersonStatus;
   sensitivity: Sensitivity;
   confidence: number;
@@ -2532,6 +2535,50 @@ export type PersonNamesAndEventsQuery = {
         " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
       };
     } | null;
+    events: {
+      nodes: Array<{
+        " $fragmentRefs"?: {
+          PersonEventSummaryFragment: PersonEventSummaryFragment;
+        };
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      };
+    } | null;
+  } | null;
+};
+
+export type PersonNamesQueryVariables = Exact<{
+  id: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type PersonNamesQuery = {
+  person: {
+    id: string;
+    names: {
+      nodes: Array<{
+        " $fragmentRefs"?: {
+          PersonNameSummaryFragment: PersonNameSummaryFragment;
+        };
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      };
+    } | null;
+  } | null;
+};
+
+export type PersonEventsQueryVariables = Exact<{
+  id: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type PersonEventsQuery = {
+  person: {
+    id: string;
     events: {
       nodes: Array<{
         " $fragmentRefs"?: {
@@ -4110,6 +4157,9 @@ export const PersonSummaryFragmentDoc = new TypedDocumentString(
   sortName
   preferredName
   biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
   status
   sensitivity
   confidence
@@ -4519,6 +4569,9 @@ fragment PersonSummary on Person {
   sortName
   preferredName
   biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
   status
   sensitivity
   confidence
@@ -4528,7 +4581,7 @@ fragment PersonSummary on Person {
   updatedAt
 }`,
   {
-    hash: "sha256:60037747d524e1d17ea2e5ea236ba93938e615b80e2d4bb753586cf7b8f50250",
+    hash: "sha256:dd133420e14d49ab24668acd0e55122041949610fe82a0eddba855df53c9ff57",
   },
 ) as unknown as TypedDocumentString<
   DashboardOverviewQuery,
@@ -6425,6 +6478,9 @@ export const DashboardPeopleDocument = new TypedDocumentString(
   sortName
   preferredName
   biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
   status
   sensitivity
   confidence
@@ -6438,7 +6494,7 @@ fragment PageDetails on PageInfo {
   hasNextPage
 }`,
   {
-    hash: "sha256:a60dd6cc5054ce68c691f28e993d9188d95817145bd8735731c8957eab21719c",
+    hash: "sha256:0fe62892f74dfbdaab1cfcb96f8342166ca9000b8fe62d8c7540712149650d85",
   },
 ) as unknown as TypedDocumentString<
   DashboardPeopleQuery,
@@ -6462,6 +6518,9 @@ export const PeopleListDocument = new TypedDocumentString(
   sortName
   preferredName
   biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
   status
   sensitivity
   confidence
@@ -6475,7 +6534,7 @@ fragment PageDetails on PageInfo {
   hasNextPage
 }`,
   {
-    hash: "sha256:0a3c8a9d087da8d71ec3e97fd1605932e6b6ca6136cd2c94ae81fbe3dc33c078",
+    hash: "sha256:3a7909d962b5ce3b14c64e00dcab92071efa45522fd0cee26bc768194ab80507",
   },
 ) as unknown as TypedDocumentString<PeopleListQuery, PeopleListQueryVariables>;
 export const PersonHeaderDocument = new TypedDocumentString(
@@ -6491,6 +6550,9 @@ export const PersonHeaderDocument = new TypedDocumentString(
   sortName
   preferredName
   biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
   status
   sensitivity
   confidence
@@ -6500,7 +6562,7 @@ export const PersonHeaderDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:f575ca3ff7435c53ceee719e70c13c99356775ea59ad438eb41d753da65d4429",
+    hash: "sha256:b555a9ded188ed98eba05d7105e34ef3057603f34c59ee3525cc454deb300218",
   },
 ) as unknown as TypedDocumentString<
   PersonHeaderQuery,
@@ -6580,6 +6642,99 @@ fragment PersonEventSummary on PersonEvent {
 ) as unknown as TypedDocumentString<
   PersonNamesAndEventsQuery,
   PersonNamesAndEventsQueryVariables
+>;
+export const PersonNamesDocument = new TypedDocumentString(
+  `
+    query PersonNames($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    names(first: $first, after: $after) {
+      nodes {
+        ...PersonNameSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+    fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}
+fragment PersonNameSummary on PersonName {
+  id
+  personId
+  kind
+  fullName
+  givenName
+  middleName
+  familyName
+  prefix
+  suffix
+  script
+  language
+  validFrom
+  validUntil
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:4de294268d73792456aa718861d6751a66b6d46d9bb90f666b0d393e1986adee",
+  },
+) as unknown as TypedDocumentString<
+  PersonNamesQuery,
+  PersonNamesQueryVariables
+>;
+export const PersonEventsDocument = new TypedDocumentString(
+  `
+    query PersonEvents($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    events(first: $first, after: $after) {
+      nodes {
+        ...PersonEventSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+    fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}
+fragment PersonEventSummary on PersonEvent {
+  id
+  personId
+  eventKind
+  title
+  description
+  placeId
+  earliestAt
+  latestAt
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:27ec9cf20e1c1691a9bc0ead0ad1341b830c39ae0c68ffcad00cdabe778795fa",
+  },
+) as unknown as TypedDocumentString<
+  PersonEventsQuery,
+  PersonEventsQueryVariables
 >;
 export const PersonFactsDocument = new TypedDocumentString(
   `
@@ -7174,6 +7329,9 @@ export const CreatePersonDocument = new TypedDocumentString(
   sortName
   preferredName
   biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
   status
   sensitivity
   confidence
@@ -7188,7 +7346,7 @@ fragment MutationIssue on ValidationIssue {
   path
 }`,
   {
-    hash: "sha256:99ffbd7bcf9d87349dd0d84ce43c02b1c4c23dd8bcbf868b73da277e8f703f88",
+    hash: "sha256:e014245d96757436ff9468102e73f6e9fa7696ad027e44ea6db5044bc66e1240",
   },
 ) as unknown as TypedDocumentString<
   CreatePersonMutation,
@@ -7214,6 +7372,9 @@ export const UpdatePersonDocument = new TypedDocumentString(
   sortName
   preferredName
   biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
   status
   sensitivity
   confidence
@@ -7228,7 +7389,7 @@ fragment MutationIssue on ValidationIssue {
   path
 }`,
   {
-    hash: "sha256:bfbba4909f6f9ee836803b5607716389e2009a1cf34a4c447c1a88b437199ff1",
+    hash: "sha256:dcf2ce9e8ff68d647af2297f8bcef1245997229e034c6a18406bf64eb26d25bd",
   },
 ) as unknown as TypedDocumentString<
   UpdatePersonMutation,

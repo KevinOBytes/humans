@@ -136,7 +136,7 @@ async function ollamaChat() {
     "exec",
     "--no-TTY",
     "app",
-    "node",
+    "/nodejs/bin/node",
     "--input-type=module",
     "-e",
     script,
