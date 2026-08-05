@@ -56,6 +56,25 @@ Resend, proxy, cron, or AI credentials. Restrict `.env` to the deployment
 operator and rotate a credential immediately if it appears in a log, image,
 shell history, backup, or support artifact.
 
+When credentials are kept in 1Password, keep the rendered deployment
+configuration in the ignored `.env` file as well. After signing in to the
+1Password CLI, make a private `.env.op.tpl` beside `.env.example`, replacing
+the placeholder values with `op://...` references to the operator's vault
+items, then render it without putting secrets in command arguments or logs:
+
+```sh
+op inject -i .env.op.tpl -o .env
+chmod 600 .env
+docker compose --env-file .env config --quiet
+```
+
+Do not commit `.env.op.tpl`, `.env`, or any rendered output. `op inject` is
+deliberately a local preparation step; Compose, the migration, bootstrap, app,
+and worker continue to consume the ordinary `.env` contract documented by
+`.env.example`. For Vercel, transfer the same values through the Vercel
+project's protected environment-variable store rather than committing or
+printing the rendered file.
+
 Keep `AUTH_SECURE_COOKIES=true`. Browsers support secure cookies on the
 `http://localhost` loopback exception used by the default Compose binding. A
 non-loopback self-host must terminate HTTPS for `NEXT_PUBLIC_APP_URL` through a
