@@ -642,6 +642,13 @@ export type SelectPersonFieldInput = {
   selectionReason?: string | null | undefined;
 };
 
+export type SelectPersonPresentationInput = {
+  expectedVersion: number;
+  personId: string;
+  primaryNameId?: string | null | undefined;
+  primaryPhotoFileId?: string | null | undefined;
+};
+
 export type Sensitivity = "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
 export type StartAiAnalysisInput = {
@@ -2826,6 +2833,25 @@ export type UnmergePersonMutation = {
       displayName: string;
       status: PersonStatus;
       version: number;
+    } | null;
+    issues: Array<{ code: string; message: string; path: Array<string> }>;
+  };
+};
+
+export type SelectPersonPresentationMutationVariables = Exact<{
+  input: SelectPersonPresentationInput;
+}>;
+
+export type SelectPersonPresentationMutation = {
+  selectPersonPresentation: {
+    person: {
+      id: string;
+      displayName: string;
+      status: PersonStatus;
+      version: number;
+      primaryNameId: string | null;
+      primaryPhotoFileId: string | null;
+      mergedIntoPersonId: string | null;
     } | null;
     issues: Array<{ code: string; message: string; path: Array<string> }>;
   };
@@ -6826,6 +6852,34 @@ export const UnmergePersonDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   UnmergePersonMutation,
   UnmergePersonMutationVariables
+>;
+export const SelectPersonPresentationDocument = new TypedDocumentString(
+  `
+    mutation SelectPersonPresentation($input: SelectPersonPresentationInput!) {
+  selectPersonPresentation(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+      primaryNameId
+      primaryPhotoFileId
+      mergedIntoPersonId
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:a4ea0cbca8ccfba0df75f39b894347fc05a32a9e657a78dca914988d7f977966",
+  },
+) as unknown as TypedDocumentString<
+  SelectPersonPresentationMutation,
+  SelectPersonPresentationMutationVariables
 >;
 export const CreateFactDefinitionDocument = new TypedDocumentString(
   `

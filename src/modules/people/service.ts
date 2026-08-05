@@ -16,7 +16,8 @@ import {
   type ValidationIssue,
 } from "@/modules/facts/validation";
 import { newId } from "@/db/id";
-import { mergeDecisions, people } from "@/db/schema/people";
+import { files } from "@/db/schema/files";
+import { mergeDecisions, people, personNames } from "@/db/schema/people";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { createPeopleRepository, type PersonRow } from "./repository";
@@ -838,6 +839,120 @@ export function createPeopleService(context: ResearchServiceContext) {
       });
       if (!restored) return { resource: null, issues: [], code: "CONFLICT" };
       return { resource: restored, issues: [], code: null };
+    },
+    async selectPresentation(input: {
+      personId: string;
+      expectedVersion: number;
+      primaryNameId?: string | null;
+      primaryPhotoFileId?: string | null;
+    }): Promise<MutationOutcome<PersonRow>> {
+      if (!context.permissions.has("person:update")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Person presentation updates are not permitted.",
+        );
+      }
+      const result = await writeTransaction(context, async (transaction) => {
+        const [current] = await transaction
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.personId),
+              isNull(people.deletedAt),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!current) return null;
+        if (input.primaryNameId !== undefined && input.primaryNameId !== null) {
+          const [name] = await transaction
+            .select({ id: personNames.id })
+            .from(personNames)
+            .where(
+              and(
+                eq(personNames.workspaceId, context.workspaceId),
+                eq(personNames.personId, input.personId),
+                eq(personNames.id, input.primaryNameId),
+                isNull(personNames.deletedAt),
+              ),
+            )
+            .limit(1)
+            .for("share");
+          if (!name)
+            throw createGraphQLError(
+              "VALIDATION_FAILED",
+              "The selected primary name does not belong to this person.",
+            );
+        }
+        if (
+          input.primaryPhotoFileId !== undefined &&
+          input.primaryPhotoFileId !== null
+        ) {
+          const [photo] = await transaction
+            .select({ id: files.id })
+            .from(files)
+            .where(
+              and(
+                eq(files.workspaceId, context.workspaceId),
+                eq(files.id, input.primaryPhotoFileId),
+                eq(files.quarantineState, "available"),
+                isNull(files.deletedAt),
+              ),
+            )
+            .limit(1)
+            .for("share");
+          if (!photo)
+            throw createGraphQLError(
+              "VALIDATION_FAILED",
+              "The selected primary photo is not available.",
+            );
+        }
+        const [updated] = await transaction
+          .update(people)
+          .set({
+            ...(input.primaryNameId === undefined
+              ? {}
+              : { primaryNameId: input.primaryNameId }),
+            ...(input.primaryPhotoFileId === undefined
+              ? {}
+              : { primaryPhotoFileId: input.primaryPhotoFileId }),
+            version: sql`${people.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          })
+          .where(
+            and(
+              eq(people.workspaceId, context.workspaceId),
+              eq(people.id, input.personId),
+              eq(people.version, input.expectedVersion),
+              isNull(people.deletedAt),
+            ),
+          )
+          .returning();
+        if (!updated) return null;
+        await audit.write(transaction as unknown as typeof context.database, {
+          action: "person.presentation.select",
+          resourceKind: "person",
+          resourceId: updated.id,
+          sensitivity: updated.sensitivity,
+          changedFields: ["primaryNameId", "primaryPhotoFileId"],
+          metadata: { version: updated.version },
+        });
+        await applySearchIndexMaintenance(context, transaction, [
+          {
+            action: "upsert",
+            sourceId: updated.id,
+            sourceKind: "person",
+            sourceVersion: updated.version,
+            workspaceId: context.workspaceId,
+          },
+        ]);
+        return updated;
+      });
+      if (!result) return { resource: null, issues: [], code: "CONFLICT" };
+      return { resource: result, issues: [], code: null };
     },
   };
 }

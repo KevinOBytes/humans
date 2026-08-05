@@ -492,6 +492,25 @@ mutation UnmergePerson($input: UnmergePersonInput!) {
   }
 }
 
+mutation SelectPersonPresentation($input: SelectPersonPresentationInput!) {
+  selectPersonPresentation(input: $input) {
+    person {
+      id
+      displayName
+      status
+      version
+      primaryNameId
+      primaryPhotoFileId
+      mergedIntoPersonId
+    }
+    issues {
+      code
+      message
+      path
+    }
+  }
+}
+
 mutation CreateFactDefinition($input: CreateFactDefinitionInput!) {
   createFactDefinition(input: $input) {
     factDefinition {

@@ -57,6 +57,15 @@ export const Person = builder.objectRef<PersonRow>("Person").implement({
     sortName: t.exposeString("sortName", { nullable: true }),
     preferredName: t.exposeString("preferredName", { nullable: true }),
     biography: t.exposeString("biography", { nullable: true }),
+    primaryNameId: t.expose("primaryNameId", { type: "UUID", nullable: true }),
+    primaryPhotoFileId: t.expose("primaryPhotoFileId", {
+      type: "UUID",
+      nullable: true,
+    }),
+    mergedIntoPersonId: t.expose("mergedIntoPersonId", {
+      type: "UUID",
+      nullable: true,
+    }),
     status: t.expose("status", { type: PersonStatus, nullable: false }),
     sensitivity: t.expose("sensitivity", {
       type: Sensitivity,
@@ -132,6 +141,17 @@ const UnmergePersonInput = builder.inputType("UnmergePersonInput", {
     expectedVersion: t.int({ required: true }),
   }),
 });
+const SelectPersonPresentationInput = builder.inputType(
+  "SelectPersonPresentationInput",
+  {
+    fields: (t) => ({
+      personId: t.field({ type: "UUID", required: true }),
+      expectedVersion: t.int({ required: true }),
+      primaryNameId: t.field({ type: "UUID" }),
+      primaryPhotoFileId: t.field({ type: "UUID" }),
+    }),
+  },
+);
 
 const CreatePersonInput = builder.inputType("CreatePersonInput", {
   fields: (t) => ({
@@ -323,6 +343,25 @@ export function registerPeopleGraphQL(): void {
       resolve: async (_root, args, context) => {
         requirePermission(context, "person", "merge");
         const outcome = await context.services.people.unmerge(args.input);
+        if (outcome.resource)
+          invalidateVisibilityDependentLoaders(context.loaders, {
+            kind: "person",
+            id: outcome.resource.id,
+          });
+        return payload(outcome);
+      },
+    }),
+    selectPersonPresentation: t.field({
+      type: PersonPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: SelectPersonPresentationInput, required: true }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        const outcome = await context.services.people.selectPresentation(
+          args.input,
+        );
         if (outcome.resource)
           invalidateVisibilityDependentLoaders(context.loaders, {
             kind: "person",
