@@ -21,6 +21,7 @@ import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
 import { facts, personFieldSelections } from "@/db/schema/facts";
 import {
+  evidenceItems,
   notes,
   personAddresses,
   personContactPoints,
@@ -52,6 +53,7 @@ import {
 import {
   createPeopleRepository,
   type PersonEventRow,
+  type PersonFileRow,
   type PersonNameRow,
   type PersonRow,
 } from "./repository";
@@ -100,6 +102,7 @@ function sortValue(row: PersonRow): string {
 const RECENT_PEOPLE_CURSOR_ORDER = "dashboard-people-updated-desc";
 const PERSON_NAMES_CURSOR_ORDER = "person-names-created-desc";
 const PERSON_EVENTS_CURSOR_ORDER = "person-events-created-desc";
+const PERSON_FILES_CURSOR_ORDER = "person-files-created-desc";
 const CONTRADICTORY_FACTS_CURSOR_ORDER = "contradictory-facts-asserted-desc";
 const PERSON_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const PERSON_REFERENCE_UUID =
@@ -119,7 +122,7 @@ function encodeRecentCursor(row: Pick<PersonRow, "id" | "updatedAt">): string {
 
 function encodeDateCursor(
   order: string,
-  row: Pick<PersonNameRow | PersonEventRow, "id" | "createdAt">,
+  row: Pick<PersonNameRow | PersonEventRow | PersonFileRow, "id" | "createdAt">,
 ): string {
   return Buffer.from(
     JSON.stringify({
@@ -415,6 +418,59 @@ export function createPeopleService(context: ResearchServiceContext) {
           hasNextPage: rows.length > page.first,
           endCursor: last
             ? encodeDateCursor(PERSON_EVENTS_CURSOR_ORDER, last)
+            : null,
+        },
+      };
+    },
+
+    async listFiles(input: {
+      personId: string;
+      first?: number | null;
+      after?: string | null;
+    }): Promise<Connection<PersonFileRow>> {
+      const page = normalizePagination(input);
+      const decoded = decodeResearchCursor(
+        page.after,
+        PERSON_FILES_CURSOR_ORDER,
+      );
+      const cursor = decoded
+        ? { createdAt: new Date(String(decoded.t)), id: String(decoded.i) }
+        : null;
+      const rows = await repository.listFiles({
+        workspaceId: context.workspaceId,
+        personId: input.personId,
+        cursor,
+        limit: page.first + 1,
+        visibility: resourceVisibilitySql(context, {
+          resourceKind: "file",
+          id: files.id,
+          sensitivity: files.sensitivity,
+        }),
+        personVisibility: visibility,
+        factVisibility: resourceVisibilitySql(context, {
+          resourceKind: "fact",
+          id: facts.id,
+          sensitivity: facts.sensitivity,
+        }),
+        evidenceVisibility: resourceVisibilitySql(context, {
+          resourceKind: "evidence",
+          id: evidenceItems.id,
+          sensitivity: evidenceItems.sensitivity,
+        }),
+        relationshipVisibility: resourceVisibilitySql(context, {
+          resourceKind: "relationship",
+          id: relationships.id,
+          sensitivity: relationships.sensitivity,
+        }),
+      });
+      const nodes = rows.slice(0, page.first);
+      const last = nodes.at(-1);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > page.first,
+          endCursor: last
+            ? encodeDateCursor(PERSON_FILES_CURSOR_ORDER, last)
             : null,
         },
       };

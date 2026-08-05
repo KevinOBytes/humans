@@ -521,6 +521,14 @@ export type NoteSubjectInput = {
   relationshipId?: string | null | undefined;
 };
 
+export type PersonFileAvailability =
+  "AVAILABLE" | "PENDING" | "QUARANTINED" | "REJECTED";
+
+export type PersonFileRole = "EVIDENCE" | "FACT" | "PRIMARY_PHOTO";
+
+export type PersonFileScanState =
+  "CLEAN" | "ERROR" | "INFECTED" | "NOT_REQUIRED" | "PENDING";
+
 export type PersonFilterInput = {
   name?: string | null | undefined;
   nameContains?: string | null | undefined;
@@ -2630,6 +2638,38 @@ export type PersonFactsQuery = {
       pageInfo: {
         " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
       } | null;
+    } | null;
+  } | null;
+};
+
+export type PersonFilesQueryVariables = Exact<{
+  id: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type PersonFilesQuery = {
+  person: {
+    id: string;
+    files: {
+      nodes: Array<{
+        id: string;
+        originalName: string;
+        mediaType: string | null;
+        detectedType: string | null;
+        byteSize: number;
+        availability: PersonFileAvailability;
+        scanState: PersonFileScanState;
+        sensitivity: Sensitivity;
+        version: number;
+        archivedAt: string | null;
+        createdAt: string;
+        updatedAt: string;
+        roles: Array<PersonFileRole>;
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      };
     } | null;
   } | null;
 };
@@ -6847,6 +6887,44 @@ fragment FactSummary on Fact {
 ) as unknown as TypedDocumentString<
   PersonFactsQuery,
   PersonFactsQueryVariables
+>;
+export const PersonFilesDocument = new TypedDocumentString(
+  `
+    query PersonFiles($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    files(first: $first, after: $after) {
+      nodes {
+        id
+        originalName
+        mediaType
+        detectedType
+        byteSize
+        availability
+        scanState
+        sensitivity
+        version
+        archivedAt
+        createdAt
+        updatedAt
+        roles
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+    fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}`,
+  {
+    hash: "sha256:69ecbd5f2ec6834c63fa968fb05975fc5ebf446b126df081e529892d934c2add",
+  },
+) as unknown as TypedDocumentString<
+  PersonFilesQuery,
+  PersonFilesQueryVariables
 >;
 export const PersonContradictoryFactsDocument = new TypedDocumentString(
   `
