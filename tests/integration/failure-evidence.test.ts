@@ -225,7 +225,11 @@ liveDescribe("whole-application dependency failure evidence", () => {
       leaseExpiresAt: null,
     });
     const storedAudit = await database
-      .select({ redactedDiff: auditEvents.redactedDiff })
+      .select({
+        action: auditEvents.action,
+        outcome: auditEvents.outcome,
+        redactedDiff: auditEvents.redactedDiff,
+      })
       .from(auditEvents)
       .where(
         and(
@@ -233,6 +237,15 @@ liveDescribe("whole-application dependency failure evidence", () => {
           eq(auditEvents.resourceId, job.id),
         ),
       );
+    expect(storedAudit).toHaveLength(1);
+    expect(storedAudit[0]).toMatchObject({
+      action: "job.dead_letter",
+      outcome: "dead_letter",
+      redactedDiff: {
+        errorCode: "dependency_unavailable",
+        state: "dead_letter",
+      },
+    });
     expect(JSON.stringify(storedAudit)).not.toContain("provider secret");
   });
 });
