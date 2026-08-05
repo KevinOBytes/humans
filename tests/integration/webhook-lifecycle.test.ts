@@ -12,8 +12,12 @@ import {
 } from "vitest";
 import { and, eq } from "drizzle-orm";
 
-vi.mock("@/modules/webhooks/target", () => ({
-  assertPublicWebhookTarget: vi.fn().mockResolvedValue(undefined),
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async (hostname: string) =>
+    hostname === "rebound.example.test"
+      ? [{ address: "127.0.0.1", family: 4 }]
+      : [{ address: "198.51.100.10", family: 4 }],
+  ),
 }));
 
 import {
@@ -23,9 +27,9 @@ import {
   SendWorkspaceWebhookTestEventDocument,
   WorkspaceWebhooksDocument,
 } from "@/graphql/generated/graphql";
+import { lookup } from "node:dns/promises";
 import { webhookDeliveries, webhooks } from "@/db/schema/operations";
 import { verifyWebhookSignature } from "@/modules/webhooks/signature";
-import { assertPublicWebhookTarget } from "@/modules/webhooks/target";
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 
 import { testAdminEnv } from "../support/auth";
@@ -156,9 +160,10 @@ liveDescribe("webhook lifecycle acceptance", () => {
       code: "webhook_http_503",
       failureKind: "retryable",
     });
-    expect(assertPublicWebhookTarget).toHaveBeenCalledWith(
-      "https://hooks.example.test/humans",
-    );
+    expect(lookup).toHaveBeenCalledWith("hooks.example.test", {
+      all: true,
+      verbatim: true,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, request] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe("https://hooks.example.test/humans");
@@ -187,9 +192,9 @@ liveDescribe("webhook lifecycle acceptance", () => {
       .where(eq(webhookDeliveries.id, deliveryId));
     expect(delivery).toMatchObject({
       attempt: 1,
-      redactedError: { code: "http_failure" },
       responseStatus: 503,
     });
+    expect(delivery?.redactedError).toEqual({ code: "http_failure" });
     expect(delivery?.completedAt).toBeInstanceOf(Date);
     expect(delivery?.nextRetryAt).toBeInstanceOf(Date);
 
@@ -220,7 +225,50 @@ liveDescribe("webhook lifecycle acceptance", () => {
       ),
     ).resolves.toEqual({ resultReferences: [completedDeliveryId] });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(assertPublicWebhookTarget).toHaveBeenCalledTimes(2);
+
+    await fixture.database
+      .update(webhooks)
+      .set({ url: "https://rebound.example.test/humans" })
+      .where(eq(webhooks.id, webhookId));
+    const queuedRebound = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId } },
+    });
+    const reboundDeliveryId = required(
+      queuedRebound.body?.data?.sendWebhookTestEvent.deliveryId,
+      "rebound webhook delivery ID",
+    );
+    await expect(
+      handler(
+        { deliveryId: reboundDeliveryId, webhookId },
+        { job: { attemptCount: 1 }, signal: new AbortController().signal },
+      ),
+    ).rejects.toMatchObject({
+      code: "webhook_transport_failure",
+      failureKind: "retryable",
+    });
+    expect(lookup).toHaveBeenCalledWith("rebound.example.test", {
+      all: true,
+      verbatim: true,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [reboundDelivery] = await fixture.database
+      .select()
+      .from(webhookDeliveries)
+      .where(eq(webhookDeliveries.id, reboundDeliveryId));
+    expect(reboundDelivery?.redactedError).toEqual({
+      code: "delivery_failed",
+      detail: "Error",
+    });
+    const serializedDelivery = JSON.stringify(reboundDelivery);
+    expect(serializedDelivery).not.toContain("temporarily unavailable");
+    expect(serializedDelivery).not.toContain(firstSecret);
+    expect(serializedDelivery).not.toContain(rotatedSecret);
+    expect(serializedDelivery).not.toContain("Humans webhook test");
 
     const disabled = await fixture.execute<{
       disableWebhook: { code: string; id: string | null };
