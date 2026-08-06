@@ -216,6 +216,7 @@ function createServices(input: {
     relationships: createRelationshipsService({
       actor: input.context.actor,
       database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
       permissions: input.context.permissions,
       requestId: input.context.requestId,
       searchIndexMaintenance: input.searchIndexMaintenance,
