@@ -64,6 +64,7 @@ export type ArchivePersonAddressInput = {
 export type ArchivePersonInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type ArchivePhoneContactInput = {
@@ -875,6 +876,7 @@ export type UpdatePersonInput = {
   displayName?: string | null | undefined;
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
   preferredName?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   sortName?: string | null | undefined;

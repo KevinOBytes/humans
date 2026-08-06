@@ -827,6 +827,146 @@ liveDescribe("research write transactions", () => {
     ).toHaveLength(4);
   });
 
+  it("replays person updates and archives without duplicate domain or audit effects", async () => {
+    const actor = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+      "person:update",
+      "person:delete",
+    ]);
+    const peopleService = createPeopleService(context);
+    const created = await peopleService.create({
+      displayName: "Retryable person",
+    });
+    if (!created.resource) throw new Error("The person fixture is missing.");
+
+    const updateInput = {
+      id: created.resource.id,
+      expectedVersion: created.resource.version,
+      idempotencyKey: "person-update-replay",
+      displayName: "Retryable person, updated",
+      biography: "The update is safe to retry.",
+    } as const;
+    const firstUpdate = await peopleService.update(updateInput);
+    const replayedUpdate = await peopleService.update(updateInput);
+    expect(firstUpdate.resource?.id).toBe(created.resource.id);
+    expect(replayedUpdate.resource).toMatchObject({
+      id: created.resource.id,
+      displayName: "Retryable person, updated",
+      biography: "The update is safe to retry.",
+      version: created.resource.version + 1,
+    });
+    await expect(
+      peopleService.update({ ...updateInput, biography: null }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+    const updateClaim = (
+      await fixture.database
+        .select()
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId))
+    ).find((claim) => claim.operation === "person.update");
+    if (!updateClaim) throw new Error("The person update claim is missing.");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { personId: created.resource.id } })
+      .where(eq(idempotencyKeys.id, updateClaim.id));
+    await expect(peopleService.update(updateInput)).rejects.toMatchObject({
+      extensions: { code: "VALIDATION_FAILED" },
+    });
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "person.update")),
+    ).toHaveLength(1);
+
+    const archiveInput = {
+      id: created.resource.id,
+      expectedVersion: created.resource.version + 1,
+      idempotencyKey: "person-archive-replay",
+    } as const;
+    const firstArchive = await peopleService.archive(archiveInput);
+    const replayedArchive = await peopleService.archive(archiveInput);
+    expect(firstArchive.resource).toMatchObject({
+      id: created.resource.id,
+      status: "archived",
+      version: created.resource.version + 2,
+    });
+    expect(replayedArchive.resource).toMatchObject({
+      id: created.resource.id,
+      status: "archived",
+      version: created.resource.version + 2,
+    });
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "person.archive")),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: idempotencyKeys.id })
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId)),
+    ).toHaveLength(2);
+  });
+
+  it("fences person mutation idempotency keys to the principal and workspace", async () => {
+    const actor = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+      "person:update",
+    ]);
+    const foreignContext = await serviceContext(fixture, foreign, [
+      "person:create",
+      "person:read",
+      "person:update",
+    ]);
+    const peopleService = createPeopleService(context);
+    const foreignPeopleService = createPeopleService(foreignContext);
+    const person = await peopleService.create({ displayName: "Private retry" });
+    const foreignPerson = await foreignPeopleService.create({
+      displayName: "Foreign retry",
+    });
+    if (!person.resource || !foreignPerson.resource) {
+      throw new Error("The tenant fencing fixtures are missing.");
+    }
+    const input = {
+      id: person.resource.id,
+      expectedVersion: person.resource.version,
+      idempotencyKey: "same-person-update-key",
+      displayName: "Private retry, changed",
+    } as const;
+    await peopleService.update(input);
+    await expect(
+      foreignPeopleService.update({
+        ...input,
+        id: foreignPerson.resource.id,
+      }),
+    ).resolves.toMatchObject({
+      resource: {
+        id: foreignPerson.resource.id,
+        displayName: "Private retry, changed",
+        version: foreignPerson.resource.version + 1,
+      },
+    });
+    await expect(
+      foreignPeopleService.update({
+        ...input,
+        id: person.resource.id,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+    expect(
+      await fixture.database
+        .select({ id: people.id })
+        .from(people)
+        .where(eq(people.workspaceId, actor.workspaceId)),
+    ).toHaveLength(1);
+  });
+
   it("rejects invalid live audit attribution before a composed write", async () => {
     const { runResearchTransaction } = transactionFunctions();
     const actor = await fixture.createActor();

@@ -511,6 +511,7 @@ const UpdatePersonInput = builder.inputType("UpdatePersonInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
     displayName: t.string(),
     sortName: t.string(),
     preferredName: t.string(),
@@ -524,6 +525,7 @@ const ArchivePersonInput = builder.inputType("ArchivePersonInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
   }),
 });
 

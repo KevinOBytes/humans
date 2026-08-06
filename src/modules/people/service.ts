@@ -213,6 +213,67 @@ export function createPeopleService(context: ResearchServiceContext) {
     });
   }
 
+  async function visibleRetryTarget(id: string): Promise<boolean> {
+    const [target] = await context.database
+      .select({ id: people.id, sensitivity: people.sensitivity })
+      .from(people)
+      .where(
+        and(eq(people.workspaceId, context.workspaceId), eq(people.id, id)),
+      )
+      .limit(1);
+    return target
+      ? canAccessResource(context.database, context, {
+          id: target.id,
+          resourceKind: "person",
+          sensitivity: target.sensitivity,
+        })
+      : false;
+  }
+
+  async function replayPerson(
+    responseReference: Readonly<
+      Record<string, string | number | boolean | null>
+    >,
+  ): Promise<PersonRow> {
+    const personId = responseReference.personId;
+    const version = responseReference.version;
+    if (
+      typeof personId !== "string" ||
+      !PERSON_REFERENCE_UUID.test(personId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    const [row] = await context.database
+      .select()
+      .from(people)
+      .where(
+        and(
+          eq(people.workspaceId, context.workspaceId),
+          eq(people.id, personId),
+        ),
+      )
+      .limit(1);
+    if (!row || !(await visible(row))) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    if (row.version !== version) {
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    }
+    return row;
+  }
+
   return {
     async get(id: string): Promise<PersonRow | null> {
       const row = await repository.getById({
@@ -811,6 +872,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     async update(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
       displayName?: string | null;
       sortName?: string | null;
       preferredName?: string | null;
@@ -824,7 +886,13 @@ export function createPeopleService(context: ResearchServiceContext) {
         workspaceId: context.workspaceId,
         id: input.id,
       });
-      if (!current || !(await visible(current))) {
+      if (
+        (!current && input.idempotencyKey == null) ||
+        (current && !(await visible(current))) ||
+        (!current &&
+          input.idempotencyKey != null &&
+          !(await visibleRetryTarget(input.id)))
+      ) {
         throw createGraphQLError(
           "NOT_FOUND",
           "The requested resource was not found.",
@@ -886,12 +954,15 @@ export function createPeopleService(context: ResearchServiceContext) {
         changedFields.push("sensitivity");
       }
       if (issues.length > 0) return invalid(issues);
-      const updated = await writeTransaction(context, async (transaction) => {
+      const persist = async (
+        writeContext: ResearchServiceContext,
+        transaction: typeof context.database,
+      ) => {
         const scoped = createPeopleRepository(
           transaction as unknown as typeof context.database,
         );
         const row = await scoped.updateIfVersion({
-          workspaceId: context.workspaceId,
+          workspaceId: writeContext.workspaceId,
           id: input.id,
           expectedVersion: input.expectedVersion,
           patch,
@@ -909,17 +980,98 @@ export function createPeopleService(context: ResearchServiceContext) {
             version: row.version,
           },
         });
-        await applySearchIndexMaintenance(context, transaction, [
+        await applySearchIndexMaintenance(writeContext, transaction, [
           {
             action: "upsert",
             sourceId: row.id,
             sourceKind: "person",
             sourceVersion: row.version,
-            workspaceId: context.workspaceId,
+            workspaceId: writeContext.workspaceId,
           },
         ]);
         return row;
-      });
+      };
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person updates are not configured.",
+          );
+        }
+        const idempotency = deriveResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person.update",
+          requestMaterial: {
+            biography: {
+              present: input.biography !== undefined,
+              value:
+                patch.biography === undefined
+                  ? null
+                  : (patch.biography as string | null),
+            },
+            displayName: {
+              present: input.displayName !== undefined,
+              value:
+                patch.displayName === undefined
+                  ? null
+                  : (patch.displayName as string | null),
+            },
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            preferredName: {
+              present: input.preferredName !== undefined,
+              value:
+                patch.preferredName === undefined
+                  ? null
+                  : (patch.preferredName as string | null),
+            },
+            sensitivity: {
+              present: input.sensitivity !== undefined,
+              value:
+                patch.sensitivity === undefined
+                  ? null
+                  : (patch.sensitivity as string | null),
+            },
+            sortName: {
+              present: input.sortName !== undefined,
+              value:
+                patch.sortName === undefined
+                  ? null
+                  : (patch.sortName as string | null),
+            },
+            status: {
+              present: input.status !== undefined,
+              value:
+                patch.status === undefined
+                  ? null
+                  : (patch.status as string | null),
+            },
+          },
+          secret,
+        });
+        const result = await runIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:update"],
+          async (scopedContext) => {
+            const row = await persist(scopedContext, scopedContext.database);
+            if (!row) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person was changed by another request.",
+              );
+            }
+            return { personId: row.id, version: row.version };
+          },
+        );
+        const replayed = await replayPerson(result.responseReference);
+        return { resource: replayed, issues: [], code: null };
+      }
+      const updated = await writeTransaction(context, async (transaction) =>
+        persist(context, transaction),
+      );
       if (!updated) {
         const latest = await repository.getById({
           workspaceId: context.workspaceId,
@@ -943,31 +1095,51 @@ export function createPeopleService(context: ResearchServiceContext) {
     async archive(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonRow>> {
       const current = await repository.getById({
         workspaceId: context.workspaceId,
         id: input.id,
       });
-      if (!current || !(await visible(current)))
+      const retryTargetVisible =
+        !current && input.idempotencyKey != null
+          ? await visibleRetryTarget(input.id)
+          : false;
+      if (
+        (!current && !retryTargetVisible) ||
+        (current !== null &&
+          current.deletedAt === null &&
+          !(await visible(current))) ||
+        (current !== null &&
+          current.deletedAt !== null &&
+          input.idempotencyKey == null) ||
+        (current !== null &&
+          current.deletedAt !== null &&
+          input.idempotencyKey != null &&
+          !(await visibleRetryTarget(input.id)))
+      )
         throw createGraphQLError(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
-      const now = new Date();
-      const archived = await writeTransaction(context, async (transaction) => {
+      const persist = async (
+        writeContext: ResearchServiceContext,
+        transaction: typeof context.database,
+      ) => {
+        const now = new Date();
         const scoped = createPeopleRepository(
           transaction as unknown as typeof context.database,
         );
         const row = await scoped.updateIfVersion({
-          workspaceId: context.workspaceId,
+          workspaceId: writeContext.workspaceId,
           id: input.id,
           expectedVersion: input.expectedVersion,
           patch: {
             status: "archived",
             deletedAt: now,
-            deletedBy: context.actor.principalId,
+            deletedBy: writeContext.actor.principalId,
             updatedAt: now,
-            updatedBy: context.actor.principalId,
+            updatedBy: writeContext.actor.principalId,
           },
         });
         if (!row) return null;
@@ -979,23 +1151,62 @@ export function createPeopleService(context: ResearchServiceContext) {
           changedFields: ["status", "deletedAt"],
           metadata: { status: "archived", version: row.version },
         });
-        await applySearchIndexMaintenance(context, transaction, [
+        await applySearchIndexMaintenance(writeContext, transaction, [
           {
             action: "remove",
             sourceId: row.id,
             sourceKind: "person",
             sourceVersion: row.version,
-            workspaceId: context.workspaceId,
+            workspaceId: writeContext.workspaceId,
           },
         ]);
         return row;
-      });
+      };
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person archives are not configured.",
+          );
+        }
+        const idempotency = deriveResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person.archive",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+          },
+          secret,
+        });
+        const result = await runIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:delete"],
+          async (scopedContext) => {
+            const row = await persist(scopedContext, scopedContext.database);
+            if (!row) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person was changed by another request.",
+              );
+            }
+            return { personId: row.id, version: row.version };
+          },
+        );
+        const replayed = await replayPerson(result.responseReference);
+        return { resource: replayed, issues: [], code: null };
+      }
+      const archived = await writeTransaction(context, async (transaction) =>
+        persist(context, transaction),
+      );
       if (!archived)
         return {
           resource: null,
           issues: [],
           code: "CONFLICT",
-          currentVersion: current.version,
+          currentVersion: current?.version ?? null,
         };
       return { resource: archived, issues: [], code: null };
     },

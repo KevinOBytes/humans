@@ -3,7 +3,7 @@
 import { readFile } from "node:fs/promises";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { auditEvents } from "@/db/schema/operations";
@@ -19,6 +19,7 @@ import {
   CreateRelationshipDocument,
   CreateRelationshipTypeDocument,
   CreateSourceDocument,
+  ArchivePersonDocument,
   EvidenceFilesDocument,
   FactEvidenceDocument,
   GraphPageDocument,
@@ -33,6 +34,7 @@ import {
   SearchWorkbenchSavedQueriesDocument,
   SearchWorkbenchSearchDocument,
   StartAiAnalysisDocument,
+  UpdatePersonDocument,
 } from "@/graphql/generated/graphql";
 
 import { expectGraphQLError, type OperationResult } from "../support/graphql";
@@ -720,6 +722,108 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     expect(replay.body?.data?.createPerson.person?.id).toBe(
       first.body?.data?.createPerson.person?.id,
     );
+  });
+
+  it("replays generated updatePerson and archivePerson responses without duplicate writes", async () => {
+    const owner = await fixture.createActor();
+    const created = dataField<{ person: { id: string; version: number } }>(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreatePerson",
+        query: CreatePersonDocument,
+        variables: {
+          input: { displayName: "Generated person mutation subject" },
+        },
+      }),
+      "createPerson",
+    );
+    const updateInput = {
+      id: created.person.id,
+      expectedVersion: created.person.version,
+      idempotencyKey: "generated-person-update-replay",
+      displayName: "Generated person mutation subject, updated",
+    };
+    const update = () =>
+      fixture.execute<{
+        updatePerson: {
+          code: string | null;
+          person: { id: string; version: number } | null;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "UpdatePerson",
+        query: UpdatePersonDocument,
+        variables: { input: updateInput },
+      });
+    const [firstUpdate, replayedUpdate] = await Promise.all([
+      update(),
+      update(),
+    ]);
+    expect(firstUpdate.body?.errors).toBeUndefined();
+    expect(replayedUpdate.body?.errors).toBeUndefined();
+    expect(firstUpdate.body?.data?.updatePerson).toMatchObject({
+      code: null,
+      person: { id: created.person.id, version: created.person.version + 1 },
+    });
+    expect(replayedUpdate.body?.data?.updatePerson).toMatchObject({
+      code: null,
+      person: { id: created.person.id, version: created.person.version + 1 },
+    });
+
+    const archiveInput = {
+      id: created.person.id,
+      expectedVersion: created.person.version + 1,
+      idempotencyKey: "generated-person-archive-replay",
+    };
+    const archive = () =>
+      fixture.execute<{
+        archivePerson: {
+          code: string | null;
+          person: { id: string; version: number; status: string } | null;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "ArchivePerson",
+        query: ArchivePersonDocument,
+        variables: { input: archiveInput },
+      });
+    const [firstArchive, replayedArchive] = await Promise.all([
+      archive(),
+      archive(),
+    ]);
+    expect(firstArchive.body?.errors).toBeUndefined();
+    expect(replayedArchive.body?.errors).toBeUndefined();
+    expect(firstArchive.body?.data?.archivePerson).toMatchObject({
+      code: null,
+      person: {
+        id: created.person.id,
+        version: created.person.version + 2,
+        status: "ARCHIVED",
+      },
+    });
+    expect(replayedArchive.body?.data?.archivePerson).toMatchObject({
+      code: null,
+      person: {
+        id: created.person.id,
+        version: created.person.version + 2,
+        status: "ARCHIVED",
+      },
+    });
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            inArray(auditEvents.action, [
+              "person.create",
+              "person.update",
+              "person.archive",
+            ]),
+          ),
+        ),
+    ).toHaveLength(3);
   });
 
   it("covers generated createFact replay, concurrency, expiry, malformed references, and tenant fencing", async () => {
