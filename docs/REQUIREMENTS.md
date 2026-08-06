@@ -6,6 +6,8 @@ Bounded HUM-NFR-008 people, fact, evidence, file-upload, webhook, and settings e
 
 Bounded HUM-NFR-008 privacy-settings evidence (2026-08-06): generated GraphQL retention-policy upsert, legal-hold create/release, consent create, and deletion-request create/review mutations now accept principal-bound durable idempotency keys. The focused live PostgreSQL acceptance proves replay without duplicate rows, malformed response-reference rejection, optimistic release/review versions, concurrent consent convergence, redacted audit-compatible response projections, and raw-key workspace fencing. The broader retention-worker enforcement, deletion execution, provider, and whole-settings matrix remains open.
 
+Bounded HUM-FR-005 deletion evidence (2026-08-06): approved workspace-scoped person deletion requests now execute once in the worker with active legal-hold fencing, soft-delete and redacted audit effects, search-index removal, and durable file-cleanup scheduling. Retention-policy enforcement, hard-delete/anonymization behavior, and the full role/resource matrix remain open.
+
 Bounded HUM-NFR-008 person-mutation evidence (2026-08-06): generated GraphQL `UpdatePerson` and `ArchivePerson` now accept principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves replay without duplicate person or audit effects and workspace fencing; merge/unmerge, names, tags, contacts, locations, and the remaining retryable mutation matrix remain open.
 
 ## Functional requirements
