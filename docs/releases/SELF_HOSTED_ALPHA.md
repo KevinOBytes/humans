@@ -306,9 +306,8 @@ invitation handoff through a sealed HTTP-only, SameSite=Strict cookie into the
 application-owned atomic acceptance route. It verifies that the matching
 verified recipient receives the invited role and the invitation becomes
 accepted; owner-to-admin assignment; an admin managing lower roles but unable
-to promote a peer or mutate an owner; and a controlled race in which an
-acceptance transaction already holding the invitation causes cancellation to
-return unchanged. This is local application and PostgreSQL evidence only. It
-does not prove external Resend delivery, provider failure, cancellation-first
-races, or browser responsive/RTL/zoom acceptance; `HUM-FR-004` remains
+to promote a peer or mutate an owner; and controlled acceptance-wins and
+cancellation-first races without deadlock. This is local application and
+PostgreSQL evidence only. It does not prove external Resend delivery, provider
+failure, or browser responsive/RTL/zoom acceptance; `HUM-FR-004` remains
 incomplete.

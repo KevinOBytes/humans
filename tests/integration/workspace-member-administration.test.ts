@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -291,6 +291,84 @@ liveDescribe("workspace member administration transactions", () => {
         .from(invitations)
         .where(eq(invitations.id, invitationId!)),
     ).toEqual([{ status: "accepted" }]);
+  });
+
+  it("serializes cancellation-first acceptance without a lock-order deadlock", async () => {
+    const owner = await fixture.createActor();
+    const recipient = await fixture.createUser({
+      email: "cancellation-first@example.test",
+      username: "CancellationFirstRecipient",
+    });
+    const issued = await fixture.execute<{
+      issueWorkspaceInvitation?: { actionId?: string };
+    }>({
+      jar: owner.jar,
+      operationName: "IssueWorkspaceInvitation",
+      query: IssueWorkspaceInvitationDocument,
+      variables: {
+        input: {
+          email: "cancellation-first@example.test",
+          role: "VIEWER",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    });
+    const invitationId = issued.body?.data?.issueWorkspaceInvitation?.actionId;
+    expect(invitationId).toEqual(expect.any(String));
+
+    let advisoryAcquired!: () => void;
+    let acceptanceRequested!: () => void;
+    let releaseCancellation!: () => void;
+    const advisoryReady = new Promise<void>((resolve) => {
+      advisoryAcquired = resolve;
+    });
+    const acceptanceReady = new Promise<void>((resolve) => {
+      acceptanceRequested = resolve;
+    });
+    const cancellationRelease = new Promise<void>((resolve) => {
+      releaseCancellation = resolve;
+    });
+    const cancellation = fixture.database.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${owner.workspaceId}, 0))`,
+      );
+      advisoryAcquired();
+      await cancellationRelease;
+      await transaction
+        .update(invitations)
+        .set({ status: "canceled" })
+        .where(eq(invitations.id, invitationId!));
+    });
+    await advisoryReady;
+
+    const acceptance = acceptInvitationAtomically({
+      afterStep: (step) => {
+        if (step === "workspace_lock_requested") acceptanceRequested();
+      },
+      database: fixture.database,
+      invitationId: invitationId!,
+      userId: recipient.userId,
+    });
+    await acceptanceReady;
+    releaseCancellation();
+    await cancellation;
+
+    await expect(acceptance).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    const [storedInvitation] = await fixture.database
+      .select({ status: invitations.status })
+      .from(invitations)
+      .where(eq(invitations.id, invitationId!));
+    expect(storedInvitation?.status).toBe("canceled");
+    const [membership] = await fixture.database
+      .select({ id: members.id })
+      .from(members)
+      .where(
+        and(
+          eq(members.workspaceId, owner.workspaceId),
+          eq(members.userId, recipient.userId),
+        ),
+      );
+    expect(membership).toBeUndefined();
   });
 
   it("permits owners to assign admins while restricting admins to lower-role members", async () => {

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { invitations, members, users } from "@/db/schema/auth";
@@ -9,7 +9,10 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 import { isWorkspaceRole } from "@/modules/auth/permissions";
 
 export type InvitationAcceptanceStep =
-  "invitation_locked" | "membership_created" | "invitation_accepted";
+  | "workspace_lock_requested"
+  | "invitation_locked"
+  | "membership_created"
+  | "invitation_accepted";
 
 export class InvitationLifecycleError extends Error {
   override readonly name = "InvitationLifecycleError";
@@ -34,6 +37,24 @@ export async function acceptInvitationAtomically(input: {
   userId: string;
 }): Promise<{ organizationId: string; workspaceId: string }> {
   return input.database.transaction(async (transaction) => {
+    // Administrative invitation mutations take the workspace advisory lock
+    // before locking the invitation row. Resolve the workspace first and use
+    // the same lock order here so acceptance/cancellation cannot deadlock.
+    const [target] = await transaction
+      .select({ workspaceId: workspaces.id })
+      .from(invitations)
+      .innerJoin(
+        workspaces,
+        eq(workspaces.organizationId, invitations.organizationId),
+      )
+      .where(eq(invitations.id, input.invitationId))
+      .limit(1);
+    if (!target) throw new InvitationLifecycleError("NOT_FOUND");
+    await input.afterStep?.("workspace_lock_requested");
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${target.workspaceId}, 0))`,
+    );
+
     const [record] = await transaction
       .select({
         email: invitations.email,
