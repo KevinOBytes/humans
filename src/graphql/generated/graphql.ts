@@ -547,6 +547,7 @@ export type LinkRelationshipEvidenceInput = {
 };
 
 export type MergePersonInput = {
+  idempotencyKey?: string | null | undefined;
   loserPersonId: string;
   reason: string;
   winnerPersonId: string;
@@ -815,6 +816,7 @@ export type TemporalSemantics =
 
 export type UnmergePersonInput = {
   expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
   loserPersonId: string;
 };
 
