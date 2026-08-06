@@ -219,6 +219,7 @@ const UpdateWorkspaceDefaultsInput = builder.inputType(
 );
 const AccessPolicyInput = builder.inputType("AccessPolicyInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     name: t.string({ required: true }),
     sensitivityCeiling: t.field({ type: Sensitivity, required: true }),
     resourceKinds: t.stringList({ required: true }),
@@ -260,6 +261,7 @@ const CreateLegalHoldInput = builder.inputType("CreateLegalHoldInput", {
 });
 const CreateResourceGrantInput = builder.inputType("CreateResourceGrantInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     policyId: t.field({ type: "UUID", required: true }),
     resourceId: t.field({ type: "UUID", required: true }),
     resourceKind: t.string({ required: true }),
@@ -273,6 +275,7 @@ const UpdateResourceGrantInput = builder.inputType("UpdateResourceGrantInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
     validFrom: t.field({ type: "DateTime" }),
     validUntil: t.field({ type: "DateTime" }),
     state: t.field({ type: PolicyState }),
@@ -706,6 +709,7 @@ export function registerSettingsGraphQL(): void {
       resolve: (_root, args, context) => {
         requirePermission(context, "accessPolicy", "create");
         return context.services.settings.policyMutations.createAccessPolicy({
+          idempotencyKey: args.input.idempotencyKey,
           name: args.input.name,
           resourceKinds: args.input.resourceKinds,
           roleBindings: args.input.roleBindings,
@@ -741,12 +745,14 @@ export function registerSettingsGraphQL(): void {
       args: {
         id: t.arg({ type: "UUID", required: true }),
         expectedVersion: t.arg.int({ required: true }),
+        idempotencyKey: t.arg.string(),
       },
       resolve: (_root, args, context) => {
         requirePermission(context, "accessPolicy", "delete");
         return context.services.settings.policyMutations.archiveAccessPolicy(
           args.id,
           args.expectedVersion,
+          args.idempotencyKey,
         );
       },
     }),
@@ -782,6 +788,7 @@ export function registerSettingsGraphQL(): void {
         return context.services.settings.policyMutations.updateResourceGrant({
           id: args.input.id,
           expectedVersion: args.input.expectedVersion,
+          idempotencyKey: args.input.idempotencyKey,
           validFrom: args.input.validFrom
             ? new Date(args.input.validFrom)
             : undefined,
@@ -798,12 +805,14 @@ export function registerSettingsGraphQL(): void {
       args: {
         id: t.arg({ type: "UUID", required: true }),
         expectedVersion: t.arg.int({ required: true }),
+        idempotencyKey: t.arg.string(),
       },
       resolve: (_root, args, context) => {
         requirePermission(context, "resourceGrant", "delete");
         return context.services.settings.policyMutations.archiveResourceGrant(
           args.id,
           args.expectedVersion,
+          args.idempotencyKey,
         );
       },
     }),
