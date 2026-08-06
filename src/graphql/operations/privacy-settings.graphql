@@ -1,0 +1,53 @@
+mutation UpsertRetentionPolicy($input: UpsertRetentionPolicyInput!) {
+  upsertRetentionPolicy(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation CreateLegalHold($input: CreateLegalHoldInput!) {
+  createLegalHold(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation ReleaseLegalHold($input: ReleaseLegalHoldInput!) {
+  releaseLegalHold(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation CreateConsentRecord($input: CreateConsentInput!) {
+  createConsentRecord(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation CreateDeletionRequest($input: CreateDeletionRequestInput!) {
+  createDeletionRequest(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation ReviewDeletionRequest($input: ReviewDeletionRequestInput!) {
+  reviewDeletionRequest(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
