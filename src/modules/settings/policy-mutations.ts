@@ -714,9 +714,9 @@ export function createPolicyMutationService(input: {
           material: {
             policyId: inputValue.policyId,
             resourceId: inputValue.resourceId,
-            resourceKind: inputValue.resourceKind,
+            resourceKind: inputValue.resourceKind.trim().toLowerCase(),
             memberId: inputValue.memberId,
-            role: inputValue.role,
+            role: inputValue.role?.trim().toLowerCase() ?? null,
             validFrom: inputValue.validFrom?.toISOString() ?? null,
             validUntil: inputValue.validUntil?.toISOString() ?? null,
           },
