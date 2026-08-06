@@ -95,6 +95,25 @@ export type AuditEventFilterInput = {
 
 export type AuditOutcome = "FAILURE" | "SUCCESS";
 
+export type ConsentStatus =
+  "DENIED" | "EXPIRED" | "GRANTED" | "UNKNOWN" | "WITHDRAWN";
+
+export type CreateConsentInput = {
+  effectiveFrom: string;
+  effectiveUntil?: string | null | undefined;
+  evidenceId?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
+  personId: string;
+  purpose: string;
+  source: string;
+  status: ConsentStatus;
+};
+
+export type CreateDeletionRequestInput = {
+  idempotencyKey?: string | null | undefined;
+  scope: unknown;
+};
+
 export type CreateEvidenceExcerptInput = {
   checksum: string;
   endOffset?: number | null | undefined;
@@ -165,6 +184,14 @@ export type CreateGraphViewInput = {
   name: string;
   positions?: Array<GraphPositionInput> | null | undefined;
   sharing?: GraphViewSharing | null | undefined;
+};
+
+export type CreateLegalHoldInput = {
+  authority: string;
+  idempotencyKey?: string | null | undefined;
+  reason: string;
+  resourceId: string;
+  resourceKind: string;
 };
 
 export type CreateNoteInput = {
@@ -339,6 +366,18 @@ export type CreateWebhookInput = {
   events: Array<string>;
   url: string;
 };
+
+export type DeletionBehavior =
+  "ANONYMIZE" | "HARD_DELETE" | "REVIEW" | "SOFT_DELETE";
+
+export type DeletionRequestState =
+  | "APPROVED"
+  | "CANCELLED"
+  | "COMPLETED"
+  | "DELETING"
+  | "EXPORTING"
+  | "REJECTED"
+  | "REVIEWING";
 
 export type ExtractionRunState =
   "CANCELLED" | "COMPLETED" | "ERROR" | "PENDING" | "PROCESSING";
@@ -609,6 +648,13 @@ export type RelationshipTemporalSemantics =
   | "UNKNOWN"
   | "YEAR_ONLY";
 
+export type ReleaseLegalHoldInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+  releaseReason: string;
+};
+
 export type ReplayGraphSnapshotInput = {
   snapshotId: string;
 };
@@ -616,6 +662,14 @@ export type ReplayGraphSnapshotInput = {
 export type RerunGraphAnalysisInput = {
   algorithm: GraphAnalysisAlgorithm;
   snapshotId: string;
+};
+
+export type ReviewDeletionRequestInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+  notes?: string | null | undefined;
+  state: DeletionRequestState;
 };
 
 export type ReviewIdentityCandidateInput = {
@@ -917,6 +971,15 @@ export type UploadSessionState =
   | "PENDING"
   | "REJECTED"
   | "VERIFYING";
+
+export type UpsertRetentionPolicyInput = {
+  deletionBehavior: DeletionBehavior;
+  expectedVersion?: number | null | undefined;
+  idempotencyKey?: string | null | undefined;
+  legalBasis?: string | null | undefined;
+  resourceKind: string;
+  retentionDays: number;
+};
 
 export type WebhookIdInput = {
   id: string;
@@ -2391,6 +2454,84 @@ export type ArchivePersonAddressMutation = {
         LocationMutationOutcomeFragment: LocationMutationOutcomeFragment;
       };
     }>;
+  };
+};
+
+export type UpsertRetentionPolicyMutationVariables = Exact<{
+  input: UpsertRetentionPolicyInput;
+}>;
+
+export type UpsertRetentionPolicyMutation = {
+  upsertRetentionPolicy: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type CreateLegalHoldMutationVariables = Exact<{
+  input: CreateLegalHoldInput;
+}>;
+
+export type CreateLegalHoldMutation = {
+  createLegalHold: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type ReleaseLegalHoldMutationVariables = Exact<{
+  input: ReleaseLegalHoldInput;
+}>;
+
+export type ReleaseLegalHoldMutation = {
+  releaseLegalHold: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type CreateConsentRecordMutationVariables = Exact<{
+  input: CreateConsentInput;
+}>;
+
+export type CreateConsentRecordMutation = {
+  createConsentRecord: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type CreateDeletionRequestMutationVariables = Exact<{
+  input: CreateDeletionRequestInput;
+}>;
+
+export type CreateDeletionRequestMutation = {
+  createDeletionRequest: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type ReviewDeletionRequestMutationVariables = Exact<{
+  input: ReviewDeletionRequestInput;
+}>;
+
+export type ReviewDeletionRequestMutation = {
+  reviewDeletionRequest: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
   };
 };
 
@@ -6568,6 +6709,114 @@ export const ArchivePersonAddressDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ArchivePersonAddressMutation,
   ArchivePersonAddressMutationVariables
+>;
+export const UpsertRetentionPolicyDocument = new TypedDocumentString(
+  `
+    mutation UpsertRetentionPolicy($input: UpsertRetentionPolicyInput!) {
+  upsertRetentionPolicy(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:c202e0aa0af73dae379fe6fcce469d07ca3abef6e60561b60ff52002b1c6f7b4",
+  },
+) as unknown as TypedDocumentString<
+  UpsertRetentionPolicyMutation,
+  UpsertRetentionPolicyMutationVariables
+>;
+export const CreateLegalHoldDocument = new TypedDocumentString(
+  `
+    mutation CreateLegalHold($input: CreateLegalHoldInput!) {
+  createLegalHold(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:d42d9249ef912316774ebc4e3c61b871424b1e1865f5fc2009a9233a03013ee3",
+  },
+) as unknown as TypedDocumentString<
+  CreateLegalHoldMutation,
+  CreateLegalHoldMutationVariables
+>;
+export const ReleaseLegalHoldDocument = new TypedDocumentString(
+  `
+    mutation ReleaseLegalHold($input: ReleaseLegalHoldInput!) {
+  releaseLegalHold(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:559e3f62cc37d81eca2993f20a137548b55cc94255546102aec34b3bb556c2dc",
+  },
+) as unknown as TypedDocumentString<
+  ReleaseLegalHoldMutation,
+  ReleaseLegalHoldMutationVariables
+>;
+export const CreateConsentRecordDocument = new TypedDocumentString(
+  `
+    mutation CreateConsentRecord($input: CreateConsentInput!) {
+  createConsentRecord(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:75310cb89afdea67d41c76ccbdcaea89b4f476adf83ae407863b47cb262a5ece",
+  },
+) as unknown as TypedDocumentString<
+  CreateConsentRecordMutation,
+  CreateConsentRecordMutationVariables
+>;
+export const CreateDeletionRequestDocument = new TypedDocumentString(
+  `
+    mutation CreateDeletionRequest($input: CreateDeletionRequestInput!) {
+  createDeletionRequest(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:42254dc96ce700dbe08b80014153b366d8598cdb3c989bbfb35a4d43f45c1c19",
+  },
+) as unknown as TypedDocumentString<
+  CreateDeletionRequestMutation,
+  CreateDeletionRequestMutationVariables
+>;
+export const ReviewDeletionRequestDocument = new TypedDocumentString(
+  `
+    mutation ReviewDeletionRequest($input: ReviewDeletionRequestInput!) {
+  reviewDeletionRequest(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:a3487a46d3bc5fa13d08bdbd652a120edb7224630bf5f229ac88a6ccc996fd88",
+  },
+) as unknown as TypedDocumentString<
+  ReviewDeletionRequestMutation,
+  ReviewDeletionRequestMutationVariables
 >;
 export const ResearchViewerDocument = new TypedDocumentString(
   `

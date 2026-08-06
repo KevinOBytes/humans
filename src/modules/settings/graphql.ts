@@ -243,6 +243,7 @@ const UpsertRetentionPolicyInput = builder.inputType(
   "UpsertRetentionPolicyInput",
   {
     fields: (t) => ({
+      idempotencyKey: t.string(),
       resourceKind: t.string({ required: true }),
       retentionDays: t.int({ required: true }),
       deletionBehavior: t.field({ type: DeletionBehavior, required: true }),
@@ -253,6 +254,7 @@ const UpsertRetentionPolicyInput = builder.inputType(
 );
 const CreateLegalHoldInput = builder.inputType("CreateLegalHoldInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     resourceId: t.field({ type: "UUID", required: true }),
     resourceKind: t.string({ required: true }),
     reason: t.string({ required: true }),
@@ -283,6 +285,7 @@ const UpdateResourceGrantInput = builder.inputType("UpdateResourceGrantInput", {
 });
 const ReleaseLegalHoldInput = builder.inputType("ReleaseLegalHoldInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
     releaseReason: t.string({ required: true }),
@@ -290,6 +293,7 @@ const ReleaseLegalHoldInput = builder.inputType("ReleaseLegalHoldInput", {
 });
 const CreateConsentInput = builder.inputType("CreateConsentInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     personId: t.field({ type: "UUID", required: true }),
     purpose: t.string({ required: true }),
     status: t.field({ type: ConsentStatus, required: true }),
@@ -301,7 +305,12 @@ const CreateConsentInput = builder.inputType("CreateConsentInput", {
 });
 const CreateDeletionRequestInput = builder.inputType(
   "CreateDeletionRequestInput",
-  { fields: (t) => ({ scope: t.field({ type: "JSON", required: true }) }) },
+  {
+    fields: (t) => ({
+      idempotencyKey: t.string(),
+      scope: t.field({ type: "JSON", required: true }),
+    }),
+  },
 );
 const ReviewDeletionRequestInput = builder.inputType(
   "ReviewDeletionRequestInput",
@@ -309,6 +318,7 @@ const ReviewDeletionRequestInput = builder.inputType(
     fields: (t) => ({
       id: t.field({ type: "UUID", required: true }),
       expectedVersion: t.int({ required: true }),
+      idempotencyKey: t.string(),
       state: t.field({ type: DeletionRequestState, required: true }),
       notes: t.string(),
     }),
@@ -852,6 +862,7 @@ export function registerSettingsGraphQL(): void {
           args.input.id,
           args.input.expectedVersion,
           args.input.releaseReason,
+          args.input.idempotencyKey,
         );
       },
     }),
@@ -882,6 +893,7 @@ export function registerSettingsGraphQL(): void {
         requirePermission(context, "workspace", "update");
         return context.services.settings.policyMutations.createDeletionRequest({
           scope: args.input.scope,
+          idempotencyKey: args.input.idempotencyKey,
         });
       },
     }),
