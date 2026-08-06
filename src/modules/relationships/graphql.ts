@@ -262,6 +262,7 @@ const UpdateRelationshipTypeInput = builder.inputType(
 );
 const CreateRelationshipInput = builder.inputType("CreateRelationshipInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     sourcePersonId: t.field({ type: "UUID", required: true }),
     targetPersonId: t.field({ type: "UUID", required: true }),
     relationshipTypeId: t.field({ type: "UUID", required: true }),
@@ -279,6 +280,7 @@ const CreateRelationshipInput = builder.inputType("CreateRelationshipInput", {
 });
 const UpdateRelationshipInput = builder.inputType("UpdateRelationshipInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
     labelOverride: t.string(),
@@ -295,6 +297,7 @@ const UpdateRelationshipInput = builder.inputType("UpdateRelationshipInput", {
 });
 const ArchiveRelationshipInput = builder.inputType("ArchiveRelationshipInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
   }),

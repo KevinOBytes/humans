@@ -83,6 +83,7 @@ export type ArchivePlaceInput = {
 export type ArchiveRelationshipInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type AuditEventFilterInput = {
@@ -289,6 +290,7 @@ export type CreatePlaceInput = {
 
 export type CreateRelationshipInput = {
   confidence?: number | null | undefined;
+  idempotencyKey?: string | null | undefined;
   labelOverride?: string | null | undefined;
   metadata?: unknown;
   relationshipTypeId: string;
@@ -928,6 +930,7 @@ export type UpdateRelationshipInput = {
   confidence?: number | null | undefined;
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
   labelOverride?: string | null | undefined;
   metadata?: unknown;
   sensitivity?: Sensitivity | null | undefined;
