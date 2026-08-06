@@ -397,6 +397,7 @@ export function createPolicyMutationService(input: {
   return {
     updateWorkspaceDefaults(inputValue: {
       expectedVersion: number;
+      idempotencyKey?: string | null;
       locale?: string | null;
       timezone?: string | null;
       retentionDays?: number | null;
@@ -405,69 +406,88 @@ export function createPolicyMutationService(input: {
       storageEnabled?: boolean | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const patch = {
-          ...(inputValue.locale == null
-            ? {}
-            : { locale: inputValue.locale.trim().slice(0, 64) }),
-          ...(inputValue.timezone == null
-            ? {}
-            : { timezone: inputValue.timezone.trim().slice(0, 64) }),
-          ...(inputValue.retentionDays === undefined
-            ? {}
-            : { retentionDays: inputValue.retentionDays }),
-          ...(inputValue.aiEnabled == null
-            ? {}
-            : { aiEnabled: inputValue.aiEnabled }),
-          ...(inputValue.retainRestrictedAiPrompts == null
-            ? {}
-            : {
-                retainRestrictedAiPrompts: inputValue.retainRestrictedAiPrompts,
-              }),
-          ...(inputValue.storageEnabled == null
-            ? {}
-            : { storageEnabled: inputValue.storageEnabled }),
-          version: sql`${workspaceSettings.version} + 1`,
-          updatedAt: new Date(),
-          updatedBy: actor.id,
-        };
-        const updated = await transaction
-          .update(workspaceSettings)
-          .set(patch)
-          .where(
-            and(
-              eq(workspaceSettings.workspaceId, input.workspaceId),
-              eq(workspaceSettings.version, inputValue.expectedVersion),
-            ),
-          )
-          .returning({
-            id: workspaceSettings.id,
-            version: workspaceSettings.version,
-          });
-        const row = updated[0];
-        if (!row)
-          return {
-            id: null,
-            version: null,
-            code: "CONFLICT",
-            requestId: input.requestId,
-          };
-        await audit(transaction, {
+        return idempotentMutation({
           actor,
-          action: "workspace.policy.update",
-          requestId: input.requestId,
-          resourceId: row.id,
-          resourceKind: "workspace_settings",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            aiEnabled: inputValue.aiEnabled,
+            expectedVersion: inputValue.expectedVersion,
+            locale: inputValue.locale,
+            retainRestrictedAiPrompts: inputValue.retainRestrictedAiPrompts,
+            retentionDays: inputValue.retentionDays,
+            storageEnabled: inputValue.storageEnabled,
+            timezone: inputValue.timezone,
+          },
+          operation: "workspace.defaults.update",
+          transaction,
+          run: async () => {
+            const patch = {
+              ...(inputValue.locale == null
+                ? {}
+                : { locale: inputValue.locale.trim().slice(0, 64) }),
+              ...(inputValue.timezone == null
+                ? {}
+                : { timezone: inputValue.timezone.trim().slice(0, 64) }),
+              ...(inputValue.retentionDays === undefined
+                ? {}
+                : { retentionDays: inputValue.retentionDays }),
+              ...(inputValue.aiEnabled == null
+                ? {}
+                : { aiEnabled: inputValue.aiEnabled }),
+              ...(inputValue.retainRestrictedAiPrompts == null
+                ? {}
+                : {
+                    retainRestrictedAiPrompts:
+                      inputValue.retainRestrictedAiPrompts,
+                  }),
+              ...(inputValue.storageEnabled == null
+                ? {}
+                : { storageEnabled: inputValue.storageEnabled }),
+              version: sql`${workspaceSettings.version} + 1`,
+              updatedAt: new Date(),
+              updatedBy: actor.id,
+            };
+            const updated = await transaction
+              .update(workspaceSettings)
+              .set(patch)
+              .where(
+                and(
+                  eq(workspaceSettings.workspaceId, input.workspaceId),
+                  eq(workspaceSettings.version, inputValue.expectedVersion),
+                ),
+              )
+              .returning({
+                id: workspaceSettings.id,
+                version: workspaceSettings.version,
+              });
+            const row = updated[0];
+            if (!row)
+              return {
+                id: null,
+                version: null,
+                code: "CONFLICT",
+                requestId: input.requestId,
+              };
+            await audit(transaction, {
+              actor,
+              action: "workspace.policy.update",
+              requestId: input.requestId,
+              resourceId: row.id,
+              resourceKind: "workspace_settings",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id: row.id,
+              version: row.version,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return {
-          id: row.id,
-          version: row.version,
-          code: "APPLIED",
-          requestId: input.requestId,
-        };
       });
     },
     createAccessPolicy(inputValue: {
+      idempotencyKey?: string | null;
       name: string;
       sensitivityCeiling: "public" | "internal" | "confidential" | "restricted";
       resourceKinds: readonly string[];
@@ -475,28 +495,54 @@ export function createPolicyMutationService(input: {
       state: "draft" | "active" | "disabled" | "archived";
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const name = normalizePolicyName(inputValue.name);
-        const id = newId();
-        await transaction.insert(accessPolicies).values({
-          id,
-          workspaceId: input.workspaceId,
-          name,
-          sensitivityCeiling: inputValue.sensitivityCeiling,
-          resourceKinds: validateResourceKinds(inputValue.resourceKinds),
-          roleBindings: validateRoleBindings(inputValue.roleBindings),
-          state: inputValue.state,
-          createdBy: actor.id,
-          updatedBy: actor.id,
-        });
-        await audit(transaction, {
+        const normalizedName = normalizePolicyName(inputValue.name);
+        const normalizedResourceKinds = validateResourceKinds(
+          inputValue.resourceKinds,
+        );
+        const normalizedRoleBindings = validateRoleBindings(
+          inputValue.roleBindings,
+        );
+        return idempotentMutation({
           actor,
-          action: "access_policy.create",
-          requestId: input.requestId,
-          resourceId: id,
-          resourceKind: "access_policy",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            name: normalizedName,
+            resourceKinds: normalizedResourceKinds,
+            roleBindings: normalizedRoleBindings,
+            sensitivityCeiling: inputValue.sensitivityCeiling,
+            state: inputValue.state,
+          },
+          operation: "access_policy.create",
+          transaction,
+          run: async () => {
+            const id = newId();
+            await transaction.insert(accessPolicies).values({
+              id,
+              workspaceId: input.workspaceId,
+              name: normalizedName,
+              sensitivityCeiling: inputValue.sensitivityCeiling,
+              resourceKinds: normalizedResourceKinds,
+              roleBindings: normalizedRoleBindings,
+              state: inputValue.state,
+              createdBy: actor.id,
+              updatedBy: actor.id,
+            });
+            await audit(transaction, {
+              actor,
+              action: "access_policy.create",
+              requestId: input.requestId,
+              resourceId: id,
+              resourceKind: "access_policy",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id,
+              version: 1,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return { id, version: 1, code: "APPLIED", requestId: input.requestId };
       });
     },
     updateAccessPolicy(inputValue: {
@@ -599,55 +645,66 @@ export function createPolicyMutationService(input: {
     archiveAccessPolicy(
       id: string,
       expectedVersion: number,
+      idempotencyKey?: string | null,
     ): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const updated = await transaction
-          .update(accessPolicies)
-          .set({
-            state: "archived",
-            deletedAt: new Date(),
-            deletedBy: actor.id,
-            updatedAt: new Date(),
-            updatedBy: actor.id,
-            version: sql`${accessPolicies.version} + 1`,
-          })
-          .where(
-            and(
-              eq(accessPolicies.id, id),
-              eq(accessPolicies.workspaceId, input.workspaceId),
-              eq(accessPolicies.version, expectedVersion),
-              isNull(accessPolicies.deletedAt),
-            ),
-          )
-          .returning({
-            id: accessPolicies.id,
-            version: accessPolicies.version,
-          });
-        const row = updated[0];
-        if (!row)
-          return {
-            id: null,
-            version: null,
-            code: "CONFLICT",
-            requestId: input.requestId,
-          };
-        await audit(transaction, {
+        return idempotentMutation({
           actor,
-          action: "access_policy.archive",
-          requestId: input.requestId,
-          resourceId: row.id,
-          resourceKind: "access_policy",
-          workspaceId: input.workspaceId,
+          key: idempotencyKey,
+          material: { expectedVersion, id },
+          operation: "access_policy.archive",
+          transaction,
+          run: async () => {
+            const updated = await transaction
+              .update(accessPolicies)
+              .set({
+                state: "archived",
+                deletedAt: new Date(),
+                deletedBy: actor.id,
+                updatedAt: new Date(),
+                updatedBy: actor.id,
+                version: sql`${accessPolicies.version} + 1`,
+              })
+              .where(
+                and(
+                  eq(accessPolicies.id, id),
+                  eq(accessPolicies.workspaceId, input.workspaceId),
+                  eq(accessPolicies.version, expectedVersion),
+                  isNull(accessPolicies.deletedAt),
+                ),
+              )
+              .returning({
+                id: accessPolicies.id,
+                version: accessPolicies.version,
+              });
+            const row = updated[0];
+            if (!row)
+              return {
+                id: null,
+                version: null,
+                code: "CONFLICT",
+                requestId: input.requestId,
+              };
+            await audit(transaction, {
+              actor,
+              action: "access_policy.archive",
+              requestId: input.requestId,
+              resourceId: row.id,
+              resourceKind: "access_policy",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id: row.id,
+              version: row.version,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return {
-          id: row.id,
-          version: row.version,
-          code: "APPLIED",
-          requestId: input.requestId,
-        };
       });
     },
     createResourceGrant(inputValue: {
+      idempotencyKey?: string | null;
       policyId: string;
       resourceId: string;
       resourceKind: string;
@@ -657,158 +714,206 @@ export function createPolicyMutationService(input: {
       validUntil?: Date | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const resourceKind = inputValue.resourceKind.trim().toLowerCase();
-        const hasMember = Boolean(inputValue.memberId);
-        const hasRole = Boolean(inputValue.role);
-        if (
-          !RESOURCE_KIND.test(resourceKind) ||
-          !UUID.test(inputValue.resourceId) ||
-          !UUID.test(inputValue.policyId) ||
-          hasMember === hasRole ||
-          (hasRole && !ROLE.test(inputValue.role ?? "")) ||
-          (inputValue.validFrom &&
-            inputValue.validUntil &&
-            inputValue.validUntil < inputValue.validFrom)
-        ) {
-          throw createGraphQLError(
-            "VALIDATION_FAILED",
-            "Resource grant is invalid.",
-          );
-        }
-        const [policy] = await transaction
-          .select({ id: accessPolicies.id })
-          .from(accessPolicies)
-          .where(
-            and(
-              eq(accessPolicies.id, inputValue.policyId),
-              eq(accessPolicies.workspaceId, input.workspaceId),
-              eq(accessPolicies.state, "active"),
-              isNull(accessPolicies.deletedAt),
-            ),
-          )
-          .limit(1)
-          .for("share");
-        if (!policy)
-          throw createGraphQLError("NOT_FOUND", "Access policy not found.");
-        if (inputValue.memberId) {
-          const [member] = await transaction
-            .select({ id: members.id })
-            .from(members)
-            .where(
-              and(
-                eq(members.id, inputValue.memberId),
-                eq(members.workspaceId, input.workspaceId),
-              ),
-            )
-            .limit(1)
-            .for("share");
-          if (!member)
-            throw createGraphQLError("NOT_FOUND", "Grant member not found.");
-        }
-        const id = newId();
-        await transaction.insert(resourceGrants).values({
-          id,
-          workspaceId: input.workspaceId,
-          policyId: inputValue.policyId,
-          memberId: inputValue.memberId ?? null,
-          role: inputValue.role?.toLowerCase() ?? null,
-          resourceId: inputValue.resourceId,
-          resourceKind,
-          validFrom: inputValue.validFrom ?? null,
-          validUntil: inputValue.validUntil ?? null,
-          createdBy: actor.id,
-          updatedBy: actor.id,
-        });
-        await audit(transaction, {
+        return idempotentMutation({
           actor,
-          action: "resource_grant.create",
-          requestId: input.requestId,
-          resourceId: id,
-          resourceKind: "resource_grant",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            policyId: inputValue.policyId,
+            resourceId: inputValue.resourceId,
+            resourceKind: inputValue.resourceKind.trim().toLowerCase(),
+            memberId: inputValue.memberId,
+            role: inputValue.role?.trim().toLowerCase() ?? null,
+            validFrom: inputValue.validFrom?.toISOString() ?? null,
+            validUntil: inputValue.validUntil?.toISOString() ?? null,
+          },
+          operation: "resource_grant.create",
+          transaction,
+          run: async () => {
+            const resourceKind = inputValue.resourceKind.trim().toLowerCase();
+            const hasMember = Boolean(inputValue.memberId);
+            const hasRole = Boolean(inputValue.role);
+            if (
+              !RESOURCE_KIND.test(resourceKind) ||
+              !UUID.test(inputValue.resourceId) ||
+              !UUID.test(inputValue.policyId) ||
+              hasMember === hasRole ||
+              (hasRole && !ROLE.test(inputValue.role ?? "")) ||
+              (inputValue.validFrom &&
+                inputValue.validUntil &&
+                inputValue.validUntil < inputValue.validFrom)
+            ) {
+              throw createGraphQLError(
+                "VALIDATION_FAILED",
+                "Resource grant is invalid.",
+              );
+            }
+            const [policy] = await transaction
+              .select({ id: accessPolicies.id })
+              .from(accessPolicies)
+              .where(
+                and(
+                  eq(accessPolicies.id, inputValue.policyId),
+                  eq(accessPolicies.workspaceId, input.workspaceId),
+                  eq(accessPolicies.state, "active"),
+                  isNull(accessPolicies.deletedAt),
+                ),
+              )
+              .limit(1)
+              .for("share");
+            if (!policy)
+              throw createGraphQLError("NOT_FOUND", "Access policy not found.");
+            if (inputValue.memberId) {
+              const [member] = await transaction
+                .select({ id: members.id })
+                .from(members)
+                .where(
+                  and(
+                    eq(members.id, inputValue.memberId),
+                    eq(members.workspaceId, input.workspaceId),
+                  ),
+                )
+                .limit(1)
+                .for("share");
+              if (!member)
+                throw createGraphQLError(
+                  "NOT_FOUND",
+                  "Grant member not found.",
+                );
+            }
+            const id = newId();
+            await transaction.insert(resourceGrants).values({
+              id,
+              workspaceId: input.workspaceId,
+              policyId: inputValue.policyId,
+              memberId: inputValue.memberId ?? null,
+              role: inputValue.role?.toLowerCase() ?? null,
+              resourceId: inputValue.resourceId,
+              resourceKind,
+              validFrom: inputValue.validFrom ?? null,
+              validUntil: inputValue.validUntil ?? null,
+              createdBy: actor.id,
+              updatedBy: actor.id,
+            });
+            await audit(transaction, {
+              actor,
+              action: "resource_grant.create",
+              requestId: input.requestId,
+              resourceId: id,
+              resourceKind: "resource_grant",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id,
+              version: 1,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return { id, version: 1, code: "APPLIED", requestId: input.requestId };
       });
     },
     updateResourceGrant(inputValue: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
       validFrom?: Date | null;
       validUntil?: Date | null;
       state?: "active" | "inactive" | "archived";
+      operation?: "resource_grant.update" | "resource_grant.archive";
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        if (
-          inputValue.validFrom &&
-          inputValue.validUntil &&
-          inputValue.validUntil < inputValue.validFrom
-        ) {
-          throw createGraphQLError(
-            "VALIDATION_FAILED",
-            "Resource grant validity is invalid.",
-          );
-        }
-        const [updated] = await transaction
-          .update(resourceGrants)
-          .set({
-            ...(inputValue.validFrom === undefined
-              ? {}
-              : { validFrom: inputValue.validFrom }),
-            ...(inputValue.validUntil === undefined
-              ? {}
-              : { validUntil: inputValue.validUntil }),
-            ...(inputValue.state === undefined
-              ? {}
-              : { state: inputValue.state }),
-            version: sql`${resourceGrants.version} + 1`,
-            updatedAt: new Date(),
-            updatedBy: actor.id,
-            ...(inputValue.state === "archived"
-              ? { deletedAt: new Date(), deletedBy: actor.id }
-              : {}),
-          })
-          .where(
-            and(
-              eq(resourceGrants.id, inputValue.id),
-              eq(resourceGrants.workspaceId, input.workspaceId),
-              eq(resourceGrants.version, inputValue.expectedVersion),
-              isNull(resourceGrants.deletedAt),
-            ),
-          )
-          .returning({
-            id: resourceGrants.id,
-            version: resourceGrants.version,
-          });
-        if (!updated)
-          return {
-            id: null,
-            version: null,
-            code: "CONFLICT",
-            requestId: input.requestId,
-          };
-        await audit(transaction, {
+        return idempotentMutation({
           actor,
-          action: "resource_grant.update",
-          requestId: input.requestId,
-          resourceId: updated.id,
-          resourceKind: "resource_grant",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            expectedVersion: inputValue.expectedVersion,
+            id: inputValue.id,
+            state: inputValue.state,
+            validFrom: inputValue.validFrom?.toISOString() ?? null,
+            validUntil: inputValue.validUntil?.toISOString() ?? null,
+          },
+          operation: inputValue.operation ?? "resource_grant.update",
+          transaction,
+          run: async () => {
+            if (
+              inputValue.validFrom &&
+              inputValue.validUntil &&
+              inputValue.validUntil < inputValue.validFrom
+            ) {
+              throw createGraphQLError(
+                "VALIDATION_FAILED",
+                "Resource grant validity is invalid.",
+              );
+            }
+            const [updated] = await transaction
+              .update(resourceGrants)
+              .set({
+                ...(inputValue.validFrom === undefined
+                  ? {}
+                  : { validFrom: inputValue.validFrom }),
+                ...(inputValue.validUntil === undefined
+                  ? {}
+                  : { validUntil: inputValue.validUntil }),
+                ...(inputValue.state === undefined
+                  ? {}
+                  : { state: inputValue.state }),
+                version: sql`${resourceGrants.version} + 1`,
+                updatedAt: new Date(),
+                updatedBy: actor.id,
+                ...(inputValue.state === "archived"
+                  ? { deletedAt: new Date(), deletedBy: actor.id }
+                  : {}),
+              })
+              .where(
+                and(
+                  eq(resourceGrants.id, inputValue.id),
+                  eq(resourceGrants.workspaceId, input.workspaceId),
+                  eq(resourceGrants.version, inputValue.expectedVersion),
+                  isNull(resourceGrants.deletedAt),
+                ),
+              )
+              .returning({
+                id: resourceGrants.id,
+                version: resourceGrants.version,
+              });
+            if (!updated)
+              return {
+                id: null,
+                version: null,
+                code: "CONFLICT",
+                requestId: input.requestId,
+              };
+            await audit(transaction, {
+              actor,
+              action:
+                inputValue.operation === "resource_grant.archive"
+                  ? "resource_grant.archive"
+                  : "resource_grant.update",
+              requestId: input.requestId,
+              resourceId: updated.id,
+              resourceKind: "resource_grant",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id: updated.id,
+              version: updated.version,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return {
-          id: updated.id,
-          version: updated.version,
-          code: "APPLIED",
-          requestId: input.requestId,
-        };
       });
     },
     archiveResourceGrant(
       id: string,
       expectedVersion: number,
+      idempotencyKey?: string | null,
     ): Promise<PolicyMutationResult> {
       return this.updateResourceGrant({
         id,
         expectedVersion,
+        idempotencyKey,
+        operation: "resource_grant.archive",
         state: "archived",
       });
     },

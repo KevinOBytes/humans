@@ -17,7 +17,7 @@ import { imports as importsTable } from "@/db/schema/files";
 import { auditEvents, jobs } from "@/db/schema/operations";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 
-import type { JobKind } from "./types";
+import { safeJobFailureCode, type JobKind } from "./types";
 
 export type JobRow = typeof jobs.$inferSelect;
 
@@ -183,6 +183,7 @@ export function createJobsRepository(database: Database) {
       retryDelayMs: number | null;
       workspaceId: string;
     }): Promise<boolean> {
+      const errorCode = safeJobFailureCode(input.errorCode);
       return database.transaction(async (transaction) => {
         const retryDelayMs =
           input.retryDelayMs === null
@@ -199,7 +200,7 @@ export function createJobsRepository(database: Database) {
                 : sql<Date>`clock_timestamp() + (${retryDelayMs} * interval '1 millisecond')`,
             leaseOwner: null,
             leaseExpiresAt: null,
-            errorCode: input.errorCode,
+            errorCode,
             updatedAt: input.now,
             updatedBy: null,
           })
@@ -257,7 +258,7 @@ export function createJobsRepository(database: Database) {
                 requestId: `worker:${input.leaseOwner}`,
                 outcome: "failure",
                 redactedDiff: {
-                  errorCode: input.errorCode,
+                  errorCode,
                   jobId: input.id,
                   state: "dead_letter",
                 },
@@ -277,7 +278,7 @@ export function createJobsRepository(database: Database) {
           resourceId: input.id,
           requestId: `worker:${input.leaseOwner}`,
           outcome: retryDelayMs === null ? "dead_letter" : "failure",
-          redactedDiff: { errorCode: input.errorCode, state },
+          redactedDiff: { errorCode, state },
           actorUserId: null,
           sessionId: null,
           apiKeyId: null,
@@ -297,6 +298,10 @@ export function createJobsRepository(database: Database) {
       workspaceId: string;
     }): Promise<boolean> {
       const retryDelayMs = boundedDatabaseDuration(input.retryDelayMs ?? 1);
+      const errorCode =
+        input.errorCode === null || input.errorCode === undefined
+          ? null
+          : safeJobFailureCode(input.errorCode);
       const [row] = await database
         .update(jobs)
         .set({
@@ -305,7 +310,7 @@ export function createJobsRepository(database: Database) {
           attemptCount: sql`greatest(${jobs.attemptCount} - 1, 0)`,
           leaseOwner: null,
           leaseExpiresAt: null,
-          errorCode: input.errorCode ?? null,
+          errorCode,
           updatedAt: input.now,
           updatedBy: null,
         })

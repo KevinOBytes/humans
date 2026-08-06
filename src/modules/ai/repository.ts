@@ -18,6 +18,7 @@ import {
 import type { ResearchServiceContext } from "@/modules/audit/service";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { createJobsService } from "@/modules/jobs/service";
+import { safeJobFailureCode } from "@/modules/jobs/types";
 import {
   aiPersistenceHmac,
   canonicalAiUserMessage,
@@ -471,7 +472,7 @@ export function createAiRepository(
           .update(jobs)
           .set({
             state: "dead_letter",
-            errorCode: "cancelled",
+            errorCode: safeJobFailureCode("cancelled"),
             leaseOwner: null,
             leaseExpiresAt: null,
             updatedAt: now,

@@ -187,6 +187,72 @@ export function equalJobHashes(left: string, right: string): boolean {
 
 export type JobFailureKind = "permanent" | "retryable";
 
+const safeJobFailureCodes = new Set([
+  "analysis_cancelled",
+  "analysis_limit_reached",
+  "archived_file_changed",
+  "archived_file_not_found",
+  "cancelled",
+  "authorization_changed",
+  "cleanup_changed",
+  "cleanup_coordinate_conflict",
+  "cleanup_not_ready",
+  "cleanup_state_conflict",
+  "cleanup_target_invalid",
+  "conflict",
+  "dependency_unavailable",
+  "execution_failed",
+  "extraction_failed",
+  "extraction_cancelled",
+  "extraction_file_unavailable",
+  "extraction_input_too_large",
+  "extraction_malformed_input",
+  "extraction_run_not_found",
+  "extraction_source_missing",
+  "extraction_type_unsupported",
+  "forbidden",
+  "import_binding_invalid",
+  "import_row_invariant",
+  "import_state_conflict",
+  "input_unavailable",
+  "internal",
+  "invalid_import_state",
+  "invalid_result_reference",
+  "lease_lost",
+  "lease_unavailable",
+  "not_found",
+  "precondition_failed",
+  "provider_invalid_response",
+  "provider_response_too_large",
+  "provider_timeout",
+  "provider_unavailable",
+  "rate_limited",
+  "storage_location_mismatch",
+  "storage_location_unconfigured",
+  "storage_unavailable",
+  "time_limit",
+  "unauthenticated",
+  "upload_rejected",
+  "validation_failed",
+  "webhook_delivery_not_found",
+  "webhook_transport_failure",
+  "worker_draining",
+]);
+
+const webhookHttpFailureCode = /^webhook_http_[1-5][0-9]{2}$/u;
+
+/** Only stable worker codes may reach durable state or audit metadata. */
+export function safeJobFailureCode(value: unknown): string {
+  if (typeof value !== "string") return "dependency_unavailable";
+  const normalized = /^[A-Z][A-Z0-9_]{0,63}$/u.test(value)
+    ? value.toLowerCase()
+    : value;
+  return safeJobFailureCodes.has(normalized) ||
+    webhookHttpFailureCode.test(normalized)
+    ? normalized
+    : "dependency_unavailable";
+}
+
 export class JobExecutionError extends Error {
   constructor(
     readonly code: string,
@@ -219,12 +285,10 @@ export function isPermanentJobError(error: unknown): boolean {
 }
 
 export function jobFailureCode(error: unknown): string {
-  if (error instanceof JobExecutionError) return error.code;
+  if (error instanceof JobExecutionError) return safeJobFailureCode(error.code);
   const code =
     error && typeof error === "object"
       ? (error as { extensions?: { code?: unknown } }).extensions?.code
       : undefined;
-  return typeof code === "string" && /^[A-Z_]{1,64}$/u.test(code)
-    ? code.toLowerCase()
-    : "dependency_unavailable";
+  return safeJobFailureCode(code);
 }

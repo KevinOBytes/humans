@@ -406,6 +406,33 @@ liveDescribe("Better Auth security boundary", () => {
     ]);
   });
 
+  it("does not forward secret-bearing upstream authentication errors", async () => {
+    const correlationId = newId();
+    const response = await decorateAuthBoundaryResponse(
+      Response.json(
+        {
+          code: "UPSTREAM_PROVIDER_FAILURE",
+          message: "provider token sk-live-secret",
+          password: "correct horse battery staple",
+          prompt: "private prompt",
+          stack: "at provider boundary",
+        },
+        { status: 502 },
+      ),
+      correlationId,
+    );
+
+    const body = await response.text();
+    expect(JSON.parse(body)).toEqual({
+      code: "AUTH_REQUEST_FAILED",
+      message: "Authentication request failed.",
+      requestId: correlationId,
+    });
+    expect(body).not.toMatch(
+      /sk-live-secret|correct horse battery staple|private prompt|provider boundary/iu,
+    );
+  });
+
   it("keeps invitation state and membership safe across signup races and delivery failure", async () => {
     const owner = await createOwner(runtime, emailSender);
     const raceInvitationId = newId();

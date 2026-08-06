@@ -395,11 +395,15 @@ export function registerFilesGraphQL(): void {
     }),
     completeUpload: t.field({
       type: UploadPayload,
-      args: { uploadSessionId: t.arg({ type: "UUID", required: true }) },
+      args: {
+        uploadSessionId: t.arg({ type: "UUID", required: true }),
+        idempotencyKey: t.arg.string(),
+      },
       resolve: async (_root, args, context) => {
         requirePermission(context, "file", "create");
         const result = await context.services.files.completeUpload(
           args.uploadSessionId,
+          args.idempotencyKey,
         );
         context.loaders.file.prime(result.file.id, result.file);
         return result;

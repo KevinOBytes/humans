@@ -138,4 +138,70 @@ describe("executeBrowserGraphQL", () => {
       ],
     });
   });
+
+  it("contains null and malformed error entries while preserving the header ID", async () => {
+    const requestId = "01984e93-7644-72c6-82d0-fda7f590580e";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ errors: [null, "private password", []] }),
+            { headers: { "x-request-id": requestId }, status: 500 },
+          ),
+        ),
+    );
+
+    await expect(
+      executeBrowserGraphQL(ResearchViewerDocument, {}),
+    ).resolves.toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "INTERNAL",
+          message: "An internal error occurred.",
+          requestId,
+        },
+        {
+          code: "INTERNAL",
+          message: "An internal error occurred.",
+          requestId,
+        },
+        {
+          code: "INTERNAL",
+          message: "An internal error occurred.",
+          requestId,
+        },
+      ],
+    });
+  });
+
+  it("rejects a non-array errors field instead of treating data as success", async () => {
+    const requestId = "01984e93-7644-72c6-82d0-fda7f590580e";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ data: { viewer: null }, errors: "malformed" }),
+            { headers: { "x-request-id": requestId } },
+          ),
+        ),
+    );
+
+    await expect(
+      executeBrowserGraphQL(ResearchViewerDocument, {}),
+    ).resolves.toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "INTERNAL",
+          message: "An internal error occurred.",
+          requestId,
+        },
+      ],
+    });
+  });
 });

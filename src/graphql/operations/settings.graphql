@@ -215,8 +215,42 @@ mutation CreateResourceGrant($input: CreateResourceGrantInput!) {
   }
 }
 
-mutation ArchiveResourceGrant($id: UUID!, $expectedVersion: Int!) {
-  archiveResourceGrant(id: $id, expectedVersion: $expectedVersion) {
+mutation UpdateResourceGrant($input: UpdateResourceGrantInput!) {
+  updateResourceGrant(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation ArchiveAccessPolicy(
+  $id: UUID!
+  $expectedVersion: Int!
+  $idempotencyKey: String
+) {
+  archiveAccessPolicy(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation ArchiveResourceGrant(
+  $id: UUID!
+  $expectedVersion: Int!
+  $idempotencyKey: String
+) {
+  archiveResourceGrant(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
     id
     version
     code

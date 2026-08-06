@@ -9,6 +9,7 @@ export type Incremental<T> =
     };
 import type { DocumentTypeDecoration } from "@graphql-typed-document-node/core";
 export type AccessPolicyInput = {
+  idempotencyKey?: string | null | undefined;
   name: string;
   resourceKinds: Array<string>;
   roleBindings: unknown;
@@ -287,6 +288,7 @@ export type CreateRelationshipTypeInput = {
 };
 
 export type CreateResourceGrantInput = {
+  idempotencyKey?: string | null | undefined;
   memberId?: string | null | undefined;
   policyId: string;
   resourceId: string;
@@ -520,6 +522,14 @@ export type NoteSubjectInput = {
   personId?: string | null | undefined;
   relationshipId?: string | null | undefined;
 };
+
+export type PersonFileAvailability =
+  "AVAILABLE" | "PENDING" | "QUARANTINED" | "REJECTED";
+
+export type PersonFileRole = "EVIDENCE" | "FACT" | "PRIMARY_PHOTO";
+
+export type PersonFileScanState =
+  "CLEAN" | "ERROR" | "INFECTED" | "NOT_REQUIRED" | "PENDING";
 
 export type PersonFilterInput = {
   name?: string | null | undefined;
@@ -864,6 +874,15 @@ export type UpdateRelationshipInput = {
   validUntil?: string | null | undefined;
 };
 
+export type UpdateResourceGrantInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+  state?: PolicyState | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
+};
+
 export type UpdateSavedQueryInput = {
   expectedVersion: number;
   id: string;
@@ -875,6 +894,7 @@ export type UpdateSavedQueryInput = {
 export type UpdateWorkspaceDefaultsInput = {
   aiEnabled?: boolean | null | undefined;
   expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
   locale?: string | null | undefined;
   retainRestrictedAiPrompts?: boolean | null | undefined;
   retentionDays?: number | null | undefined;
@@ -1269,6 +1289,7 @@ export type CreateWorkspaceUploadMutation = {
 
 export type CompleteWorkspaceUploadMutationVariables = Exact<{
   uploadSessionId: string;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type CompleteWorkspaceUploadMutation = {
@@ -2633,6 +2654,38 @@ export type PersonFactsQuery = {
   } | null;
 };
 
+export type PersonFilesQueryVariables = Exact<{
+  id: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type PersonFilesQuery = {
+  person: {
+    id: string;
+    files: {
+      nodes: Array<{
+        id: string;
+        originalName: string;
+        mediaType: string | null;
+        detectedType: string | null;
+        byteSize: number;
+        availability: PersonFileAvailability;
+        scanState: PersonFileScanState;
+        sensitivity: Sensitivity;
+        version: number;
+        archivedAt: string | null;
+        createdAt: string;
+        updatedAt: string;
+        roles: Array<PersonFileRole>;
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      };
+    } | null;
+  } | null;
+};
+
 export type PersonContradictoryFactsQueryVariables = Exact<{
   id: string;
   first?: number | null | undefined;
@@ -3933,9 +3986,38 @@ export type CreateResourceGrantMutation = {
   };
 };
 
+export type UpdateResourceGrantMutationVariables = Exact<{
+  input: UpdateResourceGrantInput;
+}>;
+
+export type UpdateResourceGrantMutation = {
+  updateResourceGrant: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type ArchiveAccessPolicyMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
+}>;
+
+export type ArchiveAccessPolicyMutation = {
+  archiveAccessPolicy: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
 export type ArchiveResourceGrantMutationVariables = Exact<{
   id: string;
   expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type ArchiveResourceGrantMutation = {
@@ -4927,8 +5009,11 @@ export const CreateWorkspaceUploadDocument = new TypedDocumentString(
 >;
 export const CompleteWorkspaceUploadDocument = new TypedDocumentString(
   `
-    mutation CompleteWorkspaceUpload($uploadSessionId: UUID!) {
-  completeUpload(uploadSessionId: $uploadSessionId) {
+    mutation CompleteWorkspaceUpload($uploadSessionId: UUID!, $idempotencyKey: String) {
+  completeUpload(
+    uploadSessionId: $uploadSessionId
+    idempotencyKey: $idempotencyKey
+  ) {
     session {
       id
       state
@@ -4968,7 +5053,7 @@ export const CompleteWorkspaceUploadDocument = new TypedDocumentString(
   }
 }`,
   {
-    hash: "sha256:f480645b6a871dd3fa23880d1b151502ee44421111b0bc14b03e25bf3215aa98",
+    hash: "sha256:60fe07c6cbd1062b54fb0d4a99eaed46ccd0277b6652fddb0522b5e00d76e1b4",
   },
 ) as unknown as TypedDocumentString<
   CompleteWorkspaceUploadMutation,
@@ -6843,6 +6928,44 @@ fragment FactSummary on Fact {
 ) as unknown as TypedDocumentString<
   PersonFactsQuery,
   PersonFactsQueryVariables
+>;
+export const PersonFilesDocument = new TypedDocumentString(
+  `
+    query PersonFiles($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    files(first: $first, after: $after) {
+      nodes {
+        id
+        originalName
+        mediaType
+        detectedType
+        byteSize
+        availability
+        scanState
+        sensitivity
+        version
+        archivedAt
+        createdAt
+        updatedAt
+        roles
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+    fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}`,
+  {
+    hash: "sha256:69ecbd5f2ec6834c63fa968fb05975fc5ebf446b126df081e529892d934c2add",
+  },
+) as unknown as TypedDocumentString<
+  PersonFilesQuery,
+  PersonFilesQueryVariables
 >;
 export const PersonContradictoryFactsDocument = new TypedDocumentString(
   `
@@ -8789,10 +8912,10 @@ export const CreateResourceGrantDocument = new TypedDocumentString(
   CreateResourceGrantMutation,
   CreateResourceGrantMutationVariables
 >;
-export const ArchiveResourceGrantDocument = new TypedDocumentString(
+export const UpdateResourceGrantDocument = new TypedDocumentString(
   `
-    mutation ArchiveResourceGrant($id: UUID!, $expectedVersion: Int!) {
-  archiveResourceGrant(id: $id, expectedVersion: $expectedVersion) {
+    mutation UpdateResourceGrant($input: UpdateResourceGrantInput!) {
+  updateResourceGrant(input: $input) {
     id
     version
     code
@@ -8801,7 +8924,51 @@ export const ArchiveResourceGrantDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:dbaefd6c8a0b3f1ee65b841aca8a03d2c3f0d233731a4edb0179edafb7cb3c59",
+    hash: "sha256:bc4f7b01d619d55e5e61c0169d26825598e84f9e5b28b82f6554e045e8ea64d1",
+  },
+) as unknown as TypedDocumentString<
+  UpdateResourceGrantMutation,
+  UpdateResourceGrantMutationVariables
+>;
+export const ArchiveAccessPolicyDocument = new TypedDocumentString(
+  `
+    mutation ArchiveAccessPolicy($id: UUID!, $expectedVersion: Int!, $idempotencyKey: String) {
+  archiveAccessPolicy(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:19346a8dc2ff6f9fa26cf98c4119316c4857ba1267184b85cf1a46a65b65e02b",
+  },
+) as unknown as TypedDocumentString<
+  ArchiveAccessPolicyMutation,
+  ArchiveAccessPolicyMutationVariables
+>;
+export const ArchiveResourceGrantDocument = new TypedDocumentString(
+  `
+    mutation ArchiveResourceGrant($id: UUID!, $expectedVersion: Int!, $idempotencyKey: String) {
+  archiveResourceGrant(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:e45aea9b50a2bef8b2e0322171971e75089ad55b40391dc7471abd1935025eac",
   },
 ) as unknown as TypedDocumentString<
   ArchiveResourceGrantMutation,

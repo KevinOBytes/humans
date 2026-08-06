@@ -41,20 +41,21 @@ function normalizeRequestId(
 
 /**
  * Convert untrusted GraphQL transport output into the bounded public error
- * contract consumed by browser and server callers. Unknown codes and
- * non-string messages are treated as internal failures; upstream exception
- * text must never become user-visible error copy.
+ * contract consumed by browser and server callers. Unknown codes become
+ * internal failures, while non-string messages receive safe code-specific
+ * copy; upstream exception text must never become user-visible error copy.
  */
 export function normalizePublicGraphQLError(
-  error: GraphQLErrorPayload,
+  error: unknown,
   responseRequestId?: string | null,
 ): PublicGraphQLError {
-  const code = isGraphQLErrorCode(error.extensions?.code)
-    ? error.extensions.code
+  const payload = asGraphQLErrorPayload(error);
+  const code = isGraphQLErrorCode(payload.extensions?.code)
+    ? payload.extensions.code
     : "INTERNAL";
   const message = publicErrorMessage(code);
   const requestId = normalizeRequestId(
-    error.extensions?.requestId,
+    payload.extensions?.requestId,
     responseRequestId,
   );
   return {
@@ -65,7 +66,7 @@ export function normalizePublicGraphQLError(
 }
 
 export function normalizePublicGraphQLErrors(
-  errors: readonly GraphQLErrorPayload[] | undefined,
+  errors: readonly unknown[] | undefined,
   responseRequestId?: string | null,
 ): readonly PublicGraphQLError[] {
   const normalized = errors?.map((error) =>
@@ -79,4 +80,24 @@ export function normalizePublicGraphQLErrors(
           responseRequestId,
         ),
       ];
+}
+
+function asGraphQLErrorPayload(value: unknown): GraphQLErrorPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const candidate = value as {
+    extensions?: unknown;
+    message?: unknown;
+  };
+  const extensions =
+    candidate.extensions &&
+    typeof candidate.extensions === "object" &&
+    !Array.isArray(candidate.extensions)
+      ? (candidate.extensions as GraphQLErrorPayload["extensions"])
+      : undefined;
+  return {
+    ...(extensions ? { extensions } : {}),
+    ...(typeof candidate.message === "string"
+      ? { message: candidate.message }
+      : {}),
+  };
 }

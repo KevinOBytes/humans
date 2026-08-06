@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { extractionRuns, files } from "@/db/schema/files";
 import type { Database } from "@/modules/auth/bootstrap-admin";
-import { JobExecutionError } from "@/modules/jobs/types";
+import { JobExecutionError, safeJobFailureCode } from "@/modules/jobs/types";
 import { ObjectReadLimitError, type ObjectStore } from "@/lib/storage/types";
 import { parseExtractionContent } from "@/modules/files/extraction-parser";
 
@@ -170,7 +170,9 @@ export function createExtractionHandler(input: {
       )
         throw error;
       const failure =
-        error instanceof JobExecutionError ? error.code : "extraction_failed";
+        error instanceof JobExecutionError
+          ? safeJobFailureCode(error.code)
+          : "extraction_failed";
       await input.database.transaction(async (transaction) => {
         const [failed] = await transaction
           .update(extractionRuns)

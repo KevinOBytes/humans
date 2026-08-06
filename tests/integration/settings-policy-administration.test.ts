@@ -3,13 +3,19 @@
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { newId } from "@/db/id";
 import {
+  ArchiveAccessPolicyDocument,
+  ArchiveResourceGrantDocument,
   CreateAccessPolicyDocument,
+  CreateResourceGrantDocument,
   SettingsPolicyPostureDocument,
   UpdateAccessPolicyDocument,
+  UpdateResourceGrantDocument,
   UpdateWorkspaceDefaultsDocument,
 } from "@/graphql/generated/graphql";
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
+import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 
 import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
@@ -519,6 +525,571 @@ liveDescribe("settings policy administration", () => {
         and(
           eq(idempotencyKeys.workspaceId, foreign.workspaceId),
           eq(idempotencyKeys.operation, "access_policy.update"),
+        ),
+      );
+    expect(Number(foreignClaims?.count)).toBe(1);
+  });
+
+  it("replays policy and resource-grant creation, updates, and archives", async () => {
+    const owner = await fixture.createActor();
+    const policyInput = {
+      idempotencyKey: "policy-create-replay-v1",
+      name: "Durable grant policy",
+      resourceKinds: ["person"],
+      roleBindings: { owner: ["read"] },
+      sensitivityCeiling: "INTERNAL" as const,
+      state: "ACTIVE" as const,
+    };
+    const policyRequests = await Promise.all(
+      [
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ].map((requestId) =>
+        fixture.execute<{
+          createAccessPolicy: {
+            code: string;
+            id: string | null;
+            requestId: string;
+            version: number | null;
+          };
+        }>({
+          headers: { "x-request-id": requestId },
+          jar: owner.jar,
+          operationName: "CreateAccessPolicy",
+          query: CreateAccessPolicyDocument,
+          variables: { input: policyInput },
+        }),
+      ),
+    );
+    expect(policyRequests.every((result) => !result.body?.errors)).toBe(true);
+    expect(policyRequests[0]?.body?.data?.createAccessPolicy).toEqual(
+      policyRequests[1]?.body?.data?.createAccessPolicy,
+    );
+    const policyResult = policyRequests[0]?.body?.data?.createAccessPolicy;
+    if (!policyResult?.id) throw new Error("Missing policy replay result");
+    expect(policyResult).toMatchObject({ code: "APPLIED", version: 1 });
+    expect(
+      await fixture.database
+        .select({ id: accessPolicies.id })
+        .from(accessPolicies)
+        .where(eq(accessPolicies.workspaceId, owner.workspaceId)),
+    ).toHaveLength(1);
+
+    const resourceId = newId();
+    const grantInput = {
+      idempotencyKey: "grant-create-replay-v1",
+      policyId: policyResult.id,
+      resourceId,
+      resourceKind: "person",
+      role: "VIEWER" as const,
+    };
+    const grantRequests = await Promise.all(
+      [
+        "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      ].map((requestId) =>
+        fixture.execute<{
+          createResourceGrant: {
+            code: string;
+            id: string | null;
+            requestId: string;
+            version: number | null;
+          };
+        }>({
+          headers: { "x-request-id": requestId },
+          jar: owner.jar,
+          operationName: "CreateResourceGrant",
+          query: CreateResourceGrantDocument,
+          variables: { input: grantInput },
+        }),
+      ),
+    );
+    expect(grantRequests.every((result) => !result.body?.errors)).toBe(true);
+    expect(grantRequests[0]?.body?.data?.createResourceGrant).toEqual(
+      grantRequests[1]?.body?.data?.createResourceGrant,
+    );
+    const grantResult = grantRequests[0]?.body?.data?.createResourceGrant;
+    if (!grantResult?.id) throw new Error("Missing grant replay result");
+    expect(grantResult).toMatchObject({ code: "APPLIED", version: 1 });
+    expect(
+      await fixture.database
+        .select({ id: resourceGrants.id })
+        .from(resourceGrants)
+        .where(eq(resourceGrants.workspaceId, owner.workspaceId)),
+    ).toHaveLength(1);
+
+    const updateInput = {
+      expectedVersion: 1,
+      id: grantResult.id,
+      idempotencyKey: "grant-update-replay-v1",
+      validUntil: "2030-01-01T00:00:00.000Z",
+    };
+    const updated = await fixture.execute<{
+      updateResourceGrant: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "UpdateResourceGrant",
+      query: UpdateResourceGrantDocument,
+      variables: { input: updateInput },
+    });
+    const replayedUpdate = await fixture.execute<{
+      updateResourceGrant: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "UpdateResourceGrant",
+      query: UpdateResourceGrantDocument,
+      variables: { input: updateInput },
+    });
+    expect(updated.body?.errors).toBeUndefined();
+    expect(replayedUpdate.body?.errors).toBeUndefined();
+    expect(updated.body?.data?.updateResourceGrant).toMatchObject({
+      code: "APPLIED",
+      id: grantResult.id,
+      version: 2,
+    });
+    expect(replayedUpdate.body?.data?.updateResourceGrant).toEqual(
+      updated.body?.data?.updateResourceGrant,
+    );
+
+    const [updateClaim] = await fixture.database
+      .select()
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, owner.workspaceId),
+          eq(idempotencyKeys.operation, "resource_grant.update"),
+        ),
+      );
+    if (!updateClaim) throw new Error("Missing resource-grant update claim");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { id: ["invalid"] } })
+      .where(eq(idempotencyKeys.id, updateClaim.id));
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "UpdateResourceGrant",
+        query: UpdateResourceGrantDocument,
+        variables: { input: updateInput },
+      }),
+      "VALIDATION_FAILED",
+    );
+
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({
+        responseReference: {
+          code: "APPLIED",
+          id: grantResult.id,
+          requestId: "replayed-update-request",
+          version: 2,
+        },
+        expiresAt: new Date(Date.now() - 1_000),
+      })
+      .where(eq(idempotencyKeys.id, updateClaim.id));
+    const takeover = await fixture.execute<{
+      updateResourceGrant: { code: string; version: number | null };
+    }>({
+      jar: owner.jar,
+      operationName: "UpdateResourceGrant",
+      query: UpdateResourceGrantDocument,
+      variables: { input: { ...updateInput, expectedVersion: 2 } },
+    });
+    expect(takeover.body?.errors).toBeUndefined();
+    expect(takeover.body?.data?.updateResourceGrant).toMatchObject({
+      code: "APPLIED",
+      version: 3,
+    });
+
+    const archivedGrant = await fixture.execute<{
+      archiveResourceGrant: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "ArchiveResourceGrant",
+      query: ArchiveResourceGrantDocument,
+      variables: {
+        expectedVersion: 3,
+        id: grantResult.id,
+        idempotencyKey: "grant-archive-replay-v1",
+      },
+    });
+    const replayedArchivedGrant = await fixture.execute<{
+      archiveResourceGrant: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "ArchiveResourceGrant",
+      query: ArchiveResourceGrantDocument,
+      variables: {
+        expectedVersion: 3,
+        id: grantResult.id,
+        idempotencyKey: "grant-archive-replay-v1",
+      },
+    });
+    expect(archivedGrant.body?.errors).toBeUndefined();
+    expect(replayedArchivedGrant.body?.errors).toBeUndefined();
+    expect(replayedArchivedGrant.body?.data?.archiveResourceGrant).toEqual(
+      archivedGrant.body?.data?.archiveResourceGrant,
+    );
+    expect(archivedGrant.body?.data?.archiveResourceGrant).toMatchObject({
+      code: "APPLIED",
+      id: grantResult.id,
+      version: 4,
+    });
+
+    const archivedPolicy = await fixture.execute<{
+      archiveAccessPolicy: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "ArchiveAccessPolicy",
+      query: ArchiveAccessPolicyDocument,
+      variables: {
+        expectedVersion: 1,
+        id: policyResult.id,
+        idempotencyKey: "policy-archive-replay-v1",
+      },
+    });
+    expect(archivedPolicy.body?.errors).toBeUndefined();
+    expect(archivedPolicy.body?.data?.archiveAccessPolicy).toMatchObject({
+      code: "APPLIED",
+      id: policyResult.id,
+      version: 2,
+    });
+
+    const [grantAuditCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.resourceKind, "resource_grant"),
+          eq(auditEvents.resourceId, grantResult.id),
+        ),
+      );
+    expect(Number(grantAuditCount?.count)).toBe(4);
+
+    const foreign = await fixture.createActor();
+    const foreignPolicy = await fixture.execute<{
+      createAccessPolicy: { id: string | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "CreateAccessPolicy",
+      query: CreateAccessPolicyDocument,
+      variables: {
+        input: { ...policyInput, name: "Foreign policy" },
+      },
+    });
+    expect(foreignPolicy.body?.errors).toBeUndefined();
+    expect(foreignPolicy.body?.data?.createAccessPolicy.id).not.toBe(
+      policyResult.id,
+    );
+    const [foreignClaimCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, foreign.workspaceId),
+          eq(idempotencyKeys.operation, "access_policy.create"),
+        ),
+      );
+    expect(Number(foreignClaimCount?.count)).toBe(1);
+  });
+
+  it("replays workspace defaults, fences malformed and expired claims, and isolates tenants", async () => {
+    const owner = await fixture.createActor();
+    const viewer = await fixture.createWorkspaceMember(owner, "viewer");
+    const posture = await fixture.execute<{
+      settingsPolicyPosture: { workspace: { version: number } };
+    }>({
+      jar: owner.jar,
+      operationName: "SettingsPolicyPosture",
+      query: SettingsPolicyPostureDocument,
+    });
+    const initialVersion =
+      posture.body?.data?.settingsPolicyPosture.workspace.version;
+    if (initialVersion == null) throw new Error("Missing workspace version");
+
+    const replayInput = {
+      aiEnabled: true,
+      expectedVersion: initialVersion,
+      idempotencyKey: "workspace-defaults-replay-v1",
+    };
+    const first = await fixture.execute<{
+      updateWorkspaceDefaults: {
+        code: string;
+        id: string | null;
+        requestId: string;
+        version: number | null;
+      };
+    }>({
+      headers: { "x-request-id": "88888888-8888-4888-8888-888888888888" },
+      jar: owner.jar,
+      operationName: "UpdateWorkspaceDefaults",
+      query: UpdateWorkspaceDefaultsDocument,
+      variables: { input: replayInput },
+    });
+    expect(first.body?.errors).toBeUndefined();
+    const firstResult = first.body?.data?.updateWorkspaceDefaults;
+    expect(firstResult).toMatchObject({
+      code: "APPLIED",
+      requestId: "88888888-8888-4888-8888-888888888888",
+      version: initialVersion + 1,
+    });
+
+    const replay = await fixture.execute<{
+      updateWorkspaceDefaults: {
+        code: string;
+        id: string | null;
+        requestId: string;
+        version: number | null;
+      };
+    }>({
+      headers: { "x-request-id": "99999999-9999-4999-8999-999999999999" },
+      jar: owner.jar,
+      operationName: "UpdateWorkspaceDefaults",
+      query: UpdateWorkspaceDefaultsDocument,
+      variables: { input: replayInput },
+    });
+    expect(replay.body?.errors).toBeUndefined();
+    expect(replay.body?.data?.updateWorkspaceDefaults).toEqual(firstResult);
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "UpdateWorkspaceDefaults",
+        query: UpdateWorkspaceDefaultsDocument,
+        variables: {
+          input: {
+            expectedVersion: initialVersion,
+            idempotencyKey: replayInput.idempotencyKey,
+            timezone: "UTC",
+          },
+        },
+      }),
+      "CONFLICT",
+    );
+
+    const [replayClaim] = await fixture.database
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, owner.workspaceId),
+          eq(idempotencyKeys.operation, "workspace.defaults.update"),
+        ),
+      )
+      .limit(1);
+    if (!replayClaim) throw new Error("Missing workspace defaults claim");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { id: ["invalid"] } })
+      .where(eq(idempotencyKeys.id, replayClaim.id));
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "UpdateWorkspaceDefaults",
+        query: UpdateWorkspaceDefaultsDocument,
+        variables: { input: replayInput },
+      }),
+      "VALIDATION_FAILED",
+    );
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: firstResult })
+      .where(eq(idempotencyKeys.id, replayClaim.id));
+
+    const expiryPosture = await fixture.execute<{
+      settingsPolicyPosture: { workspace: { version: number } };
+    }>({
+      jar: owner.jar,
+      operationName: "SettingsPolicyPosture",
+      query: SettingsPolicyPostureDocument,
+    });
+    const expiryVersion =
+      expiryPosture.body?.data?.settingsPolicyPosture.workspace.version;
+    if (expiryVersion == null) throw new Error("Missing expiry version");
+    const expiryKey = "workspace-defaults-expiry-v1";
+    const expiryFirst = await fixture.execute<{
+      updateWorkspaceDefaults: { code: string; version: number | null };
+    }>({
+      jar: owner.jar,
+      operationName: "UpdateWorkspaceDefaults",
+      query: UpdateWorkspaceDefaultsDocument,
+      variables: {
+        input: {
+          expectedVersion: expiryVersion,
+          idempotencyKey: expiryKey,
+          timezone: "UTC",
+        },
+      },
+    });
+    expect(expiryFirst.body?.data?.updateWorkspaceDefaults).toMatchObject({
+      code: "APPLIED",
+      version: expiryVersion + 1,
+    });
+    const [expiryClaim] = await fixture.database
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, owner.workspaceId),
+          eq(idempotencyKeys.operation, "workspace.defaults.update"),
+        ),
+      )
+      .orderBy(sql`${idempotencyKeys.createdAt} desc`)
+      .limit(1);
+    if (!expiryClaim) throw new Error("Missing expiry claim");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(idempotencyKeys.id, expiryClaim.id));
+    const expiryTakeover = await fixture.execute<{
+      updateWorkspaceDefaults: { code: string; version: number | null };
+    }>({
+      jar: owner.jar,
+      operationName: "UpdateWorkspaceDefaults",
+      query: UpdateWorkspaceDefaultsDocument,
+      variables: {
+        input: {
+          expectedVersion: expiryVersion + 1,
+          idempotencyKey: expiryKey,
+          locale: "en-US",
+        },
+      },
+    });
+    expect(expiryTakeover.body?.data?.updateWorkspaceDefaults).toMatchObject({
+      code: "APPLIED",
+      version: expiryVersion + 2,
+    });
+
+    const concurrentPosture = await fixture.execute<{
+      settingsPolicyPosture: { workspace: { version: number } };
+    }>({
+      jar: owner.jar,
+      operationName: "SettingsPolicyPosture",
+      query: SettingsPolicyPostureDocument,
+    });
+    const concurrentVersion =
+      concurrentPosture.body?.data?.settingsPolicyPosture.workspace.version;
+    if (concurrentVersion == null)
+      throw new Error("Missing concurrent version");
+    const concurrent = await Promise.all(
+      [
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ].map((requestId) =>
+        fixture.execute<{
+          updateWorkspaceDefaults: {
+            code: string;
+            id: string | null;
+            requestId: string;
+            version: number | null;
+          };
+        }>({
+          headers: { "x-request-id": requestId },
+          jar: owner.jar,
+          operationName: "UpdateWorkspaceDefaults",
+          query: UpdateWorkspaceDefaultsDocument,
+          variables: {
+            input: {
+              expectedVersion: concurrentVersion,
+              idempotencyKey: "workspace-defaults-concurrent-v1",
+              retentionDays: 365,
+            },
+          },
+        }),
+      ),
+    );
+    expect(concurrent.every((result) => !result.body?.errors)).toBe(true);
+    expect(concurrent[0]?.body?.data?.updateWorkspaceDefaults).toEqual(
+      concurrent[1]?.body?.data?.updateWorkspaceDefaults,
+    );
+    expect(concurrent[0]?.body?.data?.updateWorkspaceDefaults).toMatchObject({
+      code: "APPLIED",
+      version: concurrentVersion + 1,
+    });
+
+    const [auditCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.action, "workspace.policy.update"),
+        ),
+      );
+    expect(Number(auditCount?.count)).toBe(4);
+
+    expectGraphQLError(
+      await fixture.execute({
+        jar: viewer.jar,
+        operationName: "UpdateWorkspaceDefaults",
+        query: UpdateWorkspaceDefaultsDocument,
+        variables: {
+          input: {
+            expectedVersion: concurrentVersion + 1,
+            idempotencyKey: "viewer-workspace-defaults",
+            aiEnabled: false,
+          },
+        },
+      }),
+      "FORBIDDEN",
+    );
+
+    const foreign = await fixture.createActor();
+    const foreignPosture = await fixture.execute<{
+      settingsPolicyPosture: { workspace: { version: number } };
+    }>({
+      jar: foreign.jar,
+      operationName: "SettingsPolicyPosture",
+      query: SettingsPolicyPostureDocument,
+    });
+    const foreignVersion =
+      foreignPosture.body?.data?.settingsPolicyPosture.workspace.version;
+    if (foreignVersion == null) throw new Error("Missing foreign version");
+    const foreignUpdate = await fixture.execute<{
+      updateWorkspaceDefaults: { code: string; version: number | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "UpdateWorkspaceDefaults",
+      query: UpdateWorkspaceDefaultsDocument,
+      variables: {
+        input: {
+          aiEnabled: true,
+          expectedVersion: foreignVersion,
+          idempotencyKey: replayInput.idempotencyKey,
+        },
+      },
+    });
+    expect(foreignUpdate.body?.data?.updateWorkspaceDefaults).toMatchObject({
+      code: "APPLIED",
+      version: foreignVersion + 1,
+    });
+    const [foreignClaims] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, foreign.workspaceId),
+          eq(idempotencyKeys.operation, "workspace.defaults.update"),
         ),
       );
     expect(Number(foreignClaims?.count)).toBe(1);
