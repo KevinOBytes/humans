@@ -10,6 +10,14 @@ Bounded HUM-FR-005 deletion evidence (2026-08-06): approved workspace-scoped per
 
 Bounded HUM-NFR-008 person-mutation evidence (2026-08-06): generated GraphQL `UpdatePerson` and `ArchivePerson` now accept principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves replay without duplicate person or audit effects and workspace fencing; merge/unmerge, names, tags, contacts, locations, and the remaining retryable mutation matrix remain open.
 
+Bounded HUM-FR-004 invitation lock-order evidence (2026-08-06): invitation
+acceptance now acquires the same workspace advisory lock used by administrative
+cancellation before locking invitation/user/workspace rows. Live PostgreSQL
+acceptance proves a cancellation-first transition completes without deadlock,
+acceptance returns `UNAVAILABLE`, and no membership is created. External
+Resend/provider failure, browser responsive/RTL/zoom, and the full recipient and
+role matrix remain open.
+
 ## Functional requirements
 
 | ID           | Requirement                                                                                                                                                                                                                                                                                                                                         | Verification                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Status     |
