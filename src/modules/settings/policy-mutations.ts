@@ -918,6 +918,7 @@ export function createPolicyMutationService(input: {
       });
     },
     upsertRetentionPolicy(inputValue: {
+      idempotencyKey?: string | null;
       resourceKind: string;
       retentionDays: number;
       deletionBehavior: "review" | "soft_delete" | "hard_delete" | "anonymize";
@@ -926,195 +927,251 @@ export function createPolicyMutationService(input: {
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
         const resourceKind = inputValue.resourceKind.trim().toLowerCase();
-        if (
-          !RESOURCE_KIND.test(resourceKind) ||
-          !Number.isSafeInteger(inputValue.retentionDays) ||
-          inputValue.retentionDays < 0 ||
-          inputValue.retentionDays > 36500
-        )
-          throw createGraphQLError(
-            "VALIDATION_FAILED",
-            "Retention policy is invalid.",
-          );
-        const existing = await transaction
-          .select({
-            id: retentionPolicies.id,
-            version: retentionPolicies.version,
-          })
-          .from(retentionPolicies)
-          .where(
-            and(
-              eq(retentionPolicies.workspaceId, input.workspaceId),
-              eq(retentionPolicies.resourceKind, resourceKind),
-              isNull(retentionPolicies.deletedAt),
-            ),
-          )
-          .limit(1)
-          .for("update");
-        const current = existing[0];
-        if (current) {
-          if (
-            inputValue.expectedVersion == null ||
-            inputValue.expectedVersion !== current.version
-          )
-            return {
-              id: null,
-              version: null,
-              code: "CONFLICT",
-              requestId: input.requestId,
-            };
-          const [updated] = await transaction
-            .update(retentionPolicies)
-            .set({
+        const legalBasis = inputValue.legalBasis?.trim().slice(0, 512) ?? null;
+        return idempotentMutation({
+          actor,
+          key: inputValue.idempotencyKey,
+          material: {
+            deletionBehavior: inputValue.deletionBehavior,
+            expectedVersion: inputValue.expectedVersion ?? null,
+            legalBasis,
+            resourceKind,
+            retentionDays: inputValue.retentionDays,
+          },
+          operation: "retention_policy.upsert",
+          transaction,
+          run: async () => {
+            if (
+              !RESOURCE_KIND.test(resourceKind) ||
+              !Number.isSafeInteger(inputValue.retentionDays) ||
+              inputValue.retentionDays < 0 ||
+              inputValue.retentionDays > 36500
+            )
+              throw createGraphQLError(
+                "VALIDATION_FAILED",
+                "Retention policy is invalid.",
+              );
+            const existing = await transaction
+              .select({
+                id: retentionPolicies.id,
+                version: retentionPolicies.version,
+              })
+              .from(retentionPolicies)
+              .where(
+                and(
+                  eq(retentionPolicies.workspaceId, input.workspaceId),
+                  eq(retentionPolicies.resourceKind, resourceKind),
+                  isNull(retentionPolicies.deletedAt),
+                ),
+              )
+              .limit(1)
+              .for("update");
+            const current = existing[0];
+            if (current) {
+              if (
+                inputValue.expectedVersion == null ||
+                inputValue.expectedVersion !== current.version
+              )
+                return {
+                  id: null,
+                  version: null,
+                  code: "CONFLICT",
+                  requestId: input.requestId,
+                };
+              const [updated] = await transaction
+                .update(retentionPolicies)
+                .set({
+                  retentionDays: inputValue.retentionDays,
+                  deletionBehavior: inputValue.deletionBehavior,
+                  legalBasis,
+                  version: sql`${retentionPolicies.version} + 1`,
+                  updatedAt: new Date(),
+                  updatedBy: actor.id,
+                })
+                .where(
+                  and(
+                    eq(retentionPolicies.id, current.id),
+                    eq(retentionPolicies.version, current.version),
+                  ),
+                )
+                .returning({
+                  id: retentionPolicies.id,
+                  version: retentionPolicies.version,
+                });
+              if (!updated)
+                return {
+                  id: null,
+                  version: null,
+                  code: "CONFLICT",
+                  requestId: input.requestId,
+                };
+              await audit(transaction, {
+                actor,
+                action: "retention_policy.update",
+                requestId: input.requestId,
+                resourceId: updated.id,
+                resourceKind: "retention_policy",
+                workspaceId: input.workspaceId,
+              });
+              return {
+                id: updated.id,
+                version: updated.version,
+                code: "APPLIED",
+                requestId: input.requestId,
+              };
+            }
+            const id = newId();
+            await transaction.insert(retentionPolicies).values({
+              id,
+              workspaceId: input.workspaceId,
+              resourceKind,
               retentionDays: inputValue.retentionDays,
               deletionBehavior: inputValue.deletionBehavior,
-              legalBasis: inputValue.legalBasis?.trim().slice(0, 512) ?? null,
-              version: sql`${retentionPolicies.version} + 1`,
-              updatedAt: new Date(),
+              legalBasis,
+              createdBy: actor.id,
               updatedBy: actor.id,
-            })
-            .where(
-              and(
-                eq(retentionPolicies.id, current.id),
-                eq(retentionPolicies.version, current.version),
-              ),
-            )
-            .returning({
-              id: retentionPolicies.id,
-              version: retentionPolicies.version,
             });
-          if (!updated)
+            await audit(transaction, {
+              actor,
+              action: "retention_policy.create",
+              requestId: input.requestId,
+              resourceId: id,
+              resourceKind: "retention_policy",
+              workspaceId: input.workspaceId,
+            });
             return {
-              id: null,
-              version: null,
-              code: "CONFLICT",
+              id,
+              version: 1,
+              code: "APPLIED",
               requestId: input.requestId,
             };
-          await audit(transaction, {
-            actor,
-            action: "retention_policy.update",
-            requestId: input.requestId,
-            resourceId: updated.id,
-            resourceKind: "retention_policy",
-            workspaceId: input.workspaceId,
-          });
-          return {
-            id: updated.id,
-            version: updated.version,
-            code: "APPLIED",
-            requestId: input.requestId,
-          };
-        }
-        const id = newId();
-        await transaction.insert(retentionPolicies).values({
-          id,
-          workspaceId: input.workspaceId,
-          resourceKind,
-          retentionDays: inputValue.retentionDays,
-          deletionBehavior: inputValue.deletionBehavior,
-          legalBasis: inputValue.legalBasis?.trim().slice(0, 512) ?? null,
-          createdBy: actor.id,
-          updatedBy: actor.id,
+          },
         });
-        await audit(transaction, {
-          actor,
-          action: "retention_policy.create",
-          requestId: input.requestId,
-          resourceId: id,
-          resourceKind: "retention_policy",
-          workspaceId: input.workspaceId,
-        });
-        return { id, version: 1, code: "APPLIED", requestId: input.requestId };
       });
     },
     createLegalHold(inputValue: {
+      idempotencyKey?: string | null;
       resourceId: string;
       resourceKind: string;
       reason: string;
       authority: string;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        if (
-          !RESOURCE_KIND.test(inputValue.resourceKind) ||
-          inputValue.reason.trim().length < 1 ||
-          inputValue.authority.trim().length < 1
-        )
-          throw createGraphQLError(
-            "VALIDATION_FAILED",
-            "Legal hold is invalid.",
-          );
-        const id = newId();
-        await transaction.insert(legalHolds).values({
-          id,
-          workspaceId: input.workspaceId,
-          resourceId: inputValue.resourceId,
-          resourceKind: inputValue.resourceKind,
-          reason: inputValue.reason.trim().slice(0, 2048),
-          authority: inputValue.authority.trim().slice(0, 512),
-          createdBy: actor.id,
-          updatedBy: actor.id,
-        });
-        await audit(transaction, {
+        const resourceKind = inputValue.resourceKind.trim().toLowerCase();
+        const reason = inputValue.reason.trim().slice(0, 2048);
+        const authority = inputValue.authority.trim().slice(0, 512);
+        return idempotentMutation({
           actor,
-          action: "legal_hold.create",
-          requestId: input.requestId,
-          resourceId: id,
-          resourceKind: "legal_hold",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            authority,
+            reason,
+            resourceId: inputValue.resourceId,
+            resourceKind,
+          },
+          operation: "legal_hold.create",
+          transaction,
+          run: async () => {
+            if (
+              !RESOURCE_KIND.test(resourceKind) ||
+              reason.length < 1 ||
+              authority.length < 1
+            )
+              throw createGraphQLError(
+                "VALIDATION_FAILED",
+                "Legal hold is invalid.",
+              );
+            const id = newId();
+            await transaction.insert(legalHolds).values({
+              id,
+              workspaceId: input.workspaceId,
+              resourceId: inputValue.resourceId,
+              resourceKind,
+              reason,
+              authority,
+              createdBy: actor.id,
+              updatedBy: actor.id,
+            });
+            await audit(transaction, {
+              actor,
+              action: "legal_hold.create",
+              requestId: input.requestId,
+              resourceId: id,
+              resourceKind: "legal_hold",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id,
+              version: 1,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return { id, version: 1, code: "APPLIED", requestId: input.requestId };
       });
     },
     releaseLegalHold(
       id: string,
       expectedVersion: number,
       releaseReason: string,
+      idempotencyKey?: string | null,
     ): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const [updated] = await transaction
-          .update(legalHolds)
-          .set({
-            state: "released",
-            releasedAt: new Date(),
-            releasedBy: actor.id,
-            releaseReason: releaseReason.trim().slice(0, 2048),
-            updatedAt: new Date(),
-            updatedBy: actor.id,
-            version: sql`${legalHolds.version} + 1`,
-          })
-          .where(
-            and(
-              eq(legalHolds.id, id),
-              eq(legalHolds.workspaceId, input.workspaceId),
-              eq(legalHolds.state, "active"),
-              eq(legalHolds.version, expectedVersion),
-            ),
-          )
-          .returning({ id: legalHolds.id, version: legalHolds.version });
-        if (!updated)
-          return {
-            id: null,
-            version: null,
-            code: "CONFLICT",
-            requestId: input.requestId,
-          };
-        await audit(transaction, {
+        const normalizedReason = releaseReason.trim().slice(0, 2048);
+        return idempotentMutation({
           actor,
-          action: "legal_hold.release",
-          requestId: input.requestId,
-          resourceId: updated.id,
-          resourceKind: "legal_hold",
-          workspaceId: input.workspaceId,
+          key: idempotencyKey,
+          material: { expectedVersion, id, releaseReason: normalizedReason },
+          operation: "legal_hold.release",
+          transaction,
+          run: async () => {
+            const [updated] = await transaction
+              .update(legalHolds)
+              .set({
+                state: "released",
+                releasedAt: new Date(),
+                releasedBy: actor.id,
+                releaseReason: normalizedReason,
+                updatedAt: new Date(),
+                updatedBy: actor.id,
+                version: sql`${legalHolds.version} + 1`,
+              })
+              .where(
+                and(
+                  eq(legalHolds.id, id),
+                  eq(legalHolds.workspaceId, input.workspaceId),
+                  eq(legalHolds.state, "active"),
+                  eq(legalHolds.version, expectedVersion),
+                ),
+              )
+              .returning({ id: legalHolds.id, version: legalHolds.version });
+            if (!updated)
+              return {
+                id: null,
+                version: null,
+                code: "CONFLICT",
+                requestId: input.requestId,
+              };
+            await audit(transaction, {
+              actor,
+              action: "legal_hold.release",
+              requestId: input.requestId,
+              resourceId: updated.id,
+              resourceKind: "legal_hold",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id: updated.id,
+              version: updated.version,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return {
-          id: updated.id,
-          version: updated.version,
-          code: "APPLIED",
-          requestId: input.requestId,
-        };
       });
     },
     createConsent(inputValue: {
+      idempotencyKey?: string | null;
       personId: string;
       purpose: string;
       status: "granted" | "denied" | "withdrawn" | "expired" | "unknown";
@@ -1124,70 +1181,110 @@ export function createPolicyMutationService(input: {
       evidenceId?: string | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        if (!inputValue.purpose.trim() || !inputValue.source.trim())
-          throw createGraphQLError(
-            "VALIDATION_FAILED",
-            "Consent purpose and source are required.",
-          );
-        const id = newId();
-        await transaction.insert(consentRecords).values({
-          id,
-          workspaceId: input.workspaceId,
-          personId: inputValue.personId,
-          purpose: inputValue.purpose.trim().slice(0, 512),
-          status: inputValue.status,
-          source: inputValue.source.trim().slice(0, 512),
-          effectiveFrom: inputValue.effectiveFrom,
-          effectiveUntil: inputValue.effectiveUntil ?? null,
-          evidenceId: inputValue.evidenceId ?? null,
-          createdBy: actor.id,
-          updatedBy: actor.id,
-        });
-        await audit(transaction, {
+        const purpose = inputValue.purpose.trim().slice(0, 512);
+        const source = inputValue.source.trim().slice(0, 512);
+        return idempotentMutation({
           actor,
-          action: "consent.create",
-          requestId: input.requestId,
-          resourceId: id,
-          resourceKind: "consent",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            effectiveFrom: inputValue.effectiveFrom.toISOString(),
+            effectiveUntil: inputValue.effectiveUntil?.toISOString() ?? null,
+            evidenceId: inputValue.evidenceId ?? null,
+            personId: inputValue.personId,
+            purpose,
+            source,
+            status: inputValue.status,
+          },
+          operation: "consent.create",
+          transaction,
+          run: async () => {
+            if (!purpose || !source)
+              throw createGraphQLError(
+                "VALIDATION_FAILED",
+                "Consent purpose and source are required.",
+              );
+            const id = newId();
+            await transaction.insert(consentRecords).values({
+              id,
+              workspaceId: input.workspaceId,
+              personId: inputValue.personId,
+              purpose,
+              status: inputValue.status,
+              source,
+              effectiveFrom: inputValue.effectiveFrom,
+              effectiveUntil: inputValue.effectiveUntil ?? null,
+              evidenceId: inputValue.evidenceId ?? null,
+              createdBy: actor.id,
+              updatedBy: actor.id,
+            });
+            await audit(transaction, {
+              actor,
+              action: "consent.create",
+              requestId: input.requestId,
+              resourceId: id,
+              resourceKind: "consent",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id,
+              version: 1,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return { id, version: 1, code: "APPLIED", requestId: input.requestId };
       });
     },
     createDeletionRequest(inputValue: {
+      idempotencyKey?: string | null;
       scope: unknown;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        if (
-          !inputValue.scope ||
-          typeof inputValue.scope !== "object" ||
-          Array.isArray(inputValue.scope)
-        )
-          throw createGraphQLError(
-            "VALIDATION_FAILED",
-            "Deletion scope is invalid.",
-          );
-        const id = newId();
-        await transaction.insert(deletionRequests).values({
-          id,
-          workspaceId: input.workspaceId,
-          requesterId: actor.id,
-          scope: inputValue.scope,
-          createdBy: actor.id,
-          updatedBy: actor.id,
-        });
-        await audit(transaction, {
+        return idempotentMutation({
           actor,
-          action: "deletion_request.create",
-          requestId: input.requestId,
-          resourceId: id,
-          resourceKind: "deletion_request",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: { scope: inputValue.scope },
+          operation: "deletion_request.create",
+          transaction,
+          run: async () => {
+            if (
+              !inputValue.scope ||
+              typeof inputValue.scope !== "object" ||
+              Array.isArray(inputValue.scope)
+            )
+              throw createGraphQLError(
+                "VALIDATION_FAILED",
+                "Deletion scope is invalid.",
+              );
+            const id = newId();
+            await transaction.insert(deletionRequests).values({
+              id,
+              workspaceId: input.workspaceId,
+              requesterId: actor.id,
+              scope: inputValue.scope,
+              createdBy: actor.id,
+              updatedBy: actor.id,
+            });
+            await audit(transaction, {
+              actor,
+              action: "deletion_request.create",
+              requestId: input.requestId,
+              resourceId: id,
+              resourceKind: "deletion_request",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id,
+              version: 1,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return { id, version: 1, code: "APPLIED", requestId: input.requestId };
       });
     },
     reviewDeletionRequest(inputValue: {
+      idempotencyKey?: string | null;
       id: string;
       expectedVersion: number;
       state:
@@ -1201,50 +1298,66 @@ export function createPolicyMutationService(input: {
       notes?: string | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const [updated] = await transaction
-          .update(deletionRequests)
-          .set({
-            state: inputValue.state,
-            reviewedAt: new Date(),
-            reviewedBy: actor.id,
-            reviewNotes: inputValue.notes?.trim().slice(0, 2048) ?? null,
-            completedAt: inputValue.state === "completed" ? new Date() : null,
-            updatedAt: new Date(),
-            updatedBy: actor.id,
-            version: sql`${deletionRequests.version} + 1`,
-          })
-          .where(
-            and(
-              eq(deletionRequests.id, inputValue.id),
-              eq(deletionRequests.workspaceId, input.workspaceId),
-              eq(deletionRequests.version, inputValue.expectedVersion),
-            ),
-          )
-          .returning({
-            id: deletionRequests.id,
-            version: deletionRequests.version,
-          });
-        if (!updated)
-          return {
-            id: null,
-            version: null,
-            code: "CONFLICT",
-            requestId: input.requestId,
-          };
-        await audit(transaction, {
+        const notes = inputValue.notes?.trim().slice(0, 2048) ?? null;
+        return idempotentMutation({
           actor,
-          action: "deletion_request.review",
-          requestId: input.requestId,
-          resourceId: updated.id,
-          resourceKind: "deletion_request",
-          workspaceId: input.workspaceId,
+          key: inputValue.idempotencyKey,
+          material: {
+            expectedVersion: inputValue.expectedVersion,
+            id: inputValue.id,
+            notes,
+            state: inputValue.state,
+          },
+          operation: "deletion_request.review",
+          transaction,
+          run: async () => {
+            const [updated] = await transaction
+              .update(deletionRequests)
+              .set({
+                state: inputValue.state,
+                reviewedAt: new Date(),
+                reviewedBy: actor.id,
+                reviewNotes: notes,
+                completedAt:
+                  inputValue.state === "completed" ? new Date() : null,
+                updatedAt: new Date(),
+                updatedBy: actor.id,
+                version: sql`${deletionRequests.version} + 1`,
+              })
+              .where(
+                and(
+                  eq(deletionRequests.id, inputValue.id),
+                  eq(deletionRequests.workspaceId, input.workspaceId),
+                  eq(deletionRequests.version, inputValue.expectedVersion),
+                ),
+              )
+              .returning({
+                id: deletionRequests.id,
+                version: deletionRequests.version,
+              });
+            if (!updated)
+              return {
+                id: null,
+                version: null,
+                code: "CONFLICT",
+                requestId: input.requestId,
+              };
+            await audit(transaction, {
+              actor,
+              action: "deletion_request.review",
+              requestId: input.requestId,
+              resourceId: updated.id,
+              resourceKind: "deletion_request",
+              workspaceId: input.workspaceId,
+            });
+            return {
+              id: updated.id,
+              version: updated.version,
+              code: "APPLIED",
+              requestId: input.requestId,
+            };
+          },
         });
-        return {
-          id: updated.id,
-          version: updated.version,
-          code: "APPLIED",
-          requestId: input.requestId,
-        };
       });
     },
   };

@@ -7,15 +7,28 @@ import { newId } from "@/db/id";
 import {
   ArchiveAccessPolicyDocument,
   ArchiveResourceGrantDocument,
+  CreateConsentRecordDocument,
+  CreateDeletionRequestDocument,
+  CreateLegalHoldDocument,
   CreateAccessPolicyDocument,
   CreateResourceGrantDocument,
+  CreatePersonDocument,
+  ReleaseLegalHoldDocument,
+  ReviewDeletionRequestDocument,
   SettingsPolicyPostureDocument,
+  UpsertRetentionPolicyDocument,
   UpdateAccessPolicyDocument,
   UpdateResourceGrantDocument,
   UpdateWorkspaceDefaultsDocument,
 } from "@/graphql/generated/graphql";
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
-import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
+import { consentRecords, deletionRequests } from "@/db/schema/privacy";
+import {
+  accessPolicies,
+  legalHolds,
+  resourceGrants,
+  retentionPolicies,
+} from "@/db/schema/workspaces";
 
 import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
@@ -1093,5 +1106,286 @@ liveDescribe("settings policy administration", () => {
         ),
       );
     expect(Number(foreignClaims?.count)).toBe(1);
+  });
+
+  it("replays and fences privacy settings mutations with durable response references", async () => {
+    const owner = await fixture.createActor();
+    const person = await fixture.execute<{
+      createPerson: { person: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input: { displayName: "Privacy idempotency subject" } },
+    });
+    const personId = person.body?.data?.createPerson.person?.id;
+    if (!personId) throw new Error("Missing privacy test person");
+
+    const retentionInput = {
+      deletionBehavior: "REVIEW",
+      idempotencyKey: "privacy-retention-replay-v1",
+      legalBasis: "research",
+      resourceKind: "person",
+      retentionDays: 365,
+    };
+    const retention = await fixture.execute<{
+      upsertRetentionPolicy: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "UpsertRetentionPolicy",
+      query: UpsertRetentionPolicyDocument,
+      variables: { input: retentionInput },
+    });
+    const retentionResult = retention.body?.data?.upsertRetentionPolicy;
+    expect(retention.body?.errors).toBeUndefined();
+    expect(retentionResult).toMatchObject({ code: "APPLIED", version: 1 });
+    const retentionReplay = await fixture.execute({
+      jar: owner.jar,
+      operationName: "UpsertRetentionPolicy",
+      query: UpsertRetentionPolicyDocument,
+      variables: { input: retentionInput },
+    });
+    expect(retentionReplay.body?.data?.upsertRetentionPolicy).toEqual(
+      retentionResult,
+    );
+    const [retentionCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(retentionPolicies)
+      .where(eq(retentionPolicies.workspaceId, owner.workspaceId));
+    expect(Number(retentionCount?.count)).toBe(1);
+
+    const [retentionClaim] = await fixture.database
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, owner.workspaceId),
+          eq(idempotencyKeys.operation, "retention_policy.upsert"),
+        ),
+      );
+    if (!retentionClaim) throw new Error("Missing retention claim");
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({ responseReference: { id: ["malformed"] } })
+      .where(eq(idempotencyKeys.id, retentionClaim.id));
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "UpsertRetentionPolicy",
+        query: UpsertRetentionPolicyDocument,
+        variables: { input: retentionInput },
+      }),
+      "VALIDATION_FAILED",
+    );
+
+    const holdInput = {
+      authority: "privacy officer",
+      idempotencyKey: "privacy-hold-create-v1",
+      reason: "Investigation",
+      resourceId: personId,
+      resourceKind: "person",
+    };
+    const hold = await fixture.execute<{
+      createLegalHold: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateLegalHold",
+      query: CreateLegalHoldDocument,
+      variables: { input: holdInput },
+    });
+    const holdResult = hold.body?.data?.createLegalHold;
+    expect(holdResult).toMatchObject({ code: "APPLIED", version: 1 });
+    const holdReplay = await fixture.execute({
+      jar: owner.jar,
+      operationName: "CreateLegalHold",
+      query: CreateLegalHoldDocument,
+      variables: { input: holdInput },
+    });
+    expect(holdReplay.body?.data?.createLegalHold).toEqual(holdResult);
+    const [holdCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(legalHolds)
+      .where(eq(legalHolds.workspaceId, owner.workspaceId));
+    expect(Number(holdCount?.count)).toBe(1);
+    const holdId = holdResult?.id;
+    if (!holdId) throw new Error("Missing legal hold ID");
+    const releaseInput = {
+      expectedVersion: 1,
+      id: holdId,
+      idempotencyKey: "privacy-hold-release-v1",
+      releaseReason: "Investigation closed",
+    };
+    const released = await fixture.execute<{
+      releaseLegalHold: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "ReleaseLegalHold",
+      query: ReleaseLegalHoldDocument,
+      variables: { input: releaseInput },
+    });
+    const releaseResult = released.body?.data?.releaseLegalHold;
+    expect(releaseResult).toMatchObject({
+      code: "APPLIED",
+      id: holdId,
+      version: 2,
+    });
+    const releaseReplay = await fixture.execute({
+      jar: owner.jar,
+      operationName: "ReleaseLegalHold",
+      query: ReleaseLegalHoldDocument,
+      variables: { input: releaseInput },
+    });
+    expect(releaseReplay.body?.data?.releaseLegalHold).toEqual(releaseResult);
+
+    const consentIdempotencyKey = ["consent", "case", "001"].join("-");
+    const consentInput = {
+      effectiveFrom: "2026-01-01T00:00:00.000Z",
+      idempotencyKey: consentIdempotencyKey,
+      personId,
+      purpose: "research",
+      source: "signed form",
+      status: "GRANTED",
+    };
+    const consent = await fixture.execute<{
+      createConsentRecord: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateConsentRecord",
+      query: CreateConsentRecordDocument,
+      variables: { input: consentInput },
+    });
+    const consentResult = consent.body?.data?.createConsentRecord;
+    expect(consentResult).toMatchObject({ code: "APPLIED", version: 1 });
+    const consentConcurrent = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        fixture.execute({
+          jar: owner.jar,
+          operationName: "CreateConsentRecord",
+          query: CreateConsentRecordDocument,
+          variables: {
+            input: {
+              ...consentInput,
+              idempotencyKey: "privacy-consent-concurrent-v1",
+              purpose: "concurrent research",
+            },
+          },
+        }),
+      ),
+    );
+    expect(consentConcurrent.every((result) => !result.body?.errors)).toBe(
+      true,
+    );
+    expect(consentConcurrent[0]?.body?.data?.createConsentRecord).toEqual(
+      consentConcurrent[1]?.body?.data?.createConsentRecord,
+    );
+    const [consentCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(consentRecords)
+      .where(eq(consentRecords.workspaceId, owner.workspaceId));
+    expect(Number(consentCount?.count)).toBe(2);
+
+    const deletionInput = {
+      idempotencyKey: "privacy-deletion-create-v1",
+      scope: { personIds: [personId] },
+    };
+    const deletion = await fixture.execute<{
+      createDeletionRequest: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateDeletionRequest",
+      query: CreateDeletionRequestDocument,
+      variables: { input: deletionInput },
+    });
+    const deletionResult = deletion.body?.data?.createDeletionRequest;
+    expect(deletionResult).toMatchObject({ code: "APPLIED", version: 1 });
+    const deletionReplay = await fixture.execute({
+      jar: owner.jar,
+      operationName: "CreateDeletionRequest",
+      query: CreateDeletionRequestDocument,
+      variables: { input: deletionInput },
+    });
+    expect(deletionReplay.body?.data?.createDeletionRequest).toEqual(
+      deletionResult,
+    );
+    const [deletionCount] = await fixture.database
+      .select({ count: sql<number>`count(*)` })
+      .from(deletionRequests)
+      .where(eq(deletionRequests.workspaceId, owner.workspaceId));
+    expect(Number(deletionCount?.count)).toBe(1);
+    const deletionId = deletionResult?.id;
+    if (!deletionId) throw new Error("Missing deletion request ID");
+    const reviewInput = {
+      expectedVersion: 1,
+      id: deletionId,
+      idempotencyKey: "privacy-deletion-review-v1",
+      notes: "Approved by privacy officer",
+      state: "APPROVED",
+    };
+    const reviewed = await fixture.execute<{
+      reviewDeletionRequest: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "ReviewDeletionRequest",
+      query: ReviewDeletionRequestDocument,
+      variables: { input: reviewInput },
+    });
+    const reviewResult = reviewed.body?.data?.reviewDeletionRequest;
+    expect(reviewResult).toMatchObject({
+      code: "APPLIED",
+      id: deletionId,
+      version: 2,
+    });
+    const reviewReplay = await fixture.execute({
+      jar: owner.jar,
+      operationName: "ReviewDeletionRequest",
+      query: ReviewDeletionRequestDocument,
+      variables: { input: reviewInput },
+    });
+    expect(reviewReplay.body?.data?.reviewDeletionRequest).toEqual(
+      reviewResult,
+    );
+
+    const foreign = await fixture.createActor();
+    const foreignRetention = await fixture.execute({
+      jar: foreign.jar,
+      operationName: "UpsertRetentionPolicy",
+      query: UpsertRetentionPolicyDocument,
+      variables: {
+        input: {
+          ...retentionInput,
+          idempotencyKey: "privacy-retention-replay-v1",
+          resourceKind: "evidence",
+        },
+      },
+    });
+    expect(foreignRetention.body?.errors).toBeUndefined();
+    expect(foreignRetention.body?.data?.upsertRetentionPolicy).toMatchObject({
+      code: "APPLIED",
+      version: 1,
+    });
   });
 });
