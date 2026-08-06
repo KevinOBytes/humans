@@ -615,6 +615,8 @@ const ArchiveNoteInput = builder.inputType("ArchiveNoteInput", {
 });
 const CreateTagInput = builder.inputType("CreateTagInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     name: t.string({ required: true }),
     color: t.string(),
     description: t.string(),
@@ -636,6 +638,14 @@ const ArchiveTagInput = builder.inputType("ArchiveTagInput", {
   }),
 });
 const TagPersonInput = builder.inputType("TagPersonInput", {
+  fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
+    personId: t.field({ type: "UUID", required: true }),
+    tagId: t.field({ type: "UUID", required: true }),
+  }),
+});
+const UntagPersonInput = builder.inputType("UntagPersonInput", {
   fields: (t) => ({
     personId: t.field({ type: "UUID", required: true }),
     tagId: t.field({ type: "UUID", required: true }),
@@ -1296,7 +1306,7 @@ export function registerEvidenceGraphQL(): void {
     }),
     untagPerson: t.field({
       type: PersonTagPayload,
-      args: { input: t.arg({ type: TagPersonInput, required: true }) },
+      args: { input: t.arg({ type: UntagPersonInput, required: true }) },
       resolve: async (_r, args, context) => {
         requirePermission(context, "tag", "update");
         requirePermission(context, "person", "update");

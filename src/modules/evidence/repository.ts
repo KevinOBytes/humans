@@ -966,9 +966,9 @@ export function createEvidenceRepository(database: Database) {
       const [row] = await database
         .insert(tags)
         .values({ ...input.value, workspaceId: input.workspaceId })
+        .onConflictDoNothing()
         .returning();
-      if (!row) throw new Error("Tag insert failed");
-      return row;
+      return row ?? null;
     },
     async updateTag(input: {
       workspaceId: string;
