@@ -1,6 +1,7 @@
 import { newId } from "@/db/id";
 import { people as peopleTable } from "@/db/schema/people";
 import { relationships } from "@/db/schema/relationships";
+import { and, eq } from "drizzle-orm";
 import { createGraphQLError } from "@/graphql/errors";
 import { decodeResearchCursor, normalizePagination } from "@/graphql/limits";
 import {
@@ -12,7 +13,10 @@ import {
 } from "@/modules/audit/service";
 import {
   applySearchIndexMaintenance,
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
   withResearchWriteTransaction as writeTransaction,
+  type CanonicalRequestMaterial,
 } from "@/modules/audit/transactions";
 import { createPeopleRepository } from "@/modules/people/repository";
 import type { Connection, MutationOutcome } from "@/modules/people/service";
@@ -50,6 +54,9 @@ function encode(value: Record<string, unknown>) {
   );
 }
 const decode = decodeResearchCursor;
+const RELATIONSHIP_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const RELATIONSHIP_REFERENCE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 const relationshipStates = [
   "asserted",
@@ -135,6 +142,47 @@ export function createRelationshipsService(context: ResearchServiceContext) {
   }
   async function visible(row: RelationshipRow) {
     return (await visibleIds([row])).has(row.id);
+  }
+  async function replayRelationship(
+    responseReference: Readonly<
+      Record<string, string | number | boolean | null>
+    >,
+  ): Promise<RelationshipRow> {
+    const relationshipId = responseReference.relationshipId;
+    const version = responseReference.version;
+    if (
+      typeof relationshipId !== "string" ||
+      !RELATIONSHIP_REFERENCE_UUID.test(relationshipId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    const [row] = await context.database
+      .select()
+      .from(relationships)
+      .where(
+        and(
+          eq(relationships.workspaceId, context.workspaceId),
+          eq(relationships.id, relationshipId),
+        ),
+      )
+      .limit(1);
+    if (!row || !(await visible(row)))
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    if (row.version !== version)
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    return row;
   }
   async function requirePerson(id: string) {
     const row = await people.getById({ workspaceId: context.workspaceId, id });
@@ -573,6 +621,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
       };
     },
     async create(input: {
+      idempotencyKey?: string | null;
       sourcePersonId: string;
       targetPersonId: string;
       relationshipTypeId: string;
@@ -639,6 +688,61 @@ export function createRelationshipsService(context: ResearchServiceContext) {
       const state = validateRelationshipState(input.state ?? "asserted");
       issues.push(...state.issues);
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent relationship creation is not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + RELATIONSHIP_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "relationship.create.graphql",
+          requestMaterial: {
+            confidence: confidence.value ?? "1",
+            labelOverride,
+            metadata: metadata.value as CanonicalRequestMaterial,
+            relationshipTypeId: input.relationshipTypeId,
+            sensitivity,
+            sourcePersonId: input.sourcePersonId,
+            state: state.value!,
+            strength: strength.value ?? null,
+            targetPersonId: input.targetPersonId,
+            temporalPrecision: temporal.value!.precision,
+            temporalSemantics: temporal.value!.semantics,
+            validFrom: temporal.value!.earliest?.toISOString() ?? null,
+            validUntil: temporal.value!.latest?.toISOString() ?? null,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["relationship:create", "person:read"],
+          async (scopedContext) => {
+            const outcome = await createRelationshipsService(
+              scopedContext,
+            ).create({ ...input, idempotencyKey: null });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                outcome.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The relationship could not be created.",
+              );
+            }
+            return {
+              relationshipId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayRelationship(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       return writeTransaction(context, async (transaction) => {
         const scoped = createRelationshipsRepository(
           transaction as unknown as typeof context.database,
@@ -782,6 +886,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
     async update(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
       labelOverride?: string | null;
       strength?: number | null;
       confidence?: number | null;
@@ -797,11 +902,92 @@ export function createRelationshipsService(context: ResearchServiceContext) {
         workspaceId: context.workspaceId,
         id: input.id,
       });
-      if (!current || !(await visible(current)))
+      if (
+        (!current && input.idempotencyKey == null) ||
+        (current && !(await visible(current)))
+      )
         throw createGraphQLError(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent relationship updates are not configured.",
+          );
+        }
+        const fieldMaterial = (
+          value: CanonicalRequestMaterial | undefined,
+        ): CanonicalRequestMaterial =>
+          value === undefined
+            ? { present: false }
+            : { present: true, value: value ?? null };
+        const dateMaterial = (
+          value: string | Date | null | undefined,
+        ): CanonicalRequestMaterial =>
+          fieldMaterial(value instanceof Date ? value.toISOString() : value);
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + RELATIONSHIP_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "relationship.update.graphql",
+          requestMaterial: {
+            confidence: fieldMaterial(input.confidence),
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            labelOverride: fieldMaterial(
+              input.labelOverride === undefined
+                ? undefined
+                : (input.labelOverride?.normalize("NFKC").trim() ?? null),
+            ),
+            metadata: fieldMaterial(
+              input.metadata as CanonicalRequestMaterial | undefined,
+            ),
+            sensitivity: fieldMaterial(
+              input.sensitivity === undefined
+                ? undefined
+                : (input.sensitivity?.toLowerCase() ?? null),
+            ),
+            state: fieldMaterial(
+              input.state === undefined
+                ? undefined
+                : (input.state?.trim().toLowerCase() ?? null),
+            ),
+            strength: fieldMaterial(input.strength),
+            temporalPrecision: dateMaterial(input.temporalPrecision),
+            temporalSemantics: dateMaterial(input.temporalSemantics),
+            validFrom: dateMaterial(input.validFrom),
+            validUntil: dateMaterial(input.validUntil),
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["relationship:update"],
+          async (scopedContext) => {
+            const outcome = await createRelationshipsService(
+              scopedContext,
+            ).update({ ...input, idempotencyKey: null });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                outcome.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The relationship could not be updated.",
+              );
+            }
+            return {
+              relationshipId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayRelationship(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       return writeTransaction(context, async (transaction) => {
         const scoped = createRelationshipsRepository(
           transaction as unknown as typeof context.database,
@@ -990,16 +1176,64 @@ export function createRelationshipsService(context: ResearchServiceContext) {
     async archive(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<RelationshipRow>> {
       const current = await repository.get({
         workspaceId: context.workspaceId,
         id: input.id,
       });
-      if (!current || !(await visible(current)))
+      if (
+        (!current && input.idempotencyKey == null) ||
+        (current && !(await visible(current)))
+      )
         throw createGraphQLError(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent relationship archives are not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + RELATIONSHIP_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "relationship.archive.graphql",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["relationship:delete"],
+          async (scopedContext) => {
+            const outcome = await createRelationshipsService(
+              scopedContext,
+            ).archive({ ...input, idempotencyKey: null });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The relationship could not be archived.",
+              );
+            }
+            return {
+              relationshipId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayRelationship(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const now = new Date();
       const row = await writeTransaction(context, async (transaction) => {
         const scoped = createRelationshipsRepository(
