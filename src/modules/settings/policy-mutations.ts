@@ -495,28 +495,34 @@ export function createPolicyMutationService(input: {
       state: "draft" | "active" | "disabled" | "archived";
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
+        const normalizedName = normalizePolicyName(inputValue.name);
+        const normalizedResourceKinds = validateResourceKinds(
+          inputValue.resourceKinds,
+        );
+        const normalizedRoleBindings = validateRoleBindings(
+          inputValue.roleBindings,
+        );
         return idempotentMutation({
           actor,
           key: inputValue.idempotencyKey,
           material: {
-            name: inputValue.name,
-            resourceKinds: inputValue.resourceKinds,
-            roleBindings: inputValue.roleBindings,
+            name: normalizedName,
+            resourceKinds: normalizedResourceKinds,
+            roleBindings: normalizedRoleBindings,
             sensitivityCeiling: inputValue.sensitivityCeiling,
             state: inputValue.state,
           },
           operation: "access_policy.create",
           transaction,
           run: async () => {
-            const name = normalizePolicyName(inputValue.name);
             const id = newId();
             await transaction.insert(accessPolicies).values({
               id,
               workspaceId: input.workspaceId,
-              name,
+              name: normalizedName,
               sensitivityCeiling: inputValue.sensitivityCeiling,
-              resourceKinds: validateResourceKinds(inputValue.resourceKinds),
-              roleBindings: validateRoleBindings(inputValue.roleBindings),
+              resourceKinds: normalizedResourceKinds,
+              roleBindings: normalizedRoleBindings,
               state: inputValue.state,
               createdBy: actor.id,
               updatedBy: actor.id,
@@ -813,7 +819,7 @@ export function createPolicyMutationService(input: {
       validFrom?: Date | null;
       validUntil?: Date | null;
       state?: "active" | "inactive" | "archived";
-      operation?: string;
+      operation?: "resource_grant.update" | "resource_grant.archive";
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
         return idempotentMutation({
