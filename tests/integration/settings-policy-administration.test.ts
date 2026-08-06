@@ -22,6 +22,7 @@ import {
   UpdateWorkspaceDefaultsDocument,
 } from "@/graphql/generated/graphql";
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
+import { people } from "@/db/schema/people";
 import { consentRecords, deletionRequests } from "@/db/schema/privacy";
 import {
   accessPolicies,
@@ -29,6 +30,7 @@ import {
   resourceGrants,
   retentionPolicies,
 } from "@/db/schema/workspaces";
+import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
 
 import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
@@ -1387,5 +1389,199 @@ liveDescribe("settings policy administration", () => {
       code: "APPLIED",
       version: 1,
     });
+  });
+
+  it("executes approved person deletion requests once and preserves redacted worker audit", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createPerson: { person: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input: { displayName: "Deletion executor subject" } },
+    });
+    const personId = created.body?.data?.createPerson.person?.id;
+    if (!personId) throw new Error("Missing deletion executor person");
+
+    const request = await fixture.execute<{
+      createDeletionRequest: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateDeletionRequest",
+      query: CreateDeletionRequestDocument,
+      variables: {
+        input: {
+          idempotencyKey: "deletion-executor-create",
+          scope: { personIds: [personId] },
+        },
+      },
+    });
+    const requestId = request.body?.data?.createDeletionRequest.id;
+    if (!requestId) throw new Error("Missing deletion request");
+    const reviewed = await fixture.execute({
+      jar: owner.jar,
+      operationName: "ReviewDeletionRequest",
+      query: ReviewDeletionRequestDocument,
+      variables: {
+        input: {
+          expectedVersion: 1,
+          id: requestId,
+          state: "APPROVED",
+        },
+      },
+    });
+    expect(reviewed.body?.errors).toBeUndefined();
+
+    await expect(
+      executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "42".repeat(32),
+        now: new Date("2026-08-06T15:00:00.000Z"),
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "42".repeat(32),
+        now: new Date("2026-08-06T15:01:00.000Z"),
+      }),
+    ).resolves.toBe(0);
+
+    const [person] = await fixture.database
+      .select({ deletedAt: people.deletedAt, status: people.status })
+      .from(people)
+      .where(eq(people.id, personId));
+    expect(person).toMatchObject({ status: "archived" });
+    expect(person?.deletedAt).toBeInstanceOf(Date);
+    const [completedRequest] = await fixture.database
+      .select({ state: deletionRequests.state })
+      .from(deletionRequests)
+      .where(eq(deletionRequests.id, requestId));
+    expect(completedRequest?.state).toBe("completed");
+    const workerAudits = await fixture.database
+      .select({
+        action: auditEvents.action,
+        redactedDiff: auditEvents.redactedDiff,
+      })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.resourceId, requestId),
+        ),
+      );
+    expect(workerAudits.map((audit) => audit.action)).toContain(
+      "deletion_request.completed",
+    );
+    expect(JSON.stringify(workerAudits)).not.toContain(personId);
+
+    const heldCreated = await fixture.execute<{
+      createPerson: { person: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input: { displayName: "Held deletion subject" } },
+    });
+    const heldPersonId = heldCreated.body?.data?.createPerson.person?.id;
+    if (!heldPersonId) throw new Error("Missing held deletion person");
+    const heldRequest = await fixture.execute<{
+      createDeletionRequest: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateDeletionRequest",
+      query: CreateDeletionRequestDocument,
+      variables: {
+        input: {
+          idempotencyKey: "deletion-executor-held-create",
+          scope: { personIds: [heldPersonId] },
+        },
+      },
+    });
+    const heldRequestId =
+      heldRequest.body?.data?.createDeletionRequest.id ?? "";
+    if (!heldRequestId) throw new Error("Missing held deletion request");
+    await fixture.execute({
+      jar: owner.jar,
+      operationName: "ReviewDeletionRequest",
+      query: ReviewDeletionRequestDocument,
+      variables: {
+        input: { expectedVersion: 1, id: heldRequestId, state: "APPROVED" },
+      },
+    });
+    await fixture.database.insert(legalHolds).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      resourceId: heldPersonId,
+      resourceKind: "person",
+      reason: "Retention hold",
+      authority: "Privacy officer",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await expect(
+      executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "42".repeat(32),
+      }),
+    ).resolves.toBe(0);
+    const [heldPerson] = await fixture.database
+      .select({ deletedAt: people.deletedAt })
+      .from(people)
+      .where(eq(people.id, heldPersonId));
+    expect(heldPerson?.deletedAt).toBeNull();
+
+    const foreign = await fixture.createActor();
+    const foreignCreated = await fixture.execute<{
+      createPerson: { person: { id: string } | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input: { displayName: "Foreign deletion subject" } },
+    });
+    const foreignPersonId = foreignCreated.body?.data?.createPerson.person?.id;
+    if (!foreignPersonId) throw new Error("Missing foreign deletion person");
+    const foreignScopeRequest = await fixture.execute<{
+      createDeletionRequest: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateDeletionRequest",
+      query: CreateDeletionRequestDocument,
+      variables: {
+        input: {
+          idempotencyKey: "deletion-executor-foreign-scope",
+          scope: { personIds: [foreignPersonId] },
+        },
+      },
+    });
+    const foreignScopeRequestId =
+      foreignScopeRequest.body?.data?.createDeletionRequest.id;
+    if (!foreignScopeRequestId)
+      throw new Error("Missing foreign-scope deletion request");
+    await fixture.execute({
+      jar: owner.jar,
+      operationName: "ReviewDeletionRequest",
+      query: ReviewDeletionRequestDocument,
+      variables: {
+        input: {
+          expectedVersion: 1,
+          id: foreignScopeRequestId,
+          state: "APPROVED",
+        },
+      },
+    });
+    await expect(
+      executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "42".repeat(32),
+      }),
+    ).resolves.toBe(0);
+    const [rejectedForeignScope] = await fixture.database
+      .select({ state: deletionRequests.state })
+      .from(deletionRequests)
+      .where(eq(deletionRequests.id, foreignScopeRequestId));
+    expect(rejectedForeignScope?.state).toBe("rejected");
   });
 });
