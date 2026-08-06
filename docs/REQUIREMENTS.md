@@ -16,7 +16,9 @@ cancellation before locking invitation/user/workspace rows. Live PostgreSQL
 acceptance proves a cancellation-first transition completes without deadlock,
 acceptance returns `UNAVAILABLE`, and no membership is created. External
 Resend/provider failure, browser responsive/RTL/zoom, and the full recipient and
-role matrix remain open.
+role matrix remain open. This bounded race evidence supersedes the earlier
+acceptance-matrix wording that listed cancellation-wins as unverified; the
+provider, browser, recipient, and role evidence is still outstanding.
 
 ## Functional requirements
 
