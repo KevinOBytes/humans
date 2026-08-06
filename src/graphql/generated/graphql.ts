@@ -350,6 +350,7 @@ export type CreateSourceInput = {
 export type CreateTagInput = {
   color?: string | null | undefined;
   description?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
   name: string;
 };
 
@@ -787,6 +788,7 @@ export type TagFilterInput = {
 };
 
 export type TagPersonInput = {
+  idempotencyKey?: string | null | undefined;
   personId: string;
   tagId: string;
 };
@@ -814,6 +816,11 @@ export type TemporalSemantics =
 export type UnmergePersonInput = {
   expectedVersion: number;
   loserPersonId: string;
+};
+
+export type UntagPersonInput = {
+  personId: string;
+  tagId: string;
 };
 
 export type UpdateAccessPolicyInput = {
@@ -3719,7 +3726,7 @@ export type TagPersonMutation = {
 };
 
 export type UntagPersonMutationVariables = Exact<{
-  input: TagPersonInput;
+  input: UntagPersonInput;
 }>;
 
 export type UntagPersonMutation = {
@@ -8581,7 +8588,7 @@ export const TagPersonDocument = new TypedDocumentString(
 >;
 export const UntagPersonDocument = new TypedDocumentString(
   `
-    mutation UntagPerson($input: TagPersonInput!) {
+    mutation UntagPerson($input: UntagPersonInput!) {
   untagPerson(input: $input) {
     personTag {
       id
@@ -8601,7 +8608,7 @@ export const UntagPersonDocument = new TypedDocumentString(
   path
 }`,
   {
-    hash: "sha256:8e1d6092bd35e82349da826c0e89a2692a749fe5fddc8b554e753ca7aea70e02",
+    hash: "sha256:91686eda538ef34d899cf2dfb65bf064b4374fa9bb0d7d0ac1b931911df26fea",
   },
 ) as unknown as TypedDocumentString<
   UntagPersonMutation,
