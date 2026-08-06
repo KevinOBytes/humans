@@ -989,7 +989,7 @@ mutation TagPerson($input: TagPersonInput!) {
   }
 }
 
-mutation UntagPerson($input: TagPersonInput!) {
+mutation UntagPerson($input: UntagPersonInput!) {
   untagPerson(input: $input) {
     personTag {
       id

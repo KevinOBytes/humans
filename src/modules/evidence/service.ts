@@ -109,12 +109,74 @@ function versionIssue(value: number): ValidationIssue[] {
 const EVIDENCE_CREATE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const EVIDENCE_REFERENCE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const TAG_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const TAG_REFERENCE_UUID = EVIDENCE_REFERENCE_UUID;
 
 type EvidenceCreateOutcome = MutationOutcome<EvidenceItemRow>;
 type EvidenceCreateResponseReference = ResearchResponseReference & {
   readonly evidenceId: string | null;
   readonly outcome?: string;
 };
+
+type TagMutationOutcome<T> = MutationOutcome<T>;
+type TagCreateResponseReference = ResearchResponseReference & {
+  readonly tagId?: string | null;
+  readonly outcome?: string;
+};
+type PersonTagResponseReference = ResearchResponseReference & {
+  readonly personTagId?: string | null;
+  readonly outcome?: string;
+};
+
+function encodeTagMutationOutcome<T>(result: TagMutationOutcome<T>): string {
+  return JSON.stringify({
+    code: result.code,
+    currentVersion: result.currentVersion ?? null,
+    issues: result.issues,
+  });
+}
+
+function decodeTagMutationOutcome<T>(value: string): TagMutationOutcome<T> {
+  try {
+    const parsed = JSON.parse(value) as {
+      code?: unknown;
+      currentVersion?: unknown;
+      issues?: unknown;
+    };
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.issues) ||
+      (parsed.code !== null && typeof parsed.code !== "string") ||
+      (parsed.currentVersion !== null &&
+        parsed.currentVersion !== undefined &&
+        !Number.isInteger(parsed.currentVersion))
+    ) {
+      throw new Error("invalid outcome");
+    }
+    return {
+      resource: null,
+      issues: parsed.issues as ValidationIssue[],
+      code: parsed.code as TagMutationOutcome<T>["code"],
+      ...(parsed.currentVersion === undefined || parsed.currentVersion === null
+        ? {}
+        : { currentVersion: parsed.currentVersion as number }),
+    };
+  } catch {
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "The stored tag mutation result is invalid.",
+    );
+  }
+}
+
+function isUniqueConstraintViolation(error: unknown): boolean {
+  const candidate = error as {
+    code?: unknown;
+    cause?: { code?: unknown };
+  };
+  return candidate?.code === "23505" || candidate?.cause?.code === "23505";
+}
 
 function evidenceCreateRequestMaterial(input: {
   sourceId: string;
@@ -2179,6 +2241,8 @@ export function createEvidenceService(context: ResearchServiceContext) {
       name: string;
       color?: string | null;
       description?: string | null;
+      /** Optional; supplied keys are durable and principal-bound. */
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<TagRow>> {
       const name = normalizeHumanText(input.name, {
         path: ["name"],
@@ -2189,35 +2253,100 @@ export function createEvidenceService(context: ResearchServiceContext) {
       const color = validateColor(input.color, ["color"]);
       const issues = [...name.issues, ...normalized.issues, ...color.issues];
       if (issues.length) return invalid(issues);
-      try {
-        const row = await context.database.transaction(async (tx) => {
+
+      const persist = async (writeContext: ResearchServiceContext) =>
+        withResearchWriteTransaction(writeContext, async (tx) => {
           const scoped = createEvidenceRepository(
-            tx as unknown as typeof context.database,
+            tx as unknown as typeof writeContext.database,
           );
           const created = await scoped.createTag({
-            workspaceId: context.workspaceId,
+            workspaceId: writeContext.workspaceId,
             value: {
               id: newId(),
               name: name.value!,
               normalizedName: normalized.value!,
               color: color.value,
               description: input.description?.normalize("NFKC").trim() || null,
-              createdBy: context.actor.principalId,
-              updatedBy: context.actor.principalId,
+              createdBy: writeContext.actor.principalId,
+              updatedBy: writeContext.actor.principalId,
             },
           });
-          await audit.write(tx as unknown as typeof context.database, {
-            action: "tag.create",
-            resourceKind: "tag",
-            resourceId: created.id,
-            changedFields: ["name", "color", "description"],
-            metadata: { version: created.version },
-          });
+          if (!created) return null;
+          await createAuditService(writeContext).write(
+            tx as unknown as typeof writeContext.database,
+            {
+              action: "tag.create",
+              resourceKind: "tag",
+              resourceId: created.id,
+              changedFields: ["name", "color", "description"],
+              metadata: { version: created.version },
+            },
+          );
           return created;
         });
-        return { resource: row, issues: [], code: null };
+
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Tag creation idempotency is not configured.",
+          );
+        }
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + TAG_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "tag.create.graphql",
+          requestMaterial: {
+            color: color.value ?? null,
+            description: input.description?.normalize("NFKC").trim() || null,
+            name: name.value!,
+            normalizedName: normalized.value!,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["tag:create"],
+          async (scopedContext): Promise<TagCreateResponseReference> => {
+            const created = await persist(scopedContext);
+            return created
+              ? { tagId: created.id }
+              : {
+                  tagId: null,
+                  outcome: encodeTagMutationOutcome<TagRow>(conflict()),
+                };
+          },
+        );
+        const reference = executed.responseReference;
+        if (typeof reference.outcome === "string")
+          return decodeTagMutationOutcome<TagRow>(reference.outcome);
+        if (
+          typeof reference.tagId !== "string" ||
+          !TAG_REFERENCE_UUID.test(reference.tagId)
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored tag mutation reference is invalid.",
+          );
+        }
+        const tag = await repository.getTag({
+          id: reference.tagId,
+          workspaceId: context.workspaceId,
+        });
+        if (!tag)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        return { resource: tag, issues: [], code: null };
+      }
+      try {
+        const row = await persist(context);
+        return row ? { resource: row, issues: [], code: null } : conflict();
       } catch (error) {
-        if ((error as { code?: string }).code === "23505") return conflict();
+        if (isUniqueConstraintViolation(error)) return conflict();
         throw error;
       }
     },
@@ -2339,7 +2468,70 @@ export function createEvidenceService(context: ResearchServiceContext) {
     async tagPerson(input: {
       personId: string;
       tagId: string;
+      /** Optional; supplied keys are durable and principal-bound. */
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonTagRow>> {
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Person tag idempotency is not configured.",
+          );
+        }
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + TAG_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "tag.person.graphql",
+          requestMaterial: {
+            personId: input.personId,
+            tagId: input.tagId,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["tag:update", "person:update"],
+          async (scopedContext): Promise<PersonTagResponseReference> => {
+            const result = await createEvidenceService(scopedContext).tagPerson(
+              {
+                personId: input.personId,
+                tagId: input.tagId,
+              },
+            );
+            return result.resource
+              ? { personTagId: result.resource.id }
+              : {
+                  personTagId: null,
+                  outcome: encodeTagMutationOutcome(result),
+                };
+          },
+        );
+        const reference = executed.responseReference;
+        if (typeof reference.outcome === "string")
+          return decodeTagMutationOutcome<PersonTagRow>(reference.outcome);
+        if (
+          typeof reference.personTagId !== "string" ||
+          !TAG_REFERENCE_UUID.test(reference.personTagId)
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored person tag mutation reference is invalid.",
+          );
+        }
+        const personTag = await repository.getPersonTag({
+          workspaceId: context.workspaceId,
+          personId: input.personId,
+          tagId: input.tagId,
+        });
+        if (!personTag || personTag.id !== reference.personTagId)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        return { resource: personTag, issues: [], code: null };
+      }
       return tagAssociation("person", input.personId, input.tagId) as Promise<
         MutationOutcome<PersonTagRow>
       >;
