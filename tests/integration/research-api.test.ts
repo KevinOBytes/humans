@@ -720,6 +720,119 @@ liveDescribe("research API", () => {
     expect(hidden.body?.data).toEqual({ person: null });
   });
 
+  it("replays merge and unmerge idempotency without duplicate audits", async () => {
+    const owner = await fixture.createActor();
+    const winner = await fixture.createPerson(owner, {
+      displayName: "Merge winner",
+    });
+    const loser = await fixture.createPerson(owner, {
+      displayName: "Merge loser",
+    });
+    const winnerId = required(winner.body?.data?.createPerson?.person?.id);
+    const loserId = required(loser.body?.data?.createPerson?.person?.id);
+    const mergeInput = {
+      idempotencyKey: "person-merge-replay-v1",
+      loserPersonId: loserId,
+      reason: "Deterministic duplicate identity evidence.",
+      winnerPersonId: winnerId,
+    };
+    const merge = () =>
+      fixture.execute<{
+        mergePerson: {
+          code: string | null;
+          person: { id: string; version: number } | null;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "MergePerson",
+        query: MergePersonDocument,
+        variables: { input: mergeInput },
+      });
+    const [merged, replayedMerge] = await Promise.all([merge(), merge()]);
+    expect(merged.body?.errors).toBeUndefined();
+    expect(replayedMerge.body?.errors).toBeUndefined();
+    const mergedPerson = required(merged.body?.data?.mergePerson.person);
+    expect(replayedMerge.body?.data?.mergePerson.person).toEqual(mergedPerson);
+
+    const loserAfterMerge = await fixture.execute<{
+      person: { id: string; status: string; version: number } | null;
+    }>({
+      jar: owner.jar,
+      query: /* GraphQL */ `
+        query PersonForUnmerge($id: UUID!) {
+          person(id: $id) {
+            id
+            status
+            version
+          }
+        }
+      `,
+      operationName: "PersonForUnmerge",
+      variables: { id: loserId },
+    });
+    const mergedLoser = required(loserAfterMerge.body?.data?.person);
+    expect(mergedLoser.status).toBe("MERGED");
+
+    const unmergeInput = {
+      expectedVersion: mergedLoser.version,
+      idempotencyKey: "person-unmerge-replay-v1",
+      loserPersonId: loserId,
+    };
+    const unmerge = () =>
+      fixture.execute<{
+        unmergePerson: {
+          code: string | null;
+          person: { id: string; version: number } | null;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "UnmergePerson",
+        query: /* GraphQL */ `
+          mutation UnmergePerson($input: UnmergePersonInput!) {
+            unmergePerson(input: $input) {
+              code
+              person {
+                id
+                version
+              }
+            }
+          }
+        `,
+        variables: { input: unmergeInput },
+      });
+    const [unmerged, replayedUnmerge] = await Promise.all([
+      unmerge(),
+      unmerge(),
+    ]);
+    expect(unmerged.body?.errors).toBeUndefined();
+    expect(replayedUnmerge.body?.errors).toBeUndefined();
+    const unmergedPerson = required(unmerged.body?.data?.unmergePerson.person);
+    expect(replayedUnmerge.body?.data?.unmergePerson.person).toEqual(
+      unmergedPerson,
+    );
+
+    const mergeAudits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.action, "person.merge"),
+        ),
+      );
+    const unmergeAudits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.action, "person.unmerge"),
+        ),
+      );
+    expect(mergeAudits).toHaveLength(1);
+    expect(unmergeAudits).toHaveLength(1);
+  });
+
   it("applies closed typed filters before tenant-scoped limits", async () => {
     const owner = await fixture.createActor();
     const foreign = await fixture.createActor();

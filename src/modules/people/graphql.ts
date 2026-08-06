@@ -459,6 +459,7 @@ const PersonFilterInput = builder.inputType("PersonFilterInput", {
 
 const MergePersonInput = builder.inputType("MergePersonInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     winnerPersonId: t.field({ type: "UUID", required: true }),
     loserPersonId: t.field({ type: "UUID", required: true }),
     reason: t.string({ required: true }),
@@ -466,6 +467,7 @@ const MergePersonInput = builder.inputType("MergePersonInput", {
 });
 const UnmergePersonInput = builder.inputType("UnmergePersonInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     loserPersonId: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
   }),

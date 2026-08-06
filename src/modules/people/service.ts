@@ -1214,6 +1214,7 @@ export function createPeopleService(context: ResearchServiceContext) {
       winnerPersonId: string;
       loserPersonId: string;
       reason: string;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonRow>> {
       if (!context.permissions.has("person:merge")) {
         throw createGraphQLError(
@@ -1229,6 +1230,50 @@ export function createPeopleService(context: ResearchServiceContext) {
           "VALIDATION_FAILED",
           "A distinct winner, loser, and reason are required.",
         );
+      }
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person merges are not configured.",
+          );
+        }
+        const idempotency = deriveResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person.merge",
+          requestMaterial: {
+            loserPersonId: input.loserPersonId,
+            reason: input.reason.trim(),
+            winnerPersonId: input.winnerPersonId,
+          },
+          secret,
+        });
+        const result = await runIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:merge"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(scopedContext).merge({
+              loserPersonId: input.loserPersonId,
+              reason: input.reason,
+              winnerPersonId: input.winnerPersonId,
+            });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The people were changed by another request.",
+              );
+            }
+            return {
+              personId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        const replayed = await replayPerson(result.responseReference);
+        return { resource: replayed, issues: [], code: null };
       }
       const merged = await writeTransaction(context, async (transaction) => {
         await transaction.execute(
@@ -1799,12 +1844,57 @@ export function createPeopleService(context: ResearchServiceContext) {
     async unmerge(input: {
       loserPersonId: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonRow>> {
       if (!context.permissions.has("person:merge")) {
         throw createGraphQLError(
           "FORBIDDEN",
           "Person merging is not permitted.",
         );
+      }
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person unmerges are not configured.",
+          );
+        }
+        const versionIssues = validateVersion(input.expectedVersion);
+        if (versionIssues.length) return invalid(versionIssues);
+        const idempotency = deriveResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person.unmerge",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            loserPersonId: input.loserPersonId,
+          },
+          secret,
+        });
+        const result = await runIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:merge"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(scopedContext).unmerge({
+              expectedVersion: input.expectedVersion,
+              loserPersonId: input.loserPersonId,
+            });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person was changed by another request.",
+              );
+            }
+            return {
+              personId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        const replayed = await replayPerson(result.responseReference);
+        return { resource: replayed, issues: [], code: null };
       }
       const restored = await writeTransaction(context, async (transaction) => {
         await transaction.execute(
