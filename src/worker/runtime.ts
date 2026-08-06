@@ -27,6 +27,7 @@ import {
 } from "@/worker/handlers/import";
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 import { createExtractionHandler } from "@/worker/handlers/extraction";
+import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
 import {
   purgeExpiredAiEphemeralInputs,
   purgeExpiredAiThreads,
@@ -182,6 +183,12 @@ export function createRuntimeJobRunner(input: {
           limit: 1,
         });
     if (!options.signal?.aborted) {
+      await executeApprovedDeletionRequests({
+        database: input.database,
+        encryptionKey: input.env.DATA_ENCRYPTION_KEY,
+        limit: 100,
+        searchIndexMaintenance,
+      });
       await purgeExpiredAiEphemeralInputs({
         database: input.database,
         limit: 100,
