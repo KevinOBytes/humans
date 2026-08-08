@@ -190,20 +190,21 @@ export function canonicalizeAiBaseUrl(input: CanonicalAiBaseUrlInput): string {
   } catch {
     throw new TypeError("AI_BASE_URL is invalid");
   }
-  if (
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    (url.pathname !== "/v1" && url.pathname !== "/v1/")
-  ) {
+  const hostname = stripIpv6Brackets(url.hostname).toLowerCase();
+  const openRouterEndpoint =
+    input.provider === "compatible" && hostname === "openrouter.ai";
+  const validPath =
+    url.pathname === "/v1" ||
+    url.pathname === "/v1/" ||
+    (openRouterEndpoint &&
+      (url.pathname === "/api/v1" || url.pathname === "/api/v1/"));
+  if (url.username || url.password || url.search || url.hash || !validPath) {
     throw new TypeError("AI_BASE_URL is invalid");
   }
   if (input.apiKey && url.protocol !== "https:") {
     throw new TypeError("AI_BASE_URL must use HTTPS when a key is configured");
   }
 
-  const hostname = stripIpv6Brackets(url.hostname).toLowerCase();
   if (input.provider === "openai") {
     if (
       url.protocol !== "https:" ||
@@ -233,7 +234,7 @@ export function canonicalizeAiBaseUrl(input: CanonicalAiBaseUrlInput): string {
     }
   }
 
-  url.pathname = "/v1";
+  url.pathname = openRouterEndpoint ? "/api/v1" : "/v1";
   url.search = "";
   url.hash = "";
   return url.href.replace(/\/$/u, "");

@@ -184,6 +184,8 @@ const commonServerEnv = z.object({
   AI_PROVIDER: z.enum(["openai", "ollama", "compatible"]),
   AI_BASE_URL: z.string().min(1),
   AI_API_KEY: z.string().optional(),
+  /** Vercel/OpenRouter integrations commonly provision this legacy key name. */
+  OPEN_ROUTER_KEY: z.string().optional(),
   AI_MODEL: z.string().min(1),
 });
 
@@ -229,6 +231,15 @@ export const serverEnvSchema = z
         message:
           "Trusted proxy mode does not match the deployment configuration",
       });
+    }
+
+    if (
+      !env.AI_API_KEY &&
+      env.OPEN_ROUTER_KEY &&
+      env.AI_PROVIDER === "compatible" &&
+      /^https:\/\/(?:[^/]+\.)?openrouter\.ai(?:\/|$)/iu.test(env.AI_BASE_URL)
+    ) {
+      env.AI_API_KEY = env.OPEN_ROUTER_KEY;
     }
 
     if (env.AI_PROVIDER !== "ollama" && !env.AI_API_KEY) {
