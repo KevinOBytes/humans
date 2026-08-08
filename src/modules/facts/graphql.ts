@@ -615,6 +615,8 @@ const CreateFactRelationshipInput = builder.inputType(
   "CreateFactRelationshipInput",
   {
     fields: (t) => ({
+      /** Optional for backwards compatibility; supplied keys are durable. */
+      idempotencyKey: t.string(),
       sourceFactId: t.field({ type: "UUID", required: true }),
       targetFactId: t.field({ type: "UUID", required: true }),
       relationshipType: t.field({ type: FactRelationshipType, required: true }),
@@ -626,6 +628,8 @@ const ArchiveFactRelationshipInput = builder.inputType(
   "ArchiveFactRelationshipInput",
   {
     fields: (t) => ({
+      /** Optional for backwards compatibility; supplied keys are durable. */
+      idempotencyKey: t.string(),
       id: t.field({ type: "UUID", required: true }),
       expectedVersion: t.int({ required: true }),
     }),
@@ -935,9 +939,13 @@ export function registerFactsGraphQL(): void {
       },
       resolve: async (_r, args, context) => {
         requirePermission(context, "fact", "update");
-        const result = await context.services.facts.createRelationship(
-          args.input,
-        );
+        const result =
+          typeof args.input.idempotencyKey === "string"
+            ? await context.services.facts.createRelationshipIdempotent({
+                ...args.input,
+                idempotencyKey: args.input.idempotencyKey,
+              })
+            : await context.services.facts.createRelationship(args.input);
         if (result.resource) context.loaders.factRelationships.clearAll();
         return { ...result, factRelationship: result.resource };
       },
@@ -949,9 +957,13 @@ export function registerFactsGraphQL(): void {
       },
       resolve: async (_r, args, context) => {
         requirePermission(context, "fact", "update");
-        const result = await context.services.facts.archiveRelationship(
-          args.input,
-        );
+        const result =
+          typeof args.input.idempotencyKey === "string"
+            ? await context.services.facts.archiveRelationshipIdempotent({
+                ...args.input,
+                idempotencyKey: args.input.idempotencyKey,
+              })
+            : await context.services.facts.archiveRelationship(args.input);
         if (result.resource) context.loaders.factRelationships.clearAll();
         return { ...result, factRelationship: result.resource };
       },
