@@ -974,6 +974,38 @@ mutation CreateTag($input: CreateTagInput!) {
   }
 }
 
+mutation UpdateTag($input: UpdateTagInput!) {
+  updateTag(input: $input) {
+    tag {
+      id
+      name
+      color
+      description
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchiveTag($input: ArchiveTagInput!) {
+  archiveTag(input: $input) {
+    tag {
+      id
+      name
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
 mutation TagPerson($input: TagPersonInput!) {
   tagPerson(input: $input) {
     personTag {
@@ -994,6 +1026,66 @@ mutation UntagPerson($input: UntagPersonInput!) {
     personTag {
       id
       personId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation TagFact($input: TagFactInput!) {
+  tagFact(input: $input) {
+    factTag {
+      id
+      factId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UntagFact($input: TagFactInput!) {
+  untagFact(input: $input) {
+    factTag {
+      id
+      factId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation TagRelationship($input: TagRelationshipInput!) {
+  tagRelationship(input: $input) {
+    relationshipTag {
+      id
+      relationshipId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UntagRelationship($input: TagRelationshipInput!) {
+  untagRelationship(input: $input) {
+    relationshipTag {
+      id
+      relationshipId
       tagId
     }
     issues {
