@@ -51,6 +51,7 @@ export type FactServiceRuntime = Readonly<{
 }>;
 
 const FACT_CREATE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const FACT_SELECT_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -60,6 +61,14 @@ function invalid<T>(issues: ValidationIssue[]): MutationOutcome<T> {
 
 function conflict<T>(currentVersion?: number): MutationOutcome<T> {
   return { resource: null, issues: [], code: "CONFLICT", currentVersion };
+}
+
+function fieldMaterial(
+  value: CanonicalRequestMaterial | undefined,
+): CanonicalRequestMaterial {
+  return value === undefined
+    ? { present: false }
+    : { present: true, value: value ?? null };
 }
 
 type FactCreateResponseReference = ResearchResponseReference & {
@@ -289,6 +298,59 @@ export function createFactsService(
         "The requested resource was not found.",
       );
     }
+  }
+
+  async function replaySelection(
+    responseReference: ResearchResponseReference,
+  ): Promise<PersonFieldSelectionRow> {
+    const selectionId = responseReference.selectionId;
+    const personId = responseReference.personId;
+    const namespace = responseReference.namespace;
+    const fieldKey = responseReference.fieldKey;
+    const version = responseReference.version;
+    if (
+      typeof selectionId !== "string" ||
+      !UUID.test(selectionId) ||
+      typeof personId !== "string" ||
+      !UUID.test(personId) ||
+      typeof namespace !== "string" ||
+      typeof fieldKey !== "string" ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    await requireVisiblePerson(personId);
+    const row = await repository.getSelection({
+      workspaceId: context.workspaceId,
+      personId,
+      namespace,
+      fieldKey,
+    });
+    if (!row || row.id !== selectionId)
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    if (row.version !== version)
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    const fact = await repository.getFact({
+      workspaceId: context.workspaceId,
+      id: row.factId,
+    });
+    if (!fact || !(await visibleFact(fact)))
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    return row;
   }
 
   return {
@@ -1584,6 +1646,7 @@ export function createFactsService(
       factId: string;
       expectedVersion?: number | null;
       selectionReason?: string | null;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonFieldSelectionRow>> {
       await requireVisiblePerson(input.personId);
       const fact = await repository.getFact({
@@ -1621,6 +1684,62 @@ export function createFactsService(
           message: "The fact does not match the selected field.",
         });
       if (issues.length > 0) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = runtime?.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Fact selection idempotency is not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + FACT_SELECT_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "fact.select.graphql",
+          requestMaterial: {
+            expectedVersion: fieldMaterial(input.expectedVersion),
+            factId: input.factId,
+            fieldKey: fieldKey.value!,
+            namespace: namespace.value!,
+            personId: input.personId,
+            selectionReason: fieldMaterial(
+              input.selectionReason === undefined
+                ? undefined
+                : selectionReason.value,
+            ),
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["fact:select", "person:update"],
+          async (scopedContext) => {
+            const outcome = await createFactsService(
+              scopedContext,
+              runtime,
+            ).selectField({ ...input, idempotencyKey: null });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                outcome.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The fact field selection could not be saved.",
+              );
+            }
+            return {
+              fieldKey: outcome.resource.fieldKey,
+              namespace: outcome.resource.namespace,
+              personId: outcome.resource.personId,
+              selectionId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replaySelection(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const existing = await repository.getSelection({
         workspaceId: context.workspaceId,
         personId: input.personId,
@@ -1634,7 +1753,7 @@ export function createFactsService(
         return conflict(existing?.version);
       const now = new Date();
       try {
-        const row = await context.database.transaction(async (transaction) => {
+        const row = await writeTransaction(context, async (transaction) => {
           const scoped = createFactsRepository(
             transaction as unknown as typeof context.database,
           );

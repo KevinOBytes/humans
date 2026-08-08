@@ -768,6 +768,7 @@ export type SelectPersonFieldInput = {
   expectedVersion?: number | null | undefined;
   factId: string;
   fieldKey: string;
+  idempotencyKey?: string | null | undefined;
   namespace: string;
   personId: string;
   selectionReason?: string | null | undefined;
