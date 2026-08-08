@@ -80,7 +80,14 @@ async function listen(
 }
 
 function json(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { "content-type": "application/json" });
+  const requestId =
+    typeof body === "object" && body !== null && "requestId" in body
+      ? String(body.requestId)
+      : undefined;
+  response.writeHead(status, {
+    "content-type": "application/json",
+    ...(requestId ? { "x-request-id": requestId } : {}),
+  });
   response.end(JSON.stringify(body));
 }
 
@@ -176,7 +183,11 @@ describe("Vercel deployment parity contract", () => {
       } else if (request.url === "/api/graphql") {
         json(response, 401, { errors: [{ message: "unauthenticated" }] });
       } else if (request.url === "/api/jobs/run") {
-        json(response, 401, { success: false });
+        json(response, 401, {
+          success: false,
+          code: "UNAUTHENTICATED",
+          requestId: "018f0000-0000-7000-8000-000000000001",
+        });
       } else {
         json(response, 404, { error: "not found" });
       }
@@ -215,7 +226,11 @@ describe("Vercel deployment parity contract", () => {
         request.url === "/api/jobs/run" &&
         request.headers.authorization === "Bearer invalid"
       ) {
-        json(response, 401, { success: false });
+        json(response, 401, {
+          success: false,
+          code: "UNAUTHENTICATED",
+          requestId: "018f0000-0000-7000-8000-000000000002",
+        });
       } else if (
         request.url === "/api/jobs/run" &&
         request.headers.authorization === `Bearer ${cronSecret}`
@@ -223,6 +238,7 @@ describe("Vercel deployment parity contract", () => {
         json(response, 200, {
           success: true,
           summary: { claimed: 0, completed: 0, deadLettered: 0, deferred: 0 },
+          requestId: "018f0000-0000-7000-8000-000000000003",
         });
       } else {
         json(response, 403, { success: false });
