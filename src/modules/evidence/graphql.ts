@@ -594,6 +594,8 @@ const NoteContentInput = builder.inputType("NoteContentInput", {
 });
 const CreateNoteInput = builder.inputType("CreateNoteInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     subject: t.field({ type: NoteSubjectInput }),
     content: t.field({ type: NoteContentInput, required: true }),
     sensitivity: t.field({ type: Sensitivity }),
@@ -601,6 +603,8 @@ const CreateNoteInput = builder.inputType("CreateNoteInput", {
 });
 const UpdateNoteInput = builder.inputType("UpdateNoteInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
     content: t.field({ type: NoteContentInput }),
@@ -609,6 +613,8 @@ const UpdateNoteInput = builder.inputType("UpdateNoteInput", {
 });
 const ArchiveNoteInput = builder.inputType("ArchiveNoteInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
   }),
