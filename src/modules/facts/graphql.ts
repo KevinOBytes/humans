@@ -588,6 +588,8 @@ const CreateFactInput = builder.inputType("CreateFactInput", {
 });
 const ReviseFactInput = builder.inputType("ReviseFactInput", {
   fields: (t) => ({
+    /** Optional for backwards compatibility; supplied keys are durable. */
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
     value: t.field({ type: FactValueInput }),
@@ -899,7 +901,13 @@ export function registerFactsGraphQL(): void {
       args: { input: t.arg({ type: ReviseFactInput, required: true }) },
       resolve: async (_r, args, context) => {
         requirePermission(context, "fact", "update");
-        const result = await context.services.facts.revise(args.input);
+        const result =
+          typeof args.input.idempotencyKey === "string"
+            ? await context.services.facts.reviseIdempotent({
+                ...args.input,
+                idempotencyKey: args.input.idempotencyKey,
+              })
+            : await context.services.facts.revise(args.input);
         if (result.resource) {
           invalidateVisibilityDependentLoaders(context.loaders, {
             kind: "fact",

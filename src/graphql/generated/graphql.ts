@@ -700,6 +700,7 @@ export type ReviseFactInput = {
   confidence?: number | null | undefined;
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
   reviewState?: FactReviewState | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   state?: FactState | null | undefined;

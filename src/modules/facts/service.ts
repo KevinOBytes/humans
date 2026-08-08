@@ -51,6 +51,7 @@ export type FactServiceRuntime = Readonly<{
 }>;
 
 const FACT_CREATE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const FACT_REVISE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const FACT_SELECT_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -76,6 +77,10 @@ type FactCreateResponseReference = ResearchResponseReference & {
   readonly outcome?: string;
 };
 type SelectionResponseReference = ResearchResponseReference & {
+  readonly outcome?: string;
+};
+type FactReviseResponseReference = ResearchResponseReference & {
+  readonly factId?: string;
   readonly outcome?: string;
 };
 
@@ -137,6 +142,66 @@ function factCreateRequestMaterial(
       unit: input.value.unit ?? null,
     },
   };
+}
+
+function factReviseRequestMaterial(input: {
+  id: string;
+  expectedVersion: number;
+  value?: FactValueInput | null;
+  state?: string | null;
+  confidence?: number | null;
+  reviewState?: string | null;
+  sensitivity?: string | null;
+  changeReason?: string | null;
+}): Readonly<Record<string, CanonicalRequestMaterial>> {
+  const date = (value: unknown): string | null =>
+    value instanceof Date
+      ? value.toISOString()
+      : typeof value === "string"
+        ? value
+        : null;
+  const value = input.value;
+  return {
+    changeReason: fieldMaterial(input.changeReason),
+    confidence: fieldMaterial(input.confidence),
+    expectedVersion: input.expectedVersion,
+    id: input.id,
+    reviewState: fieldMaterial(input.reviewState),
+    sensitivity: fieldMaterial(input.sensitivity),
+    state: fieldMaterial(input.state),
+    value: fieldMaterial(
+      value === undefined
+        ? undefined
+        : {
+            boolean: value?.boolean ?? null,
+            dateEnd: date(value?.dateEnd),
+            dateStart: date(value?.dateStart),
+            decimal: value?.decimal ?? null,
+            fileId: value?.fileId ?? null,
+            json: (value?.json ?? null) as CanonicalRequestMaterial,
+            placeId: value?.placeId ?? null,
+            referencedPersonId: value?.referencedPersonId ?? null,
+            text: value?.text ?? null,
+            timestamp: date(value?.timestamp),
+            unit: value?.unit ?? null,
+          },
+    ),
+  };
+}
+
+function encodeFactReviseOutcome(result: FactOutcome): string {
+  return encodeFactCreateOutcome(result);
+}
+
+function decodeFactReviseOutcome(value: string): FactOutcome {
+  try {
+    return decodeFactCreateOutcome(value);
+  } catch {
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "The stored fact revision result is invalid.",
+    );
+  }
 }
 
 function encodeFactCreateOutcome(result: FactOutcome): string {
@@ -1648,6 +1713,81 @@ export function createFactsService(
         ]);
         return { resource: updated, issues: [], code: null };
       });
+    },
+    async reviseIdempotent(
+      input: {
+        id: string;
+        expectedVersion: number;
+        value?: FactValueInput | null;
+        state?: string | null;
+        confidence?: number | null;
+        reviewState?: string | null;
+        sensitivity?: string | null;
+        changeReason?: string | null;
+      } & { idempotencyKey: string },
+    ): Promise<FactOutcome> {
+      if (!runtime?.idempotencyHmacKey) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "Fact revision idempotency is not configured.",
+        );
+      }
+      const reviseInput = {
+        id: input.id,
+        expectedVersion: input.expectedVersion,
+        value: input.value,
+        state: input.state,
+        confidence: input.confidence,
+        reviewState: input.reviewState,
+        sensitivity: input.sensitivity,
+        changeReason: input.changeReason,
+      };
+      const idempotency = derivePrincipalResearchIdempotency(context, {
+        expiresAt: new Date(Date.now() + FACT_REVISE_IDEMPOTENCY_TTL_MS),
+        idempotencyKey: input.idempotencyKey,
+        operation: "fact.revise.graphql",
+        requestMaterial: factReviseRequestMaterial(reviseInput),
+        secret: runtime.idempotencyHmacKey,
+      });
+      const executed = await runPrincipalIdempotentResearchWrite(
+        context,
+        idempotency,
+        ["fact:update"],
+        async (scopedContext): Promise<FactReviseResponseReference> => {
+          const result = await createFactsService(
+            scopedContext,
+            runtime,
+          ).revise(reviseInput);
+          if (!result.resource) {
+            return { outcome: encodeFactReviseOutcome(result) };
+          }
+          return { factId: result.resource.id };
+        },
+      );
+      const reference = executed.responseReference;
+      if (typeof reference.outcome === "string") {
+        return decodeFactReviseOutcome(reference.outcome);
+      }
+      if (
+        typeof reference.factId !== "string" ||
+        !UUID.test(reference.factId)
+      ) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "The stored fact revision result is invalid.",
+        );
+      }
+      const fact = await repository.getFact({
+        id: reference.factId,
+        workspaceId: context.workspaceId,
+      });
+      if (!fact || !(await visibleFact(fact))) {
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      }
+      return { resource: fact, issues: [], code: null };
     },
     async listRevisions(input: {
       factId: string;
