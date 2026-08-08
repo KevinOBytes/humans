@@ -52,6 +52,7 @@ export type ArchiveGraphViewInput = {
 export type ArchiveNoteInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type ArchivePersonAddressInput = {
@@ -204,6 +205,7 @@ export type CreateLegalHoldInput = {
 
 export type CreateNoteInput = {
   content: NoteContentInput;
+  idempotencyKey?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   subject?: NoteSubjectInput | null | undefined;
 };
@@ -875,6 +877,7 @@ export type UpdateNoteInput = {
   content?: NoteContentInput | null | undefined;
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
 };
 

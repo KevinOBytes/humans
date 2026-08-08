@@ -111,6 +111,32 @@ const EVIDENCE_REFERENCE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const TAG_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const TAG_REFERENCE_UUID = EVIDENCE_REFERENCE_UUID;
+const NOTE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const NOTE_REFERENCE_UUID = EVIDENCE_REFERENCE_UUID;
+
+function fieldMaterial(
+  value: CanonicalRequestMaterial | undefined,
+): CanonicalRequestMaterial {
+  return value === undefined
+    ? { present: false }
+    : { present: true, value: value ?? null };
+}
+
+function noteContentMaterial(
+  value:
+    { plainText?: string | null; markdown?: string | null } | null | undefined,
+): CanonicalRequestMaterial {
+  return fieldMaterial(
+    value === undefined
+      ? undefined
+      : value === null
+        ? null
+        : {
+            markdown: value.markdown ?? null,
+            plainText: value.plainText ?? null,
+          },
+  );
+}
 
 type EvidenceCreateOutcome = MutationOutcome<EvidenceItemRow>;
 type EvidenceCreateResponseReference = ResearchResponseReference & {
@@ -134,6 +160,10 @@ type PersonTagResponseReference = ResearchResponseReference & {
 type TagAssociationResponseReference = ResearchResponseReference & {
   readonly associationId?: string | null;
   readonly outcome?: string;
+};
+type NoteResponseReference = ResearchResponseReference & {
+  readonly noteId: string;
+  readonly version: number;
 };
 
 function encodeTagMutationOutcome<T>(result: TagMutationOutcome<T>): string {
@@ -459,6 +489,47 @@ export function createEvidenceService(context: ResearchServiceContext) {
             ),
         )
       : subjectVisible(subject.kind, subject.id);
+  }
+
+  async function replayNote(
+    responseReference: ResearchResponseReference,
+  ): Promise<NoteRow> {
+    const noteId = responseReference.noteId;
+    const version = responseReference.version;
+    if (
+      typeof noteId !== "string" ||
+      !NOTE_REFERENCE_UUID.test(noteId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    const [row] = await context.database
+      .select()
+      .from(notes)
+      .where(
+        and(eq(notes.workspaceId, context.workspaceId), eq(notes.id, noteId)),
+      )
+      .limit(1);
+    if (
+      !row ||
+      !(await visible("note", row)) ||
+      !(await noteSubjectAccessible(row))
+    )
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    if (row.version !== version)
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    return row;
   }
 
   async function requireNoteSubjectMutation(
@@ -1984,6 +2055,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
       } | null;
       content: { plainText?: string | null; markdown?: string | null };
       sensitivity?: string | null;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<NoteRow>> {
       const subject = input.subject ?? {};
       const subjects = (
@@ -2010,6 +2082,60 @@ export function createEvidenceService(context: ResearchServiceContext) {
         );
       if (subject.evidenceItemId)
         await requireNoteSubjectMutation("evidence", subject.evidenceItemId);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Note creation idempotency is not configured.",
+          );
+        }
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + NOTE_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "note.create.graphql",
+          requestMaterial: {
+            content: noteContentMaterial(input.content),
+            sensitivity: fieldMaterial(input.sensitivity),
+            subject: fieldMaterial(
+              input.subject === undefined
+                ? undefined
+                : {
+                    evidenceItemId: input.subject?.evidenceItemId ?? null,
+                    factId: input.subject?.factId ?? null,
+                    personId: input.subject?.personId ?? null,
+                    relationshipId: input.subject?.relationshipId ?? null,
+                  },
+            ),
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["note:create"],
+          async (scopedContext): Promise<NoteResponseReference> => {
+            const result = await createEvidenceService(
+              scopedContext,
+            ).createNote({ ...input, idempotencyKey: null });
+            if (!result.resource) {
+              throw createGraphQLError(
+                result.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The note could not be created.",
+              );
+            }
+            return {
+              noteId: result.resource.id,
+              version: result.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayNote(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
@@ -2065,6 +2191,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
       expectedVersion: number;
       content?: { plainText?: string | null; markdown?: string | null } | null;
       sensitivity?: string | null;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<NoteRow>> {
       const current = await repository.getNote({
         workspaceId: context.workspaceId,
@@ -2098,6 +2225,52 @@ export function createEvidenceService(context: ResearchServiceContext) {
         changed.push("sensitivity");
       }
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Note update idempotency is not configured.",
+          );
+        }
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + NOTE_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "note.update.graphql",
+          requestMaterial: {
+            content: noteContentMaterial(input.content),
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            sensitivity: fieldMaterial(input.sensitivity),
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["note:update"],
+          async (scopedContext): Promise<NoteResponseReference> => {
+            const result = await createEvidenceService(
+              scopedContext,
+            ).updateNote({ ...input, idempotencyKey: null });
+            if (!result.resource) {
+              throw createGraphQLError(
+                result.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The note could not be updated.",
+              );
+            }
+            return {
+              noteId: result.resource.id,
+              version: result.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayNote(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
@@ -2135,6 +2308,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
     async archiveNote(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<NoteRow>> {
       const current = await repository.getNote({
         workspaceId: context.workspaceId,
@@ -2151,6 +2325,50 @@ export function createEvidenceService(context: ResearchServiceContext) {
         );
       const issues = versionIssue(input.expectedVersion);
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Note archive idempotency is not configured.",
+          );
+        }
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + NOTE_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "note.archive.graphql",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["note:delete"],
+          async (scopedContext): Promise<NoteResponseReference> => {
+            const result = await createEvidenceService(
+              scopedContext,
+            ).archiveNote({ ...input, idempotencyKey: null });
+            if (!result.resource) {
+              throw createGraphQLError(
+                result.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The note could not be archived.",
+              );
+            }
+            return {
+              noteId: result.resource.id,
+              version: result.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayNote(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
