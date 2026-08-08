@@ -6,6 +6,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { factDefinitions, factRevisions, facts } from "@/db/schema/facts";
 import { files } from "@/db/schema/files";
+import { locationMutationIdempotency } from "@/db/schema/locations";
 import {
   CreateFactDefinitionDocument,
   CreateFactDocument,
@@ -1790,6 +1791,140 @@ liveDescribe("research API", () => {
         .from(factEvidence)
         .where(eq(factEvidence.factId, firstId)),
     ).toEqual([{ evidenceItemId: linkedEvidenceId }]);
+  });
+
+  it("replays concurrent fact revisions without duplicate writes", async () => {
+    const owner = await fixture.createActor();
+    const person = await fixture.createPerson(owner, {
+      displayName: "Idempotent revision subject",
+    });
+    const personId = required(person.body?.data?.createPerson?.person?.id);
+    const definition = await fixture.execute<{
+      createFactDefinition: { factDefinition: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: /* GraphQL */ `
+        mutation ($input: CreateFactDefinitionInput!) {
+          createFactDefinition(input: $input) {
+            factDefinition {
+              id
+            }
+          }
+        }
+      `,
+      variables: {
+        input: {
+          namespace: "idempotent-revision",
+          fieldKey: "confidence",
+          label: "Confidence",
+          allowedValueType: "DECIMAL",
+          state: "ACTIVE",
+        },
+      },
+    });
+    const definitionId = required(
+      definition.body?.data?.createFactDefinition.factDefinition?.id,
+    );
+    const created = await fixture.execute<{
+      createFact: { fact: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: /* GraphQL */ `
+        mutation ($input: CreateFactInput!) {
+          createFact(input: $input) {
+            fact {
+              id
+            }
+          }
+        }
+      `,
+      variables: { input: { personId, definitionId, value: { decimal: 0.4 } } },
+    });
+    const factId = required(created.body?.data?.createFact.fact?.id);
+    const revise = () =>
+      fixture.execute<{
+        reviseFact: {
+          code: string | null;
+          fact: { id: string; version: number } | null;
+        };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation ($input: ReviseFactInput!) {
+            reviseFact(input: $input) {
+              code
+              fact {
+                id
+                version
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            id: factId,
+            expectedVersion: 1,
+            confidence: 0.9,
+            changeReason: "Idempotent correction",
+            idempotencyKey: "fact-revise-replay-v1",
+          },
+        },
+      });
+    const [first, replay] = await Promise.all([revise(), revise()]);
+    expect(first.body?.errors).toBeUndefined();
+    expect(replay.body?.errors).toBeUndefined();
+    expect(first.body?.data?.reviseFact).toEqual({
+      code: null,
+      fact: { id: factId, version: 2 },
+    });
+    expect(replay.body?.data?.reviseFact).toEqual(first.body?.data?.reviseFact);
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.resourceId, factId),
+            eq(auditEvents.action, "fact.revise"),
+          ),
+        ),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: locationMutationIdempotency.id })
+        .from(locationMutationIdempotency)
+        .where(
+          and(
+            eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+            eq(locationMutationIdempotency.operation, "fact.revise.graphql"),
+          ),
+        ),
+    ).toHaveLength(1);
+    const changed = await fixture.execute({
+      jar: owner.jar,
+      query: /* GraphQL */ `
+        mutation ($input: ReviseFactInput!) {
+          reviseFact(input: $input) {
+            code
+            fact {
+              id
+              version
+            }
+          }
+        }
+      `,
+      variables: {
+        input: {
+          id: factId,
+          expectedVersion: 1,
+          confidence: 0.8,
+          changeReason: "Changed request",
+          idempotencyKey: "fact-revise-replay-v1",
+        },
+      },
+    });
+    expectGraphQLError(changed, "CONFLICT");
   });
 
   it("revalidates revisions and relationship updates against locked definitions", async () => {
