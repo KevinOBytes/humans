@@ -12,6 +12,7 @@ import {
   secondaryButtonClassName,
   textLinkClassName,
 } from "@/components/auth/auth-shell";
+import { requestDirectRoute } from "@/lib/api/direct-route-client";
 import { authClient } from "@/modules/auth/auth-client";
 
 type EnrollmentMaterial = {
@@ -153,10 +154,10 @@ export default function TwoFactorEnrollment({
     setError(null);
     setPending(true);
     try {
-      const response = await fetch("/api/account/two-factor/disable", {
+      const response = await requestDirectRoute({
+        body: { action: "cancel", password },
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "cancel", password }),
+        url: "/api/account/two-factor/disable",
       });
       if (!response.ok) throw new Error("cancel failed");
       setEnrollment(null);
@@ -181,13 +182,13 @@ export default function TwoFactorEnrollment({
     setActionStatus(null);
     setPending(true);
     try {
-      const response = await fetch("/api/account/two-factor/disable", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const response = await requestDirectRoute({
+        body: {
           action: "disable",
           password: managementPassword,
-        }),
+        },
+        method: "POST",
+        url: "/api/account/two-factor/disable",
       });
       setManagementPassword("");
       if (!response.ok) throw new Error("disable failed");
