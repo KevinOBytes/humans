@@ -410,7 +410,7 @@ export function createAiAnalysisHandler(
         const resourceReferences = references(result);
         const recorded = await repository.recordClaimedToolCall({
           ...jobClaim,
-          approvedToolName: toolCall.name.toLowerCase(),
+          approvedToolName: toolCall.name,
           redactedArguments: redactedArguments(
             toolCall.name,
             toolCall.arguments,

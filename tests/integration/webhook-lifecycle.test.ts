@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { randomUUID } from "node:crypto";
 import {
   afterAll,
   afterEach,
@@ -55,7 +56,10 @@ liveDescribe("webhook lifecycle acceptance", () => {
     fixture = new ResearchFixture();
   });
   beforeEach(async () => fixture.reset());
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
   afterAll(async () => fixture.close());
 
   it("administers a generated webhook lifecycle and records a signed retry without duplicate replay", async () => {
@@ -534,6 +538,23 @@ liveDescribe("webhook lifecycle acceptance", () => {
       variables: { input: { id: webhookId, idempotencyKey: malformedKey } },
     });
     expectGraphQLError(malformedReplay, "VALIDATION_FAILED");
+
+    await fixture.database
+      .update(idempotencyKeys)
+      .set({
+        responseReference: {
+          webhookId,
+          deliveryId: randomUUID(),
+        },
+      })
+      .where(eq(idempotencyKeys.id, malformedClaim.id));
+    const missingDeliveryReplay = await fixture.execute({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId, idempotencyKey: malformedKey } },
+    });
+    expectGraphQLError(missingDeliveryReplay, "VALIDATION_FAILED");
 
     const expiryKey = "webhook-expiry-v1";
     const expiryFirst = await fixture.execute<{

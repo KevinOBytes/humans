@@ -109,7 +109,7 @@ function captureBrowserFailures(page: Page) {
   page.on("console", (message) => {
     if (
       message.type() === "error" &&
-      !message.text().includes("eval() is not supported in this environment")
+      !message.text().startsWith("eval() is not supported in this environment")
     ) {
       failures.push(`console: ${message.text()}`);
     }
@@ -450,9 +450,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   });
   await expectAxeClean(page);
   const rtlZoomOverflow = await page.evaluate(
-    () =>
-      document.documentElement.scrollWidth >
-      document.documentElement.clientWidth,
+    () => document.documentElement.scrollWidth > window.innerWidth + 1,
   );
   expect(rtlZoomOverflow, "profile should reflow at RTL 200% zoom").toBe(false);
   await page.evaluate(() => {

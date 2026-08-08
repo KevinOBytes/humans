@@ -1,7 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
+import { graphViews } from "@/db/schema/graph";
 import { createGraphQLError } from "@/graphql/errors";
 import { normalizePagination } from "@/graphql/limits";
 import type { RequestOperationLimiter } from "@/graphql/operation-limiter";
@@ -10,6 +11,13 @@ import {
   resourceVisibilitySql,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
+import {
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
+  withResearchWriteTransaction,
+  type CanonicalRequestMaterial,
+  type ResearchResponseReference,
+} from "@/modules/audit/transactions";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import type { Task12Metrics } from "@/modules/search/metrics";
 
@@ -63,6 +71,7 @@ import {
 
 export type GraphServiceContext = ResearchServiceContext & {
   cursorHmacKey: string;
+  idempotencyHmacKey?: string;
   metrics: Task12Metrics;
   operationLimiter: RequestOperationLimiter;
 };
@@ -167,6 +176,7 @@ const ANALYSIS_RUN_CURSOR_ORDER = "graph-analysis-run-id-asc";
 const DASHBOARD_ANALYSIS_RUN_CURSOR_ORDER =
   "dashboard-graph-analysis-created-desc";
 const ANALYSIS_RESULT_CURSOR_ORDER = "graph-analysis-result-rank-id-asc";
+const GRAPH_VIEW_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 
 function graphCost(input: GraphFilterInput) {
   const bounded = (
@@ -646,6 +656,17 @@ function normalizePositions(
   return positions;
 }
 
+function fieldMaterial(
+  value: CanonicalRequestMaterial | undefined,
+): CanonicalRequestMaterial {
+  return value == null ? { present: false } : { present: true, value };
+}
+
+type GraphViewResponseReference = ResearchResponseReference & {
+  readonly viewId: string;
+  readonly version: number;
+};
+
 export function createGraphService(context: GraphServiceContext) {
   const personVisibility = ({
     id,
@@ -844,6 +865,40 @@ export function createGraphService(context: GraphServiceContext) {
       row.appearance as GraphViewAppearanceInputValue,
     ),
   });
+
+  async function replayView(
+    responseReference: ResearchResponseReference,
+  ): Promise<GraphViewRecord> {
+    const viewId = responseReference.viewId;
+    const version = responseReference.version;
+    if (
+      typeof viewId !== "string" ||
+      !UUID_PATTERN.test(viewId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    )
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored graph view mutation result is invalid.",
+      );
+    const [row] = await context.database
+      .select()
+      .from(graphViews)
+      .where(
+        and(
+          eq(graphViews.workspaceId, context.workspaceId),
+          eq(graphViews.id, viewId.toLowerCase()),
+          eq(graphViews.ownerId, context.actor.id),
+        ),
+      )
+      .limit(1);
+    if (!row)
+      throw createGraphQLError("NOT_FOUND", "The graph view was not found.");
+    if (row.version !== version)
+      throw createGraphQLError("CONFLICT", "The graph view has changed.");
+    return summarizeView(row);
+  }
 
   async function visibleIds(
     database: Database,
@@ -1513,6 +1568,7 @@ export function createGraphService(context: GraphServiceContext) {
       appearance?: GraphViewAppearanceInputValue | null;
       sharing?: "private" | "workspace" | null;
       positions?: readonly GraphPosition[] | null;
+      idempotencyKey?: string | null;
     }) {
       if (context.actor.type !== "user")
         throw createGraphQLError(
@@ -1542,7 +1598,44 @@ export function createGraphService(context: GraphServiceContext) {
           "NOT_FOUND",
           "One or more saved graph nodes were not found.",
         );
-      return context.database.transaction(async (transaction) => {
+      if (input.idempotencyKey != null) {
+        if (!context.idempotencyHmacKey)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Graph view idempotency is not configured.",
+          );
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + GRAPH_VIEW_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "graph_view.create.graphql",
+          requestMaterial: {
+            appearance: appearance as unknown as CanonicalRequestMaterial,
+            filter: filter as unknown as CanonicalRequestMaterial,
+            layout: layout as unknown as CanonicalRequestMaterial,
+            name,
+            positions: positions as unknown as CanonicalRequestMaterial,
+            sharing,
+          },
+          secret: context.idempotencyHmacKey,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["graphView:create"],
+          async (scopedContext): Promise<GraphViewResponseReference> => {
+            const result = await createGraphService({
+              ...context,
+              ...scopedContext,
+            }).createView({
+              ...input,
+              idempotencyKey: null,
+            });
+            return { viewId: result.id, version: result.version };
+          },
+        );
+        return replayView(executed.responseReference);
+      }
+      return withResearchWriteTransaction(context, async (transaction) => {
         const database = transaction as Database;
         const repository = createGraphRepository(database);
         const row = await repository.createView({
@@ -1595,6 +1688,7 @@ export function createGraphService(context: GraphServiceContext) {
       appearance?: GraphViewAppearanceInputValue | null;
       sharing?: "private" | "workspace" | null;
       positions?: readonly GraphPosition[] | null;
+      idempotencyKey?: string | null;
     }) {
       if (context.actor.type !== "user")
         throw createGraphQLError(
@@ -1626,7 +1720,54 @@ export function createGraphService(context: GraphServiceContext) {
           cost: graphCost(input.filter ?? { mode: "WORKSPACE" }),
           policy: READ_POLICY,
         });
-      return context.database.transaction(async (transaction) => {
+      if (input.idempotencyKey != null) {
+        if (!context.idempotencyHmacKey)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Graph view idempotency is not configured.",
+          );
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + GRAPH_VIEW_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "graph_view.update.graphql",
+          requestMaterial: {
+            appearance: fieldMaterial(
+              input.appearance as unknown as CanonicalRequestMaterial,
+            ),
+            expectedVersion: input.expectedVersion,
+            filter: fieldMaterial(
+              input.filter as unknown as CanonicalRequestMaterial,
+            ),
+            id: viewId,
+            layout: fieldMaterial(
+              input.layout as unknown as CanonicalRequestMaterial,
+            ),
+            name: fieldMaterial(input.name),
+            positions: fieldMaterial(
+              normalizedPositions as unknown as CanonicalRequestMaterial,
+            ),
+            sharing: fieldMaterial(input.sharing),
+          },
+          secret: context.idempotencyHmacKey,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["graphView:update"],
+          async (scopedContext): Promise<GraphViewResponseReference> => {
+            const result = await createGraphService({
+              ...context,
+              ...scopedContext,
+            }).updateView({
+              ...input,
+              idempotencyKey: null,
+            });
+            return { viewId: result.id, version: result.version };
+          },
+        );
+        return replayView(executed.responseReference);
+      }
+      return withResearchWriteTransaction(context, async (transaction) => {
         const database = transaction as Database;
         const repository = createGraphRepository(database);
         const current = await repository.getOwnedViewForUpdate({
@@ -1703,7 +1844,11 @@ export function createGraphService(context: GraphServiceContext) {
         return summarizeView(row);
       });
     },
-    async archiveView(input: { id: string; expectedVersion: number }) {
+    async archiveView(input: {
+      id: string;
+      expectedVersion: number;
+      idempotencyKey?: string | null;
+    }) {
       if (context.actor.type !== "user")
         throw createGraphQLError(
           "FORBIDDEN",
@@ -1715,7 +1860,40 @@ export function createGraphService(context: GraphServiceContext) {
           "A positive expected version is required.",
         );
       const viewId = normalizeUuid(input.id, "The graph view ID is invalid.");
-      return context.database.transaction(async (transaction) => {
+      if (input.idempotencyKey != null) {
+        if (!context.idempotencyHmacKey)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Graph view idempotency is not configured.",
+          );
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + GRAPH_VIEW_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "graph_view.archive.graphql",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            id: viewId,
+          },
+          secret: context.idempotencyHmacKey,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["graphView:delete"],
+          async (scopedContext): Promise<GraphViewResponseReference> => {
+            const result = await createGraphService({
+              ...context,
+              ...scopedContext,
+            }).archiveView({
+              ...input,
+              idempotencyKey: null,
+            });
+            return { viewId: result.id, version: result.version };
+          },
+        );
+        return replayView(executed.responseReference);
+      }
+      return withResearchWriteTransaction(context, async (transaction) => {
         const database = transaction as Database;
         const repository = createGraphRepository(database);
         const current = await repository.getOwnedViewForUpdate({

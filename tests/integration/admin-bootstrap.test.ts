@@ -104,6 +104,12 @@ liveDescribe("administrator bootstrap", () => {
       ADMIN_DISPLAY_NAME: "  Recovered Administrator  ",
       ADMIN_PASSWORD: "Bootstrap recovery password! 2026",
     });
+    expect(bootstrapEnv).toMatchObject({
+      ADMIN_EMAIL: "recovered.admin@example.test",
+      ADMIN_USERNAME: "recovered-admin",
+      ADMIN_DISPLAY_NAME: "Recovered Administrator",
+      ADMIN_PASSWORD: "Bootstrap recovery password! 2026",
+    });
     const first = await bootstrapAdmin(database!, bootstrapEnv);
     const second = await bootstrapAdmin(database!, bootstrapEnv);
 

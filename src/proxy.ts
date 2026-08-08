@@ -40,7 +40,7 @@ function applySecurityHeaders(request: NextRequest, response: NextResponse) {
           value
             .replace(
               "connect-src 'self'",
-              "connect-src 'self' ws://localhost:* ws://127.0.0.1:*",
+              "connect-src 'self' ws://localhost:* ws://127.0.0.1:* ws://[::1]:*",
             )
             .replace("; upgrade-insecure-requests", ""),
         );

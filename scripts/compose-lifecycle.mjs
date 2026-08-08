@@ -98,6 +98,15 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function parseComposeJsonLines(stdout) {
+  return stdout
+    .toString("utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
 function sqlLiteral(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
@@ -256,11 +265,7 @@ async function assertRuntimeState() {
   const result = await compose(["ps", "--all", "--format", "json"], {
     capture: true,
   });
-  const lines = result.stdout
-    .toString("utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  const lines = parseComposeJsonLines(result.stdout);
   const byService = new Map(lines.map((line) => [line.Service, line]));
   for (const name of ["app", "worker", "postgres", "redis", "minio"]) {
     const service = byService.get(name);
@@ -352,6 +357,7 @@ async function assertNoLeakage() {
     environment.OPERATION_LIMIT_HMAC_KEY,
     environment.ADMIN_PASSWORD,
     environment.RESEND_API_KEY,
+    environment.CRON_SECRET,
   ]) {
     if (diagnostics.includes(value)) {
       throw new Error(
@@ -387,7 +393,7 @@ async function runSmoke() {
   });
   assert(
     unauthorized.status === 401,
-    `Built app bounded jobs route accepted invalid auth (${unauthorized.status})`,
+    `Built app bounded jobs route accepted a request without authorization (${unauthorized.status})`,
   );
   const authorizedWithSecret = await fetch(
     new URL("/api/jobs/run", appBaseUrl),
@@ -830,9 +836,9 @@ async function runPersistenceAndRestore() {
     ["ps", "--all", "--format", "json", "worker"],
     { capture: true },
   );
-  const workerOutageState = JSON.parse(
-    workerDuringRedisOutage.stdout.toString("utf8").trim(),
-  );
+  const workerOutageState = parseComposeJsonLines(
+    workerDuringRedisOutage.stdout,
+  ).find((service) => service.Service === "worker");
   assert(
     workerOutageState.State === "running" &&
       workerOutageState.Health === "healthy",
@@ -875,7 +881,9 @@ async function runPersistenceAndRestore() {
     ["ps", "--all", "--format", "json", "worker-drain-smoke"],
     { capture: true },
   );
-  const worker = JSON.parse(stopped.stdout.toString("utf8").trim());
+  const worker = parseComposeJsonLines(stopped.stdout).find(
+    (service) => service.Service === "worker-drain-smoke",
+  );
   if (worker.ExitCode !== 0 || worker.State !== "exited") {
     throw new Error(
       `Worker did not exit cleanly after SIGTERM drain (state=${String(worker.State)}, exit=${String(worker.ExitCode)})`,

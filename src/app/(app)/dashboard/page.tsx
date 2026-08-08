@@ -71,7 +71,7 @@ export default async function DashboardPage() {
     totalRows: item.totalRows,
     acceptedRows: item.acceptedRows,
     rejectedRows: item.rejectedRows,
-    createdAt: requiredText(item.createdAt),
+    startedAt: requiredText(item.startedAt),
   }));
   let activity: DashboardActivity[] | null = null;
   if (includeActivity) {

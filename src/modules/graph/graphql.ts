@@ -558,6 +558,7 @@ const CreateGraphViewInput = builder.inputType("CreateGraphViewInput", {
     appearance: t.field({ type: GraphViewAppearanceInput }),
     sharing: t.field({ type: GraphViewSharing }),
     positions: t.field({ type: [GraphPositionInput] }),
+    idempotencyKey: t.string(),
   }),
 });
 const UpdateGraphViewInput = builder.inputType("UpdateGraphViewInput", {
@@ -570,12 +571,14 @@ const UpdateGraphViewInput = builder.inputType("UpdateGraphViewInput", {
     appearance: t.field({ type: GraphViewAppearanceInput }),
     sharing: t.field({ type: GraphViewSharing }),
     positions: t.field({ type: [GraphPositionInput] }),
+    idempotencyKey: t.string(),
   }),
 });
 const ArchiveGraphViewInput = builder.inputType("ArchiveGraphViewInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
   }),
 });
 const RunGraphAnalysisInput = builder.inputType("RunGraphAnalysisInput", {

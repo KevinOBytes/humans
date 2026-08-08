@@ -117,6 +117,18 @@ liveDescribe("note mutation idempotency", () => {
     );
     expect(updated.version).toBe(2);
     expect(updatedReplay.body?.data?.updateNote.note).toEqual(updated);
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, actor.workspaceId),
+            eq(auditEvents.action, "note.update"),
+            eq(auditEvents.resourceId, updated.id),
+          ),
+        ),
+    ).toHaveLength(1);
     expectGraphQLError(
       await updateNoteChanged(actor, fixture, {
         ...updateInput,

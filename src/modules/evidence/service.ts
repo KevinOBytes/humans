@@ -126,16 +126,17 @@ function noteContentMaterial(
   value:
     { plainText?: string | null; markdown?: string | null } | null | undefined,
 ): CanonicalRequestMaterial {
-  return fieldMaterial(
-    value === undefined
-      ? undefined
-      : value === null
-        ? null
-        : {
-            markdown: value.markdown ?? null,
-            plainText: value.plainText ?? null,
-          },
-  );
+  if (value === undefined || value === null) return { present: false };
+  const normalized = validateNoteContent(value);
+  return {
+    present: true,
+    value: normalized.value
+      ? {
+          markdown: normalized.value.sanitizedMarkdown,
+          plainText: normalized.value.plainText,
+        }
+      : null,
+  };
 }
 
 type EvidenceCreateOutcome = MutationOutcome<EvidenceItemRow>;
@@ -2096,17 +2097,13 @@ export function createEvidenceService(context: ResearchServiceContext) {
           operation: "note.create.graphql",
           requestMaterial: {
             content: noteContentMaterial(input.content),
-            sensitivity: fieldMaterial(input.sensitivity),
-            subject: fieldMaterial(
-              input.subject === undefined
-                ? undefined
-                : {
-                    evidenceItemId: input.subject?.evidenceItemId ?? null,
-                    factId: input.subject?.factId ?? null,
-                    personId: input.subject?.personId ?? null,
-                    relationshipId: input.subject?.relationshipId ?? null,
-                  },
-            ),
+            sensitivity: access.value,
+            subject: {
+              evidenceItemId: subject.evidenceItemId ?? null,
+              factId: subject.factId ?? null,
+              personId: subject.personId ?? null,
+              relationshipId: subject.relationshipId ?? null,
+            },
           },
           secret,
         });
@@ -2212,6 +2209,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
         updatedBy: context.actor.principalId,
       };
       const changed: string[] = [];
+      let normalizedSensitivity: string | null | undefined;
       if (input.content) {
         const value = validateNoteContent(input.content);
         issues.push(...value.issues);
@@ -2221,6 +2219,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
       if (input.sensitivity !== undefined) {
         const value = sensitivity(input.sensitivity);
         issues.push(...value.issues);
+        normalizedSensitivity = value.value;
         if (value.value) patch.sensitivity = value.value;
         changed.push("sensitivity");
       }
@@ -2241,7 +2240,11 @@ export function createEvidenceService(context: ResearchServiceContext) {
             content: noteContentMaterial(input.content),
             expectedVersion: input.expectedVersion,
             id: input.id,
-            sensitivity: fieldMaterial(input.sensitivity),
+            sensitivity: fieldMaterial(
+              input.sensitivity === undefined
+                ? undefined
+                : normalizedSensitivity,
+            ),
           },
           secret,
         });

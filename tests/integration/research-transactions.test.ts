@@ -9,7 +9,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { members, sessions } from "@/db/schema/auth";
@@ -878,7 +878,13 @@ liveDescribe("research write transactions", () => {
       await fixture.database
         .select({ id: auditEvents.id })
         .from(auditEvents)
-        .where(eq(auditEvents.action, "person.update")),
+        .where(
+          and(
+            eq(auditEvents.workspaceId, actor.workspaceId),
+            eq(auditEvents.action, "person.update"),
+            eq(auditEvents.resourceId, created.resource.id),
+          ),
+        ),
     ).toHaveLength(1);
 
     const archiveInput = {
@@ -898,11 +904,23 @@ liveDescribe("research write transactions", () => {
       status: "archived",
       version: created.resource.version + 2,
     });
+    await expect(
+      peopleService.archive({
+        ...archiveInput,
+        idempotencyKey: "person-archive-new-key",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
     expect(
       await fixture.database
         .select({ id: auditEvents.id })
         .from(auditEvents)
-        .where(eq(auditEvents.action, "person.archive")),
+        .where(
+          and(
+            eq(auditEvents.workspaceId, actor.workspaceId),
+            eq(auditEvents.action, "person.archive"),
+            eq(auditEvents.resourceId, created.resource.id),
+          ),
+        ),
     ).toHaveLength(1);
     expect(
       await fixture.database

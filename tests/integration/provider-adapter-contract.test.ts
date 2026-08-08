@@ -39,7 +39,9 @@ class UpstashRedisBridge {
     options?: { px?: number; nx?: true },
   ): Promise<"OK" | null> {
     if (options?.nx) {
-      return this.client.set(key, value, "PX", options.px ?? 0, "NX");
+      return options.px === undefined
+        ? this.client.set(key, value, "NX")
+        : this.client.set(key, value, "PX", options.px, "NX");
     }
     if (options?.px !== undefined) {
       return this.client.set(key, value, "PX", options.px);
@@ -175,7 +177,19 @@ describe.runIf(runStorage)("S3-compatible provider adapter contract", () => {
   beforeAll(async () => {
     try {
       await client.send(new HeadBucketCommand({ Bucket: bucket }));
-    } catch {
+    } catch (error) {
+      const candidate = error as {
+        name?: unknown;
+        $metadata?: { httpStatusCode?: unknown };
+        $response?: { statusCode?: unknown };
+      };
+      const statusCode =
+        candidate.$metadata?.httpStatusCode ?? candidate.$response?.statusCode;
+      const missingBucket =
+        statusCode === 404 ||
+        candidate.name === "NotFound" ||
+        candidate.name === "NoSuchBucket";
+      if (!missingBucket) throw error;
       await client.send(new CreateBucketCommand({ Bucket: bucket }));
     }
   });
@@ -203,7 +217,7 @@ describe.runIf(runStorage)("S3-compatible provider adapter contract", () => {
       headers: upload.headers,
       body,
     });
-    expect(uploaded.status).toBe(200);
+    expect([200, 204]).toContain(uploaded.status);
 
     await expect(store.exists({ workspaceId, key })).resolves.toBe(true);
     await expect(

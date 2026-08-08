@@ -158,24 +158,37 @@ class MemoryStore implements ObjectStore {
 class MemoryRedis implements RedisStore {
   private readonly leases = new Map<string, string>();
 
-  get(): Promise<string | null> {
+  get(key: string): Promise<string | null> {
+    void key;
     return Promise.resolve(null);
   }
-  set(): Promise<void> {
+  set(
+    key: string,
+    value: string,
+    options?: { expiresInMs?: number },
+  ): Promise<void> {
+    void key;
+    void value;
+    void options;
     return Promise.resolve();
   }
-  delete(): Promise<void> {
+  delete(key: string): Promise<void> {
+    void key;
     return Promise.resolve();
   }
-  increment(): Promise<number> {
+  increment(key: string, amount?: number): Promise<number> {
+    void key;
+    void amount;
     return Promise.resolve(1);
   }
-  acquireLease(key: string, token: string): Promise<boolean> {
+  acquireLease(key: string, token: string, ttlMs: number): Promise<boolean> {
+    void ttlMs;
     if (this.leases.has(key)) return Promise.resolve(false);
     this.leases.set(key, token);
     return Promise.resolve(true);
   }
-  extendLease(key: string, token: string): Promise<boolean> {
+  extendLease(key: string, token: string, ttlMs: number): Promise<boolean> {
+    void ttlMs;
     return Promise.resolve(this.leases.get(key) === token);
   }
   releaseLease(key: string, token: string): Promise<boolean> {
@@ -183,11 +196,19 @@ class MemoryRedis implements RedisStore {
     this.leases.delete(key);
     return Promise.resolve(true);
   }
-  consumeTokenBucket(): Promise<{
+  consumeTokenBucket(input: {
+    capacity: number;
+    cost: number;
+    key: string;
+    refillAmount: number;
+    refillIntervalMs: number;
+    ttlMs: number;
+  }): Promise<{
     allowed: boolean;
     remainingMicrotokens: number;
     retryAfterMs: number;
   }> {
+    void input;
     return Promise.resolve({
       allowed: true,
       remainingMicrotokens: 0,

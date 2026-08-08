@@ -72,7 +72,9 @@ export async function executeServerGraphQL<
       normalizePublicGraphQLErrors(undefined, requestId),
     );
   }
-  const hasErrors = Object.prototype.hasOwnProperty.call(body, "errors");
+  const hasErrors =
+    Object.prototype.hasOwnProperty.call(body, "errors") &&
+    (!Array.isArray(body.errors) || body.errors.length > 0);
   if (!response.ok || hasErrors || body.data === undefined) {
     const errors = normalizePublicGraphQLErrors(
       Array.isArray(body.errors) ? body.errors : undefined,

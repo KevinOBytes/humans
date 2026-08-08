@@ -380,6 +380,29 @@ export function createWebhooksService(input: {
           "The operation response reference is invalid.",
         );
       }
+      if (responseWebhookId !== webhookId) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The operation response reference is invalid.",
+        );
+      }
+      const [delivery] = await input.database
+        .select({ id: webhookDeliveries.id })
+        .from(webhookDeliveries)
+        .where(
+          and(
+            eq(webhookDeliveries.workspaceId, input.workspaceId),
+            eq(webhookDeliveries.webhookId, responseWebhookId),
+            eq(webhookDeliveries.id, responseDeliveryId),
+          ),
+        )
+        .limit(1);
+      if (!delivery) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The operation response reference is invalid.",
+        );
+      }
       return {
         id: responseWebhookId,
         deliveryId: responseDeliveryId,

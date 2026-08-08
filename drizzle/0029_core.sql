@@ -1,0 +1,2 @@
+ALTER TABLE "ai_tool_calls" DROP CONSTRAINT "ai_tool_calls_name_check";--> statement-breakpoint
+ALTER TABLE "ai_tool_calls" ADD CONSTRAINT "ai_tool_calls_name_check" CHECK ("ai_tool_calls"."approved_tool_name" ~ '^[A-Za-z][A-Za-z0-9_.-]*$');

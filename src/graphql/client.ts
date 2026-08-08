@@ -56,7 +56,9 @@ export async function executeBrowserGraphQL<
         ],
       };
     }
-    const hasErrors = Object.prototype.hasOwnProperty.call(body, "errors");
+    const hasErrors =
+      Object.prototype.hasOwnProperty.call(body, "errors") &&
+      (!Array.isArray(body.errors) || body.errors.length > 0);
     if (!response.ok || hasErrors || body.data === undefined) {
       return {
         ok: false,

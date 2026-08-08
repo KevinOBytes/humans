@@ -131,4 +131,48 @@ liveDescribe("person presentation mutation idempotency", () => {
       foreignResult.body?.data?.selectPersonPresentation.person?.id,
     ).not.toBe(ownerResult.body?.data?.selectPersonPresentation.person?.id);
   });
+
+  it("allows the same raw key for different users in one workspace", async () => {
+    const owner = await fixture.createActor();
+    const member = await fixture.createWorkspaceMember(owner, "contributor");
+    const [ownerPerson, memberPerson] = await Promise.all([
+      fixture.createPerson(owner, { displayName: "Owner presentation user" }),
+      fixture.createPerson(owner, { displayName: "Member presentation user" }),
+    ]);
+    const ownerRow = required(
+      ownerPerson.body?.data?.createPerson?.person,
+      "owner presentation person",
+    );
+    const memberRow = required(
+      memberPerson.body?.data?.createPerson?.person,
+      "member presentation person",
+    );
+    const key = "presentation-replay-key";
+    const ownerResult = await selectPresentation(owner, {
+      personId: ownerRow.id,
+      expectedVersion: ownerRow.version,
+      idempotencyKey: key,
+    });
+    const memberResult = await selectPresentation(member, {
+      personId: memberRow.id,
+      expectedVersion: memberRow.version,
+      idempotencyKey: key,
+    });
+    expect(ownerResult.body?.errors).toBeUndefined();
+    expect(memberResult.body?.errors).toBeUndefined();
+    expect(
+      memberResult.body?.data?.selectPersonPresentation.person?.id,
+    ).not.toBe(ownerResult.body?.data?.selectPersonPresentation.person?.id);
+
+    const claims = await fixture.database
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspaceId, owner.workspaceId),
+          eq(idempotencyKeys.operation, "person.presentation.select"),
+        ),
+      );
+    expect(claims).toHaveLength(2);
+  });
 });

@@ -100,7 +100,7 @@ describe("executeBrowserGraphQL", () => {
     });
   });
 
-  it("uses a valid error extension ID when the response header is malformed", async () => {
+  it("uses a valid error extension ID when the response header is missing or malformed", async () => {
     const extensionRequestId = "01984e93-7644-72c6-82d0-fda7f590581f";
     vi.stubGlobal(
       "fetch",

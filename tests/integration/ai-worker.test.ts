@@ -265,7 +265,7 @@ liveDescribe("authorized durable AI execution handler", () => {
     expect(storedRun).toMatchObject({ state: "completed", errorCode: null });
     expect(toolCalls).toEqual([
       expect.objectContaining({
-        approvedToolName: "getperson",
+        approvedToolName: "getPerson",
         redactedArguments: { personCount: 1 },
         redactedResultSummary: { personCount: 1, resultCount: 1 },
         resourceReferences: [{ id: personId, kind: "person" }],

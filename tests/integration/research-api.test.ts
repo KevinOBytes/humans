@@ -11,6 +11,7 @@ import {
   CreateFactDocument,
   MergePersonDocument,
   PersonHeaderDocument,
+  PersonNamesAndEventsDocument,
   PersonFilesDocument,
 } from "@/graphql/generated/graphql";
 import {
@@ -21,7 +22,7 @@ import {
   tags,
 } from "@/db/schema/evidence";
 import { auditEvents } from "@/db/schema/operations";
-import { people, personNames } from "@/db/schema/people";
+import { people, personEvents, personNames } from "@/db/schema/people";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 
@@ -68,6 +69,126 @@ liveDescribe("research API", () => {
     expect(result.body?.data?.createPerson?.person?.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
     );
+  });
+
+  it("pages names and events only for a visible parent person", async () => {
+    const owner = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const ownerPerson = await fixture.createPerson(owner, {
+      displayName: "Names and events subject",
+    });
+    const foreignPerson = await fixture.createPerson(foreign, {
+      displayName: "Foreign names and events subject",
+    });
+    const ownerPersonId = required(
+      ownerPerson.body?.data?.createPerson?.person?.id,
+    );
+    const foreignPersonId = required(
+      foreignPerson.body?.data?.createPerson?.person?.id,
+    );
+    const firstName = newId();
+    const secondName = newId();
+    const firstEvent = newId();
+    const secondEvent = newId();
+    await fixture.database.insert(personNames).values([
+      {
+        id: firstName,
+        workspaceId: owner.workspaceId,
+        personId: ownerPersonId,
+        kind: "preferred",
+        fullName: "Older subject name",
+        createdAt: new Date("2026-08-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      },
+      {
+        id: secondName,
+        workspaceId: owner.workspaceId,
+        personId: ownerPersonId,
+        kind: "alias",
+        fullName: "Newer subject name",
+        createdAt: new Date("2026-08-02T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-02T00:00:00.000Z"),
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      },
+    ]);
+    await fixture.database.insert(personEvents).values([
+      {
+        id: firstEvent,
+        workspaceId: owner.workspaceId,
+        personId: ownerPersonId,
+        eventKind: "visit",
+        title: "Older visit",
+        createdAt: new Date("2026-08-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      },
+      {
+        id: secondEvent,
+        workspaceId: owner.workspaceId,
+        personId: ownerPersonId,
+        eventKind: "move",
+        title: "Newer move",
+        createdAt: new Date("2026-08-02T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-02T00:00:00.000Z"),
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      },
+    ]);
+    type NamesEventsResult = {
+      person: {
+        id: string;
+        names: {
+          nodes: Array<{ id: string }>;
+          pageInfo: { endCursor: string | null };
+        };
+        events: {
+          nodes: Array<{ id: string }>;
+          pageInfo: { endCursor: string | null };
+        };
+      } | null;
+    };
+    const first = await fixture.execute<NamesEventsResult>({
+      jar: owner.jar,
+      operationName: "PersonNamesAndEvents",
+      query: PersonNamesAndEventsDocument,
+      variables: { id: ownerPersonId, namesFirst: 1, eventsFirst: 1 },
+    });
+    expect(first.body?.errors).toBeUndefined();
+    expect(first.body?.data?.person?.names.nodes).toEqual([
+      expect.objectContaining({ id: secondName }),
+    ]);
+    expect(first.body?.data?.person?.events.nodes).toEqual([
+      expect.objectContaining({ id: secondEvent }),
+    ]);
+    const next = await fixture.execute<NamesEventsResult>({
+      jar: owner.jar,
+      operationName: "PersonNamesAndEvents",
+      query: PersonNamesAndEventsDocument,
+      variables: {
+        id: ownerPersonId,
+        namesFirst: 1,
+        namesAfter: first.body?.data?.person?.names.pageInfo.endCursor,
+        eventsFirst: 1,
+        eventsAfter: first.body?.data?.person?.events.pageInfo.endCursor,
+      },
+    });
+    expect(next.body?.data?.person?.names.nodes).toEqual([
+      expect.objectContaining({ id: firstName }),
+    ]);
+    expect(next.body?.data?.person?.events.nodes).toEqual([
+      expect.objectContaining({ id: firstEvent }),
+    ]);
+    const foreignRead = await fixture.execute({
+      jar: owner.jar,
+      operationName: "PersonNamesAndEvents",
+      query: PersonNamesAndEventsDocument,
+      variables: { id: foreignPersonId, namesFirst: 1, eventsFirst: 1 },
+    });
+    expect(foreignRead.body).toEqual({ data: { person: null } });
   });
 
   it("HUM-FR-008 selects and clears presentation pointers with full contract guards", async () => {
@@ -731,7 +852,7 @@ liveDescribe("research API", () => {
     const winnerId = required(winner.body?.data?.createPerson?.person?.id);
     const loserId = required(loser.body?.data?.createPerson?.person?.id);
     const mergeInput = {
-      idempotencyKey: "person-merge-replay-v1",
+      idempotencyKey: `person-merge-replay-${winnerId}-${loserId}`,
       loserPersonId: loserId,
       reason: "Deterministic duplicate identity evidence.",
       winnerPersonId: winnerId,

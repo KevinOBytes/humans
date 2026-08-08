@@ -265,10 +265,11 @@ export function createPeopleService(context: ResearchServiceContext) {
         and(
           eq(people.workspaceId, context.workspaceId),
           eq(people.id, personId),
+          visibility,
         ),
       )
       .limit(1);
-    if (!row || !(await visible(row))) {
+    if (!row) {
       throw createGraphQLError(
         "NOT_FOUND",
         "The requested resource was not found.",
@@ -438,7 +439,7 @@ export function createPeopleService(context: ResearchServiceContext) {
         cursor,
         limit: page.first + 1,
         visibility: resourceVisibilitySql(context, {
-          resourceKind: "person_name",
+          resourceKind: "personName",
           id: personNames.id,
           sensitivity: personNames.sensitivity,
         }),
@@ -476,7 +477,7 @@ export function createPeopleService(context: ResearchServiceContext) {
         cursor,
         limit: page.first + 1,
         visibility: resourceVisibilitySql(context, {
-          resourceKind: "person_event",
+          resourceKind: "personEvent",
           id: personEvents.id,
           sensitivity: personEvents.sensitivity,
         }),
@@ -612,7 +613,10 @@ export function createPeopleService(context: ResearchServiceContext) {
         ${facts.referencedPersonId},
         ${facts.placeId},
         ${facts.fileId},
-        ${facts.encryptedValue}
+        CASE
+          WHEN ${facts.encryptedValue} IS NOT NULL THEN ${facts.blindIndex}
+          ELSE NULL
+        END
       ))`;
       const contradictoryFields = context.database
         .select({
@@ -1194,6 +1198,15 @@ export function createPeopleService(context: ResearchServiceContext) {
           idempotency,
           ["person:delete"],
           async (scopedContext) => {
+            if (
+              current?.deletedAt !== null &&
+              current?.deletedAt !== undefined
+            ) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person was already archived.",
+              );
+            }
             const row = await persist(scopedContext, scopedContext.database);
             if (!row) {
               throw createGraphQLError(

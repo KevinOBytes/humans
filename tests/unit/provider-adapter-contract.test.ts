@@ -7,7 +7,7 @@ import { redisConnectionConfig } from "@/lib/redis";
 import { objectStoreConfig } from "@/lib/storage/s3";
 
 const PROVIDER_SDK_IMPORT =
-  /(?:from\s*|import\s*\()\s*["']((?:@upstash\/redis|ioredis|@aws-sdk\/(?:client-s3|s3-request-presigner)|@smithy\/node-http-handler|openai|ollama|@ai-sdk\/[^"']+))["']/gu;
+  /(?:from\s*|import\s*\(|import\s+)\s*["']((?:@upstash\/redis|ioredis|@aws-sdk\/(?:client-s3|s3-request-presigner)|@smithy\/node-http-handler|openai|ollama|@ai-sdk\/[^"']+))["']/gu;
 
 const allowedProviderSdkImports = new Map<string, readonly string[]>([
   ["@upstash/redis", ["src/lib/redis/index.ts"]],
@@ -32,7 +32,7 @@ function providerSdkImports(root = "src"): Array<{
   return sourceFiles(root).flatMap((path) => {
     const source = readFileSync(path, "utf8");
     return [...source.matchAll(PROVIDER_SDK_IMPORT)].map((match) => ({
-      path: relative(process.cwd(), path),
+      path: relative(process.cwd(), path).replaceAll("\\\\", "/"),
       specifier: match[1],
     }));
   });
@@ -77,7 +77,7 @@ describe("provider adapter architecture", () => {
     expect(providerSdkImports("src/modules")).toEqual([]);
   });
 
-  it("selects the direct local or Upstash REST Redis adapter without leaking Redis credentials", () => {
+  it("normalizes the Upstash REST URL without leaking Redis credentials", () => {
     expect(
       redisConnectionConfig({
         url: "redis://:local-password@redis.internal:6379/0",

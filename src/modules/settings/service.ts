@@ -252,7 +252,12 @@ export function createSettingsService(input: {
       }
     } catch {
       if (created) {
-        await cleanupCreatedApiKey(created.id);
+        try {
+          await cleanupCreatedApiKey(created.id);
+        } catch {
+          // Preserve the stable public error envelope even if compensating
+          // cleanup exhausts its retries.
+        }
       }
       throw createGraphQLError("INTERNAL", "The API key could not be created.");
     }
@@ -369,11 +374,19 @@ export function createSettingsService(input: {
           workspaceId: input.workspaceId,
         });
         if (rotated !== "APPLIED") {
-          await cleanupCreatedApiKey(replacement._createdApiKeyId);
+          try {
+            await cleanupCreatedApiKey(replacement._createdApiKeyId);
+          } catch {
+            // Cleanup is best effort; return the stable mutation outcome.
+          }
           return { actionId: null, code: "INVALID", requestId } as const;
         }
       } catch {
-        await cleanupCreatedApiKey(replacement._createdApiKeyId);
+        try {
+          await cleanupCreatedApiKey(replacement._createdApiKeyId);
+        } catch {
+          // Preserve the stable public error envelope on cleanup failure.
+        }
         throw createGraphQLError(
           "INTERNAL",
           "The API key could not be rotated.",

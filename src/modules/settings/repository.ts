@@ -143,7 +143,10 @@ export function createSettingsRepository(database: Database) {
           configId: "organization",
           name: input.name,
           prefix: "hum_",
-          start: rawKey.slice(0, 6),
+          // Better Auth renders the safe fingerprint as `${prefix}${start}`.
+          // Keep the generated prefix out of `start` so the UI does not expose
+          // `hum_hum_...` and still gets six random characters.
+          start: rawKey.slice("hum_".length, "hum_".length + 6),
           referenceId: input.organizationId,
           key: await defaultKeyHasher(rawKey),
           enabled: false,
@@ -319,9 +322,11 @@ export function createSettingsRepository(database: Database) {
     },
     async disableCreatedOrganizationApiKey(input: {
       apiKeyId: string;
+      transaction?: TransactionDatabase;
       workspaceId: string;
     }): Promise<void> {
-      await database
+      const executor = input.transaction ?? database;
+      await executor
         .update(apiKeys)
         .set({ enabled: false, updatedAt: new Date() })
         .where(

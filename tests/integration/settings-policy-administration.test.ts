@@ -1,7 +1,15 @@
 // @vitest-environment node
 
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { newId } from "@/db/id";
 import {
@@ -21,7 +29,8 @@ import {
   UpdateResourceGrantDocument,
   UpdateWorkspaceDefaultsDocument,
 } from "@/graphql/generated/graphql";
-import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
+import { auditEvents, idempotencyKeys, jobs } from "@/db/schema/operations";
+import { files } from "@/db/schema/files";
 import { people } from "@/db/schema/people";
 import { consentRecords, deletionRequests } from "@/db/schema/privacy";
 import {
@@ -176,7 +185,11 @@ liveDescribe("settings policy administration", () => {
     expectGraphQLError(viewerDenied, "FORBIDDEN");
 
     const foreignDenied = await fixture.execute<{
-      updateAccessPolicy: { code: string; id: string | null };
+      updateAccessPolicy: {
+        code: string;
+        id: string | null;
+        version: number | null;
+      };
     }>({
       jar: foreign.jar,
       operationName: "UpdateAccessPolicy",
@@ -1526,11 +1539,28 @@ liveDescribe("settings policy administration", () => {
         encryptionKey: "42".repeat(32),
       }),
     ).resolves.toBe(0);
+    await expect(
+      executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "42".repeat(32),
+      }),
+    ).resolves.toBe(0);
     const [heldPerson] = await fixture.database
       .select({ deletedAt: people.deletedAt })
       .from(people)
       .where(eq(people.id, heldPersonId));
     expect(heldPerson?.deletedAt).toBeNull();
+    const heldAudits = await fixture.database
+      .select({ action: auditEvents.action })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.resourceId, heldRequestId),
+          eq(auditEvents.action, "deletion_request.blocked"),
+        ),
+      );
+    expect(heldAudits).toHaveLength(1);
 
     const foreign = await fixture.createActor();
     const foreignCreated = await fixture.execute<{
@@ -1583,5 +1613,96 @@ liveDescribe("settings policy administration", () => {
       .from(deletionRequests)
       .where(eq(deletionRequests.id, foreignScopeRequestId));
     expect(rejectedForeignScope?.state).toBe("rejected");
+  });
+
+  it("archives files, schedules cleanup, and removes indexed people when provided", async () => {
+    const owner = await fixture.createActor();
+    const person = await fixture.execute<{
+      createPerson: { person: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input: { displayName: "File deletion subject" } },
+    });
+    const personId = person.body?.data?.createPerson.person?.id;
+    if (!personId) throw new Error("Missing file deletion person");
+    const fileId = newId();
+    await fixture.database.insert(files).values({
+      id: fileId,
+      workspaceId: owner.workspaceId,
+      storageProvider: "minio",
+      storageBucket: "private",
+      storageKey: `uploads/${fileId}/source.txt`,
+      originalName: "source.txt",
+      mediaType: "text/plain",
+      detectedType: "text/plain",
+      byteSize: 1,
+      checksum: `sha256:${"23".repeat(32)}`,
+      quarantineState: "available",
+      scanState: "clean",
+      ocrState: "not_requested",
+      extractionState: "not_requested",
+      uploadedBy: owner.userId,
+      createdBy: owner.userId,
+      updatedBy: owner.userId,
+    });
+    const request = await fixture.execute<{
+      createDeletionRequest: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateDeletionRequest",
+      query: CreateDeletionRequestDocument,
+      variables: {
+        input: {
+          idempotencyKey: "deletion-executor-file-create",
+          scope: { fileIds: [fileId], personIds: [personId] },
+        },
+      },
+    });
+    const requestId = request.body?.data?.createDeletionRequest.id;
+    if (!requestId) throw new Error("Missing file deletion request");
+    await fixture.execute({
+      jar: owner.jar,
+      operationName: "ReviewDeletionRequest",
+      query: ReviewDeletionRequestDocument,
+      variables: {
+        input: { expectedVersion: 1, id: requestId, state: "APPROVED" },
+      },
+    });
+    const apply = vi.fn(async (...args: unknown[]) => {
+      void args;
+    });
+    await expect(
+      executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "42".repeat(32),
+        searchIndexMaintenance: { mode: "transactional", apply },
+      }),
+    ).resolves.toBe(1);
+    const [archived] = await fixture.database
+      .select({ deletedAt: files.deletedAt })
+      .from(files)
+      .where(eq(files.id, fileId));
+    expect(archived?.deletedAt).toBeInstanceOf(Date);
+    expect(
+      await fixture.database
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.workspaceId, owner.workspaceId),
+            eq(jobs.kind, "file_cleanup"),
+          ),
+        ),
+    ).toHaveLength(1);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply.mock.calls[0]?.[1]).toEqual([
+      expect.objectContaining({
+        action: "remove",
+        sourceId: personId,
+        sourceKind: "person",
+      }),
+    ]);
   });
 });

@@ -261,9 +261,9 @@ runtime acceptance.
 On 2026-08-05, the live PostgreSQL reconciliation transaction acceptance
 verified that a cross-workspace actor cannot merge foreign people; a colliding
 tag remains linked to the fenced loser, while a loser-only tag and external
-record move to the winner. A current-version unmerge restored the loser’s
+record move to the winner. A current-version unmerge restored the loser's
 active state, both tag and external-record ownership, and the identity
-candidate’s prior review state. This is a bounded service-level acceptance and
+candidate's prior review state. This is a bounded service-level acceptance and
 does not close the remaining identity, conflict, or browser matrices for
 `HUM-FR-010`.
 
@@ -285,8 +285,8 @@ rotated secret, records a redacted HTTP 503 retry state, and verifies that a
 replayed completed delivery makes no second outbound call. A separate
 deterministic provider-502 fixture advances the same delivery from attempt one
 to a successful attempt two. It does not claim a live destination, complete
-DNS-rebinding defense, upgrade migration, or an external provider-failure
-matrix; `HUM-FR-024` remains incomplete.
+DNS-rebinding/redirect matrix, upgrade migration, or an external
+provider-failure matrix; `HUM-FR-024` remains incomplete.
 
 The same live suite now covers deterministic retry progression: a provider 502
 marks attempt one retryable, the same delivery succeeds on attempt two, and the

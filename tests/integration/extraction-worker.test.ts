@@ -291,7 +291,9 @@ minioDescribe("durable extraction worker against MinIO", () => {
       await client.send(new CreateBucketCommand({ Bucket: bucket }));
     }
   });
-  beforeEach(() => fixture.reset());
+  beforeEach(async () => {
+    await fixture.reset();
+  });
   afterAll(async () => {
     client.destroy();
     await fixture.close();
