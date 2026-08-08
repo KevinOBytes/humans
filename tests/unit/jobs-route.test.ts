@@ -29,6 +29,7 @@ describe("bounded Vercel job route", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
     await expect(response.json()).resolves.toEqual({
       success: true,
       summary: {
@@ -37,6 +38,7 @@ describe("bounded Vercel job route", () => {
         deadLettered: 0,
         deferred: 1,
       },
+      requestId: expect.any(String),
     });
     expect(run).toHaveBeenCalledOnce();
   });
@@ -57,7 +59,12 @@ describe("bounded Vercel job route", () => {
       );
 
       expect(response.status).toBe(401);
-      await expect(response.json()).resolves.toEqual({ success: false });
+      expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
+      await expect(response.json()).resolves.toMatchObject({
+        success: false,
+        code: "UNAUTHENTICATED",
+        requestId: expect.any(String),
+      });
       expect(run).not.toHaveBeenCalled();
     },
   );
@@ -82,16 +89,22 @@ describe("bounded Vercel job route", () => {
     for (const handler of [configurationFailure, executionFailure]) {
       const response = await handler(request);
       expect(response.status).toBe(503);
-      expect(await response.text()).toBe('{"success":false}');
+      expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(await response.json()).toMatchObject({
+        success: false,
+        code: "INTERNAL",
+        requestId: expect.any(String),
+      });
     }
   });
 
   it("uses a bounded Node runtime and closes POST", () => {
     expect(runtime).toBe("nodejs");
     expect(maxDuration).toBe(30);
-    const response = POST();
+    const response = POST(new Request("https://humans.example/api/jobs/run"));
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("GET");
+    expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
   });
 
   it("registers the protected batch endpoint in Vercel configuration", () => {
