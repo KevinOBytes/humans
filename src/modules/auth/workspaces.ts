@@ -328,6 +328,25 @@ export async function provisionOrganizationApiKey(input: {
       ...(input.expiresIn === undefined ? {} : { expiresIn: input.expiresIn }),
     },
   });
+  // Better Auth's API-key plugin stores `start` with the prefix included,
+  // while this application's read model stores the prefix separately. Keep
+  // the persisted fingerprint canonical for keys created through this
+  // compatibility boundary; the hash and one-time secret remain unchanged.
+  if (
+    created.prefix &&
+    created.key?.startsWith(created.prefix) &&
+    created.key.length > created.prefix.length
+  ) {
+    await input.database
+      .update(apiKeys)
+      .set({
+        start: created.key.slice(
+          created.prefix.length,
+          created.prefix.length + 6,
+        ),
+      })
+      .where(eq(apiKeys.id, created.id));
+  }
   await ensureApiKeyPrincipal(input.database, {
     workspaceId: active.workspaceId,
     apiKeyId: created.id,
