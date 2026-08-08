@@ -1269,11 +1269,15 @@ liveDescribe("research authorization", () => {
       variables: { input: { name: "Exact update" } },
     });
     const tagId = required(tag.body?.data?.createTag.tag?.id);
-    const tagMutation = (name: "tagPerson" | "untagPerson") => /* GraphQL */ `
-      mutation ($input: TagPersonInput!) {
+    const tagMutation = (name: "tagPerson" | "untagPerson") => {
+      const inputType =
+        name === "tagPerson" ? "TagPersonInput" : "UntagPersonInput";
+      return /* GraphQL */ `
+      mutation ($input: ${inputType}!) {
         ${name}(input: $input) { personTag { id } code }
       }
     `;
+    };
     const legacyTagKey = await fixture.provisionKey(owner, {
       person: ["read", "update"],
       tag: ["create", "delete"],
