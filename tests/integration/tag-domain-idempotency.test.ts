@@ -253,6 +253,7 @@ liveDescribe("remaining tag mutation idempotency", () => {
     const takeover = await fixture.execute<{
       updateTag: {
         code: string | null;
+        currentVersion: number | null;
         tag: { id: string; version: number } | null;
       };
     }>({
