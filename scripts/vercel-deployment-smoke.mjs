@@ -49,6 +49,9 @@ if (!Number.isFinite(timeoutMs) || timeoutMs < 1) {
   process.exit(1);
 }
 
+const requestIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
 async function call(endpoint, init = {}) {
   const headers = new Headers(init.headers ?? {});
   const requestTimeout = new AbortController();
@@ -126,6 +129,18 @@ async function assertJobsRoute() {
       `/api/jobs/run rejected invalid auth with ${unauthorized.status}, expected 401`,
     );
   }
+  const unauthorizedBody = await unauthorized.json();
+  const unauthorizedRequestId = unauthorized.headers.get("x-request-id");
+  if (
+    unauthorizedBody?.success !== false ||
+    unauthorizedBody?.code !== "UNAUTHENTICATED" ||
+    !requestIdPattern.test(unauthorizedBody?.requestId ?? "") ||
+    unauthorizedRequestId !== unauthorizedBody.requestId
+  ) {
+    throw new Error(
+      "/api/jobs/run unauthorized response did not return a stable error envelope",
+    );
+  }
 
   if (!cronSecret) return;
   const authorized = await call("/api/jobs/run", {
@@ -140,7 +155,11 @@ async function assertJobsRoute() {
     );
   }
   const body = await authorized.json();
-  if (body?.success !== true) {
+  if (
+    body?.success !== true ||
+    !requestIdPattern.test(body?.requestId ?? "") ||
+    authorized.headers.get("x-request-id") !== body.requestId
+  ) {
     throw new Error("/api/jobs/run did not return a successful result");
   }
 }
