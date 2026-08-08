@@ -457,6 +457,7 @@ export function createFactsService(
     const row = await repository.getFactRelationship({
       workspaceId: context.workspaceId,
       id: relationshipId,
+      includeDeleted: true,
     });
     if (!row) {
       throw createGraphQLError(
