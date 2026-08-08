@@ -190,7 +190,7 @@ test("read-only settings are responsive, accessible, and browser-secret safe", a
   await page.goto("/settings/account");
   const settingsNavigation = page.getByRole("navigation", { name: "Settings" });
   await expect(settingsNavigation).toBeVisible();
-  await expect(settingsNavigation.getByRole("link")).toHaveCount(7);
+  await expect(settingsNavigation.getByRole("link")).toHaveCount(8);
   await expect(
     settingsNavigation.getByRole("link", { name: "Account" }),
   ).toHaveAttribute("aria-current", "page");

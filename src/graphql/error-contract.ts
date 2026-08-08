@@ -1,5 +1,6 @@
 import {
   isGraphQLErrorCode,
+  normalizeGraphQLErrorMessage,
   publicErrorMessage,
   type GraphQLErrorCode,
 } from "./errors";
@@ -53,7 +54,13 @@ export function normalizePublicGraphQLError(
   const code = isGraphQLErrorCode(payload.extensions?.code)
     ? payload.extensions.code
     : "INTERNAL";
-  const message = publicErrorMessage(code);
+  // Preconditions are also used for safe domain guards (for example, a
+  // referenced place cannot be archived). Preserve their bounded server copy
+  // while keeping every other transport code on its stable generic message.
+  const message =
+    code === "PRECONDITION_FAILED"
+      ? normalizeGraphQLErrorMessage(code, payload.message)
+      : publicErrorMessage(code);
   const requestId = normalizeRequestId(
     payload.extensions?.requestId,
     responseRequestId,
