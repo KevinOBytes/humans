@@ -29,6 +29,22 @@ vi.mock("@/modules/auth/auth-client", () => ({
 import AcceptInvitationPage from "@/app/(auth)/accept-invitation/page";
 
 describe("invitation acceptance", () => {
+  function expectDirectRouteCall(url: string, body: unknown) {
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(([candidate]) => candidate === url);
+    expect(call).toBeDefined();
+    expect(call?.[1]).toMatchObject({
+      body: JSON.stringify(body),
+      cache: "no-store",
+      credentials: "same-origin",
+      method: "POST",
+    });
+    expect(new Headers(call?.[1]?.headers).get("content-type")).toBe(
+      "application/json",
+    );
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     client.useSession.mockReturnValue({
@@ -84,24 +100,16 @@ describe("invitation acceptance", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText(/couldn't activate the workspace/i)).toBeVisible();
     expect(screen.getByText(/invitation was accepted/i)).toBeVisible();
-    expect(fetch).toHaveBeenCalledWith("/api/account/invitations/accept", {
-      body: JSON.stringify({
-        invitationId: "018f0000-0000-7000-8000-000000000001",
-      }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
+    expectDirectRouteCall("/api/account/invitations/accept", {
+      invitationId: "018f0000-0000-7000-8000-000000000001",
     });
   });
 
   it("stores the fragment credential only in a sealed server handoff before use", async () => {
     render(<AcceptInvitationPage />);
     await screen.findByRole("button", { name: "Accept invitation" });
-    expect(fetch).toHaveBeenCalledWith("/api/account/invitations/handoff", {
-      body: JSON.stringify({
-        invitationId: "018f0000-0000-7000-8000-000000000001",
-      }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
+    expectDirectRouteCall("/api/account/invitations/handoff", {
+      invitationId: "018f0000-0000-7000-8000-000000000001",
     });
     expect(document.body.innerHTML).not.toContain("018f0000");
   });

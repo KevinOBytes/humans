@@ -96,8 +96,10 @@ Auth catch-all emits `AUTH_SERVICE_UNAVAILABLE`, `AUTH_REQUEST_FAILED`,
 JSON failure includes a request ID in the body and `x-request-id` response
 header, and route handlers use no-store responses. These listed account/auth
 route codes are not
-silently coerced into GraphQL codes; the remaining cross-surface error matrix
-and a shared typed direct-route client are tracked in `TODO.md`. Health probes,
+silently coerced into GraphQL codes; invitation handoff/acceptance and two-factor
+state changes now use a browser-safe typed direct-route client with allowlisted
+codes and fail-closed malformed responses. The remaining cross-surface error
+matrix and adoption across every direct route are tracked in `TODO.md`. Health probes,
 the cron job trigger, and the storage proxy use separate operational envelopes
 and headers (including service-specific success/error behavior); they are not
 represented by the account/auth inventory above and remain part of the

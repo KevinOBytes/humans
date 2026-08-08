@@ -1068,11 +1068,11 @@ liveDescribe("durable import worker", () => {
       .update(jobs)
       .set({
         state: "queued",
-        scheduledAt: new Date(),
+        scheduledAt: new Date(Date.now() - 1_000),
         leaseOwner: null,
         leaseExpiresAt: null,
       })
-      .where(eq(jobs.id, staged.jobId));
+      .where(inArray(jobs.id, [staged.jobId, retry.job.id]));
     await expect(
       runWorker(fixture, "019cc7c4-6ed2-7e0a-aed8-e5d451c96c12"),
     ).resolves.toMatchObject({

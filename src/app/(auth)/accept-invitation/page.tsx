@@ -11,6 +11,7 @@ import {
   textLinkClassName,
 } from "@/components/auth/auth-shell";
 import { useEphemeralHashParam } from "@/components/auth/use-location-search";
+import { requestDirectRoute } from "@/lib/api/direct-route-client";
 import { authClient } from "@/modules/auth/auth-client";
 
 type InvitationPreview = {
@@ -41,21 +42,18 @@ export default function AcceptInvitationPage() {
     let active = true;
     const establish = async () => {
       if (handoff.value) {
-        const response = await fetch("/api/account/invitations/handoff", {
-          body: JSON.stringify({ invitationId: handoff.value }),
-          headers: { "content-type": "application/json" },
+        const response = await requestDirectRoute<{ status?: boolean }>({
+          body: { invitationId: handoff.value },
           method: "POST",
+          url: "/api/account/invitations/handoff",
         });
         if (active && response.ok) setInvitationId(handoff.value);
       } else if (session) {
-        const response = await fetch("/api/account/invitations/handoff", {
-          cache: "no-store",
+        const response = await requestDirectRoute<{ invitationId?: unknown }>({
+          url: "/api/account/invitations/handoff",
         });
-        if (response.ok) {
-          const body = (await response.json()) as { invitationId?: unknown };
-          if (active && typeof body.invitationId === "string") {
-            setInvitationId(body.invitationId);
-          }
+        if (response.ok && typeof response.data.invitationId === "string") {
+          if (active) setInvitationId(response.data.invitationId);
         }
       }
       if (active) setHandoffReady(true);
@@ -124,10 +122,10 @@ export default function AcceptInvitationPage() {
     setAccepting(true);
     setError(null);
     try {
-      const response = await fetch("/api/account/invitations/accept", {
-        body: JSON.stringify({ invitationId }),
-        headers: { "content-type": "application/json" },
+      const response = await requestDirectRoute<{ status?: boolean }>({
+        body: { invitationId },
         method: "POST",
+        url: "/api/account/invitations/accept",
       });
       if (!response.ok) {
         setError(
@@ -148,7 +146,10 @@ export default function AcceptInvitationPage() {
 
       setAccepted(true);
       setInvitationId(null);
-      await fetch("/api/account/invitations/handoff", { method: "DELETE" });
+      await requestDirectRoute({
+        method: "DELETE",
+        url: "/api/account/invitations/handoff",
+      });
     } catch {
       setError(
         "We couldn't accept this invitation. Sign in with the verified email address that was invited and try again.",
