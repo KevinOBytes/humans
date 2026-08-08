@@ -20,7 +20,9 @@ export const authClient = createAuthClient({
       twoFactorPage: "/two-factor",
       onTwoFactorRedirect: () => {
         if (typeof window !== "undefined") {
-          window.location.assign(twoFactorRedirectPath(window.location.search));
+          window.location.assign(
+            twoFactorRedirectPath(window.location.search, "/dashboard"),
+          );
         }
       },
     }),
