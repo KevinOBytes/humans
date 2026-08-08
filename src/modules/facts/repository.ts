@@ -608,7 +608,11 @@ export function createFactsRepository(database: Database) {
         throw new Error("Fact relationship insert did not return a row");
       return row;
     },
-    async getFactRelationship(input: { workspaceId: string; id: string }) {
+    async getFactRelationship(input: {
+      workspaceId: string;
+      id: string;
+      includeDeleted?: boolean;
+    }) {
       const [row] = await database
         .select()
         .from(factRelationships)
@@ -616,7 +620,9 @@ export function createFactsRepository(database: Database) {
           and(
             eq(factRelationships.workspaceId, input.workspaceId),
             eq(factRelationships.id, input.id),
-            isNull(factRelationships.deletedAt),
+            ...(input.includeDeleted
+              ? []
+              : [isNull(factRelationships.deletedAt)]),
           ),
         )
         .limit(1);
