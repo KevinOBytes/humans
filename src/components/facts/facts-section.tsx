@@ -224,12 +224,16 @@ export async function FactsSection({
             label="Contradictory claims"
             resetHref={
               contradictoryAfter
-                ? profilePageHref(personId, "facts", { factAfter })
+                ? profilePageHref(personId, "facts", {
+                    catalogAfter,
+                    factAfter,
+                  })
                 : null
             }
             nextHref={
               contradictoryPage?.hasNextPage && contradictoryPage.endCursor
                 ? profilePageHref(personId, "facts", {
+                    catalogAfter,
                     factAfter,
                     contradictoryAfter: contradictoryPage.endCursor,
                   })

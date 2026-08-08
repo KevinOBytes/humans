@@ -115,6 +115,9 @@ const RESPONSE_REFERENCE_KEY = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 const HMAC_SECRET = /^[0-9a-f]{64}$/iu;
 const MAX_IDEMPOTENCY_KEY_BYTES = 128;
 const MAX_CANONICAL_REQUEST_BYTES = 65_536;
+// Structured validation outcomes can contain up to twenty bounded issues;
+// keep replay references bounded while allowing those outcomes to round-trip.
+const MAX_RESPONSE_REFERENCE_STRING_LENGTH = 16_384;
 const MAX_CANONICAL_DEPTH = 16;
 const MAX_CANONICAL_NODES = 4_096;
 const WORKER_UUID =
@@ -636,7 +639,8 @@ function validateResponseReference(value: unknown): ResearchResponseReference {
           item === null ||
           typeof item === "boolean" ||
           (typeof item === "number" && Number.isFinite(item)) ||
-          (typeof item === "string" && item.length <= 512)
+          (typeof item === "string" &&
+            item.length <= MAX_RESPONSE_REFERENCE_STRING_LENGTH)
         ),
     )
   ) {

@@ -156,6 +156,26 @@ liveDescribe("fact selection mutation idempotency", () => {
       selectionReason: "Changed request",
     });
     expectGraphQLError(changed, "CONFLICT");
+
+    const conflictInput = {
+      ...input,
+      expectedVersion: null,
+      idempotencyKey: "fact-selection-conflict-replay-v1",
+    };
+    const [conflictFirst, conflictReplay] = await Promise.all([
+      select(owner, conflictInput),
+      select(owner, conflictInput),
+    ]);
+    expect(conflictFirst.body?.errors).toBeUndefined();
+    expect(conflictReplay.body?.errors).toBeUndefined();
+    expect(conflictFirst.body?.data?.selectPersonField).toMatchObject({
+      code: "CONFLICT",
+      currentVersion: selection.version,
+      selection: null,
+    });
+    expect(conflictReplay.body?.data?.selectPersonField).toEqual(
+      conflictFirst.body?.data?.selectPersonField,
+    );
   });
 
   it("allows the same raw key in a different workspace", async () => {

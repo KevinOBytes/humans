@@ -47,6 +47,7 @@ export type AiToolState = "COMPLETED" | "FAILED" | "PENDING" | "RUNNING";
 export type ArchiveGraphViewInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type ArchiveNoteInput = {
@@ -189,6 +190,7 @@ export type CreateFactInput = {
 export type CreateGraphViewInput = {
   appearance?: GraphViewAppearanceInput | null | undefined;
   filter: GraphFilterInput;
+  idempotencyKey?: string | null | undefined;
   layout?: GraphViewLayoutInput | null | undefined;
   name: string;
   positions?: Array<GraphPositionInput> | null | undefined;
@@ -867,6 +869,7 @@ export type UpdateGraphViewInput = {
   expectedVersion: number;
   filter?: GraphFilterInput | null | undefined;
   id: string;
+  idempotencyKey?: string | null | undefined;
   layout?: GraphViewLayoutInput | null | undefined;
   name?: string | null | undefined;
   positions?: Array<GraphPositionInput> | null | undefined;

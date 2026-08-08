@@ -243,6 +243,7 @@ function createServices(input: {
       actor: input.context.actor,
       cursorHmacKey: input.searchRuntime.cursorHmacKey,
       database: input.database,
+      idempotencyHmacKey: input.searchRuntime.protectedLookupHmacKey,
       operationLimiter: input.operationLimiter,
       metrics: input.context.metrics,
       permissions: input.context.permissions,

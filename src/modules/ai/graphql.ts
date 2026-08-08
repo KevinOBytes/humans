@@ -11,6 +11,7 @@ import {
   type AiRunHistoryItem,
   type AiToolSummary,
 } from "./repository-domain";
+import { normalizeAiRunHistoryPage } from "./service";
 
 const AiProvider = builder.enumType("AiProvider", {
   values: ["OPENAI", "OLLAMA", "COMPATIBLE"] as const,
@@ -288,21 +289,17 @@ export function registerAiGraphQL(): void {
       }),
       resolve: async (_root, args, context) => {
         requirePermission(context, "analysis", "read");
-        const cost =
-          args.first == null
-            ? 5
-            : Number.isInteger(args.first) &&
-                args.first >= 1 &&
-                args.first <= 10
-              ? args.first
-              : 11;
+        // Validate pagination before charging the read budget. Invalid client
+        // input must not consume rate-limit capacity.
+        const page = normalizeAiRunHistoryPage(args);
+        const cost = page.first;
         await context.operationLimiter.consume({
           operationClass: "ai.analysis.history",
           cost,
           clientPolicy: AI_READ_POLICY,
           policy: AI_READ_POLICY,
         });
-        return context.services.ai.listOwnedRuns(args);
+        return context.services.ai.listOwnedRuns(page);
       },
     }),
   }));

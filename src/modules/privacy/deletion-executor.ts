@@ -75,7 +75,7 @@ function auditRequest(input: {
 
 /**
  * Executes approved, workspace-scoped deletion requests as a bounded worker
- * transaction. Requests are soft-deleted only after all selected resources
+ * transaction. Selected resources are soft-deleted only after all of them
  * clear active legal holds. File objects are handed to the existing durable
  * cleanup job; raw identifiers and personal values never enter audit output.
  */
@@ -97,27 +97,27 @@ export async function executeApprovedDeletionRequests(input: {
   const searchIndexMaintenance = input.searchIndexMaintenance;
   let completed = 0;
 
-  await input.database.transaction(async (transaction) => {
-    const requests = await transaction
-      .select()
-      .from(deletionRequests)
-      .where(
-        and(
-          eq(deletionRequests.state, "approved"),
-          isNull(deletionRequests.deletedAt),
-        ),
-      )
-      // Candidates are only read here. Lock each request after taking its
-      // workspace policy lock below, preserving the same lock order as
-      // policy mutations and avoiding advisory-lock/request-row deadlocks.
-      .orderBy(
-        asc(deletionRequests.workspaceId),
-        asc(deletionRequests.createdAt),
-        asc(deletionRequests.id),
-      )
-      .limit(limit);
+  const requests = await input.database
+    .select()
+    .from(deletionRequests)
+    .where(
+      and(
+        eq(deletionRequests.state, "approved"),
+        isNull(deletionRequests.deletedAt),
+      ),
+    )
+    // Candidates are only read here. Lock each request after taking its
+    // workspace policy lock below, preserving the same lock order as
+    // policy mutations and avoiding advisory-lock/request-row deadlocks.
+    .orderBy(
+      asc(deletionRequests.workspaceId),
+      asc(deletionRequests.createdAt),
+      asc(deletionRequests.id),
+    )
+    .limit(limit);
 
-    for (const candidate of requests) {
+  for (const candidate of requests) {
+    await input.database.transaction(async (transaction) => {
       await transaction.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${candidate.workspaceId}, 0))`,
       );
@@ -134,7 +134,7 @@ export async function executeApprovedDeletionRequests(input: {
         )
         .limit(1)
         .for("update", { skipLocked: true });
-      if (!request) continue;
+      if (!request) return;
 
       const scope = parseScope(request.scope);
       const requestId = `worker:deletion:${request.id}`;
@@ -165,7 +165,7 @@ export async function executeApprovedDeletionRequests(input: {
           redactedDiff: { reason: "invalid_scope" },
           outcome: "failure",
         });
-        continue;
+        return;
       }
 
       const personRows = scope.personIds.length
@@ -236,7 +236,7 @@ export async function executeApprovedDeletionRequests(input: {
           redactedDiff: { reason: "scope_unavailable" },
           outcome: "failure",
         });
-        continue;
+        return;
       }
 
       const holdPredicates = [
@@ -277,16 +277,35 @@ export async function executeApprovedDeletionRequests(input: {
             )
         : [];
       if (holds.length > 0) {
-        await auditRequest({
-          database: transaction as unknown as Database,
-          action: "deletion_request.blocked",
-          requestId,
-          resourceId: request.id,
-          workspaceId: request.workspaceId,
-          redactedDiff: { reason: "active_legal_hold" },
-          outcome: "failure",
-        });
-        continue;
+        const blockedMarker = "Deletion blocked by active legal hold.";
+        if (request.reviewNotes !== blockedMarker) {
+          await transaction
+            .update(deletionRequests)
+            .set({
+              reviewNotes: blockedMarker,
+              updatedAt: now,
+              updatedBy: WORKER_ACTOR,
+              version: sql`${deletionRequests.version} + 1`,
+            })
+            .where(
+              and(
+                eq(deletionRequests.workspaceId, request.workspaceId),
+                eq(deletionRequests.id, request.id),
+                eq(deletionRequests.state, "approved"),
+                eq(deletionRequests.version, request.version),
+              ),
+            );
+          await auditRequest({
+            database: transaction as unknown as Database,
+            action: "deletion_request.blocked",
+            requestId,
+            resourceId: request.id,
+            workspaceId: request.workspaceId,
+            redactedDiff: { reason: "active_legal_hold" },
+            outcome: "failure",
+          });
+        }
+        return;
       }
 
       const [deleting] = await transaction
@@ -306,7 +325,7 @@ export async function executeApprovedDeletionRequests(input: {
           ),
         )
         .returning({ version: deletionRequests.version });
-      if (!deleting) continue;
+      if (!deleting) return;
 
       if (personRows.length) {
         await transaction
@@ -402,7 +421,7 @@ export async function executeApprovedDeletionRequests(input: {
         outcome: "success",
       });
       completed += 1;
-    }
-  });
+    });
+  }
   return completed;
 }

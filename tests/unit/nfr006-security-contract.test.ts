@@ -34,25 +34,39 @@ function apiRoutePath(file: string): string {
 
 function apiRouteFiles(): string[] {
   return filesUnder(resolve(appRoot, "api"))
-    .filter((file) => file.endsWith("/route.ts"))
+    .filter((file) => file.endsWith(`${sep}route.ts`))
     .sort();
 }
 
 function methodSource(source: string, method: string): string {
-  const start = source.indexOf(`${method}(`);
-  if (start < 0) return "";
-  const nextMethods = [
-    "\n  async ",
-    "\n  checkReachability",
-    "\n  getMetadata",
-    "\n  openRead",
-    "\n  exists",
-    "\n  delete(",
-  ]
-    .map((candidate) => source.indexOf(candidate, start + method.length + 1))
-    .filter((index) => index >= 0);
-  const end = nextMethods.length > 0 ? Math.min(...nextMethods) : source.length;
-  return source.slice(start, end);
+  const escaped = method.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const signature = new RegExp(
+    `(?:^|\\n)\\s*(?:public\\s+)?(?:async\\s+)?${escaped}\\s*\\([^)]*\\)`,
+    "u",
+  ).exec(source);
+  if (!signature) return "";
+  const start = signature.index + signature[0].lastIndexOf(method);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  let quote: string | null = null;
+  let escapedCharacter = false;
+  for (let index = open; index < source.length; index += 1) {
+    const character = source[index];
+    if (quote) {
+      if (escapedCharacter) escapedCharacter = false;
+      else if (character === "\\") escapedCharacter = true;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+      continue;
+    }
+    if (character === "{") depth += 1;
+    if (character === "}" && --depth === 0)
+      return source.slice(start, index + 1);
+  }
+  return source.slice(start);
 }
 
 describe("HUM-NFR-006 repository security contract", () => {

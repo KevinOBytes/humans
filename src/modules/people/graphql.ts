@@ -35,52 +35,52 @@ export const PersonStatus = builder.enumType("PersonStatus", {
 });
 
 const PersonNameKind = builder.enumType("PersonNameKind", {
-  values: [
-    "LEGAL",
-    "PREFERRED",
-    "BIRTH",
-    "MARRIED",
-    "FORMER",
-    "ALIAS",
-    "TRANSLITERATION",
-    "OTHER",
-  ] as const,
+  values: {
+    LEGAL: { value: "legal" },
+    PREFERRED: { value: "preferred" },
+    BIRTH: { value: "birth" },
+    MARRIED: { value: "married" },
+    FORMER: { value: "former" },
+    ALIAS: { value: "alias" },
+    TRANSLITERATION: { value: "transliteration" },
+    OTHER: { value: "other" },
+  } as const,
 });
 
 const PersonRecordState = builder.enumType("PersonRecordState", {
-  values: [
-    "ASSERTED",
-    "VERIFIED",
-    "DISPUTED",
-    "SUPERSEDED",
-    "UNKNOWN",
-  ] as const,
+  values: {
+    ASSERTED: { value: "asserted" },
+    VERIFIED: { value: "verified" },
+    DISPUTED: { value: "disputed" },
+    SUPERSEDED: { value: "superseded" },
+    UNKNOWN: { value: "unknown" },
+  } as const,
 });
 
 const PersonTemporalSemantics = builder.enumType("PersonTemporalSemantics", {
-  values: [
-    "EXACT",
-    "APPROXIMATE",
-    "BEFORE",
-    "AFTER",
-    "BETWEEN",
-    "YEAR_ONLY",
-    "UNKNOWN",
-  ] as const,
+  values: {
+    EXACT: { value: "exact" },
+    APPROXIMATE: { value: "approximate" },
+    BEFORE: { value: "before" },
+    AFTER: { value: "after" },
+    BETWEEN: { value: "between" },
+    YEAR_ONLY: { value: "year_only" },
+    UNKNOWN: { value: "unknown" },
+  } as const,
 });
 
 const PersonTemporalPrecision = builder.enumType("PersonTemporalPrecision", {
-  values: [
-    "INSTANT",
-    "SECOND",
-    "MINUTE",
-    "HOUR",
-    "DAY",
-    "MONTH",
-    "YEAR",
-    "RANGE",
-    "UNKNOWN",
-  ] as const,
+  values: {
+    INSTANT: { value: "instant" },
+    SECOND: { value: "second" },
+    MINUTE: { value: "minute" },
+    HOUR: { value: "hour" },
+    DAY: { value: "day" },
+    MONTH: { value: "month" },
+    YEAR: { value: "year" },
+    RANGE: { value: "range" },
+    UNKNOWN: { value: "unknown" },
+  } as const,
 });
 
 const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
@@ -90,7 +90,7 @@ const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
     kind: t.field({
       type: PersonNameKind,
       nullable: false,
-      resolve: (row) => row.kind.toUpperCase() as never,
+      resolve: (row) => row.kind,
     }),
     fullName: t.exposeString("fullName", { nullable: false }),
     givenName: t.exposeString("givenName", { nullable: true }),
@@ -114,12 +114,12 @@ const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
     temporalSemantics: t.field({
       type: PersonTemporalSemantics,
       nullable: false,
-      resolve: (row) => row.temporalSemantics.toUpperCase() as never,
+      resolve: (row) => row.temporalSemantics,
     }),
     temporalPrecision: t.field({
       type: PersonTemporalPrecision,
       nullable: false,
-      resolve: (row) => row.temporalPrecision.toUpperCase() as never,
+      resolve: (row) => row.temporalPrecision,
     }),
     confidence: t.float({
       nullable: false,
@@ -132,7 +132,7 @@ const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
     state: t.field({
       type: PersonRecordState,
       nullable: false,
-      resolve: (row) => row.state.toUpperCase() as never,
+      resolve: (row) => row.state,
     }),
     version: t.exposeInt("version", { nullable: false }),
     createdAt: t.field({
@@ -169,12 +169,12 @@ const PersonEvent = builder.objectRef<PersonEventRow>("PersonEvent").implement({
     temporalSemantics: t.field({
       type: PersonTemporalSemantics,
       nullable: false,
-      resolve: (row) => row.temporalSemantics.toUpperCase() as never,
+      resolve: (row) => row.temporalSemantics,
     }),
     temporalPrecision: t.field({
       type: PersonTemporalPrecision,
       nullable: false,
-      resolve: (row) => row.temporalPrecision.toUpperCase() as never,
+      resolve: (row) => row.temporalPrecision,
     }),
     confidence: t.float({
       nullable: false,
@@ -187,7 +187,7 @@ const PersonEvent = builder.objectRef<PersonEventRow>("PersonEvent").implement({
     state: t.field({
       type: PersonRecordState,
       nullable: false,
-      resolve: (row) => row.state.toUpperCase() as never,
+      resolve: (row) => row.state,
     }),
     version: t.exposeInt("version", { nullable: false }),
     createdAt: t.field({

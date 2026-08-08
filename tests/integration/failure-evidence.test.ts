@@ -81,9 +81,9 @@ liveDescribe("whole-application dependency failure evidence", () => {
     const client = new IORedis(process.env.REDIS_TEST_URL!, {
       connectTimeout: 1_000,
       maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
     });
     await client.ping();
-    client.options.enableOfflineQueue = false;
     return client;
   }
 

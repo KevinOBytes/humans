@@ -249,10 +249,12 @@ export function UploadRecoveryControl({
       if (!uploaded?.id) throw new Error("completion_failed");
       setStatus(completedUploadStatus(uploaded));
       onCompleted?.(uploaded);
-      if (inputRef.current) inputRef.current.value = "";
     } catch {
       setStatus("The pending upload could not be resumed. Please try again.");
     } finally {
+      // Reset even when validation or recovery fails so selecting the same
+      // file again reliably emits a change event in every browser.
+      if (inputRef.current) inputRef.current.value = "";
       setBusy(false);
     }
   }

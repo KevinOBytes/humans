@@ -257,7 +257,7 @@ export const aiToolCalls = pgTable(
     }).onDelete("cascade"),
     check(
       "ai_tool_calls_name_check",
-      sql`${table.approvedToolName} ~ '^[a-z][a-z0-9_.-]*$'`,
+      sql`${table.approvedToolName} ~ '^[A-Za-z][A-Za-z0-9_.-]*$'`,
     ),
     check(
       "ai_tool_calls_timing_check",
