@@ -600,6 +600,7 @@ const ReviseFactInput = builder.inputType("ReviseFactInput", {
 });
 const SelectPersonFieldInput = builder.inputType("SelectPersonFieldInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     personId: t.field({ type: "UUID", required: true }),
     namespace: t.string({ required: true }),
     fieldKey: t.string({ required: true }),
