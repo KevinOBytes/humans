@@ -23,7 +23,7 @@ export default function TwoFactorPage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const locationSearch = useLocationSearch();
-  const returnTo = returnToFromSearch(locationSearch ?? "");
+  const returnTo = returnToFromSearch(locationSearch ?? "", "/dashboard");
 
   function selectMethod(nextMethod: ChallengeMethod) {
     setMethod(nextMethod);

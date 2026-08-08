@@ -26,7 +26,7 @@ export default function SignInPage() {
   const [pending, setPending] = useState(false);
   const locationSearch = useLocationSearch();
   const search = new URLSearchParams(locationSearch ?? "");
-  const returnTo = returnToFromSearch(locationSearch ?? "");
+  const returnTo = returnToFromSearch(locationSearch ?? "", "/dashboard");
   const queryNotice =
     search.get("verified") === "true"
       ? "Your email is verified. You can sign in now."

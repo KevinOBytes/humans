@@ -6,6 +6,16 @@ import {
 } from "@/modules/auth/return-to";
 
 describe("auth return paths", () => {
+  it("allows the caller to choose a safe default destination", () => {
+    expect(returnToFromSearch("", "/dashboard")).toBe("/dashboard");
+    expect(returnToFromSearch("?returnTo=%2Fgraph", "/dashboard")).toBe(
+      "/graph",
+    );
+    expect(twoFactorRedirectPath("", "/dashboard")).toBe(
+      "/two-factor?returnTo=%2Fdashboard",
+    );
+  });
+
   it("preserves only the clean invitation continuation", () => {
     const invitation = "/accept-invitation";
     const search = `?returnTo=${encodeURIComponent(invitation)}`;
