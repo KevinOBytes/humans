@@ -19,7 +19,7 @@ export type DashboardImport = {
   totalRows: number | null;
   acceptedRows: number | null;
   rejectedRows: number | null;
-  createdAt: string;
+  startedAt: string;
 };
 
 export type DashboardGraphAnalysis = {
@@ -319,8 +319,8 @@ export function DashboardOverview({
                   </div>
                   <p className="text-muted-foreground mt-2 text-xs">
                     Started{" "}
-                    <time dateTime={item.createdAt}>
-                      {displayDate(item.createdAt)}
+                    <time dateTime={item.startedAt}>
+                      {displayDate(item.startedAt)}
                     </time>
                   </p>
                 </li>

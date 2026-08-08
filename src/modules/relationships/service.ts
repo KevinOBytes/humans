@@ -578,7 +578,9 @@ export function createRelationshipsService(context: ResearchServiceContext) {
           idempotencyKey: input.idempotencyKey,
           operation: "relationship_type.update.graphql",
           requestMaterial: {
-            allowsSelf: fieldMaterial(input.allowsSelf),
+            allowsSelf: fieldMaterial(
+              input.allowsSelf === null ? undefined : input.allowsSelf,
+            ),
             allowedMultiplicity: fieldMaterial(
               input.allowedMultiplicity === undefined
                 ? undefined

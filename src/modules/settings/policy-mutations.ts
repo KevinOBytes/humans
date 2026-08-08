@@ -30,11 +30,7 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60_000;
 
 function normalizePolicyName(value: string): string {
   const name = value.normalize("NFKC").trim();
-  if (
-    name.length < 1 ||
-    name.length > 120 ||
-    Buffer.byteLength(name, "utf8") > 512
-  ) {
+  if (name.length < 1 || name.length > 120) {
     throw createGraphQLError("VALIDATION_FAILED", "Policy name is invalid.");
   }
   return name;
@@ -77,8 +73,6 @@ function canonicalMaterial(value: unknown): string {
 function parseStoredPolicyResult(value: unknown): PolicyMutationResult | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
-  const keys = Object.keys(row).sort();
-  if (keys.join(",") !== "code,id,requestId,version") return null;
   const validId =
     row.id === null || (typeof row.id === "string" && UUID.test(row.id));
   const validVersion =

@@ -75,6 +75,9 @@ type FactCreateResponseReference = ResearchResponseReference & {
   readonly factId: string | null;
   readonly outcome?: string;
 };
+type SelectionResponseReference = ResearchResponseReference & {
+  readonly outcome?: string;
+};
 
 type FactCreateInput = {
   personId: string;
@@ -174,6 +177,52 @@ function decodeFactCreateOutcome(value: string): FactOutcome {
     throw createGraphQLError(
       "PRECONDITION_FAILED",
       "The stored fact mutation result is invalid.",
+    );
+  }
+}
+
+function encodeSelectionOutcome(
+  result: MutationOutcome<PersonFieldSelectionRow>,
+): string {
+  return JSON.stringify({
+    code: result.code,
+    currentVersion: result.currentVersion ?? null,
+    issues: result.issues,
+  });
+}
+
+function decodeSelectionOutcome(
+  value: string,
+): MutationOutcome<PersonFieldSelectionRow> {
+  try {
+    const parsed = JSON.parse(value) as {
+      code?: unknown;
+      currentVersion?: unknown;
+      issues?: unknown;
+    };
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.issues) ||
+      (parsed.code !== null && typeof parsed.code !== "string") ||
+      (parsed.currentVersion !== null &&
+        parsed.currentVersion !== undefined &&
+        !Number.isInteger(parsed.currentVersion))
+    ) {
+      throw new Error("invalid outcome");
+    }
+    return {
+      resource: null,
+      issues: parsed.issues as ValidationIssue[],
+      code: parsed.code as MutationOutcome<PersonFieldSelectionRow>["code"],
+      ...(parsed.currentVersion === undefined || parsed.currentVersion === null
+        ? {}
+        : { currentVersion: parsed.currentVersion as number }),
+    };
+  } catch {
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "The stored fact selection result is invalid.",
     );
   }
 }
@@ -1714,16 +1763,13 @@ export function createFactsService(
           context,
           idempotency,
           ["fact:select", "person:update"],
-          async (scopedContext) => {
+          async (scopedContext): Promise<SelectionResponseReference> => {
             const outcome = await createFactsService(
               scopedContext,
               runtime,
             ).selectField({ ...input, idempotencyKey: null });
             if (!outcome.resource) {
-              throw createGraphQLError(
-                outcome.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
-                "The fact field selection could not be saved.",
-              );
+              return { outcome: encodeSelectionOutcome(outcome) };
             }
             return {
               fieldKey: outcome.resource.fieldKey,
@@ -1734,6 +1780,9 @@ export function createFactsService(
             };
           },
         );
+        if (typeof executed.responseReference.outcome === "string") {
+          return decodeSelectionOutcome(executed.responseReference.outcome);
+        }
         return {
           resource: await replaySelection(executed.responseReference),
           issues: [],

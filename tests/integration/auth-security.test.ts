@@ -2282,6 +2282,8 @@ liveDescribe("Better Auth security boundary", () => {
       referenceId: owner.organizationId,
       workspaceId: owner.workspaceId,
     });
+    expect(stored!.prefix).toBe("hum_");
+    expect(stored!.start).toBe(rawKey.slice("hum_".length, "hum_".length + 6));
     expect(stored!.key).not.toBe(rawKey);
     expect(stored!.key).not.toContain(rawKey);
     const keyLogs = JSON.stringify([log.mock.calls, error.mock.calls]);

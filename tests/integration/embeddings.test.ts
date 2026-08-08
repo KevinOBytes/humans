@@ -28,7 +28,8 @@ liveDescribe("provider-neutral embeddings", () => {
       provider: "fixture",
       model: "fixture-2d",
       dimensions: 2,
-      embed: async () => [1, 0] as const,
+      embed: async (text: string) =>
+        text.includes("Grace") ? ([0, 1] as const) : ([1, 0] as const),
     };
     const resourceId = newId();
     const sourceHash = `sha256:${"ab".repeat(32)}`;

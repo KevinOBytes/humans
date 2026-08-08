@@ -16,7 +16,7 @@ const TOOL_SUMMARY_COUNT_KEYS = new Set([
 ]);
 const TOOL_SUMMARY_BOOLEAN_KEYS = new Set(["truncated"]);
 
-export const AI_TOOL_NAME = /^[a-z][a-z0-9_.-]{0,63}$/u;
+export const AI_TOOL_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/u;
 export const AI_STABLE_ERROR_CODES = [
   "analysis_cancelled",
   "analysis_limit_reached",

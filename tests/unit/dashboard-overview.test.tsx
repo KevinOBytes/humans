@@ -52,7 +52,7 @@ const baseProps: DashboardOverviewProps = {
       totalRows: 30,
       acceptedRows: 28,
       rejectedRows: 2,
-      createdAt: "2026-08-04T14:00:00.000Z",
+      startedAt: "2026-08-04T14:00:00.000Z",
     },
   ],
   analyses: mergeRecentAnalyses(
@@ -376,7 +376,7 @@ describe("DashboardOverview", () => {
               id: "import-1",
               format: null,
               state: "COMPLETED",
-              createdAt: "2026-08-04T10:00:00.000Z",
+              startedAt: "2026-08-04T10:00:00.000Z",
             },
           ],
         },

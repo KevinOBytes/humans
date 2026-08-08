@@ -46,7 +46,7 @@ const VERIFY_TIMEOUT_MS = 60_000;
 const MAX_PENDING_ACTOR = 5;
 const MAX_PENDING_WORKSPACE = 100;
 const UPLOAD_SESSION_REFERENCE_UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const UPLOAD_COMPLETION_IDEMPOTENCY_TTL_MS = 15 * 60_000;
 
 type UploadCompletionResponseReference = {
@@ -64,8 +64,8 @@ function parseUploadCompletionReference(
     Object.keys(value).length !== 2
   ) {
     throw createGraphQLError(
-      "PRECONDITION_FAILED",
-      publicErrorMessage("PRECONDITION_FAILED"),
+      "VALIDATION_FAILED",
+      publicErrorMessage("VALIDATION_FAILED"),
     );
   }
   const candidate = value as Record<string, unknown>;
@@ -76,8 +76,8 @@ function parseUploadCompletionReference(
     !UPLOAD_SESSION_REFERENCE_UUID.test(candidate.uploadSessionId)
   ) {
     throw createGraphQLError(
-      "PRECONDITION_FAILED",
-      publicErrorMessage("PRECONDITION_FAILED"),
+      "VALIDATION_FAILED",
+      publicErrorMessage("VALIDATION_FAILED"),
     );
   }
   return {
@@ -407,7 +407,6 @@ export function createFilesService(
       };
       let session: UploadSessionRow;
       if (input.idempotencyKey != null) {
-        if (!encryptionKey) return providerUnavailable();
         const idempotency = deriveResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + GRANT_TTL_MS),
           idempotencyKey: input.idempotencyKey,
@@ -420,7 +419,7 @@ export function createFilesService(
             purpose: validated.purpose,
             sensitivity: validated.sensitivity,
           },
-          secret: encryptionKey,
+          secret: encryptionKey!,
         });
         const result = await runIdempotentResearchWrite(
           context,
@@ -492,7 +491,6 @@ export function createFilesService(
       let idempotencyClaim:
         Awaited<ReturnType<typeof claimIdempotentResearchWrite>> | undefined;
       if (idempotencyKey != null) {
-        if (!encryptionKey) return providerUnavailable();
         idempotency = deriveResearchIdempotency(context, {
           expiresAt: new Date(
             Date.now() + UPLOAD_COMPLETION_IDEMPOTENCY_TTL_MS,
@@ -500,7 +498,7 @@ export function createFilesService(
           idempotencyKey,
           operation: "file.upload.complete",
           requestMaterial: { uploadSessionId },
-          secret: encryptionKey,
+          secret: encryptionKey!,
         });
         idempotencyClaim = await claimIdempotentResearchWrite(
           context,
@@ -517,8 +515,8 @@ export function createFilesService(
             initial.fileId !== reference.fileId
           ) {
             throw createGraphQLError(
-              "PRECONDITION_FAILED",
-              publicErrorMessage("PRECONDITION_FAILED"),
+              "VALIDATION_FAILED",
+              publicErrorMessage("VALIDATION_FAILED"),
             );
           }
           const file = await repository.getFile({
@@ -527,8 +525,8 @@ export function createFilesService(
           });
           if (!file) {
             throw createGraphQLError(
-              "PRECONDITION_FAILED",
-              publicErrorMessage("PRECONDITION_FAILED"),
+              "VALIDATION_FAILED",
+              publicErrorMessage("VALIDATION_FAILED"),
             );
           }
           return { session: initial, file, issues: [] as const };
