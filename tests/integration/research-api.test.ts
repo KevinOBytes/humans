@@ -1838,7 +1838,9 @@ liveDescribe("research API", () => {
           }
         }
       `,
-      variables: { input: { personId, definitionId, value: { decimal: 0.4 } } },
+      variables: {
+        input: { personId, definitionId, value: { decimal: "0.4" } },
+      },
     });
     const factId = required(created.body?.data?.createFact.fact?.id);
     const revise = () =>
