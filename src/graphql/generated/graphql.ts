@@ -775,6 +775,7 @@ export type SelectPersonFieldInput = {
 
 export type SelectPersonPresentationInput = {
   expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
   personId: string;
   primaryNameId?: string | null | undefined;
   primaryPhotoFileId?: string | null | undefined;

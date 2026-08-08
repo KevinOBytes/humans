@@ -478,6 +478,7 @@ const SelectPersonPresentationInput = builder.inputType(
     fields: (t) => ({
       personId: t.field({ type: "UUID", required: true }),
       expectedVersion: t.int({ required: true }),
+      idempotencyKey: t.string(),
       primaryNameId: t.field({ type: "UUID" }),
       primaryPhotoFileId: t.field({ type: "UUID" }),
     }),
