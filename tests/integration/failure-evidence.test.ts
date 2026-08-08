@@ -82,7 +82,9 @@ liveDescribe("whole-application dependency failure evidence", () => {
       connectTimeout: 1_000,
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
+      lazyConnect: true,
     });
+    await client.connect();
     await client.ping();
     return client;
   }
