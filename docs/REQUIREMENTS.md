@@ -24,7 +24,7 @@ role matrix remain open. This bounded race evidence supersedes the earlier
 acceptance-matrix wording that listed cancellation-wins as unverified; the
 provider, browser, recipient, and role evidence is still outstanding.
 
-Bounded HUM-NFR-008 tag evidence (2026-08-06): generated GraphQL `createTag` and `tagPerson` accept optional principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves concurrent convergence, one tag/person-tag and audit effect, opaque response-reference replay, malformed-reference rejection, expiry takeover, and workspace fencing. Tag update/archive/untag and the remaining retryable mutation matrix remain open.
+Bounded HUM-NFR-008 tag-domain evidence (2026-08-06): generated GraphQL `createTag`, `updateTag`, `archiveTag`, `tagPerson`, `untagPerson`, `tagFact`, `untagFact`, `tagRelationship`, and `untagRelationship` accept optional principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves concurrent convergence, one durable claim and audit effect per operation, archived/deleted association response replay, malformed-reference rejection, expiry takeover, changed-material conflicts, and workspace fencing. The remaining retryable mutation matrix remains open.
 
 ## Functional requirements
 

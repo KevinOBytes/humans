@@ -626,6 +626,8 @@ const UpdateTagInput = builder.inputType("UpdateTagInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     name: t.string(),
     color: t.string(),
     description: t.string(),
@@ -635,6 +637,8 @@ const ArchiveTagInput = builder.inputType("ArchiveTagInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
   }),
 });
 const TagPersonInput = builder.inputType("TagPersonInput", {
@@ -647,18 +651,24 @@ const TagPersonInput = builder.inputType("TagPersonInput", {
 });
 const UntagPersonInput = builder.inputType("UntagPersonInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     personId: t.field({ type: "UUID", required: true }),
     tagId: t.field({ type: "UUID", required: true }),
   }),
 });
 const TagFactInput = builder.inputType("TagFactInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     factId: t.field({ type: "UUID", required: true }),
     tagId: t.field({ type: "UUID", required: true }),
   }),
 });
 const TagRelationshipInput = builder.inputType("TagRelationshipInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     relationshipId: t.field({ type: "UUID", required: true }),
     tagId: t.field({ type: "UUID", required: true }),
   }),

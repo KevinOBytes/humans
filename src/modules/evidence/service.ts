@@ -3,7 +3,7 @@ import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { createGraphQLError } from "@/graphql/errors";
 import { decodeResearchCursor, normalizePagination } from "@/graphql/limits";
 import { newId } from "@/db/id";
-import { evidenceItems, notes, sources } from "@/db/schema/evidence";
+import { evidenceItems, notes, sources, tags } from "@/db/schema/evidence";
 import { facts as factsTable } from "@/db/schema/facts";
 import { people as peopleTable } from "@/db/schema/people";
 import { relationships as relationshipsTable } from "@/db/schema/relationships";
@@ -123,8 +123,16 @@ type TagCreateResponseReference = ResearchResponseReference & {
   readonly tagId?: string | null;
   readonly outcome?: string;
 };
+type TagResponseReference = ResearchResponseReference & {
+  readonly tagId?: string | null;
+  readonly outcome?: string;
+};
 type PersonTagResponseReference = ResearchResponseReference & {
   readonly personTagId?: string | null;
+  readonly outcome?: string;
+};
+type TagAssociationResponseReference = ResearchResponseReference & {
+  readonly associationId?: string | null;
   readonly outcome?: string;
 };
 
@@ -133,6 +141,7 @@ function encodeTagMutationOutcome<T>(result: TagMutationOutcome<T>): string {
     code: result.code,
     currentVersion: result.currentVersion ?? null,
     issues: result.issues,
+    resource: result.resource ?? null,
   });
 }
 
@@ -142,6 +151,7 @@ function decodeTagMutationOutcome<T>(value: string): TagMutationOutcome<T> {
       code?: unknown;
       currentVersion?: unknown;
       issues?: unknown;
+      resource?: unknown;
     };
     if (
       !parsed ||
@@ -155,7 +165,7 @@ function decodeTagMutationOutcome<T>(value: string): TagMutationOutcome<T> {
       throw new Error("invalid outcome");
     }
     return {
-      resource: null,
+      resource: (parsed.resource ?? null) as T | null,
       issues: parsed.issues as ValidationIssue[],
       code: parsed.code as TagMutationOutcome<T>["code"],
       ...(parsed.currentVersion === undefined || parsed.currentVersion === null
@@ -2356,12 +2366,13 @@ export function createEvidenceService(context: ResearchServiceContext) {
       name?: string | null;
       color?: string | null;
       description?: string | null;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<TagRow>> {
       const current = await repository.getTag({
         workspaceId: context.workspaceId,
         id: input.id,
       });
-      if (!current)
+      if (!current && input.idempotencyKey == null)
         throw createGraphQLError(
           "NOT_FOUND",
           "The requested resource was not found.",
@@ -2372,6 +2383,8 @@ export function createEvidenceService(context: ResearchServiceContext) {
         updatedBy: context.actor.principalId,
       };
       const changed: string[] = [];
+      let nameValue: string | null | undefined;
+      let normalizedNameValue: string | null | undefined;
       if (input.name !== undefined) {
         const name = normalizeHumanText(input.name, {
           path: ["name"],
@@ -2384,20 +2397,106 @@ export function createEvidenceService(context: ResearchServiceContext) {
           patch.name = name.value;
           patch.normalizedName = normalized.value;
         }
+        nameValue = name.value;
+        normalizedNameValue = normalized.value;
         changed.push("name");
       }
+      let colorValue: string | null | undefined;
       if (input.color !== undefined) {
         const value = validateColor(input.color, ["color"]);
         issues.push(...value.issues);
         if (!value.issues.length) patch.color = value.value;
+        colorValue = value.value;
         changed.push("color");
       }
+      let descriptionValue: string | null | undefined;
       if (input.description !== undefined) {
-        patch.description = input.description?.normalize("NFKC").trim() || null;
+        descriptionValue = input.description?.normalize("NFKC").trim() || null;
+        patch.description = descriptionValue;
         changed.push("description");
       }
       if (issues.length) return invalid(issues);
-      const row = await context.database.transaction(async (tx) => {
+
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Tag update idempotency is not configured.",
+          );
+        }
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + TAG_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "tag.update.graphql",
+          requestMaterial: {
+            color:
+              input.color === undefined
+                ? "__unchanged__"
+                : (colorValue ?? null),
+            description:
+              input.description === undefined
+                ? "__unchanged__"
+                : (descriptionValue ?? null),
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            name:
+              input.name === undefined ? "__unchanged__" : (nameValue ?? null),
+            normalizedName:
+              input.name === undefined
+                ? "__unchanged__"
+                : (normalizedNameValue ?? null),
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["tag:update"],
+          async (scopedContext): Promise<TagResponseReference> => {
+            const result = await createEvidenceService(scopedContext).updateTag(
+              { ...input, idempotencyKey: null },
+            );
+            return result.resource
+              ? { tagId: result.resource.id }
+              : {
+                  tagId: null,
+                  outcome: encodeTagMutationOutcome(result),
+                };
+          },
+        );
+        const reference = executed.responseReference;
+        if (typeof reference.outcome === "string")
+          return decodeTagMutationOutcome<TagRow>(reference.outcome);
+        if (
+          typeof reference.tagId !== "string" ||
+          !TAG_REFERENCE_UUID.test(reference.tagId)
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored tag mutation reference is invalid.",
+          );
+        }
+        const [tag] = await context.database
+          .select()
+          .from(tags)
+          .where(
+            and(
+              eq(tags.workspaceId, context.workspaceId),
+              eq(tags.id, reference.tagId),
+              isNull(tags.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!tag)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        return { resource: tag, issues: [], code: null };
+      }
+
+      const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
@@ -2419,24 +2518,89 @@ export function createEvidenceService(context: ResearchServiceContext) {
       });
       return row
         ? { resource: row, issues: [], code: null }
-        : conflict(current.version);
+        : conflict(current?.version);
     },
     async archiveTag(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<TagRow>> {
       const current = await repository.getTag({
         workspaceId: context.workspaceId,
         id: input.id,
       });
-      if (!current)
+      if (!current && input.idempotencyKey == null)
         throw createGraphQLError(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
       const issues = versionIssue(input.expectedVersion);
       if (issues.length) return invalid(issues);
-      const row = await context.database.transaction(async (tx) => {
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Tag archive idempotency is not configured.",
+          );
+        }
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + TAG_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "tag.archive.graphql",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["tag:delete"],
+          async (scopedContext): Promise<TagResponseReference> => {
+            const result = await createEvidenceService(
+              scopedContext,
+            ).archiveTag({ ...input, idempotencyKey: null });
+            return result.resource
+              ? { tagId: result.resource.id }
+              : {
+                  tagId: null,
+                  outcome: encodeTagMutationOutcome(result),
+                };
+          },
+        );
+        const reference = executed.responseReference;
+        if (typeof reference.outcome === "string")
+          return decodeTagMutationOutcome<TagRow>(reference.outcome);
+        if (
+          typeof reference.tagId !== "string" ||
+          !TAG_REFERENCE_UUID.test(reference.tagId)
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored tag mutation reference is invalid.",
+          );
+        }
+        const [tag] = await context.database
+          .select()
+          .from(tags)
+          .where(
+            and(
+              eq(tags.workspaceId, context.workspaceId),
+              eq(tags.id, reference.tagId),
+            ),
+          )
+          .limit(1);
+        if (!tag)
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        return { resource: tag, issues: [], code: null };
+      }
+
+      const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
         );
@@ -2463,7 +2627,7 @@ export function createEvidenceService(context: ResearchServiceContext) {
       });
       return row
         ? { resource: row, issues: [], code: null }
-        : conflict(current.version);
+        : conflict(current?.version);
     },
     async tagPerson(input: {
       personId: string;
@@ -2539,7 +2703,29 @@ export function createEvidenceService(context: ResearchServiceContext) {
     async tagFact(input: {
       factId: string;
       tagId: string;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<FactTagRow>> {
+      if (input.idempotencyKey != null) {
+        return idempotentTagAssociation<FactTagRow>({
+          idempotencyKey: input.idempotencyKey,
+          operation: "tag.fact.graphql",
+          requiredPermissions: ["tag:update", "fact:update"],
+          subjectId: input.factId,
+          tagId: input.tagId,
+          includeOutcome: false,
+          execute: (scopedContext) =>
+            createEvidenceService(scopedContext).tagFact({
+              ...input,
+              idempotencyKey: null,
+            }),
+          load: () =>
+            repository.getFactTag({
+              workspaceId: context.workspaceId,
+              factId: input.factId,
+              tagId: input.tagId,
+            }),
+        });
+      }
       return tagAssociation("fact", input.factId, input.tagId) as Promise<
         MutationOutcome<FactTagRow>
       >;
@@ -2547,7 +2733,29 @@ export function createEvidenceService(context: ResearchServiceContext) {
     async tagRelationship(input: {
       relationshipId: string;
       tagId: string;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<RelationshipTagRow>> {
+      if (input.idempotencyKey != null) {
+        return idempotentTagAssociation<RelationshipTagRow>({
+          idempotencyKey: input.idempotencyKey,
+          operation: "tag.relationship.graphql",
+          requiredPermissions: ["tag:update", "relationship:update"],
+          subjectId: input.relationshipId,
+          tagId: input.tagId,
+          includeOutcome: false,
+          execute: (scopedContext) =>
+            createEvidenceService(scopedContext).tagRelationship({
+              ...input,
+              idempotencyKey: null,
+            }),
+          load: () =>
+            repository.getRelationshipTag({
+              workspaceId: context.workspaceId,
+              relationshipId: input.relationshipId,
+              tagId: input.tagId,
+            }),
+        });
+      }
       return tagAssociation(
         "relationship",
         input.relationshipId,
@@ -2557,7 +2765,29 @@ export function createEvidenceService(context: ResearchServiceContext) {
     async untagPerson(input: {
       personId: string;
       tagId: string;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonTagRow>> {
+      if (input.idempotencyKey != null) {
+        return idempotentTagAssociation<PersonTagRow>({
+          idempotencyKey: input.idempotencyKey,
+          operation: "untag.person.graphql",
+          requiredPermissions: ["tag:update", "person:update"],
+          subjectId: input.personId,
+          tagId: input.tagId,
+          includeOutcome: true,
+          execute: (scopedContext) =>
+            createEvidenceService(scopedContext).untagPerson({
+              ...input,
+              idempotencyKey: null,
+            }),
+          load: () =>
+            repository.getPersonTag({
+              workspaceId: context.workspaceId,
+              personId: input.personId,
+              tagId: input.tagId,
+            }),
+        });
+      }
       return untagAssociation("person", input.personId, input.tagId) as Promise<
         MutationOutcome<PersonTagRow>
       >;
@@ -2565,7 +2795,29 @@ export function createEvidenceService(context: ResearchServiceContext) {
     async untagFact(input: {
       factId: string;
       tagId: string;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<FactTagRow>> {
+      if (input.idempotencyKey != null) {
+        return idempotentTagAssociation<FactTagRow>({
+          idempotencyKey: input.idempotencyKey,
+          operation: "untag.fact.graphql",
+          requiredPermissions: ["tag:update", "fact:update"],
+          subjectId: input.factId,
+          tagId: input.tagId,
+          includeOutcome: true,
+          execute: (scopedContext) =>
+            createEvidenceService(scopedContext).untagFact({
+              ...input,
+              idempotencyKey: null,
+            }),
+          load: () =>
+            repository.getFactTag({
+              workspaceId: context.workspaceId,
+              factId: input.factId,
+              tagId: input.tagId,
+            }),
+        });
+      }
       return untagAssociation("fact", input.factId, input.tagId) as Promise<
         MutationOutcome<FactTagRow>
       >;
@@ -2573,7 +2825,29 @@ export function createEvidenceService(context: ResearchServiceContext) {
     async untagRelationship(input: {
       relationshipId: string;
       tagId: string;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<RelationshipTagRow>> {
+      if (input.idempotencyKey != null) {
+        return idempotentTagAssociation<RelationshipTagRow>({
+          idempotencyKey: input.idempotencyKey,
+          operation: "untag.relationship.graphql",
+          requiredPermissions: ["tag:update", "relationship:update"],
+          subjectId: input.relationshipId,
+          tagId: input.tagId,
+          includeOutcome: true,
+          execute: (scopedContext) =>
+            createEvidenceService(scopedContext).untagRelationship({
+              ...input,
+              idempotencyKey: null,
+            }),
+          load: () =>
+            repository.getRelationshipTag({
+              workspaceId: context.workspaceId,
+              relationshipId: input.relationshipId,
+              tagId: input.tagId,
+            }),
+        });
+      }
       return untagAssociation(
         "relationship",
         input.relationshipId,
@@ -2716,6 +2990,72 @@ export function createEvidenceService(context: ResearchServiceContext) {
           : null,
       },
     };
+  }
+
+  type TagAssociationRow = PersonTagRow | FactTagRow | RelationshipTagRow;
+
+  async function idempotentTagAssociation<T extends TagAssociationRow>(input: {
+    idempotencyKey: string;
+    operation: string;
+    requiredPermissions: readonly string[];
+    subjectId: string;
+    tagId: string;
+    includeOutcome: boolean;
+    execute: (
+      scopedContext: ResearchServiceContext,
+    ) => Promise<MutationOutcome<T>>;
+    load: () => Promise<T | null>;
+  }): Promise<MutationOutcome<T>> {
+    const secret = context.idempotencyHmacKey;
+    if (!secret) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "Tag association idempotency is not configured.",
+      );
+    }
+    const derived = derivePrincipalResearchIdempotency(context, {
+      expiresAt: new Date(Date.now() + TAG_IDEMPOTENCY_TTL_MS),
+      idempotencyKey: input.idempotencyKey,
+      operation: input.operation,
+      requestMaterial: {
+        subjectId: input.subjectId,
+        tagId: input.tagId,
+      },
+      secret,
+    });
+    const executed = await runPrincipalIdempotentResearchWrite(
+      context,
+      derived,
+      input.requiredPermissions,
+      async (scopedContext): Promise<TagAssociationResponseReference> => {
+        const result = await input.execute(scopedContext);
+        return result.resource && !input.includeOutcome
+          ? { associationId: result.resource.id }
+          : {
+              associationId: result.resource?.id ?? null,
+              outcome: encodeTagMutationOutcome(result),
+            };
+      },
+    );
+    const reference = executed.responseReference;
+    if (typeof reference.outcome === "string")
+      return decodeTagMutationOutcome<T>(reference.outcome);
+    if (
+      typeof reference.associationId !== "string" ||
+      !TAG_REFERENCE_UUID.test(reference.associationId)
+    ) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored tag association reference is invalid.",
+      );
+    }
+    const row = await input.load();
+    if (!row || row.id !== reference.associationId)
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    return { resource: row, issues: [], code: null };
   }
 
   async function tagAssociation(

@@ -86,6 +86,12 @@ export type ArchiveRelationshipInput = {
   idempotencyKey?: string | null | undefined;
 };
 
+export type ArchiveTagInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+};
+
 export type AuditEventFilterInput = {
   action?: string | null | undefined;
   occurredFrom?: string | null | undefined;
@@ -786,6 +792,12 @@ export type StartAiAnalysisInput = {
   scope?: AiAnalysisScopeInput | null | undefined;
 };
 
+export type TagFactInput = {
+  factId: string;
+  idempotencyKey?: string | null | undefined;
+  tagId: string;
+};
+
 export type TagFilterInput = {
   normalizedNamePrefix?: string | null | undefined;
 };
@@ -793,6 +805,12 @@ export type TagFilterInput = {
 export type TagPersonInput = {
   idempotencyKey?: string | null | undefined;
   personId: string;
+  tagId: string;
+};
+
+export type TagRelationshipInput = {
+  idempotencyKey?: string | null | undefined;
+  relationshipId: string;
   tagId: string;
 };
 
@@ -823,6 +841,7 @@ export type UnmergePersonInput = {
 };
 
 export type UntagPersonInput = {
+  idempotencyKey?: string | null | undefined;
   personId: string;
   tagId: string;
 };
@@ -957,6 +976,15 @@ export type UpdateSavedQueryInput = {
   name?: string | null | undefined;
   queryAst?: unknown;
   sharing?: SavedQuerySharing | null | undefined;
+};
+
+export type UpdateTagInput = {
+  color?: string | null | undefined;
+  description?: string | null | undefined;
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+  name?: string | null | undefined;
 };
 
 export type UpdateWorkspaceDefaultsInput = {
@@ -3711,6 +3739,46 @@ export type CreateTagMutation = {
   } | null;
 };
 
+export type UpdateTagMutationVariables = Exact<{
+  input: UpdateTagInput;
+}>;
+
+export type UpdateTagMutation = {
+  updateTag: {
+    code: string | null;
+    currentVersion: number | null;
+    tag: {
+      id: string | null;
+      name: string | null;
+      color: string | null;
+      description: string | null;
+      version: number | null;
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }> | null;
+  } | null;
+};
+
+export type ArchiveTagMutationVariables = Exact<{
+  input: ArchiveTagInput;
+}>;
+
+export type ArchiveTagMutation = {
+  archiveTag: {
+    code: string | null;
+    currentVersion: number | null;
+    tag: {
+      id: string | null;
+      name: string | null;
+      version: number | null;
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }> | null;
+  } | null;
+};
+
 export type TagPersonMutationVariables = Exact<{
   input: TagPersonInput;
 }>;
@@ -3741,6 +3809,82 @@ export type UntagPersonMutation = {
     personTag: {
       id: string | null;
       personId: string | null;
+      tagId: string | null;
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }> | null;
+  } | null;
+};
+
+export type TagFactMutationVariables = Exact<{
+  input: TagFactInput;
+}>;
+
+export type TagFactMutation = {
+  tagFact: {
+    code: string | null;
+    currentVersion: number | null;
+    factTag: {
+      id: string | null;
+      factId: string | null;
+      tagId: string | null;
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }> | null;
+  } | null;
+};
+
+export type UntagFactMutationVariables = Exact<{
+  input: TagFactInput;
+}>;
+
+export type UntagFactMutation = {
+  untagFact: {
+    code: string | null;
+    currentVersion: number | null;
+    factTag: {
+      id: string | null;
+      factId: string | null;
+      tagId: string | null;
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }> | null;
+  } | null;
+};
+
+export type TagRelationshipMutationVariables = Exact<{
+  input: TagRelationshipInput;
+}>;
+
+export type TagRelationshipMutation = {
+  tagRelationship: {
+    code: string | null;
+    currentVersion: number | null;
+    relationshipTag: {
+      id: string | null;
+      relationshipId: string | null;
+      tagId: string | null;
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }> | null;
+  } | null;
+};
+
+export type UntagRelationshipMutationVariables = Exact<{
+  input: TagRelationshipInput;
+}>;
+
+export type UntagRelationshipMutation = {
+  untagRelationship: {
+    code: string | null;
+    currentVersion: number | null;
+    relationshipTag: {
+      id: string | null;
+      relationshipId: string | null;
       tagId: string | null;
     } | null;
     issues: Array<{
@@ -8563,6 +8707,64 @@ export const CreateTagDocument = new TypedDocumentString(
   CreateTagMutation,
   CreateTagMutationVariables
 >;
+export const UpdateTagDocument = new TypedDocumentString(
+  `
+    mutation UpdateTag($input: UpdateTagInput!) {
+  updateTag(input: $input) {
+    tag {
+      id
+      name
+      color
+      description
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:78e9085a8bdb77e5252995a9455e3b64660af40e95ddb89f50d4f481843ede86",
+  },
+) as unknown as TypedDocumentString<
+  UpdateTagMutation,
+  UpdateTagMutationVariables
+>;
+export const ArchiveTagDocument = new TypedDocumentString(
+  `
+    mutation ArchiveTag($input: ArchiveTagInput!) {
+  archiveTag(input: $input) {
+    tag {
+      id
+      name
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:a570d10d3f67bd0d370f648710633af7c5dc7707732ee4c555692574cd6ffb87",
+  },
+) as unknown as TypedDocumentString<
+  ArchiveTagMutation,
+  ArchiveTagMutationVariables
+>;
 export const TagPersonDocument = new TypedDocumentString(
   `
     mutation TagPerson($input: TagPersonInput!) {
@@ -8618,6 +8820,115 @@ export const UntagPersonDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   UntagPersonMutation,
   UntagPersonMutationVariables
+>;
+export const TagFactDocument = new TypedDocumentString(
+  `
+    mutation TagFact($input: TagFactInput!) {
+  tagFact(input: $input) {
+    factTag {
+      id
+      factId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:da183049d7dd3793070b04ddf67492e4e8b9e15363535290799dfece732d8973",
+  },
+) as unknown as TypedDocumentString<TagFactMutation, TagFactMutationVariables>;
+export const UntagFactDocument = new TypedDocumentString(
+  `
+    mutation UntagFact($input: TagFactInput!) {
+  untagFact(input: $input) {
+    factTag {
+      id
+      factId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:9663d3ad8d835be1acffe5957ef91dac800d17abf1c793b8eb2ac798a05e87a4",
+  },
+) as unknown as TypedDocumentString<
+  UntagFactMutation,
+  UntagFactMutationVariables
+>;
+export const TagRelationshipDocument = new TypedDocumentString(
+  `
+    mutation TagRelationship($input: TagRelationshipInput!) {
+  tagRelationship(input: $input) {
+    relationshipTag {
+      id
+      relationshipId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:1e7695e1498c8d380b05a36766e2bc3909896e5544ffea4f05eb826b75e19ca7",
+  },
+) as unknown as TypedDocumentString<
+  TagRelationshipMutation,
+  TagRelationshipMutationVariables
+>;
+export const UntagRelationshipDocument = new TypedDocumentString(
+  `
+    mutation UntagRelationship($input: TagRelationshipInput!) {
+  untagRelationship(input: $input) {
+    relationshipTag {
+      id
+      relationshipId
+      tagId
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:7973ea135a7a48ababf891a15206eb84ff2997ab6546f8c4419c58a3d327edf8",
+  },
+) as unknown as TypedDocumentString<
+  UntagRelationshipMutation,
+  UntagRelationshipMutationVariables
 >;
 export const SearchWorkbenchSearchDocument = new TypedDocumentString(
   `
