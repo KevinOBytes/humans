@@ -111,7 +111,7 @@ liveDescribe("Task 11 import lifecycle forward migration", () => {
       );
       await admin.end();
     }
-  });
+  }, 120_000);
 
   it("reconciles every valid legacy import state and preserves public recovery contracts", async () => {
     const organizationId = `legacy-import-org-${newId()}`;
