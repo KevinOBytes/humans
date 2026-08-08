@@ -70,6 +70,18 @@ describe("GraphQL public error contract", () => {
     });
   });
 
+  it("preserves safe domain precondition messages", () => {
+    expect(
+      normalizePublicGraphQLError({
+        extensions: { code: "PRECONDITION_FAILED" },
+        message: "The place is still referenced.",
+      }),
+    ).toEqual({
+      code: "PRECONDITION_FAILED",
+      message: "The place is still referenced.",
+    });
+  });
+
   it("uses a valid extension ID when the header is missing or malformed", () => {
     const extensionId = "01984e93-7644-72c6-82d0-fda7f590581f";
     expect(

@@ -4,7 +4,7 @@ import { routeProxy } from "@/route-proxy";
 
 const securityHeaders = {
   "content-security-policy":
-    "default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests",
+    "default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self' data:; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests",
   "cross-origin-opener-policy": "same-origin",
   "cross-origin-resource-policy": "same-origin",
   "origin-agent-cluster": "?1",
@@ -40,7 +40,11 @@ function applySecurityHeaders(request: NextRequest, response: NextResponse) {
           value
             .replace(
               "connect-src 'self'",
-              "connect-src 'self' ws://localhost:* ws://127.0.0.1:* ws://[::1]:*",
+              "connect-src 'self' ws://localhost:* ws://127.0.0.1:*",
+            )
+            .replace(
+              "script-src 'self' 'unsafe-inline'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
             )
             .replace("; upgrade-insecure-requests", ""),
         );
