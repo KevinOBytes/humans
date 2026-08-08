@@ -390,6 +390,18 @@ describe("parseServerEnv", () => {
     ).toThrow(/AI_API_KEY/);
   });
 
+  it("maps the Vercel OpenRouter integration key for compatible providers", () => {
+    const env = parseServerEnv({
+      ...productionEnv,
+      AI_PROVIDER: "compatible",
+      AI_BASE_URL: "https://openrouter.ai/api/v1",
+      AI_API_KEY: undefined,
+      OPEN_ROUTER_KEY: "or-test-N7vQ2xL9mR4tK8wP5sD3",
+    });
+
+    expect(env.AI_API_KEY).toBe("or-test-N7vQ2xL9mR4tK8wP5sD3");
+  });
+
   it("permits an Ollama endpoint without an API key", () => {
     const env = parseServerEnv({
       ...productionEnv,
