@@ -11,6 +11,7 @@ import {
   deriveResearchIdempotency,
   runIdempotentResearchWrite,
   withResearchWriteTransaction as writeTransaction,
+  type CanonicalRequestMaterial,
 } from "@/modules/audit/transactions";
 import {
   normalizeHumanText,
@@ -78,6 +79,14 @@ export type Connection<T> = { nodes: T[]; pageInfo: PageInfo };
 
 function invalid<T>(issues: ValidationIssue[]): MutationOutcome<T> {
   return { resource: null, issues, code: "VALIDATION_FAILED" };
+}
+
+function fieldMaterial(
+  value: CanonicalRequestMaterial | undefined,
+): CanonicalRequestMaterial {
+  return value === undefined
+    ? { present: false }
+    : { present: true, value: value ?? null };
 }
 
 export function encodeCursor(order: string, sort: string, id: string): string {
@@ -2163,6 +2172,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     async selectPresentation(input: {
       personId: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
       primaryNameId?: string | null;
       primaryPhotoFileId?: string | null;
     }): Promise<MutationOutcome<PersonRow>> {
@@ -2171,6 +2181,55 @@ export function createPeopleService(context: ResearchServiceContext) {
           "FORBIDDEN",
           "Person presentation updates are not permitted.",
         );
+      }
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person presentation updates are not configured.",
+          );
+        }
+        const idempotency = deriveResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person.presentation.select",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            personId: input.personId,
+            primaryNameId: fieldMaterial(input.primaryNameId),
+            primaryPhotoFileId: fieldMaterial(input.primaryPhotoFileId),
+          },
+          secret,
+        });
+        const result = await runIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:update"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(
+              scopedContext,
+            ).selectPresentation({
+              ...input,
+              idempotencyKey: null,
+            });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person presentation was changed by another request.",
+              );
+            }
+            return {
+              personId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayPerson(result.responseReference),
+          issues: [],
+          code: null,
+        };
       }
       const result = await writeTransaction(context, async (transaction) => {
         const [current] = await transaction

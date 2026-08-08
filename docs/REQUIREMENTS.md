@@ -8,7 +8,7 @@ Bounded HUM-NFR-008 privacy-settings evidence (2026-08-06): generated GraphQL re
 
 Bounded HUM-FR-005 deletion evidence (2026-08-06): approved workspace-scoped person deletion requests now execute once in the worker with active legal-hold fencing, soft-delete and redacted audit effects, search-index removal, and durable file-cleanup scheduling. Retention-policy enforcement, hard-delete/anonymization behavior, and the full role/resource matrix remain open.
 
-Bounded HUM-NFR-008 person-mutation evidence (2026-08-06): generated GraphQL `UpdatePerson` and `ArchivePerson` now accept principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves replay without duplicate person or audit effects and workspace fencing; names, tags, contacts, locations, and the remaining retryable mutation matrix remain open.
+Bounded HUM-NFR-008 person-mutation evidence (2026-08-06): generated GraphQL `UpdatePerson` and `ArchivePerson` now accept principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves replay without duplicate person or audit effects and workspace fencing; generated `selectPersonPresentation` now has user-bound durable replay with concurrent, omitted-vs-explicit selection, and workspace-fencing coverage. Names, tags, contacts, locations, and the remaining retryable mutation matrix remain open.
 
 Bounded HUM-NFR-008 merge evidence (2026-08-06): generated GraphQL `mergePerson` and `unmergePerson` now accept durable idempotency keys. Focused live PostgreSQL acceptance proves concurrent replay converges to one merge and one unmerge audit/effect; relationship, name, and remaining retryable mutation coverage remains open.
 
