@@ -233,6 +233,7 @@ const CreateRelationshipTypeInput = builder.inputType(
   "CreateRelationshipTypeInput",
   {
     fields: (t) => ({
+      idempotencyKey: t.string(),
       namespace: t.string(),
       key: t.string({ required: true }),
       forwardLabel: t.string({ required: true }),
@@ -249,6 +250,7 @@ const UpdateRelationshipTypeInput = builder.inputType(
   "UpdateRelationshipTypeInput",
   {
     fields: (t) => ({
+      idempotencyKey: t.string(),
       id: t.field({ type: "UUID", required: true }),
       expectedVersion: t.int({ required: true }),
       forwardLabel: t.string(),

@@ -765,6 +765,27 @@ mutation CreateRelationshipType($input: CreateRelationshipTypeInput!) {
   }
 }
 
+mutation UpdateRelationshipType($input: UpdateRelationshipTypeInput!) {
+  updateRelationshipType(input: $input) {
+    relationshipType {
+      id
+      key
+      namespace
+      forwardLabel
+      inverseLabel
+      directed
+      allowsSelf
+      version
+      state
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
 mutation CreateRelationship($input: CreateRelationshipInput!) {
   createRelationship(input: $input) {
     relationship {

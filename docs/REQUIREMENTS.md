@@ -12,7 +12,9 @@ Bounded HUM-NFR-008 person-mutation evidence (2026-08-06): generated GraphQL `Up
 
 Bounded HUM-NFR-008 merge evidence (2026-08-06): generated GraphQL `mergePerson` and `unmergePerson` now accept durable idempotency keys. Focused live PostgreSQL acceptance proves concurrent replay converges to one merge and one unmerge audit/effect; relationship, name, and remaining retryable mutation coverage remains open.
 
-Bounded HUM-NFR-008 relationship-edge evidence (2026-08-06): generated GraphQL `createRelationship`, `updateRelationship`, and `archiveRelationship` now accept principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves concurrent create/update/archive replay, one durable claim and audit per operation, malformed-reference rejection, changed-material conflicts, foreign-workspace fencing, and archived-response replay. Relationship type CRUD and the remaining retryable mutation matrix remain open.
+Bounded HUM-NFR-008 relationship-edge evidence (2026-08-06): generated GraphQL `createRelationship`, `updateRelationship`, and `archiveRelationship` now accept principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves concurrent create/update/archive replay, one durable claim and audit per operation, malformed-reference rejection, changed-material conflicts, foreign-workspace fencing, and archived-response replay; the remaining retryable mutation matrix remains open.
+
+Bounded HUM-NFR-008 relationship-type evidence (2026-08-07): generated GraphQL `createRelationshipType` and `updateRelationshipType` now accept principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves concurrent create/update replay, one durable claim and audit per operation, malformed-reference rejection, changed-material conflicts, and workspace fencing. The remaining retryable mutation domains remain open.
 
 Bounded HUM-FR-004 invitation lock-order evidence (2026-08-06): invitation
 acceptance now acquires the same workspace advisory lock used by administrative

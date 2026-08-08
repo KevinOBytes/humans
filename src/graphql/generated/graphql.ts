@@ -316,6 +316,7 @@ export type CreateRelationshipTypeInput = {
   allowsSelf?: boolean | null | undefined;
   directed?: boolean | null | undefined;
   forwardLabel: string;
+  idempotencyKey?: string | null | undefined;
   inverseLabel: string;
   key: string;
   metadataSchema?: unknown;
@@ -959,6 +960,18 @@ export type UpdateRelationshipInput = {
   temporalSemantics?: RelationshipTemporalSemantics | null | undefined;
   validFrom?: string | null | undefined;
   validUntil?: string | null | undefined;
+};
+
+export type UpdateRelationshipTypeInput = {
+  allowedMultiplicity?: RelationshipMultiplicity | null | undefined;
+  allowsSelf?: boolean | null | undefined;
+  expectedVersion: number;
+  forwardLabel?: string | null | undefined;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+  inverseLabel?: string | null | undefined;
+  metadataSchema?: unknown;
+  state?: LifecycleState | null | undefined;
 };
 
 export type UpdateResourceGrantInput = {
@@ -3481,6 +3494,31 @@ export type CreateRelationshipTypeMutation = {
       directed: boolean | null;
       allowsSelf: boolean | null;
       version: number | null;
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }> | null;
+  } | null;
+};
+
+export type UpdateRelationshipTypeMutationVariables = Exact<{
+  input: UpdateRelationshipTypeInput;
+}>;
+
+export type UpdateRelationshipTypeMutation = {
+  updateRelationshipType: {
+    code: string | null;
+    currentVersion: number | null;
+    relationshipType: {
+      id: string | null;
+      key: string | null;
+      namespace: string | null;
+      forwardLabel: string | null;
+      inverseLabel: string | null;
+      directed: boolean | null;
+      allowsSelf: boolean | null;
+      version: number | null;
+      state: LifecycleState | null;
     } | null;
     issues: Array<{
       " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
@@ -8341,6 +8379,40 @@ export const CreateRelationshipTypeDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   CreateRelationshipTypeMutation,
   CreateRelationshipTypeMutationVariables
+>;
+export const UpdateRelationshipTypeDocument = new TypedDocumentString(
+  `
+    mutation UpdateRelationshipType($input: UpdateRelationshipTypeInput!) {
+  updateRelationshipType(input: $input) {
+    relationshipType {
+      id
+      key
+      namespace
+      forwardLabel
+      inverseLabel
+      directed
+      allowsSelf
+      version
+      state
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:35123a8fb0ac0ba5f834bae118b27b5c0db963750b36f970ee3c43274cec1eec",
+  },
+) as unknown as TypedDocumentString<
+  UpdateRelationshipTypeMutation,
+  UpdateRelationshipTypeMutationVariables
 >;
 export const CreateRelationshipDocument = new TypedDocumentString(
   `
