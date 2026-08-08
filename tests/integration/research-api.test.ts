@@ -1818,6 +1818,7 @@ liveDescribe("research API", () => {
           fieldKey: "confidence",
           label: "Confidence",
           allowedValueType: "DECIMAL",
+          cardinality: "MANY",
           state: "ACTIVE",
         },
       },
@@ -1843,6 +1844,26 @@ liveDescribe("research API", () => {
       },
     });
     const factId = required(created.body?.data?.createFact.fact?.id);
+    const secondCreated = await fixture.execute<{
+      createFact: { fact: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      query: /* GraphQL */ `
+        mutation ($input: CreateFactInput!) {
+          createFact(input: $input) {
+            fact {
+              id
+            }
+          }
+        }
+      `,
+      variables: {
+        input: { personId, definitionId, value: { decimal: "0.3" } },
+      },
+    });
+    const secondFactId = required(
+      secondCreated.body?.data?.createFact.fact?.id,
+    );
     const revise = () =>
       fixture.execute<{
         reviseFact: {
@@ -1927,6 +1948,114 @@ liveDescribe("research API", () => {
       },
     });
     expectGraphQLError(changed, "CONFLICT");
+
+    const createRelationship = () =>
+      fixture.execute<{
+        createFactRelationship: {
+          code: string | null;
+          factRelationship: { id: string; version: number } | null;
+        };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation ($input: CreateFactRelationshipInput!) {
+            createFactRelationship(input: $input) {
+              code
+              factRelationship {
+                id
+                version
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            sourceFactId: factId,
+            targetFactId: secondFactId,
+            relationshipType: "SUPPORTS",
+            explanation: "Idempotent fact relationship",
+            idempotencyKey: "fact-relationship-create-replay-v1",
+          },
+        },
+      });
+    const [relationshipFirst, relationshipReplay] = await Promise.all([
+      createRelationship(),
+      createRelationship(),
+    ]);
+    expect(relationshipFirst.body?.errors).toBeUndefined();
+    expect(relationshipReplay.body?.errors).toBeUndefined();
+    const relationshipId = required(
+      relationshipFirst.body?.data?.createFactRelationship.factRelationship?.id,
+    );
+    expect(
+      relationshipReplay.body?.data?.createFactRelationship.factRelationship
+        ?.id,
+    ).toBe(relationshipId);
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.resourceId, relationshipId),
+            eq(auditEvents.action, "fact.relationship.create"),
+          ),
+        ),
+    ).toHaveLength(1);
+
+    const archiveRelationship = () =>
+      fixture.execute<{
+        archiveFactRelationship: {
+          code: string | null;
+          factRelationship: { id: string; version: number } | null;
+        };
+      }>({
+        jar: owner.jar,
+        query: /* GraphQL */ `
+          mutation ($input: ArchiveFactRelationshipInput!) {
+            archiveFactRelationship(input: $input) {
+              code
+              factRelationship {
+                id
+                version
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            id: relationshipId,
+            expectedVersion: 1,
+            idempotencyKey: "fact-relationship-archive-replay-v1",
+          },
+        },
+      });
+    const [archiveFirst, archiveReplay] = await Promise.all([
+      archiveRelationship(),
+      archiveRelationship(),
+    ]);
+    expect(archiveFirst.body?.errors).toBeUndefined();
+    expect(archiveReplay.body?.errors).toBeUndefined();
+    expect(archiveFirst.body?.data?.archiveFactRelationship).toEqual({
+      code: null,
+      factRelationship: { id: relationshipId, version: 2 },
+    });
+    expect(archiveReplay.body?.data?.archiveFactRelationship).toEqual(
+      archiveFirst.body?.data?.archiveFactRelationship,
+    );
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.resourceId, relationshipId),
+            eq(auditEvents.action, "fact.relationship.archive"),
+          ),
+        ),
+    ).toHaveLength(1);
   });
 
   it("revalidates revisions and relationship updates against locked definitions", async () => {

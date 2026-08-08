@@ -53,6 +53,8 @@ export type FactServiceRuntime = Readonly<{
 const FACT_CREATE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const FACT_REVISE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const FACT_SELECT_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const FACT_RELATIONSHIP_CREATE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const FACT_RELATIONSHIP_ARCHIVE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -81,6 +83,10 @@ type SelectionResponseReference = ResearchResponseReference & {
 };
 type FactReviseResponseReference = ResearchResponseReference & {
   readonly factId?: string;
+  readonly outcome?: string;
+};
+type FactRelationshipResponseReference = ResearchResponseReference & {
+  readonly relationshipId?: string;
   readonly outcome?: string;
 };
 
@@ -202,6 +208,30 @@ function decodeFactReviseOutcome(value: string): FactOutcome {
       "The stored fact revision result is invalid.",
     );
   }
+}
+
+function factRelationshipCreateRequestMaterial(input: {
+  sourceFactId: string;
+  targetFactId: string;
+  relationshipType: string;
+  explanation?: string | null;
+}): Readonly<Record<string, CanonicalRequestMaterial>> {
+  return {
+    explanation: fieldMaterial(input.explanation),
+    relationshipType: input.relationshipType.toLowerCase(),
+    sourceFactId: input.sourceFactId,
+    targetFactId: input.targetFactId,
+  };
+}
+
+function factRelationshipArchiveRequestMaterial(input: {
+  id: string;
+  expectedVersion: number;
+}): Readonly<Record<string, CanonicalRequestMaterial>> {
+  return {
+    expectedVersion: input.expectedVersion,
+    id: input.id,
+  };
 }
 
 function encodeFactCreateOutcome(result: FactOutcome): string {
@@ -412,6 +442,50 @@ export function createFactsService(
         "The requested resource was not found.",
       );
     }
+  }
+
+  async function replayFactRelationship(
+    responseReference: ResearchResponseReference,
+  ): Promise<FactRelationshipRow> {
+    const relationshipId = responseReference.relationshipId;
+    if (typeof relationshipId !== "string" || !UUID.test(relationshipId)) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    const row = await repository.getFactRelationship({
+      workspaceId: context.workspaceId,
+      id: relationshipId,
+    });
+    if (!row) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    const [source, target] = await Promise.all([
+      repository.getFact({
+        workspaceId: context.workspaceId,
+        id: row.sourceFactId,
+      }),
+      repository.getFact({
+        workspaceId: context.workspaceId,
+        id: row.targetFactId,
+      }),
+    ]);
+    if (
+      !source ||
+      !target ||
+      !(await visibleFact(source)) ||
+      !(await visibleFact(target))
+    ) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    return row;
   }
 
   async function replaySelection(
@@ -2040,7 +2114,7 @@ export function createFactsService(
         ]);
       const now = new Date();
       const id = newId();
-      const row = await context.database.transaction(async (transaction) => {
+      const row = await writeTransaction(context, async (transaction) => {
         const scoped = createFactsRepository(
           transaction as unknown as typeof context.database,
         );
@@ -2067,6 +2141,95 @@ export function createFactsService(
         return created;
       });
       return { resource: row, issues: [], code: null };
+    },
+    async createRelationshipIdempotent(
+      input: {
+        sourceFactId: string;
+        targetFactId: string;
+        relationshipType: string;
+        explanation?: string | null;
+      } & { idempotencyKey: string },
+    ): Promise<MutationOutcome<FactRelationshipRow>> {
+      if (!runtime?.idempotencyHmacKey) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "Fact relationship idempotency is not configured.",
+        );
+      }
+      const relationshipInput = {
+        sourceFactId: input.sourceFactId,
+        targetFactId: input.targetFactId,
+        relationshipType: input.relationshipType,
+        explanation: input.explanation,
+      };
+      const idempotency = derivePrincipalResearchIdempotency(context, {
+        expiresAt: new Date(
+          Date.now() + FACT_RELATIONSHIP_CREATE_IDEMPOTENCY_TTL_MS,
+        ),
+        idempotencyKey: input.idempotencyKey,
+        operation: "fact.relationship.create.graphql",
+        requestMaterial:
+          factRelationshipCreateRequestMaterial(relationshipInput),
+        secret: runtime.idempotencyHmacKey,
+      });
+      const executed = await runPrincipalIdempotentResearchWrite(
+        context,
+        idempotency,
+        ["fact:update"],
+        async (scopedContext): Promise<FactRelationshipResponseReference> => {
+          const result = await createFactsService(
+            scopedContext,
+            runtime,
+          ).createRelationship(relationshipInput);
+          if (!result.resource) {
+            return {
+              outcome: JSON.stringify({
+                code: result.code,
+                currentVersion: result.currentVersion ?? null,
+                issues: result.issues,
+              }),
+            };
+          }
+          return { relationshipId: result.resource.id };
+        },
+      );
+      const reference = executed.responseReference;
+      if (typeof reference.outcome === "string") {
+        try {
+          const parsed = JSON.parse(reference.outcome) as {
+            code?: unknown;
+            currentVersion?: unknown;
+            issues?: unknown;
+          };
+          if (
+            !parsed ||
+            !Array.isArray(parsed.issues) ||
+            (parsed.code !== null && typeof parsed.code !== "string") ||
+            (parsed.currentVersion !== null &&
+              parsed.currentVersion !== undefined &&
+              !Number.isInteger(parsed.currentVersion))
+          )
+            throw new Error("invalid outcome");
+          return {
+            resource: null,
+            issues: parsed.issues as ValidationIssue[],
+            code: parsed.code as MutationOutcome<FactRelationshipRow>["code"],
+            ...(parsed.currentVersion == null
+              ? {}
+              : { currentVersion: parsed.currentVersion as number }),
+          };
+        } catch {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored fact relationship result is invalid.",
+          );
+        }
+      }
+      return {
+        resource: await replayFactRelationship(reference),
+        issues: [],
+        code: null,
+      };
     },
     async archiveRelationship(input: {
       id: string;
@@ -2103,7 +2266,7 @@ export function createFactsService(
         );
       const issues = versionIssues(input.expectedVersion);
       if (issues.length) return invalid(issues);
-      const row = await context.database.transaction(async (transaction) => {
+      const row = await writeTransaction(context, async (transaction) => {
         const scoped = createFactsRepository(
           transaction as unknown as typeof context.database,
         );
@@ -2126,6 +2289,89 @@ export function createFactsService(
       return row
         ? { resource: row, issues: [], code: null }
         : conflict(current.version);
+    },
+    async archiveRelationshipIdempotent(
+      input: { id: string; expectedVersion: number } & {
+        idempotencyKey: string;
+      },
+    ): Promise<MutationOutcome<FactRelationshipRow>> {
+      if (!runtime?.idempotencyHmacKey) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "Fact relationship idempotency is not configured.",
+        );
+      }
+      const archiveInput = {
+        id: input.id,
+        expectedVersion: input.expectedVersion,
+      };
+      const idempotency = derivePrincipalResearchIdempotency(context, {
+        expiresAt: new Date(
+          Date.now() + FACT_RELATIONSHIP_ARCHIVE_IDEMPOTENCY_TTL_MS,
+        ),
+        idempotencyKey: input.idempotencyKey,
+        operation: "fact.relationship.archive.graphql",
+        requestMaterial: factRelationshipArchiveRequestMaterial(archiveInput),
+        secret: runtime.idempotencyHmacKey,
+      });
+      const executed = await runPrincipalIdempotentResearchWrite(
+        context,
+        idempotency,
+        ["fact:update"],
+        async (scopedContext): Promise<FactRelationshipResponseReference> => {
+          const result = await createFactsService(
+            scopedContext,
+            runtime,
+          ).archiveRelationship(archiveInput);
+          if (!result.resource) {
+            return {
+              outcome: JSON.stringify({
+                code: result.code,
+                currentVersion: result.currentVersion ?? null,
+                issues: result.issues,
+              }),
+            };
+          }
+          return { relationshipId: result.resource.id };
+        },
+      );
+      const reference = executed.responseReference;
+      if (typeof reference.outcome === "string") {
+        try {
+          const parsed = JSON.parse(reference.outcome) as {
+            code?: unknown;
+            currentVersion?: unknown;
+            issues?: unknown;
+          };
+          if (
+            !parsed ||
+            !Array.isArray(parsed.issues) ||
+            (parsed.code !== null && typeof parsed.code !== "string") ||
+            (parsed.currentVersion !== null &&
+              parsed.currentVersion !== undefined &&
+              !Number.isInteger(parsed.currentVersion))
+          )
+            throw new Error("invalid outcome");
+          return {
+            resource: null,
+            issues: parsed.issues as ValidationIssue[],
+            code: parsed.code as MutationOutcome<FactRelationshipRow>["code"],
+            ...(parsed.currentVersion == null
+              ? {}
+              : { currentVersion: parsed.currentVersion as number }),
+          };
+        } catch {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored fact relationship result is invalid.",
+          );
+        }
+      }
+      return {
+        resource: await replayFactRelationship(reference),
+        issues: [],
+        code: null,
+      };
     },
     async listRelationships(input: {
       factId: string;
