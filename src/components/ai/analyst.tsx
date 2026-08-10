@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { PersonScopePicker } from "./person-scope-picker";
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MAX_QUESTION_BYTES = 8_000;
@@ -72,6 +74,9 @@ type AnalystProps = Readonly<{
   adapter: AnalystAdapter;
   canCancel: boolean;
   canStart: boolean;
+  initialEvidenceIds?: readonly string[];
+  initialPersonIds?: readonly string[];
+  initialQuestion?: string;
   pollDelayMs?: number;
   workspaceIdentity: string;
 }>;
@@ -93,6 +98,10 @@ const stateLabels: Readonly<Record<AnalystRunState, string>> = {
   pending: "Queued",
   running: "Running",
 };
+
+function joinScope(ids: readonly string[]): string {
+  return [...new Set(ids.filter((id) => UUID.test(id)))].join(", ");
+}
 
 function parseScope(value: string): readonly string[] {
   const values = value
@@ -182,6 +191,9 @@ function AnalystState({
   adapter,
   canCancel,
   canStart,
+  initialEvidenceIds = [],
+  initialPersonIds = [],
+  initialQuestion = "",
   pollDelayMs = 750,
 }: AnalystProps) {
   const controllersRef = useRef(new Set<AbortController>());
@@ -190,9 +202,9 @@ function AnalystState({
   const pollControllerRef = useRef<AbortController | null>(null);
   const runIdRef = useRef<string | null>(null);
   const pollAttemptRef = useRef(0);
-  const [question, setQuestion] = useState("");
-  const [personIds, setPersonIds] = useState("");
-  const [evidenceIds, setEvidenceIds] = useState("");
+  const [question, setQuestion] = useState(initialQuestion);
+  const [personIds, setPersonIds] = useState(joinScope(initialPersonIds));
+  const [evidenceIds, setEvidenceIds] = useState(joinScope(initialEvidenceIds));
   const [run, setRun] = useState<AnalystRun | null>(null);
   const [pendingAction, setPendingAction] = useState<"cancel" | "start" | null>(
     null,
@@ -397,6 +409,18 @@ function AnalystState({
     }
   }
 
+  function addPersonId(id: string): void {
+    setPersonIds((previous) => {
+      const existing = previous
+        .split(/[\s,]+/u)
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+      const next = [...new Set([...existing, id.toLowerCase()])];
+      if (next.length > MAX_SCOPE_IDS_PER_KIND) return previous;
+      return next.join(", ");
+    });
+  }
+
   const active = Boolean(run && !terminalStates.has(run.state));
   const terminal = Boolean(run && terminalStates.has(run.state));
 
@@ -462,6 +486,15 @@ function AnalystState({
                   maxLength={3_800}
                   autoComplete="off"
                   spellCheck={false}
+                  disabled={pendingAction === "start"}
+                />
+                <PersonScopePicker
+                  selectedIds={personIds
+                    .split(/[\s,]+/u)
+                    .map((item) => item.trim().toLowerCase())
+                    .filter(Boolean)
+                    .filter((id) => UUID.test(id))}
+                  onSelect={addPersonId}
                   disabled={pendingAction === "start"}
                 />
               </div>

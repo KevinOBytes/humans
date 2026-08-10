@@ -167,6 +167,9 @@ export function createBrowserAnalystAdapter(): AnalystAdapter {
 export function BrowserAnalyst(props: {
   canCancel: boolean;
   canStart: boolean;
+  initialEvidenceIds?: readonly string[];
+  initialPersonIds?: readonly string[];
+  initialQuestion?: string;
   workspaceIdentity: string;
 }) {
   const adapter = useMemo(() => createBrowserAnalystAdapter(), []);
