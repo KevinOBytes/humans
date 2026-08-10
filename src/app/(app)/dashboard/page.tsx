@@ -106,6 +106,7 @@ export default async function DashboardPage() {
         normalizedRole === "owner" || normalizedRole === "admin"
       }
       canReadActivity={includeActivity}
+      canReadAnalyst={permissions.includes("analysis:read")}
       statistics={data.graphStatistics}
       people={people.map((person) => ({
         id: person.id,

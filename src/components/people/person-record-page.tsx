@@ -99,6 +99,16 @@ export async function PersonRecordPage({
             {person.biography}
           </p>
         ) : null}
+        {permissions.includes("analysis:read") ? (
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link
+              href={`/analyst?personIds=${encodeURIComponent(personId)}&question=What do we know about ${encodeURIComponent(person.displayName)}?`}
+              className="text-primary text-sm font-semibold underline underline-offset-4"
+            >
+              Analyze person
+            </Link>
+          </div>
+        ) : null}
         {permissions.includes("person:update") ? (
           <PersonEditForm person={person} />
         ) : null}
@@ -117,11 +127,13 @@ export async function PersonRecordPage({
               >
                 {candidate === "notes"
                   ? "Notes & tags"
-                  : candidate === "names"
-                    ? "Names & timeline"
-                    : candidate === "contacts"
-                      ? "Contacts & places"
-                      : candidate}
+                  : candidate === "evidence"
+                    ? "Sources & citations"
+                    : candidate === "names"
+                      ? "Names & timeline"
+                      : candidate === "contacts"
+                        ? "Contacts & places"
+                        : candidate}
               </Link>
             </li>
           ))}

@@ -64,6 +64,7 @@ export type DashboardOverviewProps = {
   canStartImport: boolean;
   canManagePolicies: boolean;
   canReadActivity: boolean;
+  canReadAnalyst?: boolean;
   statistics: {
     visiblePeople: number;
     visibleRelationships: number;
@@ -177,6 +178,7 @@ export function DashboardOverview({
   canStartImport,
   canManagePolicies,
   canReadActivity,
+  canReadAnalyst = false,
   statistics,
   people,
   imports,
@@ -184,6 +186,96 @@ export function DashboardOverview({
   policy,
   activity,
 }: DashboardOverviewProps) {
+  const hasPeople = statistics.visiblePeople > 0;
+  const hasImports = imports.length > 0;
+  const hasAnalyses = analyses.length > 0;
+
+  let nextStepTitle = "Build an intelligence record";
+  let nextStepBody =
+    "Add an entity of interest, attach source material, map the relationships, and capture the finding in notes.";
+  let stepLinks: {
+    href: string;
+    label: string;
+    variant?: "default" | "outline";
+  }[] = [];
+
+  if (!hasPeople && canCreatePerson) {
+    nextStepTitle = "Start with a person record";
+    nextStepBody =
+      "The workspace has no visible people. Add an entity of interest to begin building evidence-backed intelligence.";
+    stepLinks = [
+      { href: "/people/new", label: "1. Add a person", variant: "default" },
+    ];
+  } else if (hasAnalyses) {
+    nextStepTitle = "Review recent findings";
+    nextStepBody =
+      "Analyses have been run. Open the graph or search to review connections and refine the record.";
+    stepLinks = [
+      { href: "/graph", label: "1. Open graph", variant: "default" },
+      { href: "/search", label: "2. Search workspace", variant: "outline" },
+    ];
+  } else if (hasPeople && !hasImports && canStartImport) {
+    nextStepTitle = "Import source data";
+    nextStepBody =
+      "You have people in the workspace. Bulk import source material or relationships from a file to accelerate research.";
+    stepLinks = [
+      { href: "/people/new", label: "1. Add a person", variant: "outline" },
+      { href: "/imports", label: "2. Start an import", variant: "default" },
+    ];
+  } else if (hasImports && !hasAnalyses) {
+    nextStepTitle = "Run an analysis";
+    nextStepBody =
+      "Imported data is ready. Run a graph or AI analysis to surface connections and patterns.";
+    stepLinks = [
+      { href: "/graph", label: "1. Explore graph", variant: "default" },
+    ];
+    if (canReadAnalyst) {
+      stepLinks.push({
+        href: "/analyst",
+        label: "2. Open AI analyst",
+        variant: "outline",
+      });
+    } else {
+      stepLinks.push({
+        href: "/search",
+        label: "2. Search workspace",
+        variant: "outline",
+      });
+    }
+  } else {
+    stepLinks = [
+      ...(canCreatePerson
+        ? [
+            {
+              href: "/people/new",
+              label: "1. Add a person",
+              variant: "default" as const,
+            },
+          ]
+        : []),
+      ...(policy.storageEnabled
+        ? [
+            {
+              href: "/evidence",
+              label: canCreatePerson
+                ? "2. Attach evidence"
+                : "1. Attach evidence",
+              variant: "outline" as const,
+            },
+          ]
+        : []),
+      {
+        href: "/graph",
+        label:
+          canCreatePerson && policy.storageEnabled
+            ? "3. Explore graph"
+            : canCreatePerson || policy.storageEnabled
+              ? "2. Explore graph"
+              : "1. Explore graph",
+        variant: "outline" as const,
+      },
+    ];
+  }
   return (
     <div className="space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-5">
@@ -239,6 +331,7 @@ export function DashboardOverview({
       <section
         aria-labelledby="research-next-step-heading"
         className={`${panelClassName} border-primary/20 bg-primary/[0.03]`}
+        aria-label="Your next step"
       >
         <div className="max-w-2xl">
           <p className="text-primary text-xs font-semibold tracking-[0.16em] uppercase">
@@ -248,30 +341,23 @@ export function DashboardOverview({
             id="research-next-step-heading"
             className="mt-2 text-xl font-semibold"
           >
-            Build an intelligence record
+            {nextStepTitle}
           </h2>
           <p className="text-muted-foreground mt-2 text-sm leading-6">
-            Add an entity of interest, attach source material, map the
-            relationships, and capture the finding in notes.
+            {nextStepBody}
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
-            {canCreatePerson ? (
-              <Link href="/people/new" className={buttonVariants()}>
-                1. Add a person
+            {stepLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={buttonVariants({
+                  variant: link.variant ?? "outline",
+                })}
+              >
+                {link.label}
               </Link>
-            ) : null}
-            <Link
-              href="/evidence"
-              className={buttonVariants({ variant: "outline" })}
-            >
-              2. Attach evidence
-            </Link>
-            <Link
-              href="/graph"
-              className={buttonVariants({ variant: "outline" })}
-            >
-              3. Explore graph
-            </Link>
+            ))}
           </div>
         </div>
       </section>
@@ -317,6 +403,17 @@ export function DashboardOverview({
                     <time dateTime={person.updatedAt}>
                       {displayDate(person.updatedAt)}
                     </time>
+                    {canReadAnalyst ? (
+                      <span className="ml-2">
+                        ·{" "}
+                        <Link
+                          href={`/analyst?personIds=${encodeURIComponent(person.id)}&question=What do we know about ${encodeURIComponent(person.displayName)}?`}
+                          className="text-primary font-semibold underline underline-offset-4"
+                        >
+                          Analyze
+                        </Link>
+                      </span>
+                    ) : null}
                   </p>
                 </li>
               ))}

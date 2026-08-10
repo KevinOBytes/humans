@@ -33,6 +33,7 @@ const baseProps: DashboardOverviewProps = {
   canStartImport: true,
   canManagePolicies: true,
   canReadActivity: true,
+  canReadAnalyst: true,
   statistics: { visiblePeople: 12, visibleRelationships: 18 },
   people: [
     {
