@@ -102,7 +102,7 @@ export function CommandMenu({
         <DialogContent>
           <DialogTitle>Go to or run a command</DialogTitle>
           <DialogDescription>
-            Navigate within the application. Research search is a separate tool.
+            Navigate the intelligence workspace. Search is a separate tool.
           </DialogDescription>
           <Input
             className="mt-5"

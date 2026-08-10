@@ -22,6 +22,21 @@ fragment FileWorkspaceItem on File {
   }
 }
 
+# Lite row for the workspace evidence list. Keeps the paginated `files`
+# query within the GraphQL complexity budget while `FileWorkspaceItem`
+# (with `variants`) remains available for single-file mutation results.
+fragment EvidenceFileRow on File {
+  id
+  originalName
+  mediaType
+  detectedType
+  byteSize
+  availability
+  scanState
+  updatedAt
+  version
+}
+
 fragment ImportWorkspaceItem on Import {
   id
   fileId
@@ -41,7 +56,7 @@ fragment ImportWorkspaceItem on Import {
 query EvidenceFiles($first: Int, $after: String) {
   files(first: $first, after: $after) {
     nodes {
-      ...FileWorkspaceItem
+      ...EvidenceFileRow
     }
     pageInfo {
       hasNextPage

@@ -271,14 +271,14 @@ export default function Home() {
           <ParallaxNetwork />
           <div className="relative z-10 max-w-2xl">
             <p className="mb-6 text-xs font-semibold tracking-[0.24em] text-cyan-200 uppercase">
-              Open-source research workspace
+              Open-source intelligence workspace
             </p>
             <h1 className="max-w-xl text-5xl leading-[0.98] font-medium tracking-[-0.045em] text-[#f4f0e9] sm:text-6xl lg:text-7xl">
               Map the people, claims, and sources behind a story.
             </h1>
             <p className="mt-7 max-w-lg text-base leading-7 text-zinc-400 sm:text-lg">
-              Humans helps research teams connect people, facts, relationships,
-              and evidence in one auditable workspace.
+              Humans helps intelligence operators connect people, facts,
+              relationships, and evidence in one auditable workspace.
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Link

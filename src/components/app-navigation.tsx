@@ -6,10 +6,12 @@ import {
   BrainCircuit,
   Database,
   FileText,
+  LayoutDashboard,
   Menu,
   Network,
   Plus,
   Search,
+  Settings,
   Users,
   X,
 } from "lucide-react";
@@ -28,11 +30,22 @@ import type { WorkspaceOption } from "@/components/research/types";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { cn } from "@/lib/utils";
 
-const destinations = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/people", label: "People" },
-  { href: "/settings/account", label: "Settings" },
-] as const;
+type NavDestination = {
+  href: string;
+  label: string;
+  icon: typeof Users;
+  shown: boolean;
+};
+
+function destinationLinkClassName(pathname: string, href: string): string {
+  const active =
+    pathname === href ||
+    (href === "/settings/account" && pathname?.startsWith("/settings/"));
+  return cn(
+    "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 motion-reduce:transition-none",
+    active && "bg-primary/10 text-primary",
+  );
+}
 
 export function NavigationLinks({
   canViewAnalyst,
@@ -52,98 +65,87 @@ export function NavigationLinks({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+
+  const research: NavDestination[] = [
+    {
+      href: "/dashboard",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+      shown: true,
+    },
+    { href: "/people", label: "People", icon: Users, shown: true },
+    { href: "/graph", label: "Graph", icon: Network, shown: canViewGraph },
+    {
+      href: "/evidence",
+      label: "Evidence",
+      icon: FileText,
+      shown: canViewEvidence,
+    },
+    { href: "/search", label: "Search", icon: Search, shown: canViewSearch },
+  ];
+
+  const tools: NavDestination[] = [
+    {
+      href: "/analyst",
+      label: "Analyst",
+      icon: BrainCircuit,
+      shown: canViewAnalyst,
+    },
+    {
+      href: "/imports",
+      label: "Imports",
+      icon: Database,
+      shown: canViewImports,
+    },
+  ];
+
+  const renderLink = (item: NavDestination) => {
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        aria-current={
+          pathname === item.href ||
+          (item.href === "/settings/account" &&
+            pathname?.startsWith("/settings/"))
+            ? "page"
+            : undefined
+        }
+        onClick={onNavigate}
+        className={destinationLinkClassName(pathname, item.href)}
+      >
+        <Icon aria-hidden="true" />
+        {item.label}
+      </Link>
+    );
+  };
+
   return (
     <nav aria-label="Primary" className="flex flex-col gap-1">
-      {destinations.map((destination) => {
-        const active =
-          pathname === destination.href ||
-          (destination.href === "/settings/account" &&
-            pathname?.startsWith("/settings/"));
-        return (
-          <Link
-            key={destination.href}
-            href={destination.href}
-            aria-current={active ? "page" : undefined}
-            onClick={onNavigate}
-            className={cn(
-              "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 motion-reduce:transition-none",
-              active && "bg-primary/10 text-primary",
-            )}
-          >
-            {destination.label}
-          </Link>
-        );
-      })}
-      {canViewGraph ? (
-        <Link
-          href="/graph"
-          aria-current={pathname === "/graph" ? "page" : undefined}
-          onClick={onNavigate}
-          className={cn(
-            "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 motion-reduce:transition-none",
-            pathname === "/graph" && "bg-primary/10 text-primary",
-          )}
-        >
-          <Network aria-hidden="true" />
-          Graph
-        </Link>
+      {research.filter((item) => item.shown).map(renderLink)}
+
+      {tools.some((item) => item.shown) ? (
+        <div className="mt-5">
+          <p className="text-muted-foreground mb-1 px-3 text-xs font-semibold tracking-wide uppercase">
+            Operations
+          </p>
+          {tools.filter((item) => item.shown).map(renderLink)}
+        </div>
       ) : null}
-      {canViewAnalyst ? (
-        <Link
-          href="/analyst"
-          aria-current={pathname === "/analyst" ? "page" : undefined}
-          onClick={onNavigate}
-          className={cn(
-            "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 motion-reduce:transition-none",
-            pathname === "/analyst" && "bg-primary/10 text-primary",
-          )}
-        >
-          <BrainCircuit aria-hidden="true" />
-          Analyst
-        </Link>
-      ) : null}
-      {canViewSearch ? (
-        <Link
-          href="/search"
-          aria-current={pathname === "/search" ? "page" : undefined}
-          onClick={onNavigate}
-          className={cn(
-            "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 motion-reduce:transition-none",
-            pathname === "/search" && "bg-primary/10 text-primary",
-          )}
-        >
-          <Search aria-hidden="true" />
-          Search
-        </Link>
-      ) : null}
-      {canViewEvidence ? (
-        <Link
-          href="/evidence"
-          aria-current={pathname === "/evidence" ? "page" : undefined}
-          onClick={onNavigate}
-          className={cn(
-            "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 motion-reduce:transition-none",
-            pathname === "/evidence" && "bg-primary/10 text-primary",
-          )}
-        >
-          <FileText aria-hidden="true" />
-          Evidence
-        </Link>
-      ) : null}
-      {canViewImports ? (
-        <Link
-          href="/imports"
-          aria-current={pathname === "/imports" ? "page" : undefined}
-          onClick={onNavigate}
-          className={cn(
-            "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 motion-reduce:transition-none",
-            pathname === "/imports" && "bg-primary/10 text-primary",
-          )}
-        >
-          <Database aria-hidden="true" />
-          Imports
-        </Link>
-      ) : null}
+
+      <Link
+        href="/settings/account"
+        onClick={onNavigate}
+        className={cn(
+          destinationLinkClassName(pathname, "/settings/account"),
+          "mt-5",
+        )}
+      >
+        <Settings aria-hidden="true" />
+        Settings
+      </Link>
+
       {canCreatePerson ? (
         <Link
           href="/people/new"
