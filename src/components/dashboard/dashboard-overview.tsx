@@ -194,9 +194,17 @@ export function DashboardOverview({
           <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
             Research dashboard
           </h1>
-          <p className="text-muted-foreground mt-3 text-sm">
-            Signed in as {humanize(role || "member")}. Review the latest visible
-            workspace research.
+          <p className="text-muted-foreground mt-3 max-w-2xl text-sm">
+            Signed in as {humanize(role || "member")}. Build evidence-backed
+            records about entities of interest, then link facts and sources to
+            see how they connect. Start with{" "}
+            <Link
+              href="/people/new"
+              className="text-foreground decoration-primary/40 underline underline-offset-4"
+            >
+              a new person
+            </Link>
+            , or pick up where a subject left off below.
           </p>
         </div>
         {canCreatePerson ? (
@@ -226,6 +234,46 @@ export function DashboardOverview({
             </dd>
           </div>
         </dl>
+      </section>
+
+      <section
+        aria-labelledby="research-next-step-heading"
+        className={`${panelClassName} border-primary/20 bg-primary/[0.03]`}
+      >
+        <div className="max-w-2xl">
+          <p className="text-primary text-xs font-semibold tracking-[0.16em] uppercase">
+            Your next step
+          </p>
+          <h2
+            id="research-next-step-heading"
+            className="mt-2 text-xl font-semibold"
+          >
+            Build an intelligence record
+          </h2>
+          <p className="text-muted-foreground mt-2 text-sm leading-6">
+            Add an entity of interest, attach source material, map the
+            relationships, and capture the finding in notes.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {canCreatePerson ? (
+              <Link href="/people/new" className={buttonVariants()}>
+                1. Add a person
+              </Link>
+            ) : null}
+            <Link
+              href="/evidence"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              2. Attach evidence
+            </Link>
+            <Link
+              href="/graph"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              3. Explore graph
+            </Link>
+          </div>
+        </div>
       </section>
 
       <div className="grid gap-6 xl:grid-cols-2">

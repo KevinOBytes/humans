@@ -23,13 +23,13 @@ import { profilePageHref } from "@/lib/research-pagination";
 
 const views = [
   "facts",
-  "names",
   "relationships",
   "evidence",
   "notes",
-  "activity",
+  "names",
   "contacts",
   "files",
+  "activity",
 ] as const;
 type View = (typeof views)[number];
 

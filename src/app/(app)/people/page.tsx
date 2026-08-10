@@ -78,9 +78,10 @@ export default async function PeoplePage({
     <div className="space-y-7">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">People</h1>
-          <p className="text-muted-foreground mt-2 text-sm">
-            Visible person records in this verified workspace.
+          <h1 className="text-3xl font-semibold tracking-tight">Entities</h1>
+          <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
+            Entities of interest for intelligence work. Build a record, then
+            link facts, relationships, and source material to it.
           </p>
         </div>
         {canCreate ? (

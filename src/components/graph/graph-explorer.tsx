@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import {
   CircleDot,
   Focus,
@@ -487,8 +488,8 @@ export function GraphExplorer({
             Social graph
           </h1>
           <p className="text-muted-foreground mt-2 max-w-3xl text-sm leading-6">
-            Explore the authorized people and relationships loaded for this
-            view. Counts describe this returned graph, not the entire workspace.
+            Map the authorized entities and relationships loaded for this view.
+            Counts describe this returned graph, not the entire workspace.
           </p>
         </div>
         <div className="text-muted-foreground text-right text-xs">
@@ -496,6 +497,28 @@ export function GraphExplorer({
           <p>{result.edges.length} relationships loaded</p>
         </div>
       </header>
+
+      {result.nodes.length === 0 ? (
+        <section
+          aria-label="Graph is empty"
+          className="border-primary/20 bg-primary/[0.03] rounded-2xl border px-5 py-6 text-sm"
+        >
+          <h2 className="text-base font-semibold">No entities mapped yet</h2>
+          <p className="text-muted-foreground mt-1 max-w-2xl leading-6">
+            Add an entity to begin, or import a CSV/JSON record set. As records
+            accumulate, relationships and source-backed connections will take
+            shape on this canvas.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href="/people/new">Add a person</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/imports">Import records</Link>
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       {result.limits.nodesTruncated || result.limits.edgesTruncated ? (
         <section

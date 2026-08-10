@@ -21,8 +21,8 @@ import {
 } from "@/components/ui/table";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
+  EvidenceFileRowFragmentDoc,
   EvidenceFilesDocument,
-  FileWorkspaceItemFragmentDoc,
   PendingWorkspaceUploadsDocument,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
@@ -54,7 +54,7 @@ export default async function EvidencePage({
       : Promise.resolve(null),
   ]);
   const files =
-    readFragment(FileWorkspaceItemFragmentDoc, data.files?.nodes) ?? [];
+    readFragment(EvidenceFileRowFragmentDoc, data.files?.nodes) ?? [];
   const pageInfo = data.files?.pageInfo;
   const pendingUploads = (pendingData?.uploadSessions?.nodes ?? []).flatMap(
     (session) =>

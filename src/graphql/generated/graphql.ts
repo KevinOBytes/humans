@@ -1206,6 +1206,18 @@ export type FileWorkspaceItemFragment = {
   }> | null;
 } & { " $fragmentName"?: "FileWorkspaceItemFragment" };
 
+export type EvidenceFileRowFragment = {
+  id: string | null;
+  originalName: string | null;
+  mediaType: string | null;
+  detectedType: string | null;
+  byteSize: number | null;
+  availability: FileAvailability | null;
+  scanState: FileScanState | null;
+  updatedAt: string | null;
+  version: number | null;
+} & { " $fragmentName"?: "EvidenceFileRowFragment" };
+
 export type ImportWorkspaceItemFragment = {
   id: string | null;
   fileId: string | null;
@@ -1230,9 +1242,7 @@ export type EvidenceFilesQueryVariables = Exact<{
 export type EvidenceFilesQuery = {
   files: {
     nodes: Array<{
-      " $fragmentRefs"?: {
-        FileWorkspaceItemFragment: FileWorkspaceItemFragment;
-      };
+      " $fragmentRefs"?: { EvidenceFileRowFragment: EvidenceFileRowFragment };
     }> | null;
     pageInfo: { hasNextPage: boolean; endCursor: string | null } | null;
   } | null;
@@ -4548,6 +4558,22 @@ export const FileWorkspaceItemFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "FileWorkspaceItem" },
 ) as unknown as TypedDocumentString<FileWorkspaceItemFragment, unknown>;
+export const EvidenceFileRowFragmentDoc = new TypedDocumentString(
+  `
+    fragment EvidenceFileRow on File {
+  id
+  originalName
+  mediaType
+  detectedType
+  byteSize
+  availability
+  scanState
+  updatedAt
+  version
+}
+    `,
+  { fragmentName: "EvidenceFileRow" },
+) as unknown as TypedDocumentString<EvidenceFileRowFragment, unknown>;
 export const ImportWorkspaceItemFragmentDoc = new TypedDocumentString(
   `
     fragment ImportWorkspaceItem on Import {
@@ -5068,7 +5094,7 @@ export const EvidenceFilesDocument = new TypedDocumentString(
     query EvidenceFiles($first: Int, $after: String) {
   files(first: $first, after: $after) {
     nodes {
-      ...FileWorkspaceItem
+      ...EvidenceFileRow
     }
     pageInfo {
       hasNextPage
@@ -5076,7 +5102,7 @@ export const EvidenceFilesDocument = new TypedDocumentString(
     }
   }
 }
-    fragment FileWorkspaceItem on File {
+    fragment EvidenceFileRow on File {
   id
   originalName
   mediaType
@@ -5084,23 +5110,11 @@ export const EvidenceFilesDocument = new TypedDocumentString(
   byteSize
   availability
   scanState
-  extractionState
-  sensitivity
-  version
-  createdAt
   updatedAt
-  variants {
-    id
-    kind
-    mediaType
-    byteSize
-    checksum
-    generatorVersion
-    createdAt
-  }
+  version
 }`,
   {
-    hash: "sha256:be04f838454a9149073ed603f2b9257fa4b44b39ba56678765de5474ab4f0a15",
+    hash: "sha256:1891cf02adb81199d5cd5acf9d173baadad56cb3030bb9b144954d4cddc315f8",
   },
 ) as unknown as TypedDocumentString<
   EvidenceFilesQuery,
