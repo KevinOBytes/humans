@@ -7,7 +7,7 @@ import {
   createJobsRunHandler,
   maxDuration,
   runtime,
-} from "@/app/api/jobs/run/route";
+} from "@/app/api/jobs/run/handler";
 
 const secret = "Cron!N7vQ2xL9mR4tK8wP5sD3cF6hJ0bE";
 

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createInvitationAcceptanceHandler,
   createInvitationAcceptanceRoute,
-} from "@/app/api/account/invitations/accept/route";
+} from "@/app/api/account/invitations/accept/handlers";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { InvitationLifecycleError } from "@/modules/auth/invitation-lifecycle";
 

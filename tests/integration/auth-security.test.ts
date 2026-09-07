@@ -14,7 +14,7 @@ import {
   vi,
 } from "vitest";
 
-import { createAuthRouteHandlers } from "@/app/api/auth/[...all]/route";
+import { createAuthRouteHandlers } from "@/app/api/auth/[...all]/handlers";
 import { newId } from "@/db/id";
 import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
 import {

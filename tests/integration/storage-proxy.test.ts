@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { createStorageProxyHandlers } from "@/app/api/storage/objects/[...path]/route";
+import { createStorageProxyHandlers } from "@/lib/storage/proxy";
 import { parseServerEnv } from "@/lib/env/server-schema";
 import { createObjectStore } from "@/lib/storage/s3";
 import {

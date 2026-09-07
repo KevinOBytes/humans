@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createInvitationHandoffHandlers,
   createInvitationHandoffRoute,
-} from "@/app/api/account/invitations/handoff/route";
+} from "@/app/api/account/invitations/handoff/handlers";
 import {
   openInvitationHandoff,
   sealInvitationHandoff,

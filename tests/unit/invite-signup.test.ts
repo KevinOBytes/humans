@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuthRouteHandlers } from "@/app/api/auth/[...all]/route";
+import { createAuthRouteHandlers } from "@/app/api/auth/[...all]/handlers";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { createTransactionalInviteSignUpHandler } from "@/modules/auth/invite-signup";
 

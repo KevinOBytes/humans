@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { GET as getLiveness } from "@/app/api/health/live/route";
-import { createReadinessHandler } from "@/app/api/health/ready/route";
+import { createReadinessHandler } from "@/app/api/health/ready/handler";
 
 describe("liveness", () => {
   it("returns a non-secret status", async () => {
