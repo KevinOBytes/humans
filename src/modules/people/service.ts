@@ -2055,6 +2055,7 @@ export function createPeopleService(context: ResearchServiceContext) {
           "The requested resource was not found.",
         );
       }
+      const person = await requireRecordPerson(existing.personId);
       if (input.idempotencyKey != null) {
         const secret = context.idempotencyHmacKey;
         if (!secret) {
@@ -2134,7 +2135,7 @@ export function createPeopleService(context: ResearchServiceContext) {
           action: "person.file.detach",
           resourceKind: "person",
           resourceId: row.personId,
-          sensitivity: "internal",
+          sensitivity: person.sensitivity,
           changedFields: ["deletedAt"],
           metadata: { fileId: row.fileId, attachmentId: row.id },
         });
