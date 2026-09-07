@@ -230,6 +230,88 @@ export function createPeopleRepository(database: Database) {
         .limit(input.limit);
     },
 
+    async getNameById(input: {
+      workspaceId: string;
+      id: string;
+    }): Promise<PersonNameRow | null> {
+      const [row] = await database
+        .select()
+        .from(personNames)
+        .where(
+          and(
+            eq(personNames.workspaceId, input.workspaceId),
+            eq(personNames.id, input.id),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    },
+
+    async getEventById(input: {
+      workspaceId: string;
+      id: string;
+    }): Promise<PersonEventRow | null> {
+      const [row] = await database
+        .select()
+        .from(personEvents)
+        .where(
+          and(
+            eq(personEvents.workspaceId, input.workspaceId),
+            eq(personEvents.id, input.id),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    },
+
+    async updateNameIfVersion(input: {
+      workspaceId: string;
+      id: string;
+      expectedVersion: number;
+      patch: Partial<typeof personNames.$inferInsert>;
+    }): Promise<PersonNameRow | null> {
+      const [row] = await database
+        .update(personNames)
+        .set({
+          ...input.patch,
+          version: sql`${personNames.version} + 1`,
+        })
+        .where(
+          and(
+            eq(personNames.workspaceId, input.workspaceId),
+            eq(personNames.id, input.id),
+            isNull(personNames.deletedAt),
+            eq(personNames.version, input.expectedVersion),
+          ),
+        )
+        .returning();
+      return row ?? null;
+    },
+
+    async updateEventIfVersion(input: {
+      workspaceId: string;
+      id: string;
+      expectedVersion: number;
+      patch: Partial<typeof personEvents.$inferInsert>;
+    }): Promise<PersonEventRow | null> {
+      const [row] = await database
+        .update(personEvents)
+        .set({
+          ...input.patch,
+          version: sql`${personEvents.version} + 1`,
+        })
+        .where(
+          and(
+            eq(personEvents.workspaceId, input.workspaceId),
+            eq(personEvents.id, input.id),
+            isNull(personEvents.deletedAt),
+            eq(personEvents.version, input.expectedVersion),
+          ),
+        )
+        .returning();
+      return row ?? null;
+    },
+
     async listFiles(input: {
       workspaceId: string;
       personId: string;

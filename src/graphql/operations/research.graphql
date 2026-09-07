@@ -574,6 +574,86 @@ mutation CreatePerson($input: CreatePersonInput!) {
   }
 }
 
+mutation CreatePersonName($input: CreatePersonNameInput!) {
+  createPersonName(input: $input) {
+    name {
+      ...PersonNameSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdatePersonName($input: UpdatePersonNameInput!) {
+  updatePersonName(input: $input) {
+    name {
+      ...PersonNameSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchivePersonName($input: ArchivePersonNameInput!) {
+  archivePersonName(input: $input) {
+    name {
+      id
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation CreatePersonEvent($input: CreatePersonEventInput!) {
+  createPersonEvent(input: $input) {
+    event {
+      ...PersonEventSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation UpdatePersonEvent($input: UpdatePersonEventInput!) {
+  updatePersonEvent(input: $input) {
+    event {
+      ...PersonEventSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchivePersonEvent($input: ArchivePersonEventInput!) {
+  archivePersonEvent(input: $input) {
+    event {
+      id
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
 mutation UpdatePerson($input: UpdatePersonInput!) {
   updatePerson(input: $input) {
     person {

@@ -157,7 +157,11 @@ export async function PersonRecordPage({
         />
       ) : null}
       {view === "names" ? (
-        <NamesTimelineSection search={search} personId={personId} />
+        <NamesTimelineSection
+          search={search}
+          personId={personId}
+          canUpdate={permissions.includes("person:update")}
+        />
       ) : null}
       {view === "relationships" ? (
         <RelationshipsSection

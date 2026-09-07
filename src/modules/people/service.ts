@@ -118,6 +118,146 @@ const CONTRADICTORY_FACTS_CURSOR_ORDER = "contradictory-facts-asserted-desc";
 const PERSON_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const PERSON_REFERENCE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const PERSON_NAME_KINDS = new Set([
+  "legal",
+  "preferred",
+  "birth",
+  "married",
+  "former",
+  "alias",
+  "transliteration",
+  "other",
+]);
+const PERSON_RECORD_STATES = new Set([
+  "asserted",
+  "verified",
+  "disputed",
+  "superseded",
+  "unknown",
+]);
+const PERSON_TEMPORAL_SEMANTICS = new Set([
+  "exact",
+  "approximate",
+  "before",
+  "after",
+  "between",
+  "year_only",
+  "unknown",
+]);
+const PERSON_TEMPORAL_PRECISIONS = new Set([
+  "instant",
+  "second",
+  "minute",
+  "hour",
+  "day",
+  "month",
+  "year",
+  "range",
+  "unknown",
+]);
+const PERSON_SENSITIVITIES = new Set([
+  "public",
+  "internal",
+  "confidential",
+  "restricted",
+]);
+
+function recordText(
+  value: string | null | undefined,
+  path: string,
+  max: number,
+  required = false,
+): { value: string | null; issues: ValidationIssue[] } {
+  if (value == null) {
+    return required
+      ? {
+          value: null,
+          issues: [
+            { path: [path], code: "REQUIRED", message: "A value is required." },
+          ],
+        }
+      : { value: null, issues: [] };
+  }
+  const normalized = value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  if (
+    !normalized ||
+    Buffer.byteLength(normalized, "utf8") > max ||
+    /[\p{Cc}\p{Cf}]/u.test(normalized)
+  ) {
+    return {
+      value: null,
+      issues: [
+        {
+          path: [path],
+          code: "INVALID_VALUE",
+          message: "The value is invalid.",
+        },
+      ],
+    };
+  }
+  return { value: normalized, issues: [] };
+}
+
+function recordDate(
+  value: Date | string | null | undefined,
+  path: string,
+): { value: Date | null | undefined; issues: ValidationIssue[] } {
+  if (value === undefined || value === null) return { value, issues: [] };
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      value: null,
+      issues: [
+        {
+          path: [path],
+          code: "INVALID_VALUE",
+          message: "The date is invalid.",
+        },
+      ],
+    };
+  }
+  return { value: parsed, issues: [] };
+}
+
+function recordEnum(
+  value: string | null | undefined,
+  path: string,
+  allowed: ReadonlySet<string>,
+  fallback: string,
+): { value: string; issues: ValidationIssue[] } {
+  const normalized = (value ?? fallback).toLowerCase();
+  return allowed.has(normalized)
+    ? { value: normalized, issues: [] }
+    : {
+        value: fallback,
+        issues: [
+          {
+            path: [path],
+            code: "INVALID_VALUE",
+            message: "The value is invalid.",
+          },
+        ],
+      };
+}
+
+function recordConfidence(
+  value: number | null | undefined,
+  path = "confidence",
+): { value: string; issues: ValidationIssue[] } {
+  const normalized = value ?? 1;
+  return Number.isFinite(normalized) && normalized >= 0 && normalized <= 1
+    ? { value: normalized.toFixed(3), issues: [] }
+    : {
+        value: "1.000",
+        issues: [
+          {
+            path: [path],
+            code: "INVALID_VALUE",
+            message: "Confidence must be between 0 and 1.",
+          },
+        ],
+      };
+}
 
 function encodeRecentCursor(row: Pick<PersonRow, "id" | "updatedAt">): string {
   return Buffer.from(
@@ -282,6 +422,48 @@ export function createPeopleService(context: ResearchServiceContext) {
       );
     }
     return row;
+  }
+
+  async function requireRecordPerson(personId: string): Promise<PersonRow> {
+    const person = await repository.getById({
+      workspaceId: context.workspaceId,
+      id: personId,
+      visibility,
+    });
+    if (!person) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    return person;
+  }
+
+  async function visibleRecord(
+    resourceKind: "personName" | "personEvent",
+    row: PersonNameRow | PersonEventRow,
+  ): Promise<boolean> {
+    return canAccessResource(context.database, context, {
+      id: row.id,
+      resourceKind,
+      sensitivity: row.sensitivity,
+    });
+  }
+
+  async function maintainPersonSearch(
+    writeContext: ResearchServiceContext,
+    database: typeof context.database,
+    person: PersonRow,
+  ): Promise<void> {
+    await applySearchIndexMaintenance(writeContext, database, [
+      {
+        action: "upsert",
+        sourceId: person.id,
+        sourceKind: "person",
+        sourceVersion: person.version,
+        workspaceId: writeContext.workspaceId,
+      },
+    ]);
   }
 
   return {
@@ -494,6 +676,637 @@ export function createPeopleService(context: ResearchServiceContext) {
             : null,
         },
       };
+    },
+
+    async createName(input: {
+      personId: string;
+      kind?: string | null;
+      fullName: string;
+      givenName?: string | null;
+      middleName?: string | null;
+      familyName?: string | null;
+      prefix?: string | null;
+      suffix?: string | null;
+      script?: string | null;
+      language?: string | null;
+      validFrom?: Date | string | null;
+      validUntil?: Date | string | null;
+      temporalSemantics?: string | null;
+      temporalPrecision?: string | null;
+      confidence?: number | null;
+      sensitivity?: string | null;
+      state?: string | null;
+    }): Promise<MutationOutcome<PersonNameRow>> {
+      const person = await requireRecordPerson(input.personId);
+      const fullName = recordText(input.fullName, "fullName", 500, true);
+      const fields = [
+        fullName,
+        ...[
+          [input.givenName, "givenName", 200],
+          [input.middleName, "middleName", 200],
+          [input.familyName, "familyName", 200],
+          [input.prefix, "prefix", 100],
+          [input.suffix, "suffix", 100],
+          [input.script, "script", 100],
+          [input.language, "language", 100],
+        ].map(([value, path, max]) =>
+          recordText(
+            value as string | null | undefined,
+            path as string,
+            max as number,
+          ),
+        ),
+      ];
+      const kind = recordEnum(input.kind, "kind", PERSON_NAME_KINDS, "other");
+      const temporalSemantics = recordEnum(
+        input.temporalSemantics,
+        "temporalSemantics",
+        PERSON_TEMPORAL_SEMANTICS,
+        "unknown",
+      );
+      const temporalPrecision = recordEnum(
+        input.temporalPrecision,
+        "temporalPrecision",
+        PERSON_TEMPORAL_PRECISIONS,
+        "unknown",
+      );
+      const sensitivity = recordEnum(
+        input.sensitivity,
+        "sensitivity",
+        PERSON_SENSITIVITIES,
+        "internal",
+      );
+      const state = recordEnum(
+        input.state,
+        "state",
+        PERSON_RECORD_STATES,
+        "asserted",
+      );
+      const validFrom = recordDate(input.validFrom, "validFrom");
+      const validUntil = recordDate(input.validUntil, "validUntil");
+      const confidence = recordConfidence(input.confidence);
+      const issues = [
+        ...fields.flatMap((field) => field.issues),
+        ...kind.issues,
+        ...temporalSemantics.issues,
+        ...temporalPrecision.issues,
+        ...sensitivity.issues,
+        ...state.issues,
+        ...validFrom.issues,
+        ...validUntil.issues,
+        ...confidence.issues,
+      ];
+      if (
+        validFrom.value &&
+        validUntil.value &&
+        validUntil.value < validFrom.value
+      ) {
+        issues.push({
+          path: ["validUntil"],
+          code: "INVALID_RANGE",
+          message: "The end date must not precede the start date.",
+        });
+      }
+      if (issues.length) return invalid(issues);
+      const now = new Date();
+      const [row] = await writeTransaction(context, async (database) => {
+        const [created] = await database
+          .insert(personNames)
+          .values({
+            id: newId(),
+            workspaceId: context.workspaceId,
+            personId: person.id,
+            kind: kind.value as "legal",
+            fullName: fullName.value!,
+            givenName: fields[1].value,
+            middleName: fields[2].value,
+            familyName: fields[3].value,
+            prefix: fields[4].value,
+            suffix: fields[5].value,
+            script: fields[6].value,
+            language: fields[7].value,
+            normalizedForm: fullName.value!.toLocaleLowerCase("en-US"),
+            validFrom: validFrom.value ?? null,
+            validUntil: validUntil.value ?? null,
+            temporalSemantics: temporalSemantics.value as "unknown",
+            temporalPrecision: temporalPrecision.value as "unknown",
+            confidence: confidence.value,
+            sensitivity: sensitivity.value as "internal",
+            state: state.value as "asserted",
+            createdAt: now,
+            createdBy: context.actor.principalId,
+            updatedAt: now,
+            updatedBy: context.actor.principalId,
+          })
+          .returning();
+        if (!created) throw new Error("Person name insert failed");
+        await audit.write(database, {
+          action: "personName.create",
+          resourceKind: "personName",
+          resourceId: created.id,
+          sensitivity: created.sensitivity,
+          changedFields: ["fullName", "kind", "state", "sensitivity"],
+          metadata: { personId: person.id, version: created.version },
+        });
+        await maintainPersonSearch(context, database, person);
+        return [created];
+      });
+      return { resource: row ?? null, issues: [], code: null };
+    },
+
+    async updateName(input: {
+      id: string;
+      expectedVersion: number;
+      fullName?: string | null;
+      kind?: string | null;
+      givenName?: string | null;
+      middleName?: string | null;
+      familyName?: string | null;
+      prefix?: string | null;
+      suffix?: string | null;
+      script?: string | null;
+      language?: string | null;
+      validFrom?: Date | string | null;
+      validUntil?: Date | string | null;
+      temporalSemantics?: string | null;
+      temporalPrecision?: string | null;
+      confidence?: number | null;
+      sensitivity?: string | null;
+      state?: string | null;
+    }): Promise<MutationOutcome<PersonNameRow>> {
+      const existing = await repository.getNameById({
+        workspaceId: context.workspaceId,
+        id: input.id,
+      });
+      if (
+        !existing ||
+        existing.deletedAt !== null ||
+        !(await visibleRecord("personName", existing))
+      )
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      const person = await requireRecordPerson(existing.personId);
+      const patch: Partial<typeof personNames.$inferInsert> = {
+        updatedAt: new Date(),
+        updatedBy: context.actor.principalId,
+      };
+      const issues: ValidationIssue[] = [];
+      if (input.fullName !== undefined) {
+        const result = recordText(input.fullName, "fullName", 500, true);
+        issues.push(...result.issues);
+        patch.fullName = result.value!;
+        if (result.value)
+          patch.normalizedForm = result.value.toLocaleLowerCase("en-US");
+      }
+      if (input.kind !== undefined) {
+        const result = recordEnum(
+          input.kind,
+          "kind",
+          PERSON_NAME_KINDS,
+          existing.kind,
+        );
+        issues.push(...result.issues);
+        patch.kind = result.value as "legal";
+      }
+      for (const [key, max] of [
+        ["givenName", 200],
+        ["middleName", 200],
+        ["familyName", 200],
+        ["prefix", 100],
+        ["suffix", 100],
+        ["script", 100],
+        ["language", 100],
+      ] as const) {
+        if (input[key] !== undefined) {
+          const result = recordText(input[key], key, max);
+          issues.push(...result.issues);
+          patch[key] = result.value;
+        }
+      }
+      for (const key of ["validFrom", "validUntil"] as const) {
+        if (input[key] !== undefined) {
+          const result = recordDate(input[key], key);
+          issues.push(...result.issues);
+          patch[key] = result.value ?? null;
+        }
+      }
+      for (const [key, allowed, fallback] of [
+        [
+          "temporalSemantics",
+          PERSON_TEMPORAL_SEMANTICS,
+          existing.temporalSemantics,
+        ],
+        [
+          "temporalPrecision",
+          PERSON_TEMPORAL_PRECISIONS,
+          existing.temporalPrecision,
+        ],
+        ["sensitivity", PERSON_SENSITIVITIES, existing.sensitivity],
+        ["state", PERSON_RECORD_STATES, existing.state],
+      ] as const) {
+        if (input[key] !== undefined) {
+          const result = recordEnum(input[key], key, allowed, fallback);
+          issues.push(...result.issues);
+          patch[key] = result.value as never;
+        }
+      }
+      if (input.confidence !== undefined) {
+        const result = recordConfidence(input.confidence);
+        issues.push(...result.issues);
+        patch.confidence = result.value;
+      }
+      const validFrom = patch.validFrom ?? existing.validFrom;
+      const validUntil = patch.validUntil ?? existing.validUntil;
+      if (validFrom && validUntil && validUntil < validFrom)
+        issues.push({
+          path: ["validUntil"],
+          code: "INVALID_RANGE",
+          message: "The end date must not precede the start date.",
+        });
+      if (issues.length) return invalid(issues);
+      const updated = await writeTransaction(context, async (database) => {
+        const scoped = createPeopleRepository(database);
+        const row = await scoped.updateNameIfVersion({
+          workspaceId: context.workspaceId,
+          id: input.id,
+          expectedVersion: input.expectedVersion,
+          patch,
+        });
+        if (!row) return null;
+        await audit.write(database, {
+          action: "personName.update",
+          resourceKind: "personName",
+          resourceId: row.id,
+          sensitivity: row.sensitivity,
+          changedFields: Object.keys(patch).filter(
+            (key) => key !== "updatedAt" && key !== "updatedBy",
+          ),
+          metadata: { personId: row.personId, version: row.version },
+        });
+        await maintainPersonSearch(context, database, person);
+        return row;
+      });
+      return updated
+        ? { resource: updated, issues: [], code: null }
+        : {
+            resource: null,
+            issues: [],
+            code: "CONFLICT",
+            currentVersion: existing.version,
+          };
+    },
+
+    async archiveName(input: {
+      id: string;
+      expectedVersion: number;
+    }): Promise<MutationOutcome<PersonNameRow>> {
+      const existing = await repository.getNameById({
+        workspaceId: context.workspaceId,
+        id: input.id,
+      });
+      if (
+        !existing ||
+        existing.deletedAt ||
+        !(await visibleRecord("personName", existing))
+      )
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      const person = await requireRecordPerson(existing.personId);
+      const archived = await writeTransaction(context, async (database) => {
+        const row = await createPeopleRepository(database).updateNameIfVersion({
+          workspaceId: context.workspaceId,
+          id: input.id,
+          expectedVersion: input.expectedVersion,
+          patch: {
+            deletedAt: new Date(),
+            deletedBy: context.actor.principalId,
+            updatedAt: new Date(),
+            updatedBy: context.actor.principalId,
+          },
+        });
+        if (!row) return null;
+        await audit.write(database, {
+          action: "personName.archive",
+          resourceKind: "personName",
+          resourceId: row.id,
+          sensitivity: row.sensitivity,
+          changedFields: ["deletedAt"],
+          metadata: { personId: row.personId, version: row.version },
+        });
+        await maintainPersonSearch(context, database, person);
+        return row;
+      });
+      return archived
+        ? { resource: archived, issues: [], code: null }
+        : {
+            resource: null,
+            issues: [],
+            code: "CONFLICT",
+            currentVersion: existing.version,
+          };
+    },
+
+    async createEvent(input: {
+      personId: string;
+      eventKind: string;
+      title: string;
+      description?: string | null;
+      placeId?: string | null;
+      earliestAt?: Date | string | null;
+      latestAt?: Date | string | null;
+      temporalSemantics?: string | null;
+      temporalPrecision?: string | null;
+      confidence?: number | null;
+      sensitivity?: string | null;
+      state?: string | null;
+    }): Promise<MutationOutcome<PersonEventRow>> {
+      const person = await requireRecordPerson(input.personId);
+      const eventKind = recordText(input.eventKind, "eventKind", 100, true);
+      const title = recordText(input.title, "title", 500, true);
+      const description = recordText(input.description, "description", 4_000);
+      const placeId = input.placeId == null ? null : input.placeId;
+      const earliestAt = recordDate(input.earliestAt, "earliestAt");
+      const latestAt = recordDate(input.latestAt, "latestAt");
+      const temporalSemantics = recordEnum(
+        input.temporalSemantics,
+        "temporalSemantics",
+        PERSON_TEMPORAL_SEMANTICS,
+        "unknown",
+      );
+      const temporalPrecision = recordEnum(
+        input.temporalPrecision,
+        "temporalPrecision",
+        PERSON_TEMPORAL_PRECISIONS,
+        "unknown",
+      );
+      const confidence = recordConfidence(input.confidence);
+      const sensitivity = recordEnum(
+        input.sensitivity,
+        "sensitivity",
+        PERSON_SENSITIVITIES,
+        "internal",
+      );
+      const state = recordEnum(
+        input.state,
+        "state",
+        PERSON_RECORD_STATES,
+        "asserted",
+      );
+      const issues = [
+        ...eventKind.issues,
+        ...title.issues,
+        ...description.issues,
+        ...earliestAt.issues,
+        ...latestAt.issues,
+        ...temporalSemantics.issues,
+        ...temporalPrecision.issues,
+        ...confidence.issues,
+        ...sensitivity.issues,
+        ...state.issues,
+      ];
+      if (
+        earliestAt.value &&
+        latestAt.value &&
+        latestAt.value < earliestAt.value
+      ) {
+        issues.push({
+          path: ["latestAt"],
+          code: "INVALID_RANGE",
+          message: "The end date must not precede the start date.",
+        });
+      }
+      if (placeId && !PERSON_REFERENCE_UUID.test(placeId))
+        issues.push({
+          path: ["placeId"],
+          code: "INVALID_VALUE",
+          message: "The place ID is invalid.",
+        });
+      if (issues.length) return invalid(issues);
+      const now = new Date();
+      const [row] = await writeTransaction(context, async (database) => {
+        const [created] = await database
+          .insert(personEvents)
+          .values({
+            id: newId(),
+            workspaceId: context.workspaceId,
+            personId: person.id,
+            eventKind: eventKind.value!,
+            title: title.value!,
+            description: description.value ?? undefined,
+            placeId: placeId ?? undefined,
+            earliestAt: earliestAt.value ?? null,
+            latestAt: latestAt.value ?? null,
+            temporalSemantics: temporalSemantics.value as "unknown",
+            temporalPrecision: temporalPrecision.value as "unknown",
+            confidence: confidence.value,
+            sensitivity: sensitivity.value as "internal",
+            state: state.value as "asserted",
+            createdAt: now,
+            createdBy: context.actor.principalId,
+            updatedAt: now,
+            updatedBy: context.actor.principalId,
+          })
+          .returning();
+        if (!created) throw new Error("Person event insert failed");
+        await audit.write(database, {
+          action: "personEvent.create",
+          resourceKind: "personEvent",
+          resourceId: created.id,
+          sensitivity: created.sensitivity,
+          changedFields: ["eventKind", "title", "state", "sensitivity"],
+          metadata: { personId: person.id, version: created.version },
+        });
+        await maintainPersonSearch(context, database, person);
+        return [created];
+      });
+      return { resource: row ?? null, issues: [], code: null };
+    },
+
+    async updateEvent(input: {
+      id: string;
+      expectedVersion: number;
+      eventKind?: string | null;
+      title?: string | null;
+      description?: string | null;
+      placeId?: string | null;
+      earliestAt?: Date | string | null;
+      latestAt?: Date | string | null;
+      temporalSemantics?: string | null;
+      temporalPrecision?: string | null;
+      confidence?: number | null;
+      sensitivity?: string | null;
+      state?: string | null;
+    }): Promise<MutationOutcome<PersonEventRow>> {
+      const existing = await repository.getEventById({
+        workspaceId: context.workspaceId,
+        id: input.id,
+      });
+      if (
+        !existing ||
+        existing.deletedAt !== null ||
+        !(await visibleRecord("personEvent", existing))
+      )
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      const person = await requireRecordPerson(existing.personId);
+      const patch: Partial<typeof personEvents.$inferInsert> = {
+        updatedAt: new Date(),
+        updatedBy: context.actor.principalId,
+      };
+      const issues: ValidationIssue[] = [];
+      for (const [key, max, required] of [
+        ["eventKind", 100, true],
+        ["title", 500, true],
+        ["description", 4_000, false],
+      ] as const) {
+        if (input[key] !== undefined) {
+          const result = recordText(input[key], key, max, required);
+          issues.push(...result.issues);
+          patch[key] = result.value ?? undefined;
+        }
+      }
+      if (input.placeId !== undefined) {
+        if (input.placeId && !PERSON_REFERENCE_UUID.test(input.placeId))
+          issues.push({
+            path: ["placeId"],
+            code: "INVALID_VALUE",
+            message: "The place ID is invalid.",
+          });
+        patch.placeId = input.placeId ?? undefined;
+      }
+      for (const key of ["earliestAt", "latestAt"] as const) {
+        if (input[key] !== undefined) {
+          const result = recordDate(input[key], key);
+          issues.push(...result.issues);
+          patch[key] = result.value ?? null;
+        }
+      }
+      for (const [key, allowed, fallback] of [
+        [
+          "temporalSemantics",
+          PERSON_TEMPORAL_SEMANTICS,
+          existing.temporalSemantics,
+        ],
+        [
+          "temporalPrecision",
+          PERSON_TEMPORAL_PRECISIONS,
+          existing.temporalPrecision,
+        ],
+        ["sensitivity", PERSON_SENSITIVITIES, existing.sensitivity],
+        ["state", PERSON_RECORD_STATES, existing.state],
+      ] as const) {
+        if (input[key] !== undefined) {
+          const result = recordEnum(input[key], key, allowed, fallback);
+          issues.push(...result.issues);
+          patch[key] = result.value as never;
+        }
+      }
+      if (input.confidence !== undefined) {
+        const result = recordConfidence(input.confidence);
+        issues.push(...result.issues);
+        patch.confidence = result.value;
+      }
+      const earliestAt = patch.earliestAt ?? existing.earliestAt;
+      const latestAt = patch.latestAt ?? existing.latestAt;
+      if (earliestAt && latestAt && latestAt < earliestAt)
+        issues.push({
+          path: ["latestAt"],
+          code: "INVALID_RANGE",
+          message: "The end date must not precede the start date.",
+        });
+      if (issues.length) return invalid(issues);
+      const updated = await writeTransaction(context, async (database) => {
+        const row = await createPeopleRepository(database).updateEventIfVersion(
+          {
+            workspaceId: context.workspaceId,
+            id: input.id,
+            expectedVersion: input.expectedVersion,
+            patch,
+          },
+        );
+        if (!row) return null;
+        await audit.write(database, {
+          action: "personEvent.update",
+          resourceKind: "personEvent",
+          resourceId: row.id,
+          sensitivity: row.sensitivity,
+          changedFields: Object.keys(patch).filter(
+            (key) => key !== "updatedAt" && key !== "updatedBy",
+          ),
+          metadata: { personId: row.personId, version: row.version },
+        });
+        await maintainPersonSearch(context, database, person);
+        return row;
+      });
+      return updated
+        ? { resource: updated, issues: [], code: null }
+        : {
+            resource: null,
+            issues: [],
+            code: "CONFLICT",
+            currentVersion: existing.version,
+          };
+    },
+
+    async archiveEvent(input: {
+      id: string;
+      expectedVersion: number;
+    }): Promise<MutationOutcome<PersonEventRow>> {
+      const existing = await repository.getEventById({
+        workspaceId: context.workspaceId,
+        id: input.id,
+      });
+      if (
+        !existing ||
+        existing.deletedAt ||
+        !(await visibleRecord("personEvent", existing))
+      )
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      const person = await requireRecordPerson(existing.personId);
+      const now = new Date();
+      const archived = await writeTransaction(context, async (database) => {
+        const row = await createPeopleRepository(database).updateEventIfVersion(
+          {
+            workspaceId: context.workspaceId,
+            id: input.id,
+            expectedVersion: input.expectedVersion,
+            patch: {
+              deletedAt: now,
+              deletedBy: context.actor.principalId,
+              updatedAt: now,
+              updatedBy: context.actor.principalId,
+            },
+          },
+        );
+        if (!row) return null;
+        await audit.write(database, {
+          action: "personEvent.archive",
+          resourceKind: "personEvent",
+          resourceId: row.id,
+          sensitivity: row.sensitivity,
+          changedFields: ["deletedAt"],
+          metadata: { personId: row.personId, version: row.version },
+        });
+        await maintainPersonSearch(context, database, person);
+        return row;
+      });
+      return archived
+        ? { resource: archived, issues: [], code: null }
+        : {
+            resource: null,
+            issues: [],
+            code: "CONFLICT",
+            currentVersion: existing.version,
+          };
     },
 
     async listFiles(input: {

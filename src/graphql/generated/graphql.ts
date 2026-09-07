@@ -63,10 +63,20 @@ export type ArchivePersonAddressInput = {
   idempotencyKey: string;
 };
 
+export type ArchivePersonEventInput = {
+  expectedVersion: number;
+  id: string;
+};
+
 export type ArchivePersonInput = {
   expectedVersion: number;
   id: string;
   idempotencyKey?: string | null | undefined;
+};
+
+export type ArchivePersonNameInput = {
+  expectedVersion: number;
+  id: string;
 };
 
 export type ArchivePhoneContactInput = {
@@ -258,6 +268,21 @@ export type CreatePersonContactInput = {
   verificationState?: string | null | undefined;
 };
 
+export type CreatePersonEventInput = {
+  confidence?: number | null | undefined;
+  description?: string | null | undefined;
+  earliestAt?: string | null | undefined;
+  eventKind: string;
+  latestAt?: string | null | undefined;
+  personId: string;
+  placeId?: string | null | undefined;
+  sensitivity?: Sensitivity | null | undefined;
+  state?: PersonRecordState | null | undefined;
+  temporalPrecision?: PersonTemporalPrecision | null | undefined;
+  temporalSemantics?: PersonTemporalSemantics | null | undefined;
+  title: string;
+};
+
 export type CreatePersonInput = {
   biography?: string | null | undefined;
   confidence?: number | null | undefined;
@@ -268,6 +293,26 @@ export type CreatePersonInput = {
   sensitivity?: Sensitivity | null | undefined;
   sortName?: string | null | undefined;
   status?: PersonStatus | null | undefined;
+};
+
+export type CreatePersonNameInput = {
+  confidence?: number | null | undefined;
+  familyName?: string | null | undefined;
+  fullName: string;
+  givenName?: string | null | undefined;
+  kind?: PersonNameKind | null | undefined;
+  language?: string | null | undefined;
+  middleName?: string | null | undefined;
+  personId: string;
+  prefix?: string | null | undefined;
+  script?: string | null | undefined;
+  sensitivity?: Sensitivity | null | undefined;
+  state?: PersonRecordState | null | undefined;
+  suffix?: string | null | undefined;
+  temporalPrecision?: PersonTemporalPrecision | null | undefined;
+  temporalSemantics?: PersonTemporalSemantics | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
 };
 
 export type CreatePhoneContactInput = {
@@ -911,6 +956,22 @@ export type UpdatePersonAddressInput = {
   validUntil?: string | null | undefined;
 };
 
+export type UpdatePersonEventInput = {
+  confidence?: number | null | undefined;
+  description?: string | null | undefined;
+  earliestAt?: string | null | undefined;
+  eventKind?: string | null | undefined;
+  expectedVersion: number;
+  id: string;
+  latestAt?: string | null | undefined;
+  placeId?: string | null | undefined;
+  sensitivity?: Sensitivity | null | undefined;
+  state?: PersonRecordState | null | undefined;
+  temporalPrecision?: PersonTemporalPrecision | null | undefined;
+  temporalSemantics?: PersonTemporalSemantics | null | undefined;
+  title?: string | null | undefined;
+};
+
 export type UpdatePersonInput = {
   biography?: string | null | undefined;
   displayName?: string | null | undefined;
@@ -921,6 +982,27 @@ export type UpdatePersonInput = {
   sensitivity?: Sensitivity | null | undefined;
   sortName?: string | null | undefined;
   status?: PersonStatus | null | undefined;
+};
+
+export type UpdatePersonNameInput = {
+  confidence?: number | null | undefined;
+  expectedVersion: number;
+  familyName?: string | null | undefined;
+  fullName?: string | null | undefined;
+  givenName?: string | null | undefined;
+  id: string;
+  kind?: PersonNameKind | null | undefined;
+  language?: string | null | undefined;
+  middleName?: string | null | undefined;
+  prefix?: string | null | undefined;
+  script?: string | null | undefined;
+  sensitivity?: Sensitivity | null | undefined;
+  state?: PersonRecordState | null | undefined;
+  suffix?: string | null | undefined;
+  temporalPrecision?: PersonTemporalPrecision | null | undefined;
+  temporalSemantics?: PersonTemporalSemantics | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
 };
 
 export type UpdatePhoneContactInput = {
@@ -3291,6 +3373,112 @@ export type CreatePersonMutation = {
     person: {
       " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
     } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }>;
+  };
+};
+
+export type CreatePersonNameMutationVariables = Exact<{
+  input: CreatePersonNameInput;
+}>;
+
+export type CreatePersonNameMutation = {
+  createPersonName: {
+    code: string | null;
+    currentVersion: number | null;
+    name: {
+      " $fragmentRefs"?: {
+        PersonNameSummaryFragment: PersonNameSummaryFragment;
+      };
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }>;
+  };
+};
+
+export type UpdatePersonNameMutationVariables = Exact<{
+  input: UpdatePersonNameInput;
+}>;
+
+export type UpdatePersonNameMutation = {
+  updatePersonName: {
+    code: string | null;
+    currentVersion: number | null;
+    name: {
+      " $fragmentRefs"?: {
+        PersonNameSummaryFragment: PersonNameSummaryFragment;
+      };
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }>;
+  };
+};
+
+export type ArchivePersonNameMutationVariables = Exact<{
+  input: ArchivePersonNameInput;
+}>;
+
+export type ArchivePersonNameMutation = {
+  archivePersonName: {
+    code: string | null;
+    currentVersion: number | null;
+    name: { id: string; version: number } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }>;
+  };
+};
+
+export type CreatePersonEventMutationVariables = Exact<{
+  input: CreatePersonEventInput;
+}>;
+
+export type CreatePersonEventMutation = {
+  createPersonEvent: {
+    code: string | null;
+    currentVersion: number | null;
+    event: {
+      " $fragmentRefs"?: {
+        PersonEventSummaryFragment: PersonEventSummaryFragment;
+      };
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }>;
+  };
+};
+
+export type UpdatePersonEventMutationVariables = Exact<{
+  input: UpdatePersonEventInput;
+}>;
+
+export type UpdatePersonEventMutation = {
+  updatePersonEvent: {
+    code: string | null;
+    currentVersion: number | null;
+    event: {
+      " $fragmentRefs"?: {
+        PersonEventSummaryFragment: PersonEventSummaryFragment;
+      };
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }>;
+  };
+};
+
+export type ArchivePersonEventMutationVariables = Exact<{
+  input: ArchivePersonEventInput;
+}>;
+
+export type ArchivePersonEventMutation = {
+  archivePersonEvent: {
+    code: string | null;
+    currentVersion: number | null;
+    event: { id: string; version: number } | null;
     issues: Array<{
       " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
     }>;
@@ -8009,6 +8197,246 @@ fragment MutationIssue on ValidationIssue {
 ) as unknown as TypedDocumentString<
   CreatePersonMutation,
   CreatePersonMutationVariables
+>;
+export const CreatePersonNameDocument = new TypedDocumentString(
+  `
+    mutation CreatePersonName($input: CreatePersonNameInput!) {
+  createPersonName(input: $input) {
+    name {
+      ...PersonNameSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}
+fragment PersonNameSummary on PersonName {
+  id
+  personId
+  kind
+  fullName
+  givenName
+  middleName
+  familyName
+  prefix
+  suffix
+  script
+  language
+  validFrom
+  validUntil
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:23f82469d144d09238af47fb893a6496295af6f7daa3753b475250744876b3e8",
+  },
+) as unknown as TypedDocumentString<
+  CreatePersonNameMutation,
+  CreatePersonNameMutationVariables
+>;
+export const UpdatePersonNameDocument = new TypedDocumentString(
+  `
+    mutation UpdatePersonName($input: UpdatePersonNameInput!) {
+  updatePersonName(input: $input) {
+    name {
+      ...PersonNameSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}
+fragment PersonNameSummary on PersonName {
+  id
+  personId
+  kind
+  fullName
+  givenName
+  middleName
+  familyName
+  prefix
+  suffix
+  script
+  language
+  validFrom
+  validUntil
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:02bee858afb41dbba55ac277c0c0952b55a98c0d684732b17e78edf4ef6e4ee7",
+  },
+) as unknown as TypedDocumentString<
+  UpdatePersonNameMutation,
+  UpdatePersonNameMutationVariables
+>;
+export const ArchivePersonNameDocument = new TypedDocumentString(
+  `
+    mutation ArchivePersonName($input: ArchivePersonNameInput!) {
+  archivePersonName(input: $input) {
+    name {
+      id
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:1f5b62a0f957965d28e683e3fb7f4fea157cb735389bd24de8cd7cc54b94894e",
+  },
+) as unknown as TypedDocumentString<
+  ArchivePersonNameMutation,
+  ArchivePersonNameMutationVariables
+>;
+export const CreatePersonEventDocument = new TypedDocumentString(
+  `
+    mutation CreatePersonEvent($input: CreatePersonEventInput!) {
+  createPersonEvent(input: $input) {
+    event {
+      ...PersonEventSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}
+fragment PersonEventSummary on PersonEvent {
+  id
+  personId
+  eventKind
+  title
+  description
+  placeId
+  earliestAt
+  latestAt
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:6246dff1ea5153525383e39a34ff7bb4b4d95e114e280328d31dd81c3b80f5df",
+  },
+) as unknown as TypedDocumentString<
+  CreatePersonEventMutation,
+  CreatePersonEventMutationVariables
+>;
+export const UpdatePersonEventDocument = new TypedDocumentString(
+  `
+    mutation UpdatePersonEvent($input: UpdatePersonEventInput!) {
+  updatePersonEvent(input: $input) {
+    event {
+      ...PersonEventSummary
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}
+fragment PersonEventSummary on PersonEvent {
+  id
+  personId
+  eventKind
+  title
+  description
+  placeId
+  earliestAt
+  latestAt
+  temporalSemantics
+  temporalPrecision
+  confidence
+  sensitivity
+  state
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:3bf10473a4bf41d456506ba677c3232825c50176fd198ed75b379ec067a8338b",
+  },
+) as unknown as TypedDocumentString<
+  UpdatePersonEventMutation,
+  UpdatePersonEventMutationVariables
+>;
+export const ArchivePersonEventDocument = new TypedDocumentString(
+  `
+    mutation ArchivePersonEvent($input: ArchivePersonEventInput!) {
+  archivePersonEvent(input: $input) {
+    event {
+      id
+      version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:0baacfe103824df15b8e3a39509954bed964dc5b834a173ac80eb35cdef74831",
+  },
+) as unknown as TypedDocumentString<
+  ArchivePersonEventMutation,
+  ArchivePersonEventMutationVariables
 >;
 export const UpdatePersonDocument = new TypedDocumentString(
   `
