@@ -13,6 +13,7 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("not found");
   }),
+  useRouter: () => ({ refresh: vi.fn() }),
 }));
 vi.mock("next/link", () => ({
   default: ({

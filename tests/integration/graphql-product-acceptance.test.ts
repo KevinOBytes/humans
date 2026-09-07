@@ -109,6 +109,7 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       query: CreatePersonNameDocument,
       variables: {
         input: {
+          idempotencyKey: "person-name-create-replay",
           personId,
           fullName: "Record Person, née Example",
           kind: "ALIAS",
@@ -122,6 +123,24 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     });
     const nameId = name.body?.data?.createPersonName.name?.id;
     expect(nameId).toBeTruthy();
+    const replayedName = await fixture.execute({
+      jar: owner.jar,
+      operationName: "CreatePersonName",
+      query: CreatePersonNameDocument,
+      variables: {
+        input: {
+          idempotencyKey: "person-name-create-replay",
+          personId,
+          fullName: "Record Person, née Example",
+          kind: "ALIAS",
+        },
+      },
+    });
+    expect(replayedName.body?.errors).toBeUndefined();
+    expect(replayedName.body?.data?.createPersonName).toMatchObject({
+      code: null,
+      name: { id: nameId, version: 1 },
+    });
 
     const updatedName = await fixture.execute({
       jar: owner.jar,
@@ -131,6 +150,7 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
         input: {
           id: nameId,
           expectedVersion: 1,
+          idempotencyKey: "person-name-update-replay",
           fullName: "Record Person Example",
           kind: "PREFERRED",
         },
@@ -140,6 +160,25 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     expect(updatedName.body?.data?.updatePersonName).toMatchObject({
       code: null,
       name: { fullName: "Record Person Example", version: 2 },
+    });
+    const replayedNameUpdate = await fixture.execute({
+      jar: owner.jar,
+      operationName: "UpdatePersonName",
+      query: UpdatePersonNameDocument,
+      variables: {
+        input: {
+          id: nameId,
+          expectedVersion: 1,
+          idempotencyKey: "person-name-update-replay",
+          fullName: "Record Person Example",
+          kind: "PREFERRED",
+        },
+      },
+    });
+    expect(replayedNameUpdate.body?.errors).toBeUndefined();
+    expect(replayedNameUpdate.body?.data?.updatePersonName).toMatchObject({
+      code: null,
+      name: { id: nameId, version: 2 },
     });
     const staleName = await fixture.execute({
       jar: owner.jar,
@@ -166,6 +205,7 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       query: CreatePersonEventDocument,
       variables: {
         input: {
+          idempotencyKey: "person-event-create-replay",
           personId,
           eventKind: "career",
           title: "Started research",
@@ -180,6 +220,25 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     });
     const eventId = event.body?.data?.createPersonEvent.event?.id;
     expect(eventId).toBeTruthy();
+    const replayedEvent = await fixture.execute({
+      jar: owner.jar,
+      operationName: "CreatePersonEvent",
+      query: CreatePersonEventDocument,
+      variables: {
+        input: {
+          idempotencyKey: "person-event-create-replay",
+          personId,
+          eventKind: "career",
+          title: "Started research",
+          earliestAt: "2020-01-01T00:00:00.000Z",
+        },
+      },
+    });
+    expect(replayedEvent.body?.errors).toBeUndefined();
+    expect(replayedEvent.body?.data?.createPersonEvent).toMatchObject({
+      code: null,
+      event: { id: eventId, version: 1 },
+    });
 
     const updatedEvent = await fixture.execute({
       jar: owner.jar,
@@ -189,6 +248,7 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
         input: {
           id: eventId,
           expectedVersion: 1,
+          idempotencyKey: "person-event-update-replay",
           title: "Started independent research",
         },
       },
@@ -197,6 +257,24 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     expect(updatedEvent.body?.data?.updatePersonEvent).toMatchObject({
       code: null,
       event: { title: "Started independent research", version: 2 },
+    });
+    const replayedEventUpdate = await fixture.execute({
+      jar: owner.jar,
+      operationName: "UpdatePersonEvent",
+      query: UpdatePersonEventDocument,
+      variables: {
+        input: {
+          id: eventId,
+          expectedVersion: 1,
+          idempotencyKey: "person-event-update-replay",
+          title: "Started independent research",
+        },
+      },
+    });
+    expect(replayedEventUpdate.body?.errors).toBeUndefined();
+    expect(replayedEventUpdate.body?.data?.updatePersonEvent).toMatchObject({
+      code: null,
+      event: { id: eventId, version: 2 },
     });
 
     const names = await fixture.execute<{
@@ -240,10 +318,33 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       jar: owner.jar,
       operationName: "ArchivePersonName",
       query: ArchivePersonNameDocument,
-      variables: { input: { id: nameId, expectedVersion: 2 } },
+      variables: {
+        input: {
+          id: nameId,
+          expectedVersion: 2,
+          idempotencyKey: "person-name-archive-replay",
+        },
+      },
     });
     expect(archivedName.body?.errors).toBeUndefined();
     expect(archivedName.body?.data?.archivePersonName).toMatchObject({
+      code: null,
+      name: { id: nameId, version: 3 },
+    });
+    const replayedArchivedName = await fixture.execute({
+      jar: owner.jar,
+      operationName: "ArchivePersonName",
+      query: ArchivePersonNameDocument,
+      variables: {
+        input: {
+          id: nameId,
+          expectedVersion: 2,
+          idempotencyKey: "person-name-archive-replay",
+        },
+      },
+    });
+    expect(replayedArchivedName.body?.errors).toBeUndefined();
+    expect(replayedArchivedName.body?.data?.archivePersonName).toMatchObject({
       code: null,
       name: { id: nameId, version: 3 },
     });
@@ -251,10 +352,33 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       jar: owner.jar,
       operationName: "ArchivePersonEvent",
       query: ArchivePersonEventDocument,
-      variables: { input: { id: eventId, expectedVersion: 2 } },
+      variables: {
+        input: {
+          id: eventId,
+          expectedVersion: 2,
+          idempotencyKey: "person-event-archive-replay",
+        },
+      },
     });
     expect(archivedEvent.body?.errors).toBeUndefined();
     expect(archivedEvent.body?.data?.archivePersonEvent).toMatchObject({
+      code: null,
+      event: { id: eventId, version: 3 },
+    });
+    const replayedArchivedEvent = await fixture.execute({
+      jar: owner.jar,
+      operationName: "ArchivePersonEvent",
+      query: ArchivePersonEventDocument,
+      variables: {
+        input: {
+          id: eventId,
+          expectedVersion: 2,
+          idempotencyKey: "person-event-archive-replay",
+        },
+      },
+    });
+    expect(replayedArchivedEvent.body?.errors).toBeUndefined();
+    expect(replayedArchivedEvent.body?.data?.archivePersonEvent).toMatchObject({
       code: null,
       event: { id: eventId, version: 3 },
     });

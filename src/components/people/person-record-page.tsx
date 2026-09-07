@@ -21,6 +21,8 @@ import {
 import { executeServerGraphQL } from "@/graphql/server-client";
 import { personIdPattern, type SearchState } from "@/lib/person-profile-params";
 import { profilePageHref } from "@/lib/research-pagination";
+import { getServerEnv } from "@/lib/env/server";
+import { uploadMaxBytesForDeployment } from "@/modules/files/limits";
 
 const views = [
   "facts",
@@ -161,6 +163,7 @@ export async function PersonRecordPage({
           search={search}
           personId={personId}
           canUpdate={permissions.includes("person:update")}
+          canDelete={permissions.includes("person:delete")}
         />
       ) : null}
       {view === "relationships" ? (
@@ -213,7 +216,23 @@ export async function PersonRecordPage({
         />
       ) : null}
       {view === "files" ? (
-        <PersonFilesSection search={search} personId={personId} />
+        <PersonFilesSection
+          canAttach={
+            permissions.includes("file:create") &&
+            permissions.includes("person:update")
+          }
+          personVersion={person.version}
+          search={search}
+          personId={personId}
+          uploadMaxBytes={
+            permissions.includes("file:create")
+              ? uploadMaxBytesForDeployment(
+                  "EVIDENCE",
+                  getServerEnv().DEPLOYMENT_MODE,
+                )
+              : null
+          }
+        />
       ) : null}
     </div>
   );

@@ -66,6 +66,7 @@ export type ArchivePersonAddressInput = {
 export type ArchivePersonEventInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type ArchivePersonInput = {
@@ -77,6 +78,7 @@ export type ArchivePersonInput = {
 export type ArchivePersonNameInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type ArchivePhoneContactInput = {
@@ -273,6 +275,7 @@ export type CreatePersonEventInput = {
   description?: string | null | undefined;
   earliestAt?: string | null | undefined;
   eventKind: string;
+  idempotencyKey?: string | null | undefined;
   latestAt?: string | null | undefined;
   personId: string;
   placeId?: string | null | undefined;
@@ -300,6 +303,7 @@ export type CreatePersonNameInput = {
   familyName?: string | null | undefined;
   fullName: string;
   givenName?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
   kind?: PersonNameKind | null | undefined;
   language?: string | null | undefined;
   middleName?: string | null | undefined;
@@ -963,6 +967,7 @@ export type UpdatePersonEventInput = {
   eventKind?: string | null | undefined;
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
   latestAt?: string | null | undefined;
   placeId?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
@@ -991,6 +996,7 @@ export type UpdatePersonNameInput = {
   fullName?: string | null | undefined;
   givenName?: string | null | undefined;
   id: string;
+  idempotencyKey?: string | null | undefined;
   kind?: PersonNameKind | null | undefined;
   language?: string | null | undefined;
   middleName?: string | null | undefined;
