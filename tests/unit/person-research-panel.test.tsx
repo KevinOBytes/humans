@@ -181,4 +181,26 @@ describe("PersonResearchPanel", () => {
     ).toBeChecked();
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it("keeps the panel usable when a provider request throws", async () => {
+    const user = userEvent.setup();
+    render(<PersonResearchPanel person={person} canUpdate />);
+    executeBrowser.mockRejectedValueOnce(new Error("network unavailable"));
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /I understand and want to search public web sources/i,
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Research this person" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Web research could not be completed.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Research this person" }),
+    ).toBeEnabled();
+  });
 });

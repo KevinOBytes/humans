@@ -78,10 +78,23 @@ export function PersonResearchPanel({
     setResearching(true);
     setFeedback(null);
     setSaved(false);
-    const result = await executeBrowserGraphQL(PersonWebResearchDocument, {
-      personId: person.id,
-      consent: true,
-    });
+    let result: Awaited<
+      ReturnType<typeof executeBrowserGraphQL<typeof PersonWebResearchDocument>>
+    >;
+    try {
+      result = await executeBrowserGraphQL(PersonWebResearchDocument, {
+        personId: person.id,
+        consent: true,
+      });
+    } catch {
+      setResearching(false);
+      setFeedback({
+        code: "REQUEST_FAILED",
+        fallback: "Web research could not be completed.",
+        issues: [],
+      });
+      return;
+    }
     setResearching(false);
     if (!result.ok) {
       setFeedback(
@@ -116,7 +129,20 @@ export function PersonResearchPanel({
     setApplying(true);
     setFeedback(null);
     setSaved(false);
-    const result = await executeBrowserGraphQL(UpdatePersonDocument, { input });
+    let result: Awaited<
+      ReturnType<typeof executeBrowserGraphQL<typeof UpdatePersonDocument>>
+    >;
+    try {
+      result = await executeBrowserGraphQL(UpdatePersonDocument, { input });
+    } catch {
+      setApplying(false);
+      setFeedback({
+        code: "REQUEST_FAILED",
+        fallback: "The selected research fields could not be applied.",
+        issues: [],
+      });
+      return;
+    }
     setApplying(false);
     if (!result.ok) {
       setFeedback(
