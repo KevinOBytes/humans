@@ -196,7 +196,7 @@ describe("container configuration", () => {
       "node:24.18.0-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573",
     );
     expect(dockerfile).toContain(
-      "gcr.io/distroless/nodejs24-debian13:nonroot@sha256:af85d11ce7ef10172855a6e3649e3e8125b1b9e3ca41849ec2918036f05cb212",
+      "gcr.io/distroless/nodejs24-debian13:nonroot@sha256:774b7d020b24214835769e24c3544835526cd0288f0b094eae48e8b2c2429a79",
     );
     expect(dockerfile).toContain("COPY --from=build --chown=65532:65532");
     expect(dockerfile).toContain('ENTRYPOINT ["/nodejs/bin/node"]');

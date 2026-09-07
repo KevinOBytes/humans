@@ -39,11 +39,11 @@ function run(arguments_, options = {}) {
 const [inspection] = JSON.parse(run(["image", "inspect", image]));
 const config = inspection.Config ?? {};
 const expectedLabels = {
-  "org.humans.base-resolution-date": "2026-08-03",
+  "org.humans.base-resolution-date": "2026-09-07",
   "org.humans.builder.digest":
     "sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573",
   "org.opencontainers.image.base.digest":
-    "sha256:af85d11ce7ef10172855a6e3649e3e8125b1b9e3ca41849ec2918036f05cb212",
+    "sha256:774b7d020b24214835769e24c3544835526cd0288f0b094eae48e8b2c2429a79",
 };
 if (config.User !== "65532:65532") throw new Error("Runtime user is not 65532");
 if (config.WorkingDir !== "/app")
