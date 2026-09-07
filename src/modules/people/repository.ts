@@ -12,7 +12,12 @@ import {
   type SQL,
 } from "drizzle-orm";
 
-import { people, personEvents, personNames } from "@/db/schema/people";
+import {
+  people,
+  personEvents,
+  personFileAttachments,
+  personNames,
+} from "@/db/schema/people";
 import { files } from "@/db/schema/files";
 import { facts } from "@/db/schema/facts";
 import {
@@ -31,10 +36,14 @@ export type PersonRow = typeof people.$inferSelect;
 export type NewPersonRow = typeof people.$inferInsert;
 export type PersonNameRow = typeof personNames.$inferSelect;
 export type PersonEventRow = typeof personEvents.$inferSelect;
-export type PersonFileRole = "primary_photo" | "fact" | "evidence";
+export type PersonFileRole = "primary_photo" | "fact" | "evidence" | "direct";
 export type PersonFileRow = typeof files.$inferSelect & {
   roles: readonly PersonFileRole[];
+  directAttachmentId: string | null;
+  directAttachmentVersion: number | null;
+  directAttachmentLabel: string | null;
 };
+export type PersonFileAttachmentRow = typeof personFileAttachments.$inferSelect;
 
 export function createPeopleRepository(database: Database) {
   return {
@@ -454,6 +463,7 @@ export function createPeopleRepository(database: Database) {
         relationshipEvidenceRefs,
         contactEvidenceRefs,
         addressEvidenceRefs,
+        directAttachmentRefs,
       ] = await Promise.all([
         database
           .select({ fileId: people.primaryPhotoFileId })
@@ -634,6 +644,22 @@ export function createPeopleRepository(database: Database) {
               inArray(evidenceItems.fileId, fileIds),
             ),
           ),
+        database
+          .select({
+            fileId: personFileAttachments.fileId,
+            attachmentId: personFileAttachments.id,
+            attachmentVersion: personFileAttachments.version,
+            attachmentLabel: personFileAttachments.label,
+          })
+          .from(personFileAttachments)
+          .where(
+            and(
+              eq(personFileAttachments.workspaceId, input.workspaceId),
+              eq(personFileAttachments.personId, input.personId),
+              isNull(personFileAttachments.deletedAt),
+              inArray(personFileAttachments.fileId, fileIds),
+            ),
+          ),
       ]);
 
       const rolesByFile = new Map<string, Set<PersonFileRole>>();
@@ -655,10 +681,98 @@ export function createPeopleRepository(database: Database) {
       addRefs(relationshipEvidenceRefs, "evidence");
       addRefs(contactEvidenceRefs, "evidence");
       addRefs(addressEvidenceRefs, "evidence");
+      const directAttachmentByFile = new Map(
+        directAttachmentRefs.map((ref) => [ref.fileId, ref]),
+      );
+      addRefs(directAttachmentRefs, "direct");
       return rows.map((row) => ({
         ...row,
         roles: [...(rolesByFile.get(row.id) ?? [])].sort(),
+        directAttachmentId:
+          directAttachmentByFile.get(row.id)?.attachmentId ?? null,
+        directAttachmentVersion:
+          directAttachmentByFile.get(row.id)?.attachmentVersion ?? null,
+        directAttachmentLabel:
+          directAttachmentByFile.get(row.id)?.attachmentLabel ?? null,
       }));
+    },
+
+    async getFileAttachment(input: {
+      workspaceId: string;
+      id: string;
+    }): Promise<PersonFileAttachmentRow | null> {
+      const [row] = await database
+        .select()
+        .from(personFileAttachments)
+        .where(
+          and(
+            eq(personFileAttachments.workspaceId, input.workspaceId),
+            eq(personFileAttachments.id, input.id),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    },
+
+    async getActiveFileAttachment(input: {
+      workspaceId: string;
+      personId: string;
+      fileId: string;
+    }): Promise<PersonFileAttachmentRow | null> {
+      const [row] = await database
+        .select()
+        .from(personFileAttachments)
+        .where(
+          and(
+            eq(personFileAttachments.workspaceId, input.workspaceId),
+            eq(personFileAttachments.personId, input.personId),
+            eq(personFileAttachments.fileId, input.fileId),
+            isNull(personFileAttachments.deletedAt),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    },
+
+    async createFileAttachment(input: {
+      workspaceId: string;
+      value: Omit<typeof personFileAttachments.$inferInsert, "workspaceId">;
+    }): Promise<PersonFileAttachmentRow> {
+      const [row] = await database
+        .insert(personFileAttachments)
+        .values({ ...input.value, workspaceId: input.workspaceId })
+        .returning();
+      if (!row)
+        throw new Error("Person file attachment insert did not return a row");
+      return row;
+    },
+
+    async archiveFileAttachmentIfVersion(input: {
+      workspaceId: string;
+      id: string;
+      expectedVersion: number;
+      deletedAt: Date;
+      deletedBy: string;
+    }): Promise<PersonFileAttachmentRow | null> {
+      const [row] = await database
+        .update(personFileAttachments)
+        .set({
+          deletedAt: input.deletedAt,
+          deletedBy: input.deletedBy,
+          updatedAt: input.deletedAt,
+          updatedBy: input.deletedBy,
+          version: sql`${personFileAttachments.version} + 1`,
+        })
+        .where(
+          and(
+            eq(personFileAttachments.workspaceId, input.workspaceId),
+            eq(personFileAttachments.id, input.id),
+            eq(personFileAttachments.version, input.expectedVersion),
+            isNull(personFileAttachments.deletedAt),
+          ),
+        )
+        .returning();
+      return row ?? null;
     },
 
     async create(input: {

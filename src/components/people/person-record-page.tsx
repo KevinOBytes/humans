@@ -217,6 +217,10 @@ export async function PersonRecordPage({
       ) : null}
       {view === "files" ? (
         <PersonFilesSection
+          canManageAttachments={
+            permissions.includes("file:read") &&
+            permissions.includes("person:update")
+          }
           canAttach={
             permissions.includes("file:create") &&
             permissions.includes("person:update")

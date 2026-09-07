@@ -12,6 +12,7 @@ import { ActorAttribution } from "@/modules/audit/attribution-graphql";
 
 import type {
   PersonEventRow,
+  PersonFileAttachmentRow,
   PersonFileRow,
   PersonNameRow,
   PersonRow,
@@ -250,6 +251,7 @@ const PersonFileRole = builder.enumType("PersonFileRole", {
     PRIMARY_PHOTO: { value: "primary_photo" },
     FACT: { value: "fact" },
     EVIDENCE: { value: "evidence" },
+    DIRECT: { value: "direct" },
   } as const,
 });
 const PersonFileAvailability = builder.enumType("PersonFileAvailability", {
@@ -315,8 +317,45 @@ const PersonFile = builder.objectRef<PersonFileRow>("PersonFile").implement({
       nullable: { items: false, list: false },
       resolve: (row) => row.roles,
     }),
+    directAttachmentId: t.expose("directAttachmentId", {
+      type: "UUID",
+      nullable: true,
+    }),
+    directAttachmentVersion: t.exposeInt("directAttachmentVersion", {
+      nullable: true,
+    }),
+    directAttachmentLabel: t.exposeString("directAttachmentLabel", {
+      nullable: true,
+    }),
   }),
 });
+
+const PersonFileAttachment = builder
+  .objectRef<PersonFileAttachmentRow>("PersonFileAttachment")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID", nullable: false }),
+      personId: t.expose("personId", { type: "UUID", nullable: false }),
+      fileId: t.expose("fileId", { type: "UUID", nullable: false }),
+      label: t.exposeString("label", { nullable: true }),
+      version: t.exposeInt("version", { nullable: false }),
+      archivedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.deletedAt?.toISOString() ?? null,
+      }),
+      createdAt: t.field({
+        type: "DateTime",
+        nullable: false,
+        resolve: (row) => row.createdAt.toISOString(),
+      }),
+      updatedAt: t.field({
+        type: "DateTime",
+        nullable: false,
+        resolve: (row) => row.updatedAt.toISOString(),
+      }),
+    }),
+  });
 
 export const ValidationIssue = builder
   .objectRef<{
@@ -668,6 +707,21 @@ const ArchivePersonEventInput = builder.inputType("ArchivePersonEventInput", {
     idempotencyKey: t.string(),
   }),
 });
+const AttachPersonFileInput = builder.inputType("AttachPersonFileInput", {
+  fields: (t) => ({
+    idempotencyKey: t.string(),
+    personId: t.field({ type: "UUID", required: true }),
+    fileId: t.field({ type: "UUID", required: true }),
+    label: t.string(),
+  }),
+});
+const ArchivePersonFileInput = builder.inputType("ArchivePersonFileInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
+  }),
+});
 
 type PersonPayloadShape = MutationOutcome<PersonRow> & {
   person: PersonRow | null;
@@ -716,6 +770,33 @@ function namePayload(
 type PersonEventPayloadShape = MutationOutcome<PersonEventRow> & {
   event: PersonEventRow | null;
 };
+
+type PersonFileAttachmentPayloadShape =
+  MutationOutcome<PersonFileAttachmentRow> & {
+    attachment: PersonFileAttachmentRow | null;
+  };
+const PersonFileAttachmentPayload = builder
+  .objectRef<PersonFileAttachmentPayloadShape>("PersonFileAttachmentPayload")
+  .implement({
+    fields: (t) => ({
+      attachment: t.expose("attachment", {
+        type: PersonFileAttachment,
+        nullable: true,
+      }),
+      issues: t.expose("issues", {
+        type: [ValidationIssue],
+        nullable: { items: false, list: false },
+      }),
+      code: t.exposeString("code", { nullable: true }),
+      currentVersion: t.exposeInt("currentVersion", { nullable: true }),
+    }),
+  });
+
+function attachmentPayload(
+  outcome: MutationOutcome<PersonFileAttachmentRow>,
+): PersonFileAttachmentPayloadShape {
+  return { ...outcome, attachment: outcome.resource };
+}
 const PersonEventPayload = builder
   .objectRef<PersonEventPayloadShape>("PersonEventPayload")
   .implement({
@@ -958,6 +1039,33 @@ export function registerPeopleGraphQL(): void {
         requirePermission(context, "person", "delete");
         return eventPayload(
           await context.services.people.archiveEvent(args.input),
+        );
+      },
+    }),
+    attachPersonFile: t.field({
+      type: PersonFileAttachmentPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: AttachPersonFileInput, required: true }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        requirePermission(context, "file", "read");
+        return attachmentPayload(
+          await context.services.people.attachFile(args.input),
+        );
+      },
+    }),
+    archivePersonFile: t.field({
+      type: PersonFileAttachmentPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: ArchivePersonFileInput, required: true }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        return attachmentPayload(
+          await context.services.people.archiveFileAttachment(args.input),
         );
       },
     }),

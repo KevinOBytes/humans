@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
@@ -99,6 +100,66 @@ export const people = pgTable(
       sql`(${table.status} = 'merged' AND ${table.mergedIntoPersonId} IS NOT NULL)
         OR (${table.status} <> 'merged' AND ${table.mergedIntoPersonId} IS NULL)`,
     ),
+  ],
+);
+
+/**
+ * A direct, workspace-scoped relationship between a person and a file.
+ *
+ * Facts and evidence can already point at files, but this table is for files
+ * that are relevant to a person without pretending they are a fact or source
+ * citation (for example a portrait, interview recording, or case packet).
+ */
+export const personFileAttachments = pgTable(
+  "person_file_attachments",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    personId: uuid("person_id").notNull(),
+    fileId: uuid("file_id").notNull(),
+    label: text("label"),
+    version: integer("version").default(1).notNull(),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+    createdBy: text("created_by").notNull(),
+    updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
+    updatedBy: text("updated_by").notNull(),
+    deletedAt: domainTimestamp("deleted_at"),
+    deletedBy: text("deleted_by"),
+  },
+  (table) => [
+    unique("person_file_attachments_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("person_file_attachments_current_pair_unique")
+      .on(table.workspaceId, table.personId, table.fileId)
+      .where(sql`${table.deletedAt} IS NULL`),
+    index("person_file_attachments_workspace_person_idx").on(
+      table.workspaceId,
+      table.personId,
+      table.createdAt,
+    ),
+    index("person_file_attachments_workspace_file_idx").on(
+      table.workspaceId,
+      table.fileId,
+    ),
+    foreignKey({
+      name: "person_file_attachments_workspace_person_fk",
+      columns: [table.workspaceId, table.personId],
+      foreignColumns: [people.workspaceId, people.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "person_file_attachments_workspace_file_fk",
+      columns: [table.workspaceId, table.fileId],
+      foreignColumns: [files.workspaceId, files.id],
+    }).onDelete("restrict"),
+    check(
+      "person_file_attachments_label_length_check",
+      sql`${table.label} IS NULL OR octet_length(${table.label}) <= 500`,
+    ),
+    check("person_file_attachments_version_check", sql`${table.version} > 0`),
   ],
 );
 

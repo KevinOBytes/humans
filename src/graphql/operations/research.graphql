@@ -236,6 +236,9 @@ query PersonFiles($id: UUID!, $first: Int, $after: String) {
         createdAt
         updatedAt
         roles
+        directAttachmentId
+        directAttachmentVersion
+        directAttachmentLabel
       }
       pageInfo {
         ...PageDetails
@@ -645,6 +648,45 @@ mutation ArchivePersonEvent($input: ArchivePersonEventInput!) {
     event {
       id
       version
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation AttachPersonFile($input: AttachPersonFileInput!) {
+  attachPersonFile(input: $input) {
+    attachment {
+      id
+      personId
+      fileId
+      label
+      version
+      archivedAt
+      createdAt
+      updatedAt
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+
+mutation ArchivePersonFile($input: ArchivePersonFileInput!) {
+  archivePersonFile(input: $input) {
+    attachment {
+      id
+      personId
+      fileId
+      label
+      version
+      archivedAt
+      updatedAt
     }
     issues {
       ...MutationIssue
