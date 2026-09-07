@@ -113,11 +113,14 @@ export async function PersonRecordPage({
         {permissions.includes("person:update") ? (
           <PersonEditForm person={person} />
         ) : null}
+        {permissions.includes("analysis:create") &&
+        permissions.includes("analysis:run") ? (
+          <PersonResearchPanel
+            person={person}
+            canUpdate={permissions.includes("person:update")}
+          />
+        ) : null}
       </header>
-      <PersonResearchPanel
-        canUpdate={permissions.includes("person:update")}
-        person={person}
-      />
       <nav
         aria-label="Person research sections"
         className="border-border overflow-x-auto border-b"

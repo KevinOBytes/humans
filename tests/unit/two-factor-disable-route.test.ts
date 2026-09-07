@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createTwoFactorDisableHandler,
   createTwoFactorDisableRoute,
-} from "@/app/api/account/two-factor/disable/route";
+} from "@/app/api/account/two-factor/disable/handlers";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 
 const database = {} as Database;

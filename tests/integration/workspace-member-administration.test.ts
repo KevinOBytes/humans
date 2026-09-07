@@ -13,8 +13,8 @@ import {
 import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
 import { invitations, members, sessions } from "@/db/schema/auth";
 import { auditEvents } from "@/db/schema/operations";
-import { createInvitationAcceptanceHandler } from "@/app/api/account/invitations/accept/route";
-import { createInvitationHandoffHandlers } from "@/app/api/account/invitations/handoff/route";
+import { createInvitationAcceptanceHandler } from "@/app/api/account/invitations/accept/handlers";
+import { createInvitationHandoffHandlers } from "@/app/api/account/invitations/handoff/handlers";
 import { acceptInvitationAtomically } from "@/modules/auth/invitation-lifecycle";
 import {
   enqueueAuthEmail,
