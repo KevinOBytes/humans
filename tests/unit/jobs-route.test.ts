@@ -2,12 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  POST,
-  createJobsRunHandler,
-  maxDuration,
-  runtime,
-} from "@/app/api/jobs/run/handler";
+import { POST, createJobsRunHandler } from "@/app/api/jobs/run/handler";
+import { maxDuration, runtime } from "@/app/api/jobs/run/route";
 
 const secret = "Cron!N7vQ2xL9mR4tK8wP5sD3cF6hJ0bE";
 

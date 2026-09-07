@@ -6,11 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { createStorageProxyHandlers } from "@/lib/storage/proxy";
 import { parseServerEnv } from "@/lib/env/server-schema";
 import { createObjectStore } from "@/lib/storage/s3";
 import {
   ApplicationProxyObjectStore,
+  createStorageProxyHandlers,
   validateFileName,
 } from "@/lib/storage/proxy";
 import type { SignedObjectRequest } from "@/lib/storage/types";
