@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { PersonRecordEditor } from "@/components/people/person-record-editor";
 import {
   PageControls,
   ResearchList,
@@ -98,9 +99,11 @@ function dateLabel(
 export async function NamesTimelineSection({
   personId,
   search,
+  canUpdate = false,
 }: {
   personId: string;
   search: SearchState;
+  canUpdate?: boolean;
 }) {
   const namesAfter = cursorParam(search, "nameAfter");
   const eventsAfter = cursorParam(search, "eventAfter");
@@ -135,6 +138,7 @@ export async function NamesTimelineSection({
 
   return (
     <div className="space-y-7">
+      {canUpdate ? <PersonRecordEditor personId={personId} /> : null}
       <section className="space-y-3">
         <ResearchList
           title="Names"

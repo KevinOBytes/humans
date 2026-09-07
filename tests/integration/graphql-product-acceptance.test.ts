@@ -16,6 +16,8 @@ import {
   CreateFactDocument,
   CreateGraphViewDocument,
   CreatePersonDocument,
+  CreatePersonEventDocument,
+  CreatePersonNameDocument,
   CreateRelationshipDocument,
   CreateRelationshipTypeDocument,
   CreateSourceDocument,
@@ -35,6 +37,12 @@ import {
   SearchWorkbenchSearchDocument,
   StartAiAnalysisDocument,
   UpdatePersonDocument,
+  UpdatePersonEventDocument,
+  UpdatePersonNameDocument,
+  ArchivePersonEventDocument,
+  ArchivePersonNameDocument,
+  PersonEventsDocument,
+  PersonNamesDocument,
 } from "@/graphql/generated/graphql";
 
 import { expectGraphQLError, type OperationResult } from "../support/graphql";
@@ -80,6 +88,176 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     expectGraphQLError(await research(viewer), "FORBIDDEN");
     expectGraphQLError(await research(foreign), "NOT_FOUND");
     expectGraphQLError(await research(owner), "PROVIDER_UNAVAILABLE");
+  });
+
+  it("creates, updates, lists, and archives names and timeline events with optimistic versions", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.createPerson(owner, {
+      displayName: "Record workflow person",
+    });
+    const personId = created.body?.data?.createPerson?.person?.id;
+    expect(personId).toBeTruthy();
+
+    const name = await fixture.execute<{
+      createPersonName: {
+        name: { id: string; fullName: string; version: number } | null;
+        code: string | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePersonName",
+      query: CreatePersonNameDocument,
+      variables: {
+        input: {
+          personId,
+          fullName: "Record Person, née Example",
+          kind: "ALIAS",
+        },
+      },
+    });
+    expect(name.body?.errors).toBeUndefined();
+    expect(name.body?.data?.createPersonName).toMatchObject({
+      code: null,
+      name: { fullName: "Record Person, née Example", version: 1 },
+    });
+    const nameId = name.body?.data?.createPersonName.name?.id;
+    expect(nameId).toBeTruthy();
+
+    const updatedName = await fixture.execute({
+      jar: owner.jar,
+      operationName: "UpdatePersonName",
+      query: UpdatePersonNameDocument,
+      variables: {
+        input: {
+          id: nameId,
+          expectedVersion: 1,
+          fullName: "Record Person Example",
+          kind: "PREFERRED",
+        },
+      },
+    });
+    expect(updatedName.body?.errors).toBeUndefined();
+    expect(updatedName.body?.data?.updatePersonName).toMatchObject({
+      code: null,
+      name: { fullName: "Record Person Example", version: 2 },
+    });
+    const staleName = await fixture.execute({
+      jar: owner.jar,
+      operationName: "UpdatePersonName",
+      query: UpdatePersonNameDocument,
+      variables: {
+        input: { id: nameId, expectedVersion: 1, fullName: "stale" },
+      },
+    });
+    expect(staleName.body?.data?.updatePersonName).toMatchObject({
+      code: "CONFLICT",
+      name: null,
+      currentVersion: 2,
+    });
+
+    const event = await fixture.execute<{
+      createPersonEvent: {
+        event: { id: string; title: string; version: number } | null;
+        code: string | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePersonEvent",
+      query: CreatePersonEventDocument,
+      variables: {
+        input: {
+          personId,
+          eventKind: "career",
+          title: "Started research",
+          earliestAt: "2020-01-01T00:00:00.000Z",
+        },
+      },
+    });
+    expect(event.body?.errors).toBeUndefined();
+    expect(event.body?.data?.createPersonEvent).toMatchObject({
+      code: null,
+      event: { title: "Started research", version: 1 },
+    });
+    const eventId = event.body?.data?.createPersonEvent.event?.id;
+    expect(eventId).toBeTruthy();
+
+    const updatedEvent = await fixture.execute({
+      jar: owner.jar,
+      operationName: "UpdatePersonEvent",
+      query: UpdatePersonEventDocument,
+      variables: {
+        input: {
+          id: eventId,
+          expectedVersion: 1,
+          title: "Started independent research",
+        },
+      },
+    });
+    expect(updatedEvent.body?.errors).toBeUndefined();
+    expect(updatedEvent.body?.data?.updatePersonEvent).toMatchObject({
+      code: null,
+      event: { title: "Started independent research", version: 2 },
+    });
+
+    const names = await fixture.execute<{
+      person: {
+        names: { nodes: Array<{ id: string; fullName: string }> };
+      } | null;
+    }>({
+      jar: owner.jar,
+      operationName: "PersonNames",
+      query: PersonNamesDocument,
+      variables: { id: personId, first: 10 },
+    });
+    expect(names.body?.data?.person?.names?.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: nameId,
+          fullName: "Record Person Example",
+        }),
+      ]),
+    );
+    const events = await fixture.execute<{
+      person: {
+        events: { nodes: Array<{ id: string; title: string }> };
+      } | null;
+    }>({
+      jar: owner.jar,
+      operationName: "PersonEvents",
+      query: PersonEventsDocument,
+      variables: { id: personId, first: 10 },
+    });
+    expect(events.body?.data?.person?.events?.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: eventId,
+          title: "Started independent research",
+        }),
+      ]),
+    );
+
+    const archivedName = await fixture.execute({
+      jar: owner.jar,
+      operationName: "ArchivePersonName",
+      query: ArchivePersonNameDocument,
+      variables: { input: { id: nameId, expectedVersion: 2 } },
+    });
+    expect(archivedName.body?.errors).toBeUndefined();
+    expect(archivedName.body?.data?.archivePersonName).toMatchObject({
+      code: null,
+      name: { id: nameId, version: 3 },
+    });
+    const archivedEvent = await fixture.execute({
+      jar: owner.jar,
+      operationName: "ArchivePersonEvent",
+      query: ArchivePersonEventDocument,
+      variables: { input: { id: eventId, expectedVersion: 2 } },
+    });
+    expect(archivedEvent.body?.errors).toBeUndefined();
+    expect(archivedEvent.body?.data?.archivePersonEvent).toMatchObject({
+      code: null,
+      event: { id: eventId, version: 3 },
+    });
   });
 
   it("replays evidence-create references, converges concurrent callers, and fences expiry, corruption, and tenants", async () => {

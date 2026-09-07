@@ -574,6 +574,95 @@ const ArchivePersonInput = builder.inputType("ArchivePersonInput", {
   }),
 });
 
+const CreatePersonNameInput = builder.inputType("CreatePersonNameInput", {
+  fields: (t) => ({
+    personId: t.field({ type: "UUID", required: true }),
+    kind: t.field({ type: PersonNameKind }),
+    fullName: t.string({ required: true }),
+    givenName: t.string(),
+    middleName: t.string(),
+    familyName: t.string(),
+    prefix: t.string(),
+    suffix: t.string(),
+    script: t.string(),
+    language: t.string(),
+    validFrom: t.field({ type: "DateTime" }),
+    validUntil: t.field({ type: "DateTime" }),
+    temporalSemantics: t.field({ type: PersonTemporalSemantics }),
+    temporalPrecision: t.field({ type: PersonTemporalPrecision }),
+    confidence: t.float(),
+    sensitivity: t.field({ type: Sensitivity }),
+    state: t.field({ type: PersonRecordState }),
+  }),
+});
+const UpdatePersonNameInput = builder.inputType("UpdatePersonNameInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+    kind: t.field({ type: PersonNameKind }),
+    fullName: t.string(),
+    givenName: t.string(),
+    middleName: t.string(),
+    familyName: t.string(),
+    prefix: t.string(),
+    suffix: t.string(),
+    script: t.string(),
+    language: t.string(),
+    validFrom: t.field({ type: "DateTime" }),
+    validUntil: t.field({ type: "DateTime" }),
+    temporalSemantics: t.field({ type: PersonTemporalSemantics }),
+    temporalPrecision: t.field({ type: PersonTemporalPrecision }),
+    confidence: t.float(),
+    sensitivity: t.field({ type: Sensitivity }),
+    state: t.field({ type: PersonRecordState }),
+  }),
+});
+const ArchivePersonNameInput = builder.inputType("ArchivePersonNameInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+  }),
+});
+const CreatePersonEventInput = builder.inputType("CreatePersonEventInput", {
+  fields: (t) => ({
+    personId: t.field({ type: "UUID", required: true }),
+    eventKind: t.string({ required: true }),
+    title: t.string({ required: true }),
+    description: t.string(),
+    placeId: t.field({ type: "UUID" }),
+    earliestAt: t.field({ type: "DateTime" }),
+    latestAt: t.field({ type: "DateTime" }),
+    temporalSemantics: t.field({ type: PersonTemporalSemantics }),
+    temporalPrecision: t.field({ type: PersonTemporalPrecision }),
+    confidence: t.float(),
+    sensitivity: t.field({ type: Sensitivity }),
+    state: t.field({ type: PersonRecordState }),
+  }),
+});
+const UpdatePersonEventInput = builder.inputType("UpdatePersonEventInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+    eventKind: t.string(),
+    title: t.string(),
+    description: t.string(),
+    placeId: t.field({ type: "UUID" }),
+    earliestAt: t.field({ type: "DateTime" }),
+    latestAt: t.field({ type: "DateTime" }),
+    temporalSemantics: t.field({ type: PersonTemporalSemantics }),
+    temporalPrecision: t.field({ type: PersonTemporalPrecision }),
+    confidence: t.float(),
+    sensitivity: t.field({ type: Sensitivity }),
+    state: t.field({ type: PersonRecordState }),
+  }),
+});
+const ArchivePersonEventInput = builder.inputType("ArchivePersonEventInput", {
+  fields: (t) => ({
+    id: t.field({ type: "UUID", required: true }),
+    expectedVersion: t.int({ required: true }),
+  }),
+});
+
 type PersonPayloadShape = MutationOutcome<PersonRow> & {
   person: PersonRow | null;
 };
@@ -593,6 +682,52 @@ const PersonPayload = builder
 
 function payload(outcome: MutationOutcome<PersonRow>): PersonPayloadShape {
   return { ...outcome, person: outcome.resource };
+}
+
+type PersonNamePayloadShape = MutationOutcome<PersonNameRow> & {
+  name: PersonNameRow | null;
+};
+const PersonNamePayload = builder
+  .objectRef<PersonNamePayloadShape>("PersonNamePayload")
+  .implement({
+    fields: (t) => ({
+      name: t.expose("name", { type: PersonName, nullable: true }),
+      issues: t.expose("issues", {
+        type: [ValidationIssue],
+        nullable: { items: false, list: false },
+      }),
+      code: t.exposeString("code", { nullable: true }),
+      currentVersion: t.exposeInt("currentVersion", { nullable: true }),
+    }),
+  });
+
+function namePayload(
+  outcome: MutationOutcome<PersonNameRow>,
+): PersonNamePayloadShape {
+  return { ...outcome, name: outcome.resource };
+}
+
+type PersonEventPayloadShape = MutationOutcome<PersonEventRow> & {
+  event: PersonEventRow | null;
+};
+const PersonEventPayload = builder
+  .objectRef<PersonEventPayloadShape>("PersonEventPayload")
+  .implement({
+    fields: (t) => ({
+      event: t.expose("event", { type: PersonEvent, nullable: true }),
+      issues: t.expose("issues", {
+        type: [ValidationIssue],
+        nullable: { items: false, list: false },
+      }),
+      code: t.exposeString("code", { nullable: true }),
+      currentVersion: t.exposeInt("currentVersion", { nullable: true }),
+    }),
+  });
+
+function eventPayload(
+  outcome: MutationOutcome<PersonEventRow>,
+): PersonEventPayloadShape {
+  return { ...outcome, event: outcome.resource };
 }
 
 function connectionComplexity(first: number | null | undefined) {
@@ -752,6 +887,72 @@ export function registerPeopleGraphQL(): void {
         if (outcome.resource)
           context.loaders.person.prime(outcome.resource.id, outcome.resource);
         return payload(outcome);
+      },
+    }),
+    createPersonName: t.field({
+      type: PersonNamePayload,
+      nullable: false,
+      args: { input: t.arg({ type: CreatePersonNameInput, required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        return namePayload(
+          await context.services.people.createName(args.input),
+        );
+      },
+    }),
+    updatePersonName: t.field({
+      type: PersonNamePayload,
+      nullable: false,
+      args: { input: t.arg({ type: UpdatePersonNameInput, required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        return namePayload(
+          await context.services.people.updateName(args.input),
+        );
+      },
+    }),
+    archivePersonName: t.field({
+      type: PersonNamePayload,
+      nullable: false,
+      args: { input: t.arg({ type: ArchivePersonNameInput, required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "delete");
+        return namePayload(
+          await context.services.people.archiveName(args.input),
+        );
+      },
+    }),
+    createPersonEvent: t.field({
+      type: PersonEventPayload,
+      nullable: false,
+      args: { input: t.arg({ type: CreatePersonEventInput, required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        return eventPayload(
+          await context.services.people.createEvent(args.input),
+        );
+      },
+    }),
+    updatePersonEvent: t.field({
+      type: PersonEventPayload,
+      nullable: false,
+      args: { input: t.arg({ type: UpdatePersonEventInput, required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        return eventPayload(
+          await context.services.people.updateEvent(args.input),
+        );
+      },
+    }),
+    archivePersonEvent: t.field({
+      type: PersonEventPayload,
+      nullable: false,
+      args: { input: t.arg({ type: ArchivePersonEventInput, required: true }) },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "delete");
+        return eventPayload(
+          await context.services.people.archiveEvent(args.input),
+        );
       },
     }),
     updatePerson: t.field({
