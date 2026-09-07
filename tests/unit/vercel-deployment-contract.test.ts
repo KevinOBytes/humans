@@ -115,7 +115,7 @@ describe("Vercel deployment parity contract", () => {
     expect(packageJson.engines?.node).toBe("24.x");
     expect(packageJson.scripts?.build).toBe("next build");
     expect(readFileSync("next.config.ts", "utf8")).toContain(
-      'output: "standalone"',
+      'output: process.env.VERCEL ? undefined : "standalone"',
     );
   });
 

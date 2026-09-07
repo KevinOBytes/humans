@@ -228,7 +228,7 @@ describe("container configuration", () => {
     );
     expect(composeService(compose, "seed")).toContain('profiles: ["seed"]');
     expect(readFileSync("next.config.ts", "utf8")).toContain(
-      'output: "standalone"',
+      'output: process.env.VERCEL ? undefined : "standalone"',
     );
   });
 
