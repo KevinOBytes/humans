@@ -12,12 +12,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { executeBrowserGraphQL } from "@/graphql/client";
+import {
+  executeBrowserGraphQL,
+  type GraphQLResult,
+} from "@/graphql/client";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
   PersonSummaryFragmentDoc,
   PersonWebResearchDocument,
   UpdatePersonDocument,
+  type PersonWebResearchMutation,
+  type UpdatePersonMutation,
   type UpdatePersonInput,
 } from "@/graphql/generated/graphql";
 
@@ -78,9 +83,7 @@ export function PersonResearchPanel({
     setResearching(true);
     setFeedback(null);
     setSaved(false);
-    let result: Awaited<
-      ReturnType<typeof executeBrowserGraphQL<typeof PersonWebResearchDocument>>
-    >;
+    let result: GraphQLResult<PersonWebResearchMutation>;
     try {
       result = await executeBrowserGraphQL(PersonWebResearchDocument, {
         personId: person.id,
@@ -129,9 +132,7 @@ export function PersonResearchPanel({
     setApplying(true);
     setFeedback(null);
     setSaved(false);
-    let result: Awaited<
-      ReturnType<typeof executeBrowserGraphQL<typeof UpdatePersonDocument>>
-    >;
+    let result: GraphQLResult<UpdatePersonMutation>;
     try {
       result = await executeBrowserGraphQL(UpdatePersonDocument, { input });
     } catch {
