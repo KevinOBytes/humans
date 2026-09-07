@@ -21,6 +21,7 @@ import { build } from "esbuild";
 import {
   assertNoForbiddenRuntimeFiles,
   assertRequiredRuntimePackageIdentities,
+  isForbiddenRuntimePath,
   normalizeRuntimePath,
   runtimePackageIdentitiesFromMetadata,
 } from "./runtime-boundary.mjs";
@@ -111,6 +112,17 @@ export function validateTraceWarnings(warnings) {
       `Unreviewed Node File Trace warning(s):\n${unreviewed.join("\n---\n")}`,
     );
   }
+}
+
+export function filterRuntimeTraceFiles(files) {
+  return [...new Set(files.map(normalizeTracePath))]
+    .filter(
+      (path) =>
+        path !== "package.json" &&
+        !path.startsWith(".next/runtime-build/") &&
+        !isForbiddenRuntimePath(path),
+    )
+    .sort();
 }
 
 export function assertRuntimeFileInventory(files) {
@@ -256,6 +268,14 @@ async function removeNonRuntimeSources(directory) {
   }
 }
 
+async function removeForbiddenRuntimeFiles(directory) {
+  for (const path of await listFiles(directory)) {
+    if (isForbiddenRuntimePath(path)) {
+      await rm(resolve(directory, path), { force: true, recursive: true });
+    }
+  }
+}
+
 async function assertSharpNativeRuntime(root) {
   const files = await listFiles(root);
   const sharedLibrary =
@@ -356,13 +376,7 @@ async function traceExternalRuntimeFiles() {
     processCwd: repositoryRoot,
   });
   validateTraceWarnings(trace.warnings);
-  return [...new Set([...trace.fileList, ...trace.esmFileList])]
-    .map(normalizeTracePath)
-    .filter(
-      (path) =>
-        path !== "package.json" && !path.startsWith(".next/runtime-build/"),
-    )
-    .sort();
+  return filterRuntimeTraceFiles([...trace.fileList, ...trace.esmFileList]);
 }
 
 async function assertRequiredPaths(root) {
@@ -418,6 +432,10 @@ export async function buildRuntimeArtifacts() {
     await copyEntry(source, resolve(runtimeRoot, path));
   }
   await copySharpNativeRuntimePackages();
+  // Next's standalone trace can include local dotenv files even though the
+  // Docker build context excludes them. Sanitize the assembled tree before
+  // the strict inventory check so local configuration never ships.
+  await removeForbiddenRuntimeFiles(runtimeRoot);
 
   const sourcePackage = JSON.parse(
     await readFile(resolve(repositoryRoot, "package.json"), "utf8"),

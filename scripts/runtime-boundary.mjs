@@ -51,10 +51,15 @@ export function normalizeRuntimePath(candidate) {
 export function assertNoForbiddenRuntimeFiles(files) {
   for (const candidate of files) {
     const path = normalizeRuntimePath(candidate);
-    if (forbiddenRuntimePatterns.some((pattern) => pattern.test(path))) {
+    if (isForbiddenRuntimePath(path)) {
       throw new Error(`Forbidden runtime artifact: ${path}`);
     }
   }
+}
+
+export function isForbiddenRuntimePath(candidate) {
+  const path = normalizeRuntimePath(candidate);
+  return forbiddenRuntimePatterns.some((pattern) => pattern.test(path));
 }
 
 function validIdentityField(value) {

@@ -47,9 +47,22 @@ describe("fact draft parsing", () => {
   it("only advertises types implemented with safe controls", () => {
     expect(supportedFactValueType("TEXT")).toBe(true);
     expect(supportedFactValueType("QUANTITY")).toBe(true);
-    expect(supportedFactValueType("PERSON_REFERENCE")).toBe(false);
+    expect(supportedFactValueType("PERSON_REFERENCE")).toBe(true);
     expect(supportedFactValueType("PLACE_REFERENCE")).toBe(false);
     expect(supportedFactValueType("FILE_REFERENCE")).toBe(false);
+  });
+
+  it("parses a person reference only when it is a canonical UUID", () => {
+    const personId = "018f5f39-9ca7-7b67-a2f1-b8a82ca894d1";
+    expect(parseFactDraft("PERSON_REFERENCE", { value: personId })).toEqual({
+      value: { referencedPersonId: personId },
+    });
+    expect(
+      parseFactDraft("PERSON_REFERENCE", { value: "not-a-person" }),
+    ).toEqual({
+      error: "Choose a valid person.",
+      field: "value",
+    });
   });
 
   it("renders a file-backed claim as a safe reference label", () => {

@@ -32,17 +32,29 @@ export type FactDefinitionOption = {
   sensitivity: "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 };
 
+export type PersonReferenceOption = {
+  id: string;
+  displayName: string;
+};
+
 export function FactForm({
   definitions,
   personId,
+  personOptions = [],
 }: {
   definitions: readonly FactDefinitionOption[];
   personId: string;
+  personOptions?: readonly PersonReferenceOption[];
 }) {
   const router = useRouter();
   const supported = useMemo(
-    () => definitions.filter((item) => supportedFactValueType(item.valueType)),
-    [definitions],
+    () =>
+      definitions.filter(
+        (item) =>
+          supportedFactValueType(item.valueType) &&
+          (item.valueType !== "PERSON_REFERENCE" || personOptions.length > 0),
+      ),
+    [definitions, personOptions.length],
   );
   const [definitionId, setDefinitionId] = useState(supported[0]?.id ?? "");
   const selected =
@@ -205,6 +217,7 @@ export function FactForm({
           valueIssue={valueIssue?.message}
           valueEndIssue={valueEndIssue?.message}
           unitIssue={unitIssue?.message}
+          personOptions={personOptions}
         />
         <div className="space-y-2">
           <Label htmlFor="fact-state">Claim state</Label>
@@ -271,11 +284,13 @@ export function FactForm({
 }
 
 function FactValueEditor({
+  personOptions,
   unitIssue,
   valueEndIssue,
   valueIssue,
   valueType,
 }: {
+  personOptions: readonly PersonReferenceOption[];
   unitIssue?: string;
   valueEndIssue?: string;
   valueIssue?: string;
@@ -305,6 +320,24 @@ function FactValueEditor({
             </option>
             <option value="true">True</option>
             <option value="false">False</option>
+          </select>
+        ) : valueType === "PERSON_REFERENCE" ? (
+          <select
+            id="fact-value"
+            name="value"
+            defaultValue=""
+            required
+            {...valueProps}
+            className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+          >
+            <option value="" disabled>
+              Choose a person
+            </option>
+            {personOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.displayName}
+              </option>
+            ))}
           </select>
         ) : valueType === "JSON" || valueType === "RICH_TEXT" ? (
           <textarea

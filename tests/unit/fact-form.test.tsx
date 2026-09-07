@@ -71,6 +71,37 @@ describe("FactForm", () => {
     });
   });
 
+  it("offers workspace people for person-reference facts and submits the selected ID", async () => {
+    const user = userEvent.setup();
+    execute.mockResolvedValue({
+      ok: true,
+      data: {
+        createFact: { fact: { id: "fact-person" }, issues: [], code: null },
+      },
+      requestId: "request-person",
+    });
+    const personId = "018f5f39-9ca7-7b67-a2f1-b8a82ca894d1";
+    render(
+      <FactForm
+        definitions={[definition("PERSON_REFERENCE")]}
+        personId={personId}
+        personOptions={[
+          { id: personId, displayName: "Ada Lovelace" },
+          {
+            id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894d2",
+            displayName: "Grace Hopper",
+          },
+        ]}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText("Value"), personId);
+    await user.click(screen.getByRole("button", { name: "Add fact" }));
+    await waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    expect(execute.mock.calls[0]?.[1]).toMatchObject({
+      input: { value: { referencedPersonId: personId } },
+    });
+  });
+
   it("maps a literal payload issue and request ID to the value control", async () => {
     const user = userEvent.setup();
     execute.mockResolvedValue({
