@@ -594,7 +594,7 @@ async function runFileLifecycleAcceptance() {
     {
       input: {
         displayName: `Compose attachment person ${suffix}`,
-        sensitivity: "PUBLIC",
+        sensitivity: "INTERNAL",
         idempotencyKey: randomUUID(),
       },
     },

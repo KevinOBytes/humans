@@ -1882,12 +1882,22 @@ liveDescribe("research write transactions", () => {
       },
     });
 
-    const reviewed = await peopleService.reviewIdentityCandidate({
-      id: candidateId,
-      expectedVersion: 1,
-      state: "accepted",
-      reason: "Two independent identifiers agree.",
-    });
+    const [reviewed, concurrentReplay] = await Promise.all([
+      peopleService.reviewIdentityCandidate({
+        id: candidateId,
+        expectedVersion: 1,
+        idempotencyKey: "identity-candidate-review-accept",
+        state: "accepted",
+        reason: "Two independent identifiers agree.",
+      }),
+      peopleService.reviewIdentityCandidate({
+        id: candidateId,
+        expectedVersion: 1,
+        idempotencyKey: "identity-candidate-review-accept",
+        state: "accepted",
+        reason: "Two independent identifiers agree.",
+      }),
+    ]);
     expect(reviewed).toMatchObject({
       id: candidateId,
       state: "accepted",
@@ -1895,6 +1905,47 @@ liveDescribe("research write transactions", () => {
       version: 2,
       reviewedBy: actor.principalId,
     });
+    expect(concurrentReplay).toMatchObject({
+      id: candidateId,
+      state: "accepted",
+      version: 2,
+      reviewedBy: actor.principalId,
+    });
+
+    const replayed = await peopleService.reviewIdentityCandidate({
+      id: candidateId,
+      expectedVersion: 1,
+      idempotencyKey: "identity-candidate-review-accept",
+      state: "accepted",
+      reason: "Two independent identifiers agree.",
+    });
+    expect(replayed).toMatchObject({
+      id: candidateId,
+      state: "accepted",
+      version: 2,
+      reviewedBy: actor.principalId,
+    });
+    const [reviewAuditCount] = await fixture.database
+      .select({ count: count() })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, actor.workspaceId),
+          eq(auditEvents.action, "person.identity_candidate.review"),
+          eq(auditEvents.resourceId, candidateId),
+        ),
+      );
+    expect(reviewAuditCount?.count).toBe(1);
+
+    await expect(
+      peopleService.reviewIdentityCandidate({
+        id: candidateId,
+        expectedVersion: 1,
+        idempotencyKey: "identity-candidate-review-accept",
+        state: "rejected",
+        reason: "The same key cannot change the review decision.",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
 
     await expect(
       peopleService.reviewIdentityCandidate({
