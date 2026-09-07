@@ -88,6 +88,8 @@ export function PersonRecordEditor({ personId }: { personId: string }) {
     setPending(true);
     setFeedback(null);
     const data = new FormData(form);
+    const earliestAt = isoDate(data.get("event-earliestAt"));
+    const latestAt = isoDate(data.get("event-latestAt"));
     let result: GraphQLResult<CreatePersonEventMutation>;
     try {
       result = await executeBrowserGraphQL(CreatePersonEventDocument, {
@@ -96,8 +98,8 @@ export function PersonRecordEditor({ personId }: { personId: string }) {
           eventKind: String(data.get("event-kind") ?? ""),
           title: String(data.get("event-title") ?? ""),
           description: String(data.get("event-description") ?? "") || undefined,
-          earliestAt: isoDate(data.get("event-earliestAt")),
-          latestAt: isoDate(data.get("event-latestAt")),
+          ...(earliestAt ? { earliestAt } : {}),
+          ...(latestAt ? { latestAt } : {}),
         },
       });
     } catch {

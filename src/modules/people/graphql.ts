@@ -571,6 +571,7 @@ const ReviewIdentityCandidateInput = builder.inputType(
     fields: (t) => ({
       id: t.field({ type: "UUID", required: true }),
       expectedVersion: t.int({ required: true }),
+      idempotencyKey: t.string(),
       state: t.field({ type: IdentityCandidateState, required: true }),
       reason: t.string(),
     }),

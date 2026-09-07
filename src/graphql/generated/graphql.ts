@@ -753,6 +753,7 @@ export type ReviewDeletionRequestInput = {
 export type ReviewIdentityCandidateInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
   reason?: string | null | undefined;
   state: IdentityCandidateState;
 };

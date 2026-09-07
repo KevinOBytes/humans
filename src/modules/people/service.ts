@@ -570,6 +570,51 @@ export function createPeopleService(context: ResearchServiceContext) {
     return row;
   }
 
+  async function replayIdentityCandidate(
+    responseReference: Readonly<
+      Record<string, string | number | boolean | null>
+    >,
+  ): Promise<typeof identityCandidates.$inferSelect> {
+    const candidateId = responseReference.identityCandidateId;
+    const version = responseReference.version;
+    if (
+      typeof candidateId !== "string" ||
+      !PERSON_REFERENCE_UUID.test(candidateId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    const [row] = await context.database
+      .select()
+      .from(identityCandidates)
+      .where(
+        and(
+          eq(identityCandidates.workspaceId, context.workspaceId),
+          eq(identityCandidates.id, candidateId),
+          isNull(identityCandidates.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    if (row.version !== version) {
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    }
+    return row;
+  }
+
   async function maintainPersonSearch(
     writeContext: ResearchServiceContext,
     database: typeof context.database,
@@ -3940,23 +3985,62 @@ export function createPeopleService(context: ResearchServiceContext) {
     async reviewIdentityCandidate(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
       state: "pending" | "reviewing" | "accepted" | "rejected" | "cancelled";
       reason?: string | null;
-    }) {
+    }): Promise<typeof identityCandidates.$inferSelect> {
       if (!context.permissions.has("person:merge")) {
         throw createGraphQLError(
           "FORBIDDEN",
           "Identity candidate review is not permitted.",
         );
       }
-      const [row] = await writeTransaction(context, async (transaction) =>
-        transaction
+      const reviewReason = input.reason?.trim().slice(0, 2048) ?? null;
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent identity candidate reviews are not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person.identity-candidate.review",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            reason: fieldMaterial(reviewReason),
+            state: input.state,
+          },
+          secret,
+        });
+        const result = await runPrincipalIdempotentResearchWrite<{
+          identityCandidateId: string;
+          version: number;
+        }>(context, idempotency, ["person:merge"], async (scopedContext) => {
+          const reviewed: typeof identityCandidates.$inferSelect =
+            await createPeopleService(scopedContext).reviewIdentityCandidate({
+              ...input,
+              idempotencyKey: null,
+              reason: reviewReason,
+            });
+          return {
+            identityCandidateId: reviewed.id,
+            version: reviewed.version,
+          };
+        });
+        return replayIdentityCandidate(result.responseReference);
+      }
+      const [row] = await writeTransaction(context, async (transaction) => {
+        const [updated] = await transaction
           .update(identityCandidates)
           .set({
             state: input.state,
             reviewedAt: new Date(),
             reviewedBy: context.actor.principalId,
-            reviewReason: input.reason?.trim().slice(0, 2048) ?? null,
+            reviewReason,
             version: sql`${identityCandidates.version} + 1`,
             updatedAt: new Date(),
             updatedBy: context.actor.principalId,
@@ -3969,8 +4053,24 @@ export function createPeopleService(context: ResearchServiceContext) {
               isNull(identityCandidates.deletedAt),
             ),
           )
-          .returning(),
-      );
+          .returning();
+        if (updated) {
+          await audit.write(transaction as typeof context.database, {
+            action: "person.identity_candidate.review",
+            resourceKind: "identity_candidate",
+            resourceId: updated.id,
+            sensitivity: "internal",
+            changedFields: [
+              "state",
+              "reviewReason",
+              "reviewedAt",
+              "reviewedBy",
+            ],
+            metadata: { state: updated.state, version: updated.version },
+          });
+        }
+        return [updated];
+      });
       if (!row)
         throw createGraphQLError(
           "CONFLICT",

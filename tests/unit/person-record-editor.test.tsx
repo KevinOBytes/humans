@@ -74,7 +74,7 @@ describe("PersonRecordEditor", () => {
         eventKind: "education",
         title: "University",
         description: "Studied history",
-        earliestAt: "2020-01-02T15:30:00.000Z",
+        earliestAt: new Date("2020-01-02T10:30").toISOString(),
       },
     });
   });
