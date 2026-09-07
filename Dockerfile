@@ -16,7 +16,7 @@ FROM dependencies AS build
 COPY . .
 RUN pnpm build && pnpm runtime:build
 
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:af85d11ce7ef10172855a6e3649e3e8125b1b9e3ca41849ec2918036f05cb212 AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:774b7d020b24214835769e24c3544835526cd0288f0b094eae48e8b2c2429a79 AS runtime
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -25,10 +25,10 @@ ENV PORT=3000
 WORKDIR /app
 
 LABEL org.opencontainers.image.base.name="gcr.io/distroless/nodejs24-debian13:nonroot" \
-      org.opencontainers.image.base.digest="sha256:af85d11ce7ef10172855a6e3649e3e8125b1b9e3ca41849ec2918036f05cb212" \
+      org.opencontainers.image.base.digest="sha256:774b7d020b24214835769e24c3544835526cd0288f0b094eae48e8b2c2429a79" \
       org.humans.builder.name="node:24.18.0-trixie-slim" \
       org.humans.builder.digest="sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573" \
-      org.humans.base-resolution-date="2026-08-03"
+      org.humans.base-resolution-date="2026-09-07"
 
 COPY --from=build --chown=65532:65532 /app/.next/runtime-root/ /app/
 
