@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
 
 const policyPath = resolve("config/allowed-dependency-licenses.json");
 
@@ -193,6 +194,93 @@ function exceptionAllows(record, policy) {
   );
 }
 
+function packageLicense(packageJson) {
+  const value = packageJson.license ?? packageJson.licenses;
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return typeof value.type === "string" ? value.type : "UNKNOWN";
+  }
+  if (Array.isArray(value)) {
+    const expressions = value
+      .map((entry) =>
+        typeof entry === "string"
+          ? entry
+          : entry && typeof entry.type === "string"
+            ? entry.type
+            : null,
+      )
+      .filter((entry) => entry !== null);
+    return expressions.length > 0 ? expressions.join(" OR ") : "UNKNOWN";
+  }
+  return "UNKNOWN";
+}
+
+function readResolvedPackage(entry) {
+  let directory = dirname(entry);
+  while (directory !== dirname(directory)) {
+    const candidate = join(directory, "package.json");
+    if (existsSync(candidate)) {
+      try {
+        const packageJson = JSON.parse(readFileSync(candidate, "utf8"));
+        if (typeof packageJson.name === "string" && packageJson.version) {
+          return { directory, packageJson };
+        }
+      } catch {
+        // Keep walking: packages such as qrcode.react have nested metadata.
+      }
+    }
+    directory = dirname(directory);
+  }
+  return null;
+}
+
+/**
+ * pnpm's license command requires a local SQLite package-index cache that is
+ * not guaranteed to exist in a fresh checkout. Walk the installed production
+ * dependency closure instead so the policy remains deterministic and fails
+ * closed for packages without license metadata.
+ */
+function installedProductionLicenseInventory() {
+  const root = process.cwd();
+  const rootPackage = JSON.parse(
+    readFileSync(resolve(root, "package.json"), "utf8"),
+  );
+  const queue = Object.keys({
+    ...rootPackage.dependencies,
+    ...rootPackage.optionalDependencies,
+  }).map((name) => ({ name, from: root }));
+  const seen = new Map();
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    const requester = createRequire(join(current.from, "package.json"));
+    let entry;
+    try {
+      entry = requester.resolve(current.name);
+    } catch {
+      // An optional dependency may not be installed on this platform.
+      continue;
+    }
+    const resolved = readResolvedPackage(entry);
+    if (!resolved) continue;
+    const { directory, packageJson } = resolved;
+    const identity = `${packageJson.name}@${packageJson.version}`;
+    if (seen.has(identity)) continue;
+    seen.set(identity, {
+      expression: packageLicense(packageJson),
+      name: packageJson.name,
+      version: packageJson.version,
+    });
+    for (const dependency of Object.keys({
+      ...packageJson.dependencies,
+      ...packageJson.optionalDependencies,
+    })) {
+      queue.push({ name: dependency, from: directory });
+    }
+  }
+  return [...seen.values()];
+}
+
 export function runLicenseCheck() {
   const policy = readPolicy();
   const result = spawnSync(
@@ -202,10 +290,26 @@ export function runLicenseCheck() {
   );
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`pnpm license inventory failed:\n${result.stderr.trim()}`);
+    const diagnostic = `${result.stdout}\n${result.stderr}`;
+    if (
+      !/ERR_PNPM_MISSING_PACKAGE_INDEX_FILE|ERR_SQLITE_ERROR/u.test(diagnostic)
+    ) {
+      throw new Error(`pnpm license inventory failed:\n${diagnostic.trim()}`);
+    }
+    process.stderr.write(
+      "pnpm license inventory unavailable; using installed production dependency closure.\n",
+    );
+    const records = installedProductionLicenseInventory();
+    if (records.length === 0)
+      throw new Error("Production dependency license inventory is empty");
+    return checkRecords(records, policy);
   }
 
   const records = licensedPackageVersions(JSON.parse(result.stdout));
+  return checkRecords(records, policy);
+}
+
+function checkRecords(records, policy) {
   if (records.length === 0)
     throw new Error("Production dependency license inventory is empty");
 
