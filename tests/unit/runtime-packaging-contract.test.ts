@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertMinimalRuntimePackage,
   assertRuntimeFileInventory,
+  filterRuntimeTraceFiles,
   normalizeTracePath,
   reviewedAwsTraceWarning,
   reviewedTraceWarning,
@@ -257,7 +258,7 @@ describe("runtime artifact packaging contract", () => {
     );
     expect(packageJson.devDependencies.esbuild).toBe("0.28.1");
     expect(packageJson.devDependencies["@vercel/nft"]).toBe("1.10.2");
-    expect(packageJson.dependencies["@opentelemetry/api"]).toBeUndefined();
+    expect(packageJson.dependencies["@opentelemetry/api"]).toBe("1.9.0");
     expect(dockerfile).toContain("pnpm runtime:build");
     expect(dockerfile).toContain("/app/.next/runtime-root/ /app/");
     expect(dockerfile).not.toContain(
@@ -265,5 +266,22 @@ describe("runtime artifact packaging contract", () => {
     );
     expect(dockerignore).toContain(".tmp");
     expect(dockerignore).toContain(".next/runtime-root");
+  });
+
+  it("does not copy local configuration or source files from the trace", () => {
+    expect(
+      filterRuntimeTraceFiles([
+        "package.json",
+        ".env",
+        ".env.local",
+        "src/db/seed.ts",
+        ".next/runtime-build/compiled/seed.mjs",
+        "node_modules/postgres/package.json",
+        ".next/server/app/page.js",
+      ]),
+    ).toEqual([
+      ".next/server/app/page.js",
+      "node_modules/postgres/package.json",
+    ]);
   });
 });

@@ -21,6 +21,7 @@ const supportedTypes = new Set<FactValueType>([
   "DURATION",
   "INTEGER",
   "JSON",
+  "PERSON_REFERENCE",
   "QUANTITY",
   "RICH_TEXT",
   "TEXT",
@@ -29,6 +30,8 @@ const supportedTypes = new Set<FactValueType>([
 ]);
 const decimalPattern = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u;
 const datePattern = /^(\d{4})-(\d{2})-(\d{2})$/u;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function supportedFactValueType(valueType: FactValueType): boolean {
   return supportedTypes.has(valueType);
@@ -117,6 +120,10 @@ export function parseFactDraft(
         ? { error: "Choose a valid date and time.", field: "value" }
         : { value: { timestamp: timestamp.toISOString() } };
     }
+    case "PERSON_REFERENCE":
+      return uuidPattern.test(value)
+        ? { value: { referencedPersonId: value } }
+        : { error: "Choose a valid person.", field: "value" };
     case "URI":
       try {
         const url = new URL(value);

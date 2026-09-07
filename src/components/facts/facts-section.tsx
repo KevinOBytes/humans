@@ -13,6 +13,7 @@ import {
   PersonContradictoryFactsDocument,
   PersonFactsDocument,
   PersonFieldSelectionsDocument,
+  PeopleOptionsDocument,
   type PersonSummaryFragment,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
@@ -141,6 +142,16 @@ export async function FactsSection({
           ]
         : [],
   );
+  const personReferenceDefinitions = definitions.some(
+    (definition) => definition.valueType === "PERSON_REFERENCE",
+  );
+  const peopleOptions =
+    canCreate && personReferenceDefinitions
+      ? await executeServerGraphQL(PeopleOptionsDocument, { first: 100 })
+      : null;
+  const personOptions = (peopleOptions?.people.nodes ?? []).filter(
+    (person) => person.id && person.displayName,
+  );
   const factPage = readFragment(
     PageDetailsFragmentDoc,
     data.person.facts?.pageInfo,
@@ -166,7 +177,11 @@ export async function FactsSection({
           <h2 id="fact-editor-heading" className="sr-only">
             Fact editor
           </h2>
-          <FactForm definitions={definitions} personId={personId} />
+          <FactForm
+            definitions={definitions}
+            personId={personId}
+            personOptions={personOptions}
+          />
           <PageControls
             label="Fact field options"
             resetHref={
