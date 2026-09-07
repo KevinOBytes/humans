@@ -12,10 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  executeBrowserGraphQL,
-  type GraphQLResult,
-} from "@/graphql/client";
+import { executeBrowserGraphQL, type GraphQLResult } from "@/graphql/client";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
   PersonSummaryFragmentDoc,
