@@ -15,7 +15,7 @@ const officialActions = new Map([
   ],
   [
     "pnpm/action-setup",
-    { sha: "0ebf47130e4866e96fce0953f49152a61190b271", tag: "v6.0.9" },
+    { sha: "0977fd99725f1db4007ccb2928dbb4e90d06cc86", tag: "v6.0.10" },
   ],
   [
     "actions/upload-artifact",
