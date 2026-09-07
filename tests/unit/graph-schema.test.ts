@@ -46,4 +46,16 @@ describe("graph GraphQL schema", () => {
       ["INFERRED", "inferred"],
     ]);
   });
+
+  it("exposes audited direct person-file attachment operations", () => {
+    const mutation = schema.getMutationType()?.getFields();
+    expect(mutation).toHaveProperty("attachPersonFile");
+    expect(mutation).toHaveProperty("archivePersonFile");
+    expect(schema.getType("PersonFileRole")).toBeDefined();
+    expect(
+      (schema.getType("PersonFileRole") as GraphQLEnumType)
+        .getValues()
+        .map(({ name, value }) => [name, value]),
+    ).toContainEqual(["DIRECT", "direct"]);
+  });
 });
