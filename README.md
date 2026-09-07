@@ -171,6 +171,19 @@ The command accepts only one workspace UUID, an optional batch size from 1 to 50
 
 Task 12 production metrics are emitted as structured `humans.task12.metric.v1` events with fixed names and low-cardinality labels. They exclude workspace, actor, request, query, protected value, resource, cursor, and Redis-key material; metrics writer failures never alter product authorization or availability.
 
+## Assisted person research
+
+Person profiles can optionally request a bounded public-web lookup when the
+server has `WEB_SEARCH_API_KEY` configured (the current adapter uses Brave
+Search). The request requires an explicit disclosure acknowledgement and sends
+only the person name for internal records; contacts, addresses, identifiers,
+relationships, and private notes are never sent. The OpenAI-compatible model
+returns source-backed drafts for a small allowlist of presentation fields.
+Nothing is written until an authorized user edits and checks each field and the
+application submits the existing optimistic `UpdatePerson` mutation. Leave the
+key unset to keep the feature disabled; the UI returns a stable unavailable
+message rather than changing the record.
+
 ## Cited AI analyst
 
 `/analyst` uses generated GraphQL operations to start, read, and cancel one

@@ -108,6 +108,7 @@ export function PersonEditForm({ person }: { person: PersonEditProjection }) {
           setEditing(false);
           router.refresh();
         }}
+        showConfidence={false}
       />
     </div>
   );

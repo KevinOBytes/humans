@@ -61,6 +61,27 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
   beforeEach(async () => fixture.reset());
   afterAll(async () => fixture.close());
 
+  it("gates person web research by permission, workspace visibility, and optional configuration", async () => {
+    const owner = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const viewer = await fixture.createWorkspaceMember(owner, "viewer");
+    const created = await fixture.createPerson(owner, {
+      displayName: "Public research fixture",
+      sensitivity: "PUBLIC",
+    });
+    const personId = created.body?.data?.createPerson?.person?.id;
+    expect(personId).toBeTruthy();
+    const research = (actor: typeof owner) =>
+      fixture.execute({
+        jar: actor.jar,
+        query: `mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) { personWebResearch(personId: $personId, consent: $consent) { personId suggestions { field value sourceUrls } sources { url title snippet } provider model } }`,
+        variables: { personId, consent: true },
+      });
+    expectGraphQLError(await research(viewer), "FORBIDDEN");
+    expectGraphQLError(await research(foreign), "NOT_FOUND");
+    expectGraphQLError(await research(owner), "PROVIDER_UNAVAILABLE");
+  });
+
   it("replays evidence-create references, converges concurrent callers, and fences expiry, corruption, and tenants", async () => {
     const owner = await fixture.createActor();
     const foreign = await fixture.createActor();

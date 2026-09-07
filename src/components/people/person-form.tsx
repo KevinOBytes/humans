@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label";
 
 export type PersonFormInput = {
   biography?: string;
+  confidence?: number;
+  confidenceExplanation?: string;
   displayName: string;
   preferredName?: string;
   sensitivity: "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
@@ -41,6 +43,7 @@ export type PersonFormProps = {
   onSaved?: (personId: string) => void;
   submit: (input: PersonFormInput) => Promise<PersonFormResult>;
   submitLabel?: string;
+  showConfidence?: boolean;
 };
 
 type FieldId =
@@ -48,6 +51,8 @@ type FieldId =
   | "preferredName"
   | "sortName"
   | "biography"
+  | "confidence"
+  | "confidenceExplanation"
   | "status"
   | "sensitivity";
 
@@ -63,6 +68,7 @@ export function PersonForm({
   onSaved,
   submit,
   submitLabel = "Create person",
+  showConfidence = true,
 }: PersonFormProps) {
   const [feedback, setFeedback] = useState<MutationFeedbackView | null>(null);
   const [pending, setPending] = useState(false);
@@ -78,15 +84,29 @@ export function PersonForm({
     const data = new FormData(event.currentTarget);
     const input: PersonFormInput = {
       displayName: valueFrom(data, "displayName"),
-      preferredName: valueFrom(data, "preferredName") || undefined,
-      sortName: valueFrom(data, "sortName") || undefined,
-      biography: valueFrom(data, "biography") || undefined,
       status: valueFrom(data, "status") as PersonFormInput["status"],
       sensitivity: valueFrom(
         data,
         "sensitivity",
       ) as PersonFormInput["sensitivity"],
     };
+    const preferredName = valueFrom(data, "preferredName");
+    const sortName = valueFrom(data, "sortName");
+    const biography = valueFrom(data, "biography");
+    const confidence = valueFrom(data, "confidence");
+    const confidenceExplanation = valueFrom(data, "confidenceExplanation");
+    if (preferredName) input.preferredName = preferredName;
+    if (sortName) input.sortName = sortName;
+    if (biography) input.biography = biography;
+    if (confidence) {
+      const numericConfidence = Number(confidence);
+      if (Number.isFinite(numericConfidence)) {
+        input.confidence = numericConfidence;
+      }
+    }
+    if (confidenceExplanation) {
+      input.confidenceExplanation = confidenceExplanation;
+    }
 
     try {
       const result = await submit(input);
@@ -184,7 +204,7 @@ export function PersonForm({
           <select
             id="status"
             name="status"
-            defaultValue={initial?.status ?? "UNKNOWN"}
+            defaultValue={initial?.status ?? "ACTIVE"}
             aria-describedby={fieldIssue("status") ? "status-error" : undefined}
             aria-invalid={Boolean(fieldIssue("status"))}
             className="border-input bg-background min-h-11 w-full rounded-xl border px-3.5 text-[16px] sm:text-sm"
@@ -217,6 +237,49 @@ export function PersonForm({
           </select>
         </FormField>
       </div>
+      {showConfidence ? (
+        <div className="grid gap-5 sm:grid-cols-2">
+          <FormField
+            id="confidence"
+            label="Confidence"
+            issue={fieldIssue("confidence")}
+          >
+            <Input
+              id="confidence"
+              name="confidence"
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="0 to 1"
+              defaultValue={initial?.confidence ?? ""}
+              aria-describedby={
+                fieldIssue("confidence") ? "confidence-error" : undefined
+              }
+              aria-invalid={Boolean(fieldIssue("confidence"))}
+            />
+          </FormField>
+          <FormField
+            id="confidenceExplanation"
+            label="Confidence explanation"
+            issue={fieldIssue("confidenceExplanation")}
+          >
+            <Input
+              id="confidenceExplanation"
+              name="confidenceExplanation"
+              defaultValue={initial?.confidenceExplanation ?? ""}
+              aria-describedby={
+                fieldIssue("confidenceExplanation")
+                  ? "confidenceExplanation-error"
+                  : undefined
+              }
+              aria-invalid={Boolean(fieldIssue("confidenceExplanation"))}
+              autoComplete="off"
+            />
+          </FormField>
+        </div>
+      ) : null}
       <FormField
         id="biography"
         label="Biography"

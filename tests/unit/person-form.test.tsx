@@ -59,6 +59,62 @@ describe("PersonForm", () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith("person-a"));
   });
 
+  it("uses active for new records and omits blank optional fields", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn().mockResolvedValue({
+      person: { id: "person-active", version: 1 },
+      issues: [],
+      code: null,
+    });
+    render(<PersonForm submit={submit} />);
+
+    await user.type(screen.getByLabelText("Display name"), "Ada Researcher");
+    await user.click(screen.getByRole("button", { name: "Create person" }));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    expect(submit).toHaveBeenCalledWith({
+      displayName: "Ada Researcher",
+      status: "ACTIVE",
+      sensitivity: "INTERNAL",
+    });
+  });
+
+  it("includes confidence and its explanation when supplied", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn().mockResolvedValue({
+      person: { id: "person-confidence", version: 1 },
+      issues: [],
+      code: null,
+    });
+    render(<PersonForm submit={submit} />);
+
+    await user.type(screen.getByLabelText("Display name"), "Ada Researcher");
+    await user.type(screen.getByLabelText("Confidence"), "0.72");
+    await user.type(
+      screen.getByLabelText("Confidence explanation"),
+      "Two independent sources agree.",
+    );
+    await user.click(screen.getByRole("button", { name: "Create person" }));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    expect(submit).toHaveBeenCalledWith({
+      displayName: "Ada Researcher",
+      status: "ACTIVE",
+      sensitivity: "INTERNAL",
+      confidence: 0.72,
+      confidenceExplanation: "Two independent sources agree.",
+    });
+  });
+
+  it("can omit confidence fields for edit forms whose mutation does not support them", () => {
+    render(<PersonForm submit={vi.fn()} showConfidence={false} />);
+
+    expect(screen.queryByLabelText("Confidence")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Confidence explanation"),
+    ).not.toBeInTheDocument();
+  });
+
   it("prevents cancellation while a save is pending", async () => {
     const user = userEvent.setup();
     let resolve!: (value: PersonFormResult) => void;
@@ -111,6 +167,8 @@ describe("PersonForm", () => {
             "preferredName",
             "sortName",
             "biography",
+            "confidence",
+            "confidenceExplanation",
             "status",
             "sensitivity",
           ].map((field) => ({
@@ -128,6 +186,8 @@ describe("PersonForm", () => {
       ["Preferred name", "preferredName"],
       ["Sort name", "sortName"],
       ["Biography", "biography"],
+      ["Confidence", "confidence"],
+      ["Confidence explanation", "confidenceExplanation"],
       ["Status", "status"],
       ["Sensitivity", "sensitivity"],
     ] as const) {

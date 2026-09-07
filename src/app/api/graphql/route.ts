@@ -5,6 +5,7 @@ import {
 import { OperationLimiter } from "@/graphql/operation-limiter";
 import { productionSecurityEventLogger } from "@/lib/observability/security-events";
 import { createSearchIndexMaintenance } from "@/modules/search/indexer";
+import { createBravePersonSearch } from "@/modules/people/research";
 import {
   createTask12Metrics,
   productionMetricsSink,
@@ -107,6 +108,14 @@ async function getProductionHandler() {
           hmacKey: env.DATA_ENCRYPTION_KEY,
           provider: aiProvider,
         },
+        personResearchRuntime: env.WEB_SEARCH_API_KEY
+          ? {
+              search: createBravePersonSearch({
+                apiKey: env.WEB_SEARCH_API_KEY,
+              }),
+              provider: aiProvider,
+            }
+          : undefined,
       });
     },
   );

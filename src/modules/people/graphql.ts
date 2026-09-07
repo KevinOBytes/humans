@@ -1,5 +1,11 @@
 import { builder } from "@/graphql/builder";
 import { requirePermission } from "@/graphql/context";
+import { createGraphQLError } from "@/graphql/errors";
+import type {
+  PersonResearchResult,
+  PersonResearchSource,
+  PersonResearchSuggestion,
+} from "./research";
 import { invalidateVisibilityDependentLoaders } from "@/graphql/loaders";
 import { normalizePagination } from "@/graphql/limits";
 import { ActorAttribution } from "@/modules/audit/attribution-graphql";
@@ -13,6 +19,42 @@ import type {
 import type { InferSelectModel } from "drizzle-orm";
 import { identityCandidates } from "@/db/schema/people";
 import type { MutationOutcome, PageInfo as PageInfoShape } from "./service";
+
+const PersonResearchSourceObject = builder
+  .objectRef<PersonResearchSource>("PersonResearchSource")
+  .implement({
+    fields: (t) => ({
+      url: t.exposeString("url", { nullable: false }),
+      title: t.exposeString("title", { nullable: false }),
+      snippet: t.exposeString("snippet", { nullable: false }),
+    }),
+  });
+const PersonResearchSuggestionObject = builder
+  .objectRef<PersonResearchSuggestion>("PersonResearchSuggestion")
+  .implement({
+    fields: (t) => ({
+      field: t.exposeString("field", { nullable: false }),
+      value: t.exposeString("value", { nullable: false }),
+      sourceUrls: t.exposeStringList("sourceUrls", { nullable: false }),
+    }),
+  });
+const PersonResearchResultObject = builder
+  .objectRef<PersonResearchResult>("PersonResearchResult")
+  .implement({
+    fields: (t) => ({
+      personId: t.expose("personId", { type: "UUID", nullable: false }),
+      sources: t.expose("sources", {
+        type: [PersonResearchSourceObject],
+        nullable: false,
+      }),
+      suggestions: t.expose("suggestions", {
+        type: [PersonResearchSuggestionObject],
+        nullable: false,
+      }),
+      provider: t.exposeString("provider", { nullable: false }),
+      model: t.exposeString("model", { nullable: false }),
+    }),
+  });
 
 export const Sensitivity = builder.enumType("Sensitivity", {
   values: {
@@ -680,6 +722,26 @@ export function registerPeopleGraphQL(): void {
   }));
 
   builder.mutationFields((t) => ({
+    personWebResearch: t.field({
+      type: PersonResearchResultObject,
+      nullable: false,
+      args: {
+        personId: t.arg({ type: "UUID", required: true }),
+        consent: t.arg.boolean({ required: true }),
+      },
+      complexity: 100,
+      resolve: (_root, args, context) => {
+        requirePermission(context, "person", "read");
+        requirePermission(context, "analysis", "create");
+        requirePermission(context, "analysis", "run");
+        if (!context.services.personResearch)
+          throw createGraphQLError(
+            "PROVIDER_UNAVAILABLE",
+            "Web research is not configured. Ask an administrator to enable it.",
+          );
+        return context.services.personResearch.run(args);
+      },
+    }),
     createPerson: t.field({
       type: PersonPayload,
       nullable: false,

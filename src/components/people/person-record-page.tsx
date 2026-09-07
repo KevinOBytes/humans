@@ -8,6 +8,7 @@ import { FactsSection } from "@/components/facts/facts-section";
 import { NotesSection } from "@/components/notes/notes-section";
 import { ContactsPlacesSection } from "@/components/locations/contacts-places-section";
 import { PersonEditForm } from "@/components/people/person-edit-form";
+import { PersonResearchPanel } from "@/components/people/person-research-panel";
 import { NamesTimelineSection } from "@/components/people/names-timeline-section";
 import { PersonFilesSection } from "@/components/people/person-files-section";
 import { RelationshipsSection } from "@/components/relationships/relationships-section";
@@ -113,6 +114,10 @@ export async function PersonRecordPage({
           <PersonEditForm person={person} />
         ) : null}
       </header>
+      <PersonResearchPanel
+        canUpdate={permissions.includes("person:update")}
+        person={person}
+      />
       <nav
         aria-label="Person research sections"
         className="border-border overflow-x-auto border-b"

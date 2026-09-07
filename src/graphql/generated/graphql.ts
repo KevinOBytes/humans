@@ -3314,6 +3314,25 @@ export type UpdatePersonMutation = {
   };
 };
 
+export type PersonWebResearchMutationVariables = Exact<{
+  personId: string;
+  consent: boolean;
+}>;
+
+export type PersonWebResearchMutation = {
+  personWebResearch: {
+    personId: string;
+    provider: string;
+    model: string;
+    sources: Array<{ title: string; url: string; snippet: string }>;
+    suggestions: Array<{
+      field: string;
+      value: string;
+      sourceUrls: Array<string>;
+    }>;
+  };
+};
+
 export type ArchivePersonMutationVariables = Exact<{
   input: ArchivePersonInput;
 }>;
@@ -8033,6 +8052,33 @@ fragment MutationIssue on ValidationIssue {
 ) as unknown as TypedDocumentString<
   UpdatePersonMutation,
   UpdatePersonMutationVariables
+>;
+export const PersonWebResearchDocument = new TypedDocumentString(
+  `
+    mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) {
+  personWebResearch(personId: $personId, consent: $consent) {
+    personId
+    provider
+    model
+    sources {
+      title
+      url
+      snippet
+    }
+    suggestions {
+      field
+      value
+      sourceUrls
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:3b4e7d075d85cd38299d0e380e296e20099997eb86b73879335ccd638ccf5b32",
+  },
+) as unknown as TypedDocumentString<
+  PersonWebResearchMutation,
+  PersonWebResearchMutationVariables
 >;
 export const ArchivePersonDocument = new TypedDocumentString(
   `
