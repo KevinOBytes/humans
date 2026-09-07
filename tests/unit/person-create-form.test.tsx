@@ -47,6 +47,16 @@ describe("PersonCreateForm", () => {
     expect(alert).toHaveTextContent("request-person-transport");
     expect(alert).toHaveTextContent("Your session has expired.");
     expect(screen.getByLabelText("Display name")).toHaveValue("Ada Researcher");
+    expect(execute).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        input: expect.objectContaining({
+          displayName: "Ada Researcher",
+          status: "ACTIVE",
+          sensitivity: "INTERNAL",
+        }),
+      }),
+    );
   });
 
   it("preserves successful-response payload metadata and typed issues", async () => {

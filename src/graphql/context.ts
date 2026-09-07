@@ -24,6 +24,10 @@ import {
   ensureUserPrincipal,
 } from "@/modules/auth/workspaces";
 import { createPeopleService } from "@/modules/people/service";
+import {
+  createPersonResearchService,
+  type PersonResearchRuntime,
+} from "@/modules/people/research";
 import { createFactsService } from "@/modules/facts/service";
 import { createRelationshipsService } from "@/modules/relationships/service";
 import { createEvidenceService } from "@/modules/evidence/service";
@@ -122,6 +126,7 @@ export type CreateContextInput = {
   importRuntime?: ImportServiceRuntime;
   settingsRuntime?: WorkspaceMemberRuntime;
   aiRuntime: AiAnalysisRuntime;
+  personResearchRuntime?: PersonResearchRuntime;
 };
 
 export function parseGraphQLOrigin(value: string): string | null {
@@ -170,7 +175,17 @@ function createServices(input: {
   importRuntime?: ImportServiceRuntime;
   settingsRuntime?: WorkspaceMemberRuntime;
   aiRuntime: AiAnalysisRuntime;
+  personResearchRuntime?: PersonResearchRuntime;
 }): GraphQLServices {
+  const people = createPeopleService({
+    actor: input.context.actor,
+    database: input.database,
+    idempotencyHmacKey: input.aiRuntime.hmacKey,
+    permissions: input.context.permissions,
+    requestId: input.context.requestId,
+    searchIndexMaintenance: input.searchIndexMaintenance,
+    workspaceId: input.context.workspaceId,
+  });
   return {
     async loadWorkspaces(ids) {
       const requested = [...new Set(ids.filter(Boolean))];
@@ -193,14 +208,13 @@ function createServices(input: {
       const byId = new Map(rows.map((workspace) => [workspace.id, workspace]));
       return ids.map((id) => byId.get(id) ?? null);
     },
-    people: createPeopleService({
-      actor: input.context.actor,
-      database: input.database,
-      idempotencyHmacKey: input.aiRuntime.hmacKey,
+    people,
+    personResearch: createPersonResearchService({
+      loadPerson: (id) => people.get(id),
       permissions: input.context.permissions,
-      requestId: input.context.requestId,
-      searchIndexMaintenance: input.searchIndexMaintenance,
       workspaceId: input.context.workspaceId,
+      operationLimiter: input.operationLimiter,
+      runtime: input.personResearchRuntime,
     }),
     facts: createFactsService(
       {
@@ -376,6 +390,7 @@ function contextWithLoaders(
   fileRuntime?: FileServiceRuntime,
   importRuntime?: ImportServiceRuntime,
   settingsRuntime?: WorkspaceMemberRuntime,
+  personResearchRuntime?: PersonResearchRuntime,
 ): GraphQLContext {
   const budgetOperation = (operationClass: string) => {
     switch (operationClass) {
@@ -388,6 +403,7 @@ function contextWithLoaders(
         return "GRAPH_SNAPSHOT" as const;
       case "graph.analysis":
       case "ai.analysis.start":
+      case "person.web_research":
         return "ANALYSIS_RUN" as const;
       case "graph.analysis.export":
         return "ANALYSIS_EXPORT" as const;
@@ -436,6 +452,7 @@ function contextWithLoaders(
     fileRuntime,
     importRuntime,
     settingsRuntime,
+    personResearchRuntime,
   });
   const loaders = createLoaders({
     services,
@@ -550,6 +567,7 @@ async function createSessionContext(
     input.fileRuntime,
     input.importRuntime,
     input.settingsRuntime,
+    input.personResearchRuntime,
   );
 }
 
@@ -633,6 +651,7 @@ async function createApiKeyContext(
     input.fileRuntime,
     input.importRuntime,
     input.settingsRuntime,
+    input.personResearchRuntime,
   );
 }
 

@@ -187,6 +187,10 @@ const commonServerEnv = z.object({
   /** Vercel/OpenRouter integrations commonly provision this legacy key name. */
   OPEN_ROUTER_KEY: z.string().optional(),
   AI_MODEL: z.string().min(1),
+  WEB_SEARCH_API_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().trim().min(1).max(4096).optional(),
+  ),
 });
 
 export const serverEnvSchema = z
@@ -326,6 +330,7 @@ export const serverEnvSchema = z
       ["STORAGE_SECRET_ACCESS_KEY", env.STORAGE_SECRET_ACCESS_KEY, 16],
       ["RESEND_API_KEY", env.RESEND_API_KEY, 16],
       ["REDIS_TOKEN", env.REDIS_TOKEN, 16],
+      ["WEB_SEARCH_API_KEY", env.WEB_SEARCH_API_KEY, 16],
     ] as const) {
       addProductionSecretIssue(context, path, value, minimumLength);
     }

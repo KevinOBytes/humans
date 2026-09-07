@@ -2,6 +2,7 @@ import DataLoader from "dataloader";
 
 import type { PersonRow } from "@/modules/people/repository";
 import type { PeopleService } from "@/modules/people/service";
+import type { createPersonResearchService } from "@/modules/people/research";
 import type {
   FactDefinitionRow,
   FactRelationshipRow,
@@ -51,6 +52,7 @@ export type GraphQLServices = {
     ids: readonly string[],
   ): Promise<readonly (SafeWorkspace | null)[]>;
   people: PeopleService;
+  personResearch?: ReturnType<typeof createPersonResearchService>;
   facts: FactsService;
   relationships: RelationshipsService;
   evidence: EvidenceService;

@@ -587,6 +587,24 @@ mutation UpdatePerson($input: UpdatePersonInput!) {
   }
 }
 
+mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) {
+  personWebResearch(personId: $personId, consent: $consent) {
+    personId
+    provider
+    model
+    sources {
+      title
+      url
+      snippet
+    }
+    suggestions {
+      field
+      value
+      sourceUrls
+    }
+  }
+}
+
 mutation ArchivePerson($input: ArchivePersonInput!) {
   archivePerson(input: $input) {
     person {
