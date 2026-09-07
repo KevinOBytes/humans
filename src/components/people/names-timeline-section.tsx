@@ -17,11 +17,82 @@ import { executeServerGraphQL } from "@/graphql/server-client";
 import { cursorParam, type SearchState } from "@/lib/person-profile-params";
 import { profilePageHref } from "@/lib/research-pagination";
 
-function dateLabel(value: string | null | undefined): string {
+type TemporalPrecision =
+  | "INSTANT"
+  | "SECOND"
+  | "MINUTE"
+  | "HOUR"
+  | "DAY"
+  | "MONTH"
+  | "YEAR"
+  | "RANGE"
+  | "UNKNOWN"
+  | string
+  | null
+  | undefined;
+
+type TemporalSemantics =
+  | "EXACT"
+  | "APPROXIMATE"
+  | "BEFORE"
+  | "AFTER"
+  | "BETWEEN"
+  | "YEAR_ONLY"
+  | "UNKNOWN"
+  | string
+  | null
+  | undefined;
+
+function dateParts(value: string): {
+  year: number;
+  month?: number;
+  day?: number;
+} {
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(value);
+  if (!match) {
+    const parsed = new Date(value);
+    return {
+      year: parsed.getUTCFullYear(),
+      month: parsed.getUTCMonth() + 1,
+      day: parsed.getUTCDate(),
+    };
+  }
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: match[3] ? Number(match[3]) : undefined,
+  };
+}
+
+function dateLabel(
+  value: string | null | undefined,
+  precision: TemporalPrecision = "UNKNOWN",
+  semantics: TemporalSemantics = "UNKNOWN",
+): string {
   if (!value) return "Date unknown";
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(
-    new Date(value),
-  );
+  const parts = dateParts(value);
+  const year = String(parts.year);
+  let label: string;
+  if (precision === "YEAR" || semantics === "YEAR_ONLY") {
+    label = year;
+  } else if (precision === "MONTH" || parts.day === undefined) {
+    label = new Intl.DateTimeFormat("en", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(parts.year, (parts.month ?? 1) - 1, 1)));
+  } else {
+    label = new Intl.DateTimeFormat("en", {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(
+      new Date(Date.UTC(parts.year, (parts.month ?? 1) - 1, parts.day)),
+    );
+  }
+  if (semantics === "APPROXIMATE") return `about ${label}`;
+  if (semantics === "BEFORE") return `before ${label}`;
+  if (semantics === "AFTER") return `after ${label}`;
+  return label;
 }
 
 export async function NamesTimelineSection({
@@ -80,7 +151,7 @@ export async function NamesTimelineSection({
                   <p className="text-muted-foreground mt-1 text-sm">
                     {name.kind.toLowerCase()}
                     {name.validFrom || name.validUntil
-                      ? ` · ${dateLabel(name.validFrom)} – ${dateLabel(name.validUntil)}`
+                      ? ` · ${dateLabel(name.validFrom, name.temporalPrecision, name.temporalSemantics)} – ${dateLabel(name.validUntil, name.temporalPrecision, name.temporalSemantics)}`
                       : ""}
                   </p>
                 </div>
@@ -129,8 +200,15 @@ export async function NamesTimelineSection({
                 <div>
                   <h3 className="font-semibold">{event.title}</h3>
                   <p className="text-muted-foreground mt-1 text-sm">
-                    {event.eventKind} · {dateLabel(event.earliestAt)}
-                    {event.latestAt ? ` – ${dateLabel(event.latestAt)}` : ""}
+                    {event.eventKind} ·{" "}
+                    {dateLabel(
+                      event.earliestAt,
+                      event.temporalPrecision,
+                      event.temporalSemantics,
+                    )}
+                    {event.latestAt
+                      ? ` – ${dateLabel(event.latestAt, event.temporalPrecision, event.temporalSemantics)}`
+                      : ""}
                   </p>
                 </div>
                 <Badge>{event.state.toLowerCase()}</Badge>

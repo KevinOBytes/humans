@@ -56,6 +56,13 @@ function response() {
             state: "ASSERTED",
             validFrom: "1815-12-10",
             validUntil: null,
+            temporalSemantics: "EXACT",
+            temporalPrecision: "DAY",
+            confidence: 1,
+            sensitivity: "INTERNAL",
+            version: 1,
+            createdAt: "1815-12-10T00:00:00.000Z",
+            updatedAt: "1815-12-10T00:00:00.000Z",
           },
         ],
         pageInfo: pageInfo(nextNameCursor),
@@ -69,6 +76,13 @@ function response() {
             description: "Timeline acceptance event.",
             earliestAt: "1843-01-01T00:00:00.000Z",
             latestAt: null,
+            temporalSemantics: "YEAR_ONLY",
+            temporalPrecision: "YEAR",
+            confidence: 1,
+            sensitivity: "INTERNAL",
+            version: 1,
+            createdAt: "1843-01-01T00:00:00.000Z",
+            updatedAt: "1843-01-01T00:00:00.000Z",
             state: "DISPUTED",
           },
         ],
@@ -127,5 +141,34 @@ describe("NamesTimelineSection", () => {
       "href",
       `/people/${personId}?view=names&nameAfter=${nameAfter}&eventAfter=${nextEventCursor}`,
     );
+  });
+
+  it("renders stored temporal precision without timezone drift or false precision", async () => {
+    const payload = response();
+    Object.assign(payload.person.names.nodes[0], {
+      validFrom: "1840-01-01",
+      validUntil: "1841-02-01",
+      temporalPrecision: "MONTH",
+      temporalSemantics: "APPROXIMATE",
+    });
+    Object.assign(payload.person.events.nodes[0], {
+      earliestAt: "1843-01-01T00:00:00.000Z",
+      temporalPrecision: "YEAR",
+      temporalSemantics: "YEAR_ONLY",
+    });
+
+    executeServer.mockResolvedValueOnce(payload).mockResolvedValueOnce(payload);
+    render(
+      await NamesTimelineSection({
+        personId,
+        search: {},
+      }),
+    );
+
+    expect(
+      screen.getByText(/about January 1840 – about February 1841/),
+    ).toBeVisible();
+    expect(screen.getByText(/MILESTONE · 1843/)).toBeVisible();
+    expect(screen.queryByText(/Jan 1, 1843/)).not.toBeInTheDocument();
   });
 });
