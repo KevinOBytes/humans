@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { FileDownloadButton } from "@/components/files/upload-panel";
+import { PersonPhotoUploadPanel } from "@/components/people/person-photo-upload-panel";
 import {
   PageControls,
   ResearchList,
@@ -22,11 +23,17 @@ function formatBytes(value: number): string {
 }
 
 export async function PersonFilesSection({
+  canAttach,
+  personVersion,
   personId,
   search,
+  uploadMaxBytes,
 }: {
+  canAttach: boolean;
+  personVersion: number;
   personId: string;
   search: SearchState;
+  uploadMaxBytes: number | null;
 }) {
   const after = cursorParam(search, "fileAfter");
   const data = await executeServerGraphQL(PersonFilesDocument, {
@@ -40,6 +47,13 @@ export async function PersonFilesSection({
 
   return (
     <div className="space-y-3">
+      {canAttach && uploadMaxBytes ? (
+        <PersonPhotoUploadPanel
+          expectedVersion={personVersion}
+          maxBytes={uploadMaxBytes}
+          personId={personId}
+        />
+      ) : null}
       <ResearchList
         title="Person files"
         empty="No visible files are attached to this person."

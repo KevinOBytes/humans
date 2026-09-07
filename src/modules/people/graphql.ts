@@ -576,6 +576,7 @@ const ArchivePersonInput = builder.inputType("ArchivePersonInput", {
 
 const CreatePersonNameInput = builder.inputType("CreatePersonNameInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     personId: t.field({ type: "UUID", required: true }),
     kind: t.field({ type: PersonNameKind }),
     fullName: t.string({ required: true }),
@@ -599,6 +600,7 @@ const UpdatePersonNameInput = builder.inputType("UpdatePersonNameInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
     kind: t.field({ type: PersonNameKind }),
     fullName: t.string(),
     givenName: t.string(),
@@ -621,10 +623,12 @@ const ArchivePersonNameInput = builder.inputType("ArchivePersonNameInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
   }),
 });
 const CreatePersonEventInput = builder.inputType("CreatePersonEventInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     personId: t.field({ type: "UUID", required: true }),
     eventKind: t.string({ required: true }),
     title: t.string({ required: true }),
@@ -643,6 +647,7 @@ const UpdatePersonEventInput = builder.inputType("UpdatePersonEventInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
     eventKind: t.string(),
     title: t.string(),
     description: t.string(),
@@ -660,6 +665,7 @@ const ArchivePersonEventInput = builder.inputType("ArchivePersonEventInput", {
   fields: (t) => ({
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
+    idempotencyKey: t.string(),
   }),
 });
 

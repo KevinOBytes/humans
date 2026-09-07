@@ -2,10 +2,13 @@ import { notFound } from "next/navigation";
 
 import { PersonRecordEditor } from "@/components/people/person-record-editor";
 import {
+  PersonEventRowEditor,
+  PersonNameRowEditor,
+} from "@/components/people/person-record-row-editor";
+import {
   PageControls,
   ResearchList,
 } from "@/components/research/paginated-research-list";
-import { Badge } from "@/components/ui/badge";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
   PageDetailsFragmentDoc,
@@ -100,10 +103,12 @@ export async function NamesTimelineSection({
   personId,
   search,
   canUpdate = false,
+  canDelete = false,
 }: {
   personId: string;
   search: SearchState;
   canUpdate?: boolean;
+  canDelete?: boolean;
 }) {
   const namesAfter = cursorParam(search, "nameAfter");
   const eventsAfter = cursorParam(search, "eventAfter");
@@ -145,30 +150,17 @@ export async function NamesTimelineSection({
           empty="No visible names have been recorded."
         >
           {names.map((name) => (
-            <li
+            <PersonNameRowEditor
               key={name.id}
-              className="border-border bg-card rounded-xl border p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">{name.fullName}</h3>
-                  <p className="text-muted-foreground mt-1 text-sm">
-                    {name.kind.toLowerCase()}
-                    {name.validFrom || name.validUntil
-                      ? ` · ${dateLabel(name.validFrom, name.temporalPrecision, name.temporalSemantics)} – ${dateLabel(name.validUntil, name.temporalPrecision, name.temporalSemantics)}`
-                      : ""}
-                  </p>
-                </div>
-                <Badge>{name.state.toLowerCase()}</Badge>
-              </div>
-              {name.givenName || name.familyName ? (
-                <p className="text-muted-foreground mt-3 text-sm">
-                  {[name.givenName, name.middleName, name.familyName]
-                    .filter(Boolean)
-                    .join(" ")}
-                </p>
-              ) : null}
-            </li>
+              name={name}
+              canUpdate={canUpdate}
+              canDelete={canDelete}
+              dateLabel={
+                name.validFrom || name.validUntil
+                  ? `${dateLabel(name.validFrom, name.temporalPrecision, name.temporalSemantics)} – ${dateLabel(name.validUntil, name.temporalPrecision, name.temporalSemantics)}`
+                  : ""
+              }
+            />
           ))}
         </ResearchList>
         <PageControls
@@ -196,33 +188,13 @@ export async function NamesTimelineSection({
           empty="No visible timeline events have been recorded."
         >
           {events.map((event) => (
-            <li
+            <PersonEventRowEditor
               key={event.id}
-              className="border-border bg-card rounded-xl border p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">{event.title}</h3>
-                  <p className="text-muted-foreground mt-1 text-sm">
-                    {event.eventKind} ·{" "}
-                    {dateLabel(
-                      event.earliestAt,
-                      event.temporalPrecision,
-                      event.temporalSemantics,
-                    )}
-                    {event.latestAt
-                      ? ` – ${dateLabel(event.latestAt, event.temporalPrecision, event.temporalSemantics)}`
-                      : ""}
-                  </p>
-                </div>
-                <Badge>{event.state.toLowerCase()}</Badge>
-              </div>
-              {event.description ? (
-                <p className="text-muted-foreground mt-3 text-sm leading-6 whitespace-pre-wrap">
-                  {event.description}
-                </p>
-              ) : null}
-            </li>
+              event={event}
+              canUpdate={canUpdate}
+              canDelete={canDelete}
+              dateLabel={`${dateLabel(event.earliestAt, event.temporalPrecision, event.temporalSemantics)}${event.latestAt ? ` – ${dateLabel(event.latestAt, event.temporalPrecision, event.temporalSemantics)}` : ""}`}
+            />
           ))}
         </ResearchList>
         <PageControls

@@ -58,10 +58,16 @@ function firstIssue(
 }
 
 export function UploadPanel({
+  accept,
+  description,
+  heading,
   maxBytes,
   onCompleted,
   purpose,
 }: {
+  accept?: string;
+  description?: string;
+  heading?: string;
   maxBytes: number;
   onCompleted?(file: FileWorkspaceItemFragment): void;
   purpose: UploadPurpose;
@@ -152,11 +158,14 @@ export function UploadPanel({
         </span>
         <div>
           <h2 className="font-semibold">
-            {purpose === "EVIDENCE" ? "Upload evidence" : "Upload import data"}
+            {heading ??
+              (purpose === "EVIDENCE"
+                ? "Upload evidence"
+                : "Upload import data")}
           </h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Files are checksum-verified, private to this workspace, and limited
-            to {maxBytes / (1024 * 1024)} MiB.
+            {description ??
+              `Files are checksum-verified, private to this workspace, and limited to ${maxBytes / (1024 * 1024)} MiB.`}
           </p>
         </div>
       </div>
@@ -168,7 +177,7 @@ export function UploadPanel({
         id={inputId}
         className="mt-2 file:mr-3 file:border-0 file:bg-transparent file:text-sm file:font-semibold"
         type="file"
-        accept={acceptedTypes[purpose]}
+        accept={accept ?? acceptedTypes[purpose]}
         disabled={busy}
         onChange={(event) => {
           const file = event.currentTarget.files?.[0];

@@ -8,7 +8,9 @@ import {
 } from "@/modules/audit/service";
 import {
   applySearchIndexMaintenance,
+  derivePrincipalResearchIdempotency,
   deriveResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
   runIdempotentResearchWrite,
   withResearchWriteTransaction as writeTransaction,
   type CanonicalRequestMaterial,
@@ -116,6 +118,7 @@ const PERSON_EVENTS_CURSOR_ORDER = "person-events-created-desc";
 const PERSON_FILES_CURSOR_ORDER = "person-files-created-desc";
 const CONTRADICTORY_FACTS_CURSOR_ORDER = "contradictory-facts-asserted-desc";
 const PERSON_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const PERSON_RECORD_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const PERSON_REFERENCE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const PERSON_NAME_KINDS = new Set([
@@ -450,6 +453,82 @@ export function createPeopleService(context: ResearchServiceContext) {
     });
   }
 
+  async function replayPersonName(
+    responseReference: Readonly<
+      Record<string, string | number | boolean | null>
+    >,
+  ): Promise<PersonNameRow> {
+    const nameId = responseReference.nameId;
+    const version = responseReference.version;
+    if (
+      typeof nameId !== "string" ||
+      !PERSON_REFERENCE_UUID.test(nameId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    const row = await repository.getNameById({
+      workspaceId: context.workspaceId,
+      id: nameId,
+    });
+    if (!row || !(await visibleRecord("personName", row))) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    if (row.version !== version) {
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    }
+    return row;
+  }
+
+  async function replayPersonEvent(
+    responseReference: Readonly<
+      Record<string, string | number | boolean | null>
+    >,
+  ): Promise<PersonEventRow> {
+    const eventId = responseReference.eventId;
+    const version = responseReference.version;
+    if (
+      typeof eventId !== "string" ||
+      !PERSON_REFERENCE_UUID.test(eventId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    const row = await repository.getEventById({
+      workspaceId: context.workspaceId,
+      id: eventId,
+    });
+    if (!row || !(await visibleRecord("personEvent", row))) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    if (row.version !== version) {
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    }
+    return row;
+  }
+
   async function maintainPersonSearch(
     writeContext: ResearchServiceContext,
     database: typeof context.database,
@@ -679,6 +758,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     },
 
     async createName(input: {
+      idempotencyKey?: string | null;
       personId: string;
       kind?: string | null;
       fullName: string;
@@ -768,6 +848,65 @@ export function createPeopleService(context: ResearchServiceContext) {
         });
       }
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person-name creation is not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_RECORD_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person_name.create.graphql",
+          requestMaterial: {
+            confidence: confidence.value,
+            familyName: fields[3].value ?? null,
+            fullName: fullName.value!,
+            givenName: fields[1].value ?? null,
+            kind: kind.value!,
+            language: fields[7].value ?? null,
+            middleName: fields[2].value ?? null,
+            personId: person.id,
+            prefix: fields[4].value ?? null,
+            script: fields[6].value ?? null,
+            sensitivity: sensitivity.value!,
+            state: state.value!,
+            suffix: fields[5].value ?? null,
+            temporalPrecision: temporalPrecision.value!,
+            temporalSemantics: temporalSemantics.value!,
+            validFrom: validFrom.value?.toISOString() ?? null,
+            validUntil: validUntil.value?.toISOString() ?? null,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:update"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(scopedContext).createName(
+              { ...input, idempotencyKey: null },
+            );
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                outcome.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The person name could not be created.",
+              );
+            }
+            return {
+              nameId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayPersonName(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const now = new Date();
       const [row] = await writeTransaction(context, async (database) => {
         const [created] = await database
@@ -817,6 +956,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     async updateName(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
       fullName?: string | null;
       kind?: string | null;
       givenName?: string | null;
@@ -926,6 +1066,98 @@ export function createPeopleService(context: ResearchServiceContext) {
           message: "The end date must not precede the start date.",
         });
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person-name updates are not configured.",
+          );
+        }
+        const dateMaterial = (
+          value: Date | string | null | undefined,
+        ): CanonicalRequestMaterial =>
+          fieldMaterial(value instanceof Date ? value.toISOString() : value);
+        const textMaterial = (
+          value: string | null | undefined,
+        ): CanonicalRequestMaterial =>
+          fieldMaterial(
+            value === undefined
+              ? undefined
+              : (value?.normalize("NFKC").trim() ?? null),
+          );
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_RECORD_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person_name.update.graphql",
+          requestMaterial: {
+            confidence: fieldMaterial(input.confidence),
+            expectedVersion: input.expectedVersion,
+            familyName: textMaterial(input.familyName),
+            fullName: textMaterial(input.fullName),
+            givenName: textMaterial(input.givenName),
+            id: input.id,
+            kind: fieldMaterial(
+              input.kind === undefined
+                ? undefined
+                : (input.kind?.trim().toLowerCase() ?? null),
+            ),
+            language: textMaterial(input.language),
+            middleName: textMaterial(input.middleName),
+            prefix: textMaterial(input.prefix),
+            script: textMaterial(input.script),
+            sensitivity: fieldMaterial(
+              input.sensitivity === undefined
+                ? undefined
+                : (input.sensitivity?.toLowerCase() ?? null),
+            ),
+            state: fieldMaterial(
+              input.state === undefined
+                ? undefined
+                : (input.state?.toLowerCase() ?? null),
+            ),
+            suffix: textMaterial(input.suffix),
+            temporalPrecision: fieldMaterial(
+              input.temporalPrecision === undefined
+                ? undefined
+                : (input.temporalPrecision?.toLowerCase() ?? null),
+            ),
+            temporalSemantics: fieldMaterial(
+              input.temporalSemantics === undefined
+                ? undefined
+                : (input.temporalSemantics?.toLowerCase() ?? null),
+            ),
+            validFrom: dateMaterial(input.validFrom),
+            validUntil: dateMaterial(input.validUntil),
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:update"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(scopedContext).updateName(
+              { ...input, idempotencyKey: null },
+            );
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                outcome.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The person name could not be updated.",
+              );
+            }
+            return {
+              nameId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayPersonName(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const updated = await writeTransaction(context, async (database) => {
         const scoped = createPeopleRepository(database);
         const row = await scoped.updateNameIfVersion({
@@ -961,6 +1193,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     async archiveName(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonNameRow>> {
       const existing = await repository.getNameById({
         workspaceId: context.workspaceId,
@@ -976,6 +1209,50 @@ export function createPeopleService(context: ResearchServiceContext) {
           "The requested resource was not found.",
         );
       const person = await requireRecordPerson(existing.personId);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person-name archives are not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_RECORD_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person_name.archive.graphql",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:delete"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(
+              scopedContext,
+            ).archiveName({ ...input, idempotencyKey: null });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person name could not be archived.",
+              );
+            }
+            return {
+              nameId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayPersonName(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const archived = await writeTransaction(context, async (database) => {
         const row = await createPeopleRepository(database).updateNameIfVersion({
           workspaceId: context.workspaceId,
@@ -1011,6 +1288,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     },
 
     async createEvent(input: {
+      idempotencyKey?: string | null;
       personId: string;
       eventKind: string;
       title: string;
@@ -1086,6 +1364,60 @@ export function createPeopleService(context: ResearchServiceContext) {
           message: "The place ID is invalid.",
         });
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person-event creation is not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_RECORD_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person_event.create.graphql",
+          requestMaterial: {
+            confidence: confidence.value,
+            description: description.value ?? null,
+            earliestAt: earliestAt.value?.toISOString() ?? null,
+            eventKind: eventKind.value!,
+            latestAt: latestAt.value?.toISOString() ?? null,
+            personId: person.id,
+            placeId,
+            sensitivity: sensitivity.value!,
+            state: state.value!,
+            temporalPrecision: temporalPrecision.value!,
+            temporalSemantics: temporalSemantics.value!,
+            title: title.value!,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:update"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(
+              scopedContext,
+            ).createEvent({ ...input, idempotencyKey: null });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                outcome.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The person event could not be created.",
+              );
+            }
+            return {
+              eventId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayPersonEvent(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const now = new Date();
       const [row] = await writeTransaction(context, async (database) => {
         const [created] = await database
@@ -1129,6 +1461,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     async updateEvent(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
       eventKind?: string | null;
       title?: string | null;
       description?: string | null;
@@ -1221,6 +1554,89 @@ export function createPeopleService(context: ResearchServiceContext) {
           message: "The end date must not precede the start date.",
         });
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person-event updates are not configured.",
+          );
+        }
+        const dateMaterial = (
+          value: Date | string | null | undefined,
+        ): CanonicalRequestMaterial =>
+          fieldMaterial(value instanceof Date ? value.toISOString() : value);
+        const textMaterial = (
+          value: string | null | undefined,
+        ): CanonicalRequestMaterial =>
+          fieldMaterial(
+            value === undefined
+              ? undefined
+              : (value?.normalize("NFKC").trim() ?? null),
+          );
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_RECORD_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person_event.update.graphql",
+          requestMaterial: {
+            confidence: fieldMaterial(input.confidence),
+            description: textMaterial(input.description),
+            earliestAt: dateMaterial(input.earliestAt),
+            eventKind: textMaterial(input.eventKind),
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+            latestAt: dateMaterial(input.latestAt),
+            placeId: fieldMaterial(input.placeId),
+            sensitivity: fieldMaterial(
+              input.sensitivity === undefined
+                ? undefined
+                : (input.sensitivity?.toLowerCase() ?? null),
+            ),
+            state: fieldMaterial(
+              input.state === undefined
+                ? undefined
+                : (input.state?.toLowerCase() ?? null),
+            ),
+            temporalPrecision: fieldMaterial(
+              input.temporalPrecision === undefined
+                ? undefined
+                : (input.temporalPrecision?.toLowerCase() ?? null),
+            ),
+            temporalSemantics: fieldMaterial(
+              input.temporalSemantics === undefined
+                ? undefined
+                : (input.temporalSemantics?.toLowerCase() ?? null),
+            ),
+            title: textMaterial(input.title),
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:update"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(
+              scopedContext,
+            ).updateEvent({ ...input, idempotencyKey: null });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                outcome.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The person event could not be updated.",
+              );
+            }
+            return {
+              eventId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayPersonEvent(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const updated = await writeTransaction(context, async (database) => {
         const row = await createPeopleRepository(database).updateEventIfVersion(
           {
@@ -1257,6 +1673,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     async archiveEvent(input: {
       id: string;
       expectedVersion: number;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonEventRow>> {
       const existing = await repository.getEventById({
         workspaceId: context.workspaceId,
@@ -1272,6 +1689,50 @@ export function createPeopleService(context: ResearchServiceContext) {
           "The requested resource was not found.",
         );
       const person = await requireRecordPerson(existing.personId);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent person-event archives are not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_RECORD_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person_event.archive.graphql",
+          requestMaterial: {
+            expectedVersion: input.expectedVersion,
+            id: input.id,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:delete"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(
+              scopedContext,
+            ).archiveEvent({ ...input, idempotencyKey: null });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person event could not be archived.",
+              );
+            }
+            return {
+              eventId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replayPersonEvent(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const now = new Date();
       const archived = await writeTransaction(context, async (database) => {
         const row = await createPeopleRepository(database).updateEventIfVersion(
