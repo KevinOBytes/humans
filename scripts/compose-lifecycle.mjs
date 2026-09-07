@@ -386,7 +386,31 @@ async function runSmoke() {
   await compose(["config", "--quiet"]);
   await compose(["build", "--no-cache", "app"]);
   await compose(["up", "--detach", "postgres", "minio"]);
+
+  // Exercise the explicit bootstrap contract before the application starts:
+  // the first call creates the administrator, the second is a no-op replay,
+  // and the third proves that a missing credential is recoverable without
+  // replacing the user or requiring the application to be online.
   await compose(["run", "--rm", "bootstrap-admin"]);
+  await compose(["run", "--rm", "bootstrap-admin"]);
+  const adminId = await databaseValue(
+    `select id from users where email = ${sqlLiteral(environment.ADMIN_EMAIL)}`,
+  );
+  assert(
+    /^[0-9a-f-]{36}$/iu.test(adminId),
+    "Compose bootstrap did not create a valid administrator identity",
+  );
+  await databaseValue(
+    `delete from accounts where user_id = ${sqlLiteral(adminId)} and provider_id = 'credential'`,
+  );
+  await compose(["run", "--rm", "bootstrap-admin"]);
+  const credentialCount = await databaseValue(
+    `select count(*) from accounts where user_id = ${sqlLiteral(adminId)} and provider_id = 'credential'`,
+  );
+  assert(
+    credentialCount === "1",
+    "Compose bootstrap did not recover exactly one administrator credential",
+  );
   await compose(["up", "--detach", "--wait", "app", "worker"]);
   const unauthorized = await appRequest("/api/jobs/run", {
     method: "GET",
@@ -560,6 +584,90 @@ async function runFileLifecycleAcceptance() {
     "Completed file is not available",
   );
   const fileId = completion.file.id;
+  const createdPerson = await graphqlRequest(
+    `mutation CreateLifecyclePerson($input: CreatePersonInput!) {
+      createPerson(input: $input) {
+        person { id version }
+        issues { code message path }
+      }
+    }`,
+    {
+      input: {
+        displayName: `Compose attachment person ${suffix}`,
+        sensitivity: "PUBLIC",
+        idempotencyKey: randomUUID(),
+      },
+    },
+    jar,
+  );
+  const person = createdPerson?.createPerson;
+  assert(person?.issues?.length === 0, "Person creation returned issues");
+  assert(person?.person?.id, "Person creation did not return an ID");
+  const attached = await graphqlRequest(
+    `mutation AttachLifecycleFile($input: AttachPersonFileInput!) {
+      attachPersonFile(input: $input) {
+        attachment { id fileId label version }
+        issues { code message path }
+      }
+    }`,
+    {
+      input: {
+        personId: person.person.id,
+        fileId,
+        label: "Lifecycle attachment",
+        idempotencyKey: randomUUID(),
+      },
+    },
+    jar,
+  );
+  const attachment = attached?.attachPersonFile;
+  assert(attachment?.issues?.length === 0, "File attachment returned issues");
+  assert(
+    attachment?.attachment?.fileId === fileId &&
+      attachment.attachment.label === "Lifecycle attachment",
+    "File attachment did not return the attached file",
+  );
+  const personFiles = await graphqlRequest(
+    `query LifecyclePersonFiles($id: UUID!) {
+      person(id: $id) {
+        files(first: 10) {
+          nodes { id roles directAttachmentId directAttachmentVersion }
+        }
+      }
+    }`,
+    { id: person.person.id },
+    jar,
+  );
+  const attachedFile = personFiles?.person?.files?.nodes?.find(
+    (node) => node?.id === fileId,
+  );
+  assert(
+    attachedFile?.roles?.includes("DIRECT") &&
+      attachedFile.directAttachmentId === attachment.attachment.id,
+    "Person file projection did not expose the direct attachment",
+  );
+  const detached = await graphqlRequest(
+    `mutation DetachLifecycleFile($input: ArchivePersonFileInput!) {
+      archivePersonFile(input: $input) {
+        attachment { id archivedAt version }
+        issues { code message path }
+      }
+    }`,
+    {
+      input: {
+        id: attachment.attachment.id,
+        expectedVersion: attachment.attachment.version,
+        idempotencyKey: randomUUID(),
+      },
+    },
+    jar,
+  );
+  const detachedAttachment = detached?.archivePersonFile;
+  assert(
+    detachedAttachment?.issues?.length === 0 &&
+      detachedAttachment.attachment?.archivedAt,
+    "File detachment did not archive the attachment",
+  );
   const primaryKey = await databaseValue(
     `select storage_key from files where id = ${sqlLiteral(fileId)} and workspace_id = ${sqlLiteral(workspaceId)}`,
   );

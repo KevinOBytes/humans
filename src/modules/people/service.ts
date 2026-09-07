@@ -58,6 +58,7 @@ import {
 import {
   createPeopleRepository,
   type PersonEventRow,
+  type PersonFileAttachmentRow,
   type PersonFileRow,
   type PersonNameRow,
   type PersonRow,
@@ -440,6 +441,46 @@ export function createPeopleService(context: ResearchServiceContext) {
       );
     }
     return person;
+  }
+
+  async function requireAttachableFile(fileId: string) {
+    const fileVisibility = resourceVisibilitySql(context, {
+      resourceKind: "file",
+      id: files.id,
+      sensitivity: files.sensitivity,
+    });
+    const [file] = await context.database
+      .select()
+      .from(files)
+      .where(
+        and(
+          eq(files.workspaceId, context.workspaceId),
+          eq(files.id, fileId),
+          isNull(files.deletedAt),
+          fileVisibility,
+        ),
+      )
+      .limit(1);
+    if (!file) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    return file;
+  }
+
+  async function visibleFileAttachment(
+    row: PersonFileAttachmentRow,
+  ): Promise<boolean> {
+    if (row.deletedAt) return false;
+    try {
+      await requireRecordPerson(row.personId);
+      await requireAttachableFile(row.fileId);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function visibleRecord(
@@ -1854,6 +1895,259 @@ export function createPeopleService(context: ResearchServiceContext) {
             : null,
         },
       };
+    },
+
+    async attachFile(input: {
+      personId: string;
+      fileId: string;
+      label?: string | null;
+      idempotencyKey?: string | null;
+    }): Promise<MutationOutcome<PersonFileAttachmentRow>> {
+      const person = await requireRecordPerson(input.personId);
+      const file = await requireAttachableFile(input.fileId);
+      const label = recordText(input.label, "label", 500);
+      if (label.issues.length) return invalid(label.issues);
+      if (
+        { public: 0, internal: 1, confidential: 2, restricted: 3 }[
+          person.sensitivity
+        ] <
+        { public: 0, internal: 1, confidential: 2, restricted: 3 }[
+          file.sensitivity
+        ]
+      ) {
+        return invalid([
+          {
+            path: ["fileId"],
+            code: "SENSITIVITY_TOO_LOW",
+            message: "A person cannot expose a more sensitive file.",
+          },
+        ]);
+      }
+      const existing = await repository.getActiveFileAttachment({
+        workspaceId: context.workspaceId,
+        personId: input.personId,
+        fileId: input.fileId,
+      });
+      if (existing) {
+        if ((existing.label ?? null) !== (label.value ?? null)) {
+          return {
+            resource: null,
+            issues: [
+              {
+                path: ["fileId"],
+                code: "CONFLICT",
+                message: "This file is already attached with another label.",
+              },
+            ],
+            code: "CONFLICT",
+            currentVersion: existing.version,
+          };
+        }
+        return { resource: existing, issues: [], code: null };
+      }
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Person file attachment idempotency is not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_RECORD_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person_file_attachment.create.graphql",
+          requestMaterial: {
+            personId: input.personId,
+            fileId: input.fileId,
+            label: label.value,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:update", "file:read"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(scopedContext).attachFile(
+              {
+                personId: input.personId,
+                fileId: input.fileId,
+                label: label.value,
+              },
+            );
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person file attachment could not be created.",
+              );
+            }
+            return {
+              attachmentId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        const reference = executed.responseReference;
+        if (
+          typeof reference.attachmentId !== "string" ||
+          !PERSON_REFERENCE_UUID.test(reference.attachmentId)
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored person file attachment reference is invalid.",
+          );
+        }
+        const replay = await repository.getFileAttachment({
+          workspaceId: context.workspaceId,
+          id: reference.attachmentId,
+        });
+        if (!replay || !(await visibleFileAttachment(replay))) {
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        }
+        return { resource: replay, issues: [], code: null };
+      }
+      const now = new Date();
+      const created = await writeTransaction(context, async (database) => {
+        const scoped = createPeopleRepository(database);
+        const row = await scoped.createFileAttachment({
+          workspaceId: context.workspaceId,
+          value: {
+            id: newId(),
+            personId: input.personId,
+            fileId: input.fileId,
+            label: label.value,
+            version: 1,
+            createdAt: now,
+            createdBy: context.actor.principalId,
+            updatedAt: now,
+            updatedBy: context.actor.principalId,
+          },
+        });
+        await audit.write(database, {
+          action: "person.file.attach",
+          resourceKind: "person",
+          resourceId: input.personId,
+          sensitivity: person.sensitivity,
+          changedFields: ["fileId", "label"],
+          metadata: { fileId: file.id, attachmentId: row.id },
+        });
+        return row;
+      });
+      return { resource: created, issues: [], code: null };
+    },
+
+    async archiveFileAttachment(input: {
+      id: string;
+      expectedVersion: number;
+      idempotencyKey?: string | null;
+    }): Promise<MutationOutcome<PersonFileAttachmentRow>> {
+      const existing = await repository.getFileAttachment({
+        workspaceId: context.workspaceId,
+        id: input.id,
+      });
+      if (!existing || !(await visibleFileAttachment(existing))) {
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      }
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Person file attachment idempotency is not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_RECORD_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person_file_attachment.archive.graphql",
+          requestMaterial: {
+            id: input.id,
+            expectedVersion: input.expectedVersion,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:update"],
+          async (scopedContext) => {
+            const outcome = await createPeopleService(
+              scopedContext,
+            ).archiveFileAttachment({
+              id: input.id,
+              expectedVersion: input.expectedVersion,
+            });
+            if (!outcome.resource) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The person file attachment could not be archived.",
+              );
+            }
+            return {
+              attachmentId: outcome.resource.id,
+              version: outcome.resource.version,
+            };
+          },
+        );
+        const reference = executed.responseReference;
+        if (
+          typeof reference.attachmentId !== "string" ||
+          !PERSON_REFERENCE_UUID.test(reference.attachmentId)
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored person file attachment reference is invalid.",
+          );
+        }
+        const replay = await repository.getFileAttachment({
+          workspaceId: context.workspaceId,
+          id: reference.attachmentId,
+        });
+        if (!replay) {
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        }
+        return { resource: replay, issues: [], code: null };
+      }
+      const now = new Date();
+      const archived = await writeTransaction(context, async (database) => {
+        const row = await createPeopleRepository(
+          database,
+        ).archiveFileAttachmentIfVersion({
+          workspaceId: context.workspaceId,
+          id: input.id,
+          expectedVersion: input.expectedVersion,
+          deletedAt: now,
+          deletedBy: context.actor.principalId,
+        });
+        if (!row) return null;
+        await audit.write(database, {
+          action: "person.file.detach",
+          resourceKind: "person",
+          resourceId: row.personId,
+          sensitivity: "internal",
+          changedFields: ["deletedAt"],
+          metadata: { fileId: row.fileId, attachmentId: row.id },
+        });
+        return row;
+      });
+      return archived
+        ? { resource: archived, issues: [], code: null }
+        : {
+            resource: null,
+            issues: [],
+            code: "CONFLICT",
+            currentVersion: existing.version,
+          };
     },
 
     async listContradictoryFacts(input: {

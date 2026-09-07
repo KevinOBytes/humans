@@ -3,6 +3,10 @@ import { notFound } from "next/navigation";
 import { FileDownloadButton } from "@/components/files/upload-panel";
 import { PersonPhotoUploadPanel } from "@/components/people/person-photo-upload-panel";
 import {
+  PersonFileAttachmentPanel,
+  PersonFileDetachButton,
+} from "@/components/people/person-file-attachment-panel";
+import {
   PageControls,
   ResearchList,
 } from "@/components/research/paginated-research-list";
@@ -10,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
   PageDetailsFragmentDoc,
+  EvidenceFilesDocument,
+  EvidenceFileRowFragmentDoc,
   PersonFilesDocument,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
@@ -24,26 +30,52 @@ function formatBytes(value: number): string {
 
 export async function PersonFilesSection({
   canAttach,
+  canManageAttachments,
   personVersion,
   personId,
   search,
   uploadMaxBytes,
 }: {
   canAttach: boolean;
+  canManageAttachments: boolean;
   personVersion: number;
   personId: string;
   search: SearchState;
   uploadMaxBytes: number | null;
 }) {
   const after = cursorParam(search, "fileAfter");
-  const data = await executeServerGraphQL(PersonFilesDocument, {
-    id: personId,
-    first: 10,
-    after,
-  });
+  const [data, workspaceFiles] = await Promise.all([
+    executeServerGraphQL(PersonFilesDocument, {
+      id: personId,
+      first: 10,
+      after,
+    }),
+    canManageAttachments
+      ? executeServerGraphQL(EvidenceFilesDocument, { first: 50, after: null })
+      : Promise.resolve(null),
+  ]);
   if (!data.person || !data.person.files) notFound();
   const page = readFragment(PageDetailsFragmentDoc, data.person.files.pageInfo);
   const files = data.person.files.nodes ?? [];
+  const workspaceFileOptions = (workspaceFiles?.files?.nodes ?? [])
+    .filter((file): file is NonNullable<typeof file> => file != null)
+    .map((file) => readFragment(EvidenceFileRowFragmentDoc, file))
+    .filter(
+      (
+        file,
+      ): file is typeof file & {
+        id: string;
+        originalName: string;
+        byteSize: number;
+        availability: string;
+        scanState: string;
+      } =>
+        typeof file.id === "string" &&
+        typeof file.originalName === "string" &&
+        typeof file.byteSize === "number" &&
+        typeof file.availability === "string" &&
+        typeof file.scanState === "string",
+    );
 
   return (
     <div className="space-y-3">
@@ -52,6 +84,12 @@ export async function PersonFilesSection({
           expectedVersion={personVersion}
           maxBytes={uploadMaxBytes}
           personId={personId}
+        />
+      ) : null}
+      {canManageAttachments ? (
+        <PersonFileAttachmentPanel
+          personId={personId}
+          files={workspaceFileOptions}
         />
       ) : null}
       <ResearchList
@@ -98,6 +136,14 @@ export async function PersonFilesSection({
                     Download unavailable until the file is cleared.
                   </span>
                 )}
+                {canManageAttachments &&
+                file.directAttachmentId &&
+                file.directAttachmentVersion ? (
+                  <PersonFileDetachButton
+                    attachmentId={file.directAttachmentId}
+                    expectedVersion={file.directAttachmentVersion}
+                  />
+                ) : null}
               </div>
             </li>
           );

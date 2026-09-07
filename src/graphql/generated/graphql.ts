@@ -69,6 +69,12 @@ export type ArchivePersonEventInput = {
   idempotencyKey?: string | null | undefined;
 };
 
+export type ArchivePersonFileInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+};
+
 export type ArchivePersonInput = {
   expectedVersion: number;
   id: string;
@@ -104,6 +110,13 @@ export type ArchiveTagInput = {
   expectedVersion: number;
   id: string;
   idempotencyKey?: string | null | undefined;
+};
+
+export type AttachPersonFileInput = {
+  fileId: string;
+  idempotencyKey?: string | null | undefined;
+  label?: string | null | undefined;
+  personId: string;
 };
 
 export type AuditEventFilterInput = {
@@ -630,7 +643,7 @@ export type NoteSubjectInput = {
 export type PersonFileAvailability =
   "AVAILABLE" | "PENDING" | "QUARANTINED" | "REJECTED";
 
-export type PersonFileRole = "EVIDENCE" | "FACT" | "PRIMARY_PHOTO";
+export type PersonFileRole = "DIRECT" | "EVIDENCE" | "FACT" | "PRIMARY_PHOTO";
 
 export type PersonFileScanState =
   "CLEAN" | "ERROR" | "INFECTED" | "NOT_REQUIRED" | "PENDING";
@@ -2981,6 +2994,9 @@ export type PersonFilesQuery = {
         createdAt: string;
         updatedAt: string;
         roles: Array<PersonFileRole>;
+        directAttachmentId: string | null;
+        directAttachmentVersion: number | null;
+        directAttachmentLabel: string | null;
       }> | null;
       pageInfo: {
         " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
@@ -3485,6 +3501,53 @@ export type ArchivePersonEventMutation = {
     code: string | null;
     currentVersion: number | null;
     event: { id: string; version: number } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }>;
+  };
+};
+
+export type AttachPersonFileMutationVariables = Exact<{
+  input: AttachPersonFileInput;
+}>;
+
+export type AttachPersonFileMutation = {
+  attachPersonFile: {
+    code: string | null;
+    currentVersion: number | null;
+    attachment: {
+      id: string;
+      personId: string;
+      fileId: string;
+      label: string | null;
+      version: number;
+      archivedAt: string | null;
+      createdAt: string;
+      updatedAt: string;
+    } | null;
+    issues: Array<{
+      " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
+    }>;
+  };
+};
+
+export type ArchivePersonFileMutationVariables = Exact<{
+  input: ArchivePersonFileInput;
+}>;
+
+export type ArchivePersonFileMutation = {
+  archivePersonFile: {
+    code: string | null;
+    currentVersion: number | null;
+    attachment: {
+      id: string;
+      personId: string;
+      fileId: string;
+      label: string | null;
+      version: number;
+      archivedAt: string | null;
+      updatedAt: string;
+    } | null;
     issues: Array<{
       " $fragmentRefs"?: { MutationIssueFragment: MutationIssueFragment };
     }>;
@@ -7630,6 +7693,9 @@ export const PersonFilesDocument = new TypedDocumentString(
         createdAt
         updatedAt
         roles
+        directAttachmentId
+        directAttachmentVersion
+        directAttachmentLabel
       }
       pageInfo {
         ...PageDetails
@@ -7642,7 +7708,7 @@ export const PersonFilesDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:69ecbd5f2ec6834c63fa968fb05975fc5ebf446b126df081e529892d934c2add",
+    hash: "sha256:9df1945a399e7a8620f3ae76bda096d3eac19137ec7287b00f9a9b5c2e0bc4bc",
   },
 ) as unknown as TypedDocumentString<
   PersonFilesQuery,
@@ -8443,6 +8509,71 @@ export const ArchivePersonEventDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ArchivePersonEventMutation,
   ArchivePersonEventMutationVariables
+>;
+export const AttachPersonFileDocument = new TypedDocumentString(
+  `
+    mutation AttachPersonFile($input: AttachPersonFileInput!) {
+  attachPersonFile(input: $input) {
+    attachment {
+      id
+      personId
+      fileId
+      label
+      version
+      archivedAt
+      createdAt
+      updatedAt
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:4647f2898de1d4c827c01cf79c78c60f335eb775fb3d96bf97dc8485d7345912",
+  },
+) as unknown as TypedDocumentString<
+  AttachPersonFileMutation,
+  AttachPersonFileMutationVariables
+>;
+export const ArchivePersonFileDocument = new TypedDocumentString(
+  `
+    mutation ArchivePersonFile($input: ArchivePersonFileInput!) {
+  archivePersonFile(input: $input) {
+    attachment {
+      id
+      personId
+      fileId
+      label
+      version
+      archivedAt
+      updatedAt
+    }
+    issues {
+      ...MutationIssue
+    }
+    code
+    currentVersion
+  }
+}
+    fragment MutationIssue on ValidationIssue {
+  code
+  message
+  path
+}`,
+  {
+    hash: "sha256:e49b694eb9a0b0dce6b6f1b75a4a757bd0632e41659184572c6e5c380b97bd87",
+  },
+) as unknown as TypedDocumentString<
+  ArchivePersonFileMutation,
+  ArchivePersonFileMutationVariables
 >;
 export const UpdatePersonDocument = new TypedDocumentString(
   `
