@@ -31,5 +31,7 @@ pnpm vitest run tests/integration/provider-adapter-contract.test.ts --no-file-pa
 ```
 
 The external provider checks remain opt-in and must use a dedicated test
-workspace/bucket and short-lived credentials. They must never be enabled by
+workspace/bucket and short-lived credentials. Set
+`RUN_EXTERNAL_PROVIDER_CONTRACTS=true` alongside those credentials to enable
+the Upstash REST or R2/generic-S3 branch. They must never be enabled by
 default in CI or committed to `.env.example`.
