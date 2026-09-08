@@ -87,6 +87,9 @@ export function createWebhookDeliveryHandler(input: {
       await assertPublicWebhookTarget(row.webhook.url);
       const response = await fetch(row.webhook.url, {
         method: "POST",
+        // The destination was validated immediately before this request. Do
+        // not follow a redirect into a private or otherwise unvalidated host.
+        redirect: "error",
         headers: webhookEventHeaders({
           event,
           deliveryId: row.delivery.id,
