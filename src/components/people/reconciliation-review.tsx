@@ -15,14 +15,20 @@ import { Label } from "@/components/ui/label";
 import { executeBrowserGraphQL, type GraphQLResult } from "@/graphql/client";
 import {
   ReviewIdentityCandidateDocument,
+  MergePersonDocument,
+  UnmergePersonDocument,
   type IdentityCandidateState,
+  type MergePersonMutation,
   type ReviewIdentityCandidateMutation,
+  type UnmergePersonMutation,
 } from "@/graphql/generated/graphql";
 
 export type ReconciliationPerson = {
   id: string;
   displayName: string;
   preferredName?: string | null;
+  status?: string | null;
+  version?: number | null;
 };
 
 export type ReconciliationCandidate = {
@@ -54,6 +60,12 @@ type ReviewStateDraft = {
 };
 
 type CandidateFeedback = Record<string, MutationFeedbackView | null>;
+type MergeChoice = "first" | "second";
+type MergeResult = {
+  loserPersonId: string;
+  loserVersion: number;
+  undone: boolean;
+};
 
 function displayName(person: ReconciliationPerson | null, id: string) {
   return person?.displayName?.trim() || `Person ${id.slice(0, 8)}`;
@@ -122,6 +134,17 @@ export function ReconciliationReview({
   );
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState<CandidateFeedback>({});
+  const [mergeChoices, setMergeChoices] = useState<
+    Record<string, MergeChoice | "">
+  >({});
+  const [mergeReasons, setMergeReasons] = useState<Record<string, string>>({});
+  const [mergeConfirmations, setMergeConfirmations] = useState<
+    Record<string, boolean>
+  >({});
+  const [mergeBusy, setMergeBusy] = useState<Set<string>>(new Set());
+  const [mergeResults, setMergeResults] = useState<
+    Record<string, MergeResult | null>
+  >({});
 
   function updateDraft(id: string, patch: Partial<ReviewStateDraft>) {
     setDrafts((current) => ({
@@ -209,6 +232,155 @@ export function ReconciliationReview({
     }));
   }
 
+  async function merge(candidate: ReconciliationCandidate) {
+    if (!canReview || mergeBusy.has(candidate.id)) return;
+    const choice = mergeChoices[candidate.id];
+    const reason = (mergeReasons[candidate.id] ?? "").trim().slice(0, 2048);
+    if (candidate.state !== "ACCEPTED" || !choice || !reason) return;
+    const winnerPersonId =
+      choice === "first" ? candidate.firstPersonId : candidate.secondPersonId;
+    const loserPersonId =
+      choice === "first" ? candidate.secondPersonId : candidate.firstPersonId;
+    setMergeBusy((current) => new Set(current).add(candidate.id));
+    setFeedback((current) => ({ ...current, [candidate.id]: null }));
+    let result: GraphQLResult<MergePersonMutation>;
+    try {
+      result = await executeBrowserGraphQL(MergePersonDocument, {
+        input: {
+          winnerPersonId,
+          loserPersonId,
+          reason,
+          idempotencyKey: crypto.randomUUID(),
+        },
+      });
+    } catch {
+      result = {
+        ok: false,
+        errors: [
+          {
+            code: "NETWORK_ERROR",
+            message: "The person merge could not be completed.",
+          },
+        ],
+      };
+    }
+    setMergeBusy((current) => {
+      const next = new Set(current);
+      next.delete(candidate.id);
+      return next;
+    });
+    if (!result.ok) {
+      setFeedback((current) => ({
+        ...current,
+        [candidate.id]: transportMutationFeedback(
+          result.errors,
+          "The person merge could not be completed.",
+        ),
+      }));
+      return;
+    }
+    const payload = result.data.mergePerson;
+    if (!payload.person || payload.issues.length) {
+      setFeedback((current) => ({
+        ...current,
+        [candidate.id]: {
+          code: payload.issues[0]?.code ?? "MERGE_FAILED",
+          fallback:
+            payload.issues[0]?.message ??
+            "The person merge could not be completed.",
+          issues: payload.issues,
+        },
+      }));
+      return;
+    }
+    setMergeResults((current) => ({
+      ...current,
+      [candidate.id]: {
+        loserPersonId,
+        loserVersion:
+          (choice === "first"
+            ? candidate.firstPerson?.version
+            : candidate.secondPerson?.version) ?? 0,
+        undone: false,
+      },
+    }));
+    setCandidates((current) =>
+      current.map((item) =>
+        item.id === candidate.id
+          ? { ...item, state: "CANCELLED", version: item.version + 1 }
+          : item,
+      ),
+    );
+  }
+
+  async function undoMerge(candidate: ReconciliationCandidate) {
+    if (!canReview || mergeBusy.has(candidate.id)) return;
+    const mergeResult = mergeResults[candidate.id];
+    if (!mergeResult || mergeResult.undone) return;
+    setMergeBusy((current) => new Set(current).add(candidate.id));
+    setFeedback((current) => ({ ...current, [candidate.id]: null }));
+    let result: GraphQLResult<UnmergePersonMutation>;
+    try {
+      result = await executeBrowserGraphQL(UnmergePersonDocument, {
+        input: {
+          loserPersonId: mergeResult.loserPersonId,
+          expectedVersion: mergeResult.loserVersion + 1,
+          idempotencyKey: crypto.randomUUID(),
+        },
+      });
+    } catch {
+      result = {
+        ok: false,
+        errors: [
+          {
+            code: "NETWORK_ERROR",
+            message: "The person merge could not be undone.",
+          },
+        ],
+      };
+    }
+    setMergeBusy((current) => {
+      const next = new Set(current);
+      next.delete(candidate.id);
+      return next;
+    });
+    if (!result.ok) {
+      setFeedback((current) => ({
+        ...current,
+        [candidate.id]: transportMutationFeedback(
+          result.errors,
+          "The person merge could not be undone.",
+        ),
+      }));
+      return;
+    }
+    const payload = result.data.unmergePerson;
+    if (!payload.person || payload.issues.length) {
+      setFeedback((current) => ({
+        ...current,
+        [candidate.id]: {
+          code: payload.issues[0]?.code ?? "UNMERGE_FAILED",
+          fallback:
+            payload.issues[0]?.message ??
+            "The person merge could not be undone.",
+          issues: payload.issues,
+        },
+      }));
+      return;
+    }
+    setMergeResults((current) => ({
+      ...current,
+      [candidate.id]: { ...mergeResult, undone: true },
+    }));
+    setCandidates((current) =>
+      current.map((item) =>
+        item.id === candidate.id
+          ? { ...item, state: "ACCEPTED", version: item.version + 1 }
+          : item,
+      ),
+    );
+  }
+
   if (!candidates.length) {
     return (
       <section className="border-border bg-card rounded-2xl border border-dashed px-6 py-12 text-center">
@@ -242,6 +414,17 @@ export function ReconciliationReview({
           candidate.secondPersonId,
         );
         const candidateFeedback = feedback[candidate.id];
+        const mergeResult = mergeResults[candidate.id];
+        const mergeChoice = mergeChoices[candidate.id] ?? "";
+        const mergeReason = mergeReasons[candidate.id] ?? "";
+        const mergeReady =
+          canReview &&
+          candidate.state === "ACCEPTED" &&
+          Boolean(mergeChoice) &&
+          Boolean(mergeReason.trim()) &&
+          Boolean(mergeConfirmations[candidate.id]) &&
+          !isBusy &&
+          !mergeBusy.has(candidate.id);
         return (
           <article
             key={candidate.id}
@@ -365,6 +548,122 @@ export function ReconciliationReview({
                 ) : null}
               </div>
             </div>
+
+            {canReview && candidate.state === "ACCEPTED" ? (
+              <div className="border-border bg-muted/20 mt-5 rounded-xl border p-4">
+                <h3 className="text-sm font-semibold">
+                  Merge after acceptance
+                </h3>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  Choose the canonical person only after reviewing this
+                  candidate. The other record will be retained as merged and can
+                  be restored with Undo merge.
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <Label htmlFor={`merge-winner-${candidate.id}`}>
+                      Merge winner
+                    </Label>
+                    <select
+                      id={`merge-winner-${candidate.id}`}
+                      aria-label="Merge winner"
+                      value={mergeChoice}
+                      disabled={
+                        candidate.state !== "ACCEPTED" ||
+                        mergeBusy.has(candidate.id)
+                      }
+                      onChange={(event) =>
+                        setMergeChoices((current) => ({
+                          ...current,
+                          [candidate.id]: event.currentTarget.value as
+                            MergeChoice | "",
+                        }))
+                      }
+                      className="border-input bg-background mt-2 min-h-11 w-full rounded-xl border px-3 text-sm"
+                    >
+                      <option value="">Select the canonical person</option>
+                      <option value="first">{firstName}</option>
+                      <option value="second">{secondName}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor={`merge-reason-${candidate.id}`}>
+                      Merge reason
+                    </Label>
+                    <Input
+                      id={`merge-reason-${candidate.id}`}
+                      className="mt-2"
+                      maxLength={2048}
+                      value={mergeReason}
+                      disabled={
+                        candidate.state !== "ACCEPTED" ||
+                        mergeBusy.has(candidate.id)
+                      }
+                      onChange={(event) =>
+                        setMergeReasons((current) => ({
+                          ...current,
+                          [candidate.id]: event.currentTarget.value,
+                        }))
+                      }
+                      placeholder="Why should these records be merged?"
+                    />
+                  </div>
+                </div>
+                <label className="text-muted-foreground mt-3 flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    aria-label="Confirm merge"
+                    className="accent-primary mt-1 size-4"
+                    checked={mergeConfirmations[candidate.id] ?? false}
+                    disabled={
+                      candidate.state !== "ACCEPTED" ||
+                      mergeBusy.has(candidate.id)
+                    }
+                    onChange={(event) =>
+                      setMergeConfirmations((current) => ({
+                        ...current,
+                        [candidate.id]: event.currentTarget.checked,
+                      }))
+                    }
+                  />
+                  <span>
+                    I understand that this permanently changes the canonical
+                    identity while preserving an undo path.
+                  </span>
+                </label>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    disabled={!mergeReady}
+                    onClick={() => void merge(candidate)}
+                  >
+                    {mergeBusy.has(candidate.id)
+                      ? "Merging…"
+                      : "Merge selected people"}
+                  </Button>
+                  {mergeResult && !mergeResult.undone ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={mergeBusy.has(candidate.id)}
+                      onClick={() => void undoMerge(candidate)}
+                    >
+                      {mergeBusy.has(candidate.id) ? "Undoing…" : "Undo merge"}
+                    </Button>
+                  ) : null}
+                  {mergeResult?.undone ? (
+                    <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                      Merge undone
+                    </span>
+                  ) : null}
+                  {mergeResult && !mergeResult.undone ? (
+                    <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                      Merge completed
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </article>
         );
       })}
