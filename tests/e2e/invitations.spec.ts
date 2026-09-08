@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 
 import { newId } from "@/db/id";
-import { invitations, members } from "@/db/schema/auth";
+import { invitations, members, users } from "@/db/schema/auth";
 import { ResearchFixture } from "../support/research-fixture";
 import type { CookieJar } from "../support/auth";
 
@@ -203,6 +203,81 @@ test("expired invitations can be re-issued from member administration", async ({
       };
     })
     .toEqual({ expiredStatus: "canceled", pendingCount: 1, total: 2 });
+
+  await context.close();
+});
+
+test("owners can resend and cancel pending invitations and remove a member", async ({
+  browser,
+}) => {
+  const owner = await fixture.createActor("owner");
+  const member = await fixture.createWorkspaceMember(owner, "viewer");
+  const [memberUser] = await fixture.database
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, member.userId));
+  if (!memberUser) throw new Error("Invitation member user was not created");
+
+  const email = `pending-lifecycle-${newId()}@example.test`;
+  const invitationId = newId();
+  await fixture.database.insert(invitations).values({
+    id: invitationId,
+    organizationId: owner.organizationId,
+    email,
+    role: "viewer",
+    status: "pending",
+    expiresAt: new Date(Date.now() + 60_000),
+    inviterId: owner.userId,
+  });
+
+  const context = await browser.newContext();
+  await authenticate(context, owner.jar);
+  const page = await context.newPage();
+  await page.goto("/settings/members");
+
+  const invitationRow = page
+    .getByText(email, { exact: true })
+    .locator("..")
+    .locator("..");
+  await expect(invitationRow.getByText(/viewer · pending/)).toBeVisible();
+  await invitationRow.getByRole("button", { name: "Resend" }).click();
+  await expect(page.getByText("Workspace access was updated.")).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await invitationRow.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText("Workspace access was updated.")).toBeVisible();
+  await expect(page.getByText(email, { exact: true })).toHaveCount(0);
+
+  const memberRow = page
+    .getByText(memberUser.email, { exact: true })
+    .locator("..")
+    .locator("..");
+  await expect(memberRow.getByRole("button", { name: "Remove" })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await memberRow.getByRole("button", { name: "Remove" }).click();
+  await expect(page.getByText("Workspace access was updated.")).toBeVisible();
+  await expect(page.getByText(memberUser.email, { exact: true })).toHaveCount(
+    0,
+  );
+
+  await expect
+    .poll(async () => {
+      const [invitation] = await fixture.database
+        .select({ status: invitations.status })
+        .from(invitations)
+        .where(eq(invitations.id, invitationId));
+      const [removedMember] = await fixture.database
+        .select({ id: members.id })
+        .from(members)
+        .where(
+          and(
+            eq(members.userId, member.userId),
+            eq(members.organizationId, owner.organizationId),
+          ),
+        );
+      return { invitation: invitation?.status, removedMember };
+    })
+    .toEqual({ invitation: "canceled", removedMember: undefined });
 
   await context.close();
 });
