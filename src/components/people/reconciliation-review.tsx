@@ -593,13 +593,14 @@ export function ReconciliationReview({
                         Boolean(mergeResult) ||
                         mergeBusy.has(candidate.id)
                       }
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const value = event.currentTarget.value as
+                          MergeChoice | "";
                         setMergeChoices((current) => ({
                           ...current,
-                          [candidate.id]: event.currentTarget.value as
-                            MergeChoice | "",
-                        }))
-                      }
+                          [candidate.id]: value,
+                        }));
+                      }}
                       className="border-input bg-background mt-2 min-h-11 w-full rounded-xl border px-3 text-sm"
                     >
                       <option value="">Select the canonical person</option>
@@ -621,12 +622,13 @@ export function ReconciliationReview({
                         Boolean(mergeResult) ||
                         mergeBusy.has(candidate.id)
                       }
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
                         setMergeReasons((current) => ({
                           ...current,
-                          [candidate.id]: event.currentTarget.value,
-                        }))
-                      }
+                          [candidate.id]: value,
+                        }));
+                      }}
                       placeholder="Why should these records be merged?"
                     />
                   </div>
@@ -642,12 +644,13 @@ export function ReconciliationReview({
                       Boolean(mergeResult) ||
                       mergeBusy.has(candidate.id)
                     }
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked;
                       setMergeConfirmations((current) => ({
                         ...current,
-                        [candidate.id]: event.currentTarget.checked,
-                      }))
-                    }
+                        [candidate.id]: checked,
+                      }));
+                    }}
                   />
                   <span>
                     I understand that this permanently changes the canonical
