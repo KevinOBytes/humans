@@ -113,6 +113,7 @@ describe("provider adapter architecture", () => {
       objectStoreConfig({
         endpoint: "https://account.r2.cloudflarestorage.com",
         provider: "r2",
+        forcePathStyle: true,
       }),
     ).toEqual({
       endpoint: "https://account.r2.cloudflarestorage.com",
@@ -127,5 +128,15 @@ describe("provider adapter architecture", () => {
       endpoint: "https://s3.us-east-1.amazonaws.com",
       forcePathStyle: false,
     });
+  });
+
+  it.each([
+    ["credentials", "https://user:password@s3.example.com"],
+    ["empty userinfo", "https://@s3.example.com"],
+    ["non-HTTP protocol", "ftp://s3.example.com"],
+  ])("rejects storage endpoints containing %s", (_case, endpoint) => {
+    expect(() => objectStoreConfig({ endpoint, provider: "s3" })).toThrow(
+      /storage endpoint/i,
+    );
   });
 });

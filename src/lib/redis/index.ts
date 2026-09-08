@@ -340,9 +340,17 @@ export function redisConnectionConfig(input: {
   url: string;
   token?: string;
 }): RedisConnectionConfig {
+  let url: URL;
+  try {
+    url = new URL(input.url);
+  } catch {
+    throw new TypeError("Invalid Redis URL.");
+  }
+  if (url.protocol !== "redis:" && url.protocol !== "rediss:") {
+    throw new TypeError("Invalid Redis URL.");
+  }
   if (!input.token) return { provider: "local", url: input.url };
 
-  const url = new URL(input.url);
   return {
     provider: "upstash",
     url: `https://${url.hostname}`,
