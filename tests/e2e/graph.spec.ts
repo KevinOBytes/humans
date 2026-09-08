@@ -527,6 +527,9 @@ test("relationship editor performs only explicitly confirmed mutations", async (
   await authenticate(context, actor.jar);
   const expectNoFailures = browserFailures(page);
   await page.goto("/graph");
+  await expect(
+    page.getByRole("heading", { name: "Visual graph" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Details for Alpha Person" }).click();
   await page
     .getByRole("button", { name: "Edit selected neighborhood" })

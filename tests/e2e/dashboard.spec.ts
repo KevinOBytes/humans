@@ -349,7 +349,9 @@ test("owner sees newest research, merged analysis labels, exact statistics, safe
   const peopleList = page.getByRole("list", {
     name: "Recently updated people",
   });
-  const peopleLabels = await peopleList.getByRole("link").allTextContents();
+  const peopleLabels = await peopleList
+    .locator('a[href^="/people/"]')
+    .allTextContents();
   expect(peopleLabels.slice(0, 3)).toEqual([
     "Dashboard Newest Visible",
     "Dashboard Older Visible",
@@ -357,9 +359,12 @@ test("owner sees newest research, merged analysis labels, exact statistics, safe
   ]);
   await expect(peopleList).toContainText(longName);
   await expect(peopleList).not.toContainText(sentinels.hiddenPerson);
-  await expect(page.getByText("Visible people").locator("..")).toContainText(
-    "3",
-  );
+  await expect(
+    page
+      .locator('section[aria-labelledby="workspace-statistics-heading"]')
+      .getByText("Visible people", { exact: true })
+      .locator(".."),
+  ).toContainText("3");
   await expect(
     page.getByText("Visible relationships").locator(".."),
   ).toContainText("1");
@@ -431,15 +436,20 @@ test("viewer gets a read-only, visibility-scoped dashboard without owner or priv
   const peopleList = page.getByRole("list", {
     name: "Recently updated people",
   });
-  const peopleLabels = await peopleList.getByRole("link").allTextContents();
+  const peopleLabels = await peopleList
+    .locator('a[href^="/people/"]')
+    .allTextContents();
   expect(peopleLabels.slice(0, 2)).toEqual([
     "Dashboard Newest Visible",
     "Dashboard Older Visible",
   ]);
   await expect(peopleList).not.toContainText(sentinels.hiddenPerson);
-  await expect(page.getByText("Visible people").locator("..")).toContainText(
-    "3",
-  );
+  await expect(
+    page
+      .locator('section[aria-labelledby="workspace-statistics-heading"]')
+      .getByText("Visible people", { exact: true })
+      .locator(".."),
+  ).toContainText("3");
   await expect(
     page.getByText("Visible relationships").locator(".."),
   ).toContainText("1");
@@ -470,9 +480,12 @@ test("an empty workspace presents explicit empty states and usable keyboard focu
   await expect(
     page.getByText("No workspace activity has been recorded yet."),
   ).toBeVisible();
-  await expect(page.getByText("Visible people").locator("..")).toContainText(
-    "0",
-  );
+  await expect(
+    page
+      .locator('section[aria-labelledby="workspace-statistics-heading"]')
+      .getByText("Visible people", { exact: true })
+      .locator(".."),
+  ).toContainText("0");
   await expect(
     page.getByText("Visible relationships").locator(".."),
   ).toContainText("0");
