@@ -5,7 +5,10 @@ import {
   HeadBucketCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import type { Redis as UpstashClient } from "@upstash/redis";
+import {
+  Redis as UpstashRedis,
+  type Redis as UpstashClient,
+} from "@upstash/redis";
 import IORedis from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -81,6 +84,48 @@ function redisAdapters(client: IORedis): Array<{
   ];
 }
 
+async function assertRedisStoreLifecycle(
+  store: RedisStore,
+  name: string,
+  keys: string[],
+): Promise<void> {
+  const prefix = `nfr002:${name}:${randomUUID()}`;
+  const valueKey = `${prefix}:value`;
+  const counterKey = `${prefix}:counter`;
+  const leaseKey = `${prefix}:lease`;
+  const bucketKey = `${prefix}:bucket`;
+  keys.push(valueKey, counterKey, leaseKey, bucketKey);
+
+  await store.set(valueKey, "value", { expiresInMs: 10_000 });
+  await expect(store.get(valueKey)).resolves.toBe("value");
+  await expect(store.increment(counterKey, 2)).resolves.toBe(2);
+  await expect(store.increment(counterKey)).resolves.toBe(3);
+
+  await expect(store.acquireLease(leaseKey, "owner", 5_000)).resolves.toBe(
+    true,
+  );
+  await expect(store.extendLease(leaseKey, "intruder", 10_000)).resolves.toBe(
+    false,
+  );
+  await expect(store.extendLease(leaseKey, "owner", 10_000)).resolves.toBe(
+    true,
+  );
+  await expect(store.releaseLease(leaseKey, "owner")).resolves.toBe(true);
+
+  await expect(
+    store.consumeTokenBucket({
+      capacity: 2,
+      cost: 1,
+      key: bucketKey,
+      refillAmount: 1,
+      refillIntervalMs: 1_000,
+      ttlMs: 2_000,
+    }),
+  ).resolves.toMatchObject({ allowed: true });
+  await expect(store.delete(valueKey)).resolves.toBeUndefined();
+  await expect(store.get(valueKey)).resolves.toBeNull();
+}
+
 const redisUrl = process.env.REDIS_TEST_URL;
 const runRedis = Boolean(redisUrl);
 
@@ -108,44 +153,42 @@ describe.runIf(runRedis)("Redis provider adapter contract", () => {
     async (name) => {
       const store = adapters.find((adapter) => adapter.name === name)?.store;
       if (!store) throw new Error(`Missing ${name} adapter`);
-      const prefix = `nfr002:${name}:${randomUUID()}`;
-      const valueKey = `${prefix}:value`;
-      const counterKey = `${prefix}:counter`;
-      const leaseKey = `${prefix}:lease`;
-      const bucketKey = `${prefix}:bucket`;
-      keys.push(valueKey, counterKey, leaseKey, bucketKey);
-
-      await store.set(valueKey, "value", { expiresInMs: 10_000 });
-      await expect(store.get(valueKey)).resolves.toBe("value");
-      await expect(store.increment(counterKey, 2)).resolves.toBe(2);
-      await expect(store.increment(counterKey)).resolves.toBe(3);
-
-      await expect(store.acquireLease(leaseKey, "owner", 5_000)).resolves.toBe(
-        true,
-      );
-      await expect(
-        store.extendLease(leaseKey, "intruder", 10_000),
-      ).resolves.toBe(false);
-      await expect(store.extendLease(leaseKey, "owner", 10_000)).resolves.toBe(
-        true,
-      );
-      await expect(store.releaseLease(leaseKey, "owner")).resolves.toBe(true);
-
-      await expect(
-        store.consumeTokenBucket({
-          capacity: 2,
-          cost: 1,
-          key: bucketKey,
-          refillAmount: 1,
-          refillIntervalMs: 1_000,
-          ttlMs: 2_000,
-        }),
-      ).resolves.toMatchObject({ allowed: true });
-      await expect(store.delete(valueKey)).resolves.toBeUndefined();
-      await expect(store.get(valueKey)).resolves.toBeNull();
+      await assertRedisStoreLifecycle(store, name, keys);
     },
   );
 });
+
+const upstashRestUrl = process.env.UPSTASH_REDIS_REST_URL;
+const upstashRestToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+const runUpstashRest = Boolean(upstashRestUrl && upstashRestToken);
+
+describe.runIf(runUpstashRest)(
+  "Upstash Redis REST provider adapter contract",
+  () => {
+    let client: UpstashClient;
+    const keys: string[] = [];
+
+    beforeAll(async () => {
+      client = new UpstashRedis({
+        url: upstashRestUrl!,
+        token: upstashRestToken!,
+      });
+      await client.ping();
+    });
+
+    afterAll(async () => {
+      if (keys.length) await client.del(...keys);
+    });
+
+    it("preserves the complete RedisStore lifecycle through Upstash REST", async () => {
+      await assertRedisStoreLifecycle(
+        new UpstashRedisStore(client),
+        "upstash-rest",
+        keys,
+      );
+    });
+  },
+);
 
 const storageEndpoint = process.env.TEST_STORAGE_ENDPOINT;
 const storageAccessKeyId = process.env.TEST_STORAGE_ACCESS_KEY_ID;
