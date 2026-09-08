@@ -73,11 +73,12 @@ Each item retains the status and MVP traceability assigned by
 `docs/REQUIREMENTS.md` and `TODO.md`. This alpha boundary does not reclassify
 any design-included work as post-MVP.
 
-The current hosted deployment has a verified `humans.kevinbytes.com` domain and
-live liveness evidence, but readiness is intentionally failing closed until the
-S3-compatible storage variables and attended migration/bootstrap/provider checks
-are complete. This document is not evidence of full MVP completion or production
-readiness.
+The current hosted deployment `dpl_76tDQCwXFT7XDH7FWvFYhtHuwnhn` has a verified
+`humans.kevinbytes.com` domain. Live liveness and readiness both pass, including
+PostgreSQL, Redis, and storage probes, and the bounded hosted smoke passes. This
+does not prove attended bootstrap repeat/recovery, authenticated sign-in and
+person creation, authorized cron execution, or the external-provider matrix.
+This document is not evidence of full MVP completion or production readiness.
 
 ## Operator path
 
