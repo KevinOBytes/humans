@@ -220,6 +220,46 @@ describe("rendered Compose configuration contract", () => {
     });
   });
 
+  it("renders the disposable host-port override for graph performance runs", () => {
+    const config = render(
+      [
+        "docker-compose.yml",
+        "docker-compose.test.yml",
+        "docker-compose.performance.yml",
+      ],
+      undefined,
+      {
+        ...syntheticEnvironment,
+        PERF_POSTGRES_PORT: "55442",
+        PERF_REDIS_PORT: "6382",
+        PERF_MINIO_PORT: "9005",
+      },
+    );
+    expect(publishedPorts(config)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          service: "postgres",
+          host_ip: "127.0.0.1",
+          published: "55442",
+          target: 5432,
+        }),
+        expect.objectContaining({
+          service: "redis",
+          host_ip: "127.0.0.1",
+          published: "6382",
+          target: 6379,
+        }),
+        expect.objectContaining({
+          service: "minio",
+          host_ip: "127.0.0.1",
+          published: "9005",
+          target: 9000,
+        }),
+      ]),
+    );
+    expect(config.networks.edge?.internal).not.toBe(true);
+  }, 15_000);
+
   it("runs every application role from the same compiled artifact image", () => {
     const config = render(["docker-compose.yml"], "smoke");
     const seedConfig = render(["docker-compose.yml"], "seed");

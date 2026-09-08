@@ -1,0 +1,35 @@
+name: humans-performance
+
+# Disposable host-port override for the opt-in reference performance run.
+# Keep this file paired with docker-compose.yml and use a unique project name;
+# every data volume is tmpfs-backed and is discarded when the project is down.
+services:
+  postgres:
+    networks:
+      - backend
+      - edge
+    ports:
+      - "127.0.0.1:${PERF_POSTGRES_PORT:-55441}:5432"
+    volumes:
+      - type: tmpfs
+        target: /var/lib/postgresql
+
+  redis:
+    networks:
+      - backend
+      - edge
+    ports:
+      - "127.0.0.1:${PERF_REDIS_PORT:-6381}:6379"
+    volumes:
+      - type: tmpfs
+        target: /data
+
+  minio:
+    networks:
+      - backend
+      - edge
+    ports:
+      - "127.0.0.1:${PERF_MINIO_PORT:-9004}:9000"
+    volumes:
+      - type: tmpfs
+        target: /data

@@ -319,14 +319,17 @@ test("production GraphQL reports p95, response bytes, and bounded SQL query coun
   const maxBytes = Math.max(...samples.map((sample) => sample.bytes));
   await testInfo.attach("graph-api-performance.json", {
     body: Buffer.from(
-      JSON.stringify({ concurrent: { maxBytes, maxQueryCount, p95Ms }, full }),
+      JSON.stringify({
+        concurrent: { maxBytes, maxQueryCount, p95Ms, samples },
+        full,
+      }),
     ),
     contentType: "application/json",
   });
   testInfo.annotations.push({
     type: "graph-api-performance",
     description: JSON.stringify({
-      concurrent: { maxBytes, maxQueryCount, p95Ms },
+      concurrent: { maxBytes, maxQueryCount, p95Ms, samples },
       full,
     }),
   });
@@ -763,7 +766,9 @@ test("public, dashboard, people, and editor route boundaries stay inside compres
   const publicPage = await publicContext.newPage();
   const publicRoute = await encodedRouteJavaScript(publicPage, "/");
   await expect(
-    publicPage.getByRole("heading", { name: "Humans" }),
+    publicPage.getByRole("heading", {
+      name: "Map the people, claims, and sources behind a story.",
+    }),
   ).toBeVisible();
   await publicContext.close();
 
@@ -775,7 +780,7 @@ test("public, dashboard, people, and editor route boundaries stay inside compres
   const peopleRoute = await measureAuthenticatedRoute(
     browser,
     "/people",
-    "People",
+    "Entities",
   );
   for (const route of [publicRoute, dashboard, peopleRoute]) {
     expect(route.urls.length).toBeGreaterThan(0);

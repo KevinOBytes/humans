@@ -59,6 +59,17 @@ describe("parseServerEnv", () => {
     expect(env.TRUSTED_PROXY_MODE).toBe("vercel");
   });
 
+  it("accepts a bounded explicit database pool size without changing the default", () => {
+    expect(parseServerEnv(productionEnv).DATABASE_POOL_MAX).toBeUndefined();
+    expect(
+      parseServerEnv({ ...productionEnv, DATABASE_POOL_MAX: "20" })
+        .DATABASE_POOL_MAX,
+    ).toBe(20);
+    expect(() =>
+      parseServerEnv({ ...productionEnv, DATABASE_POOL_MAX: "21" }),
+    ).toThrow(/DATABASE_POOL_MAX/);
+  });
+
   it("requires an explicit opt-in for public registration", () => {
     expect(
       parseServerEnv({

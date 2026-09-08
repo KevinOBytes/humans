@@ -9,6 +9,7 @@ import {
   ArchiveFileControl,
   PendingUploadRecoveryList,
 } from "@/components/files/file-lifecycle-controls";
+import { FileExtractionControls } from "@/components/files/file-extraction-controls";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ export default async function EvidencePage({
   const after = readOpaqueCursor(params.after);
   const canCreate = context.viewer.permissions.includes("file:create");
   const canDelete = context.viewer.permissions.includes("file:delete");
+  const canUpdate = context.viewer.permissions.includes("file:update");
   const uploadMaxBytes = canCreate
     ? uploadMaxBytesForDeployment("EVIDENCE", getServerEnv().DEPLOYMENT_MODE)
     : null;
@@ -161,6 +163,16 @@ export default async function EvidencePage({
                                 Not available
                               </span>
                             )}
+                            <FileExtractionControls
+                              fileId={file.id}
+                              fileName={file.originalName}
+                              canManage={canUpdate}
+                              available={
+                                file.availability === "AVAILABLE" &&
+                                (file.scanState === "CLEAN" ||
+                                  file.scanState === "NOT_REQUIRED")
+                              }
+                            />
                             {canDelete && file.version ? (
                               <ArchiveFileControl
                                 fileId={file.id}

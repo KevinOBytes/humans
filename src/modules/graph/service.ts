@@ -33,8 +33,8 @@ import {
 } from "./metrics";
 import {
   createGraphRepository,
+  type GraphEdgeRow,
   type GraphPersonRow,
-  type GraphRelationshipRow,
   type GraphViewRow,
 } from "./repository";
 import { normalizeGraphFilter, type GraphFilterInput } from "./transform";
@@ -513,7 +513,7 @@ function toNode(row: GraphPersonRow): GraphNode {
   };
 }
 
-function toEdge(row: GraphRelationshipRow): GraphEdge {
+function toEdge(row: GraphEdgeRow): GraphEdge {
   return {
     id: row.id,
     relationshipId: row.id,
@@ -696,7 +696,7 @@ export function createGraphService(context: GraphServiceContext) {
   ): Promise<GraphResult> {
     const repository = createGraphRepository(database);
     const nodes = new Map<string, GraphNode>();
-    const edgeRows = new Map<string, GraphRelationshipRow>();
+    const edgeRows = new Map<string, GraphEdgeRow>();
     let nodesTruncated = false;
     let edgesTruncated = false;
 
@@ -710,11 +710,10 @@ export function createGraphService(context: GraphServiceContext) {
       nodesTruncated = peopleRows.length > filter.nodeLimit;
       for (const row of peopleRows.slice(0, filter.nodeLimit))
         nodes.set(row.id, toNode(row));
-      const rows = await repository.listVisibleEdgesAmongPeople({
+      const rows = await repository.listVisibleEdgesAmongVisiblePeople({
         workspaceId: context.workspaceId,
         personIds: [...nodes.keys()],
         filter,
-        personVisibility,
         relationshipVisibility,
         limit: filter.edgeLimit + 1,
       });
@@ -776,11 +775,10 @@ export function createGraphService(context: GraphServiceContext) {
         frontier = [...next].sort();
       }
       if (edgeRows.size < filter.edgeLimit && nodes.size) {
-        const rows = await repository.listVisibleEdgesAmongPeople({
+        const rows = await repository.listVisibleEdgesAmongVisiblePeople({
           workspaceId: context.workspaceId,
           personIds: [...nodes.keys()],
           filter,
-          personVisibility,
           relationshipVisibility,
           limit: filter.edgeLimit + 1,
         });
