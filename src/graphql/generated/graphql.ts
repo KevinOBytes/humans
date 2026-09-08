@@ -3672,6 +3672,12 @@ export type IdentityCandidatesQuery = {
     reviewReason: string | null;
     reviewedAt: string | null;
     version: number | null;
+    firstPerson: {
+      " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
+    } | null;
+    secondPerson: {
+      " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
+    } | null;
   }> | null;
 };
 
@@ -3689,6 +3695,12 @@ export type ReviewIdentityCandidateMutation = {
     reviewReason: string | null;
     reviewedAt: string | null;
     version: number | null;
+    firstPerson: {
+      " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
+    } | null;
+    secondPerson: {
+      " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
+    } | null;
   };
 };
 
@@ -8759,6 +8771,12 @@ export const IdentityCandidatesDocument = new TypedDocumentString(
     id
     firstPersonId
     secondPersonId
+    firstPerson {
+      ...PersonSummary
+    }
+    secondPerson {
+      ...PersonSummary
+    }
     score
     matchSignals
     state
@@ -8767,9 +8785,25 @@ export const IdentityCandidatesDocument = new TypedDocumentString(
     version
   }
 }
-    `,
+    fragment PersonSummary on Person {
+  id
+  displayName
+  sortName
+  preferredName
+  biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
+  status
+  sensitivity
+  confidence
+  confidenceExplanation
+  version
+  createdAt
+  updatedAt
+}`,
   {
-    hash: "sha256:0e1ff74eca3177672fc907ab0ca75766eb5d7984631b8d90cff3f21838bbff14",
+    hash: "sha256:176994e5b71b0f4117ee1cee0c90bb8faaad310a22f6a3c036c4e663c5a91838",
   },
 ) as unknown as TypedDocumentString<
   IdentityCandidatesQuery,
@@ -8782,6 +8816,12 @@ export const ReviewIdentityCandidateDocument = new TypedDocumentString(
     id
     firstPersonId
     secondPersonId
+    firstPerson {
+      ...PersonSummary
+    }
+    secondPerson {
+      ...PersonSummary
+    }
     score
     state
     reviewReason
@@ -8789,9 +8829,25 @@ export const ReviewIdentityCandidateDocument = new TypedDocumentString(
     version
   }
 }
-    `,
+    fragment PersonSummary on Person {
+  id
+  displayName
+  sortName
+  preferredName
+  biography
+  primaryNameId
+  primaryPhotoFileId
+  mergedIntoPersonId
+  status
+  sensitivity
+  confidence
+  confidenceExplanation
+  version
+  createdAt
+  updatedAt
+}`,
   {
-    hash: "sha256:2ca0b872ae40e40d5bc5eade2cb28d9f3d44a197ba2206e18f060bc1ee2de7b2",
+    hash: "sha256:f673840b5f78c6b4308b2e31659650c31048d2a003e33ceb0d16ad21f0f3039b",
   },
 ) as unknown as TypedDocumentString<
   ReviewIdentityCandidateMutation,

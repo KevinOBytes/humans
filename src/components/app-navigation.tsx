@@ -6,6 +6,7 @@ import {
   BrainCircuit,
   Database,
   FileText,
+  GitMerge,
   LayoutDashboard,
   Menu,
   Network,
@@ -54,6 +55,7 @@ export function NavigationLinks({
   canViewGraph,
   canViewImports,
   canViewSearch,
+  canViewReconciliation,
   onNavigate,
 }: {
   canViewAnalyst: boolean;
@@ -62,6 +64,7 @@ export function NavigationLinks({
   canViewGraph: boolean;
   canViewImports: boolean;
   canViewSearch: boolean;
+  canViewReconciliation?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -96,6 +99,12 @@ export function NavigationLinks({
       label: "Imports",
       icon: Database,
       shown: canViewImports,
+    },
+    {
+      href: "/reconciliation",
+      label: "Reconciliation",
+      icon: GitMerge,
+      shown: canViewReconciliation ?? false,
     },
   ];
 
@@ -168,6 +177,7 @@ export function MobileNavigation({
   canViewGraph,
   canViewImports,
   canViewSearch,
+  canViewReconciliation,
   organizations,
 }: {
   activeWorkspace: WorkspaceOption;
@@ -177,6 +187,7 @@ export function MobileNavigation({
   canViewGraph: boolean;
   canViewImports: boolean;
   canViewSearch: boolean;
+  canViewReconciliation?: boolean;
   organizations: readonly WorkspaceOption[];
 }) {
   const [open, setOpen] = useState(false);
@@ -239,6 +250,7 @@ export function MobileNavigation({
             canViewGraph={canViewGraph}
             canViewImports={canViewImports}
             canViewSearch={canViewSearch}
+            canViewReconciliation={canViewReconciliation}
             onNavigate={() => setOpen(false)}
           />
         </div>
