@@ -175,7 +175,10 @@ merge; the same UI exposes a version-fenced Undo merge action.
 owner can inspect a seeded candidate, persist a version-checked `ACCEPTED`
 decision, merge the selected people, verify the loser/decision in PostgreSQL,
 undo the merge, and verify restoration; a viewer can inspect but cannot change
-it. Broader conflict-matrix and hosted acceptance remain unverified.
+it. The suite also includes a stale-view case that must surface `CONFLICT`
+without replacing the first view's accepted database state; this newly added
+case still requires CI execution before it is treated as release evidence.
+Broader conflict-matrix and hosted acceptance remain unverified.
 
 ## Functional requirements
 
