@@ -14,7 +14,20 @@ async function signIn(
   await page.goto("/sign-in?returnTo=%2Fdashboard");
   await page.getByLabel("Email or username").fill(identifier);
   await page.getByLabel("Password").fill(adminPassword);
+  const authResponse = page.waitForResponse((response) =>
+    /\/api\/auth\/sign-in\/(email|username)$/u.test(response.url()),
+  );
   await page.getByRole("button", { name: "Sign in" }).click();
+  const response = await authResponse;
+  const responseBody = await response.text();
+  expect(
+    response.ok(),
+    `configured administrator sign-in failed (${response.status()}): ${responseBody}`,
+  ).toBe(true);
+  expect(
+    responseBody,
+    `configured administrator sign-in returned an error: ${responseBody}`,
+  ).not.toContain('"error"');
   await expect(page).toHaveURL(/\/dashboard$/u);
 }
 
