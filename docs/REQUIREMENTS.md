@@ -133,10 +133,10 @@ passed for commit `4916f10` after rerunning its transient browser failure. All
 9 checks are green, including PostgreSQL fixtures for protected
 identifier/contact/birth-date signals and the complete Chromium suite.
 
-Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_FDiSVUNCAaFWuytmWW6htUzThduf` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
+Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_DByVWd9SKafZiqRgdNkAFVwxV615` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected route boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
 Current deployment evidence (2026-09-08): production deployment
-`dpl_58g14JghpMc4s943eShS5JEmwNSf` is Ready and aliases
+`dpl_DByVWd9SKafZiqRgdNkAFVwxV615` is Ready and aliases
 `humans.kevinbytes.com`. Live probes return homepage 200, liveness 200,
 readiness 200 with PostgreSQL/Redis/storage healthy, unauthenticated GraphQL
 401 with the stable `UNAUTHENTICATED` envelope, and protected jobs 401 with its
