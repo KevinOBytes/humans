@@ -433,7 +433,9 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await namesTimelineLink.focus();
   await page.keyboard.press("Enter");
   await expect(namesTimelineLink).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: "Names" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Names", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Ada Byron", exact: true }),
