@@ -243,9 +243,12 @@ export function ReconciliationReview({
 
   async function merge(candidate: ReconciliationCandidate) {
     if (!canReview || mergeBusy.has(candidate.id)) return;
+    const draft = drafts[candidate.id] ?? initialDraft(candidate);
     const choice = mergeChoices[candidate.id];
     const reason = (mergeReasons[candidate.id] ?? "").trim().slice(0, 2048);
-    if (!isAcceptedState(candidate.state) || !choice || !reason) return;
+    const acceptedForMerge =
+      isAcceptedState(candidate.state) || isAcceptedState(draft.state);
+    if (!acceptedForMerge || !choice || !reason) return;
     const winnerPersonId =
       choice === "first" ? candidate.firstPersonId : candidate.secondPersonId;
     const loserPersonId =
@@ -426,9 +429,17 @@ export function ReconciliationReview({
         const mergeResult = mergeResults[candidate.id];
         const mergeChoice = mergeChoices[candidate.id] ?? "";
         const mergeReason = mergeReasons[candidate.id] ?? "";
+        // Keep the merge controls available during the optimistic review
+        // transition. This also protects the flow when an older API response
+        // omits the enum while the local draft already records acceptance.
+        const acceptedForMerge =
+          isAcceptedState(candidate.state) || isAcceptedState(draft.state);
+        const showMerge =
+          canReview && (acceptedForMerge || Boolean(mergeResult));
         const mergeReady =
           canReview &&
-          isAcceptedState(candidate.state) &&
+          acceptedForMerge &&
+          !mergeResult &&
           Boolean(mergeChoice) &&
           Boolean(mergeReason.trim()) &&
           Boolean(mergeConfirmations[candidate.id]) &&
@@ -558,7 +569,7 @@ export function ReconciliationReview({
               </div>
             </div>
 
-            {canReview && isAcceptedState(candidate.state) ? (
+            {showMerge ? (
               <div className="border-border bg-muted/20 mt-5 rounded-xl border p-4">
                 <h3 className="text-sm font-semibold">
                   Merge after acceptance
@@ -578,7 +589,8 @@ export function ReconciliationReview({
                       aria-label="Merge winner"
                       value={mergeChoice}
                       disabled={
-                        !isAcceptedState(candidate.state) ||
+                        !acceptedForMerge ||
+                        Boolean(mergeResult) ||
                         mergeBusy.has(candidate.id)
                       }
                       onChange={(event) =>
@@ -605,7 +617,8 @@ export function ReconciliationReview({
                       maxLength={2048}
                       value={mergeReason}
                       disabled={
-                        !isAcceptedState(candidate.state) ||
+                        !acceptedForMerge ||
+                        Boolean(mergeResult) ||
                         mergeBusy.has(candidate.id)
                       }
                       onChange={(event) =>
@@ -625,7 +638,8 @@ export function ReconciliationReview({
                     className="accent-primary mt-1 size-4"
                     checked={mergeConfirmations[candidate.id] ?? false}
                     disabled={
-                      !isAcceptedState(candidate.state) ||
+                      !acceptedForMerge ||
+                      Boolean(mergeResult) ||
                       mergeBusy.has(candidate.id)
                     }
                     onChange={(event) =>
