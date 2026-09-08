@@ -532,10 +532,17 @@ test("relationship editor performs only explicitly confirmed mutations", async (
   await expect(
     page.getByRole("heading", { name: "Visual graph" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Details for Alpha Person" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Alpha Person" }),
-  ).toBeVisible();
+  const selectAlpha = async () => {
+    const details = page.getByRole("button", {
+      name: /Details for Alpha Person/u,
+    });
+    await expect(details).toBeVisible();
+    await details.click();
+    await expect(
+      page.getByRole("heading", { name: "Alpha Person" }),
+    ).toBeVisible();
+  };
+  await selectAlpha();
   const editNeighborhood = page.getByRole("button", {
     name: "Edit selected neighborhood",
   });
@@ -553,10 +560,7 @@ test("relationship editor performs only explicitly confirmed mutations", async (
     page.getByText("2 relationships loaded", { exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Details for Alpha Person" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Alpha Person" }),
-  ).toBeVisible();
+  await selectAlpha();
   await expect(editNeighborhood).toBeEnabled();
   await editNeighborhood.click();
   await page
@@ -574,10 +578,7 @@ test("relationship editor performs only explicitly confirmed mutations", async (
     page.getByText("2 relationships loaded", { exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Details for Alpha Person" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Alpha Person" }),
-  ).toBeVisible();
+  await selectAlpha();
   await expect(editNeighborhood).toBeEnabled();
   await editNeighborhood.click();
   await page
