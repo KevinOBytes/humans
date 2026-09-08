@@ -73,7 +73,7 @@ Each item retains the status and MVP traceability assigned by
 `docs/REQUIREMENTS.md` and `TODO.md`. This alpha boundary does not reclassify
 any design-included work as post-MVP.
 
-The current hosted deployment `dpl_2E8dUJnMjS5MK3vEW5A1JKBiyica` has a verified
+The current hosted deployment `dpl_DByVWd9SKafZiqRgdNkAFVwxV615` has a verified
 `humans.kevinbytes.com` domain. Live liveness and readiness both pass, including
 PostgreSQL, Redis, and storage probes, and the bounded hosted smoke passes.
 The prior deployment's production request logs show the configured scheduled
