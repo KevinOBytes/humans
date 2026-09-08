@@ -15,6 +15,11 @@ The active `Protect main` ruleset requires these exact successful checks on the 
 - `secret-scan`: full-history and pull-request Gitleaks scanning.
 - `image-security`: one local application image, its bounded SBOM artifact, and high/critical vulnerability scanning of that exact image.
 
+The workflow also runs `browser-integration`, an additive Playwright acceptance
+suite against PostgreSQL, Redis, and MinIO. The currently verified hosted
+ruleset still requires the eight checks listed above; making browser coverage a
+merge-blocking check requires a deliberate hosted ruleset update.
+
 Ruleset `20371861` requires pull requests, resolved review conversations, strict current-branch checks, and squash merges. It blocks force pushes and deletion. Only the GitHub repository-admin role has an explicit bypass; ordinary collaborators and automation have none. Successful public runs [30900728396](https://github.com/KevinOBytes/humans/actions/runs/30900728396), [30900760773](https://github.com/KevinOBytes/humans/actions/runs/30900760773), and post-merge `main` run [30901164011](https://github.com/KevinOBytes/humans/actions/runs/30901164011) prove the exact check names and all eight gates.
 
 ## Workflow safety
