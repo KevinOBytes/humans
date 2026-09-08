@@ -90,6 +90,10 @@ function scoreLabel(score: number) {
   return `${Math.round(Math.max(0, Math.min(1, score)) * 100)}% match`;
 }
 
+function isAcceptedState(state: IdentityCandidateState) {
+  return state.toUpperCase() === "ACCEPTED";
+}
+
 function initialDraft(candidate: ReconciliationCandidate): ReviewStateDraft {
   return {
     state: reviewStates.includes(candidate.state as ReviewState)
@@ -236,7 +240,7 @@ export function ReconciliationReview({
     if (!canReview || mergeBusy.has(candidate.id)) return;
     const choice = mergeChoices[candidate.id];
     const reason = (mergeReasons[candidate.id] ?? "").trim().slice(0, 2048);
-    if (candidate.state !== "ACCEPTED" || !choice || !reason) return;
+    if (!isAcceptedState(candidate.state) || !choice || !reason) return;
     const winnerPersonId =
       choice === "first" ? candidate.firstPersonId : candidate.secondPersonId;
     const loserPersonId =
@@ -419,7 +423,7 @@ export function ReconciliationReview({
         const mergeReason = mergeReasons[candidate.id] ?? "";
         const mergeReady =
           canReview &&
-          candidate.state === "ACCEPTED" &&
+          isAcceptedState(candidate.state) &&
           Boolean(mergeChoice) &&
           Boolean(mergeReason.trim()) &&
           Boolean(mergeConfirmations[candidate.id]) &&
@@ -549,7 +553,7 @@ export function ReconciliationReview({
               </div>
             </div>
 
-            {canReview && candidate.state === "ACCEPTED" ? (
+            {canReview && isAcceptedState(candidate.state) ? (
               <div className="border-border bg-muted/20 mt-5 rounded-xl border p-4">
                 <h3 className="text-sm font-semibold">
                   Merge after acceptance
@@ -569,7 +573,7 @@ export function ReconciliationReview({
                       aria-label="Merge winner"
                       value={mergeChoice}
                       disabled={
-                        candidate.state !== "ACCEPTED" ||
+                        !isAcceptedState(candidate.state) ||
                         mergeBusy.has(candidate.id)
                       }
                       onChange={(event) =>
@@ -596,7 +600,7 @@ export function ReconciliationReview({
                       maxLength={2048}
                       value={mergeReason}
                       disabled={
-                        candidate.state !== "ACCEPTED" ||
+                        !isAcceptedState(candidate.state) ||
                         mergeBusy.has(candidate.id)
                       }
                       onChange={(event) =>
@@ -616,7 +620,7 @@ export function ReconciliationReview({
                     className="accent-primary mt-1 size-4"
                     checked={mergeConfirmations[candidate.id] ?? false}
                     disabled={
-                      candidate.state !== "ACCEPTED" ||
+                      !isAcceptedState(candidate.state) ||
                       mergeBusy.has(candidate.id)
                     }
                     onChange={(event) =>
