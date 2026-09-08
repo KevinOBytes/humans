@@ -766,7 +766,9 @@ test("public, dashboard, people, and editor route boundaries stay inside compres
   const publicPage = await publicContext.newPage();
   const publicRoute = await encodedRouteJavaScript(publicPage, "/");
   await expect(
-    publicPage.getByRole("heading", { name: "Humans" }),
+    publicPage.getByRole("heading", {
+      name: "Map the people, claims, and sources behind a story.",
+    }),
   ).toBeVisible();
   await publicContext.close();
 
