@@ -245,8 +245,9 @@ jobs:
             sleep 1
           done
           docker run --rm --network host \
+            --env MC_HOST_local=http://synthetic-e2e-minio-user:synthetic-e2e-minio-password@127.0.0.1:9000 \
             quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z \
-            /bin/sh -c 'mc alias set local http://127.0.0.1:9000 synthetic-e2e-minio-user synthetic-e2e-minio-password && mc mb --ignore-existing local/humans-private'
+            mb --ignore-existing local/humans-private
       - name: Install Chromium
         timeout-minutes: 10
         run: corepack pnpm exec playwright install --with-deps chromium
