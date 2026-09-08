@@ -16,6 +16,12 @@ Chromium browser acceptance suite. This closes the recent CI/browser
 regression tranche but does not close the broader incomplete requirements
 below, which still require hosted/provider and whole-product evidence.
 
+Latest repository gate (2026-09-08): GitHub Actions run `34177886170` for
+commit `2ab8101` passed all checks, including the hardened Chromium graph
+selection/editor flow, real PostgreSQL integration, Compose lifecycle,
+production build, quality, generated-artifact drift, dependency policy, image
+security, and secret scanning.
+
 Latest hosted evidence (2026-09-08): verified commit `f2ad282` is deployed to
 Vercel production as `dpl_76tDQCwXFT7XDH7FWvFYhtHuwnhn`; the custom hostname,
 liveness, readiness, PostgreSQL/Redis/storage probes, unauthenticated GraphQL
