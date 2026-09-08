@@ -9,8 +9,8 @@ evidence for the current tree; it does not close the hosted/provider,
 whole-product, or measured-production requirements that remain marked
 **Incomplete** below.
 
-Latest repository gate (2026-09-08): GitHub Actions run `34177886170` for
-commit `2ab8101` passed all checks, including the Chromium graph
+Latest repository gate (2026-09-08): GitHub Actions run `34241537402` for
+commit `f795ede` passed all 9 checks, including the invitation Chromium
 selection/editor flow, real PostgreSQL integration, Compose lifecycle,
 production build, quality, generated-artifact drift, dependency policy, image
 security, and secret scanning.
@@ -63,19 +63,19 @@ Bounded HUM-FR-028 record/file evidence (2026-09-07): profile name and timeline 
 
 Historical bounded release evidence (2026-09-07): the Node 24 webpack production build completed, the non-host-dependent suite passed 146 files/1,313 tests, and the isolated Docker Compose smoke passed with PostgreSQL, Redis, MinIO, migrations, explicit administrator recovery, app, worker, protected CRUD, tenant/sensitivity denials, Redis recovery, and leakage controls. The current evidence superseding that snapshot is recorded below.
 
-Latest bounded release evidence (2026-09-08): GitHub Actions run `34234190818`
-passed for commit `521e4d2`, including quality, generated artifacts, production
+Latest bounded release evidence (2026-09-08): GitHub Actions run `34241537402`
+passed for commit `f795ede`, including quality, generated artifacts, production
 build, PostgreSQL/Redis/MinIO integration, Compose lifecycle, image security,
 secret scan, dependency policy, and the Chromium browser acceptance suite.
 The sign-in bootstrap and reconciliation workspace are deployed to Vercel
-production as `dpl_8woXibj7Pd2b3gQQjAzJJV9s7Hgd`; the bounded hosted smoke passes the custom
+production as `dpl_2E8dUJnMjS5MK3vEW5A1JKBiyica`; the bounded hosted smoke passes the custom
 hostname, liveness, readiness, PostgreSQL/Redis/storage probes, unauthenticated
 GraphQL boundary, and protected jobs boundary. Repeated scheduled `200` logs
 were verified on the prior deployment; the new deployment's scheduled request
 is not yet observed. Hosted authenticated production acceptance and the
 remaining matrix are still open.
 
-Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_8woXibj7Pd2b3gQQjAzJJV9s7Hgd` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
+Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_2E8dUJnMjS5MK3vEW5A1JKBiyica` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
 Bounded HUM-FR-003 local Compose recovery evidence (2026-09-07): the isolated production-image smoke now executes the explicit administrator bootstrap across create, idempotent repeat, deliberate credential deletion, and credential recovery before starting the app and worker, then verifies exactly one credential remains. This strengthens the local release contract only; hosted Vercel repeat/recovery and operator-run evidence remain unverified.
 
