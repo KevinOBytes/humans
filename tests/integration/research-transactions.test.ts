@@ -15,12 +15,15 @@ import { newId } from "@/db/id";
 import { members, sessions } from "@/db/schema/auth";
 import { personTags, tags } from "@/db/schema/evidence";
 import { factDefinitions, facts } from "@/db/schema/facts";
+import { contactPoints } from "@/db/schema/locations";
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
 import {
   externalRecords,
   identityCandidates,
   people,
+  personIdentifiers,
 } from "@/db/schema/people";
+import { personContactPoints } from "@/db/schema/evidence";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { ensureUserPrincipal } from "@/modules/auth/workspaces";
@@ -2000,6 +2003,95 @@ liveDescribe("research write transactions", () => {
     if (!first.resource || !second.resource || !unrelated.resource) {
       throw new Error("Expected candidate-generation people to be created.");
     }
+    const now = new Date();
+    const sharedIdentifierIndex = "a".repeat(64);
+    await fixture.database.insert(personIdentifiers).values(
+      [first.resource.id, second.resource.id].map((personId) => ({
+        id: newId(),
+        workspaceId: actor.workspaceId,
+        personId,
+        namespace: "passport",
+        identifierType: "number",
+        encryptedRawValue: "sealed-value",
+        blindIndex: sharedIdentifierIndex,
+        blindIndexVersion: 1,
+        verificationState: "verified" as const,
+        sensitivity: "confidential" as const,
+        createdAt: now,
+        createdBy: actor.principalId,
+        updatedAt: now,
+        updatedBy: actor.principalId,
+      })),
+    );
+    const sharedContactIndex = "b".repeat(64);
+    const contactPointId = newId();
+    await fixture.database.insert(contactPoints).values({
+      id: contactPointId,
+      workspaceId: actor.workspaceId,
+      kind: "email",
+      encryptedDisplayValue: "sealed-email",
+      blindIndex: sharedContactIndex,
+      blindIndexVersion: 1,
+      verificationState: "verified",
+      sensitivity: "confidential",
+      createdAt: now,
+      createdBy: actor.principalId,
+      updatedAt: now,
+      updatedBy: actor.principalId,
+    });
+    await fixture.database.insert(personContactPoints).values(
+      [first.resource.id, second.resource.id].map((personId) => ({
+        id: newId(),
+        workspaceId: actor.workspaceId,
+        personId,
+        contactPointId,
+        usageKind: "personal",
+        createdAt: now,
+        createdBy: actor.principalId,
+        updatedAt: now,
+        updatedBy: actor.principalId,
+      })),
+    );
+    const birthDefinitionId = newId();
+    await fixture.database.insert(factDefinitions).values({
+      id: birthDefinitionId,
+      workspaceId: actor.workspaceId,
+      namespace: "profile",
+      fieldKey: "date_of_birth",
+      label: "Date of birth",
+      allowedValueType: "date",
+      cardinality: "one",
+      defaultSensitivity: "internal",
+      state: "active",
+      createdAt: now,
+      createdBy: actor.principalId,
+      updatedAt: now,
+      updatedBy: actor.principalId,
+    });
+    await fixture.database.insert(facts).values(
+      [first.resource.id, second.resource.id].map((personId) => ({
+        id: newId(),
+        workspaceId: actor.workspaceId,
+        personId,
+        factDefinitionId: birthDefinitionId,
+        namespace: "profile",
+        fieldKey: "date_of_birth",
+        label: "Date of birth",
+        valueType: "date" as const,
+        valueDateStart: "1990-01-01",
+        state: "asserted" as const,
+        confidence: "1",
+        sensitivity: "internal" as const,
+        reviewState: "unreviewed" as const,
+        temporalSemantics: "exact" as const,
+        temporalPrecision: "day" as const,
+        assertedAt: now,
+        createdAt: now,
+        createdBy: actor.principalId,
+        updatedAt: now,
+        updatedBy: actor.principalId,
+      })),
+    );
 
     const [generated, replayed] = await Promise.all([
       peopleService.generateIdentityCandidates({
@@ -2017,11 +2109,14 @@ liveDescribe("research write transactions", () => {
       id: generated[0]!.id,
       firstPersonId: first.resource.id,
       secondPersonId: second.resource.id,
-      score: "0.920",
+      score: "0.990",
       state: "pending",
       matchSignals: {
         sharedDisplayName: true,
         sharedSortName: true,
+        sharedIdentifier: true,
+        sharedContact: true,
+        sharedBirthDate: true,
       },
     });
 
