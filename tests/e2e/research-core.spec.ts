@@ -138,6 +138,150 @@ test("anonymous protected routes use the canonical safe sign-in redirect", async
   expectNoBrowserFailures();
 });
 
+test("person research requires consent and applies only selected edited fields", async ({
+  context,
+  page,
+}) => {
+  const expectNoBrowserFailures = captureBrowserFailures(page);
+  const actor = await fixture.createActor();
+  const created = await fixture.createPerson(actor, {
+    displayName: "Research Subject",
+    biography: "Original biography",
+  });
+  const personId = created.body?.data?.createPerson?.person?.id;
+  if (!personId) throw new Error("AI research E2E person was not created");
+
+  await authenticate(context, actor.jar);
+  await page.route("**/api/graphql", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") return route.continue();
+    let body: { query?: unknown; variables?: unknown };
+    try {
+      body = JSON.parse(request.postData() ?? "") as typeof body;
+    } catch {
+      return route.continue();
+    }
+    if (
+      typeof body.query !== "string" ||
+      !body.query.includes("personWebResearch")
+    ) {
+      return route.continue();
+    }
+    expect(body.variables).toEqual({ personId, consent: true });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "x-request-id": "e2e-person-research" },
+      body: JSON.stringify({
+        data: {
+          personWebResearch: {
+            personId,
+            provider: "OLLAMA",
+            model: "fixture-model",
+            sources: [
+              {
+                title: "Public profile",
+                url: "https://example.test/research-subject",
+                snippet: "A public profile used by the browser fixture.",
+              },
+            ],
+            suggestions: [
+              {
+                field: "displayName",
+                value: "Auto Filled Name",
+                sourceUrls: ["https://example.test/research-subject"],
+              },
+              {
+                field: "preferredName",
+                value: "Auto Alias",
+                sourceUrls: ["https://example.test/research-subject"],
+              },
+              {
+                field: "biography",
+                value: "Auto-filled biography",
+                sourceUrls: ["https://example.test/research-subject"],
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto(`/people/${personId}`);
+  await expect(
+    page.getByRole("heading", { name: "Research Subject" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", {
+      name: /I understand and want to search public web sources/i,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Research this person" }),
+  ).toBeDisabled();
+
+  await page
+    .getByRole("checkbox", {
+      name: /I understand and want to search public web sources/i,
+    })
+    .check();
+  await page.getByRole("button", { name: "Research this person" }).click();
+  await expect(page.getByLabel("Display name suggestion")).toHaveValue(
+    "Auto Filled Name",
+  );
+  await expect(page.getByLabel("Preferred name suggestion")).toHaveValue(
+    "Auto Alias",
+  );
+  await expect(page.getByLabel("Biography suggestion")).toHaveValue(
+    "Auto-filled biography",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Review suggestions" }),
+  ).toBeVisible();
+
+  const displayNameApply = page.getByRole("checkbox", {
+    name: "Apply Display name",
+  });
+  const preferredNameApply = page.getByRole("checkbox", {
+    name: "Apply Preferred name",
+  });
+  const biographyApply = page.getByRole("checkbox", {
+    name: "Apply Biography",
+  });
+  await expect(displayNameApply).not.toBeChecked();
+  await expect(preferredNameApply).not.toBeChecked();
+  await expect(biographyApply).not.toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Apply selected fields" }),
+  ).toBeDisabled();
+
+  await page.getByLabel("Biography suggestion").fill("Edited biography");
+  await biographyApply.check();
+  await expect(displayNameApply).not.toBeChecked();
+  await expect(preferredNameApply).not.toBeChecked();
+  await page.getByRole("button", { name: "Apply selected fields" }).click();
+  await expect(page.getByRole("status")).toHaveText("Selected fields applied.");
+
+  const persisted = await fixture.execute<{
+    person: {
+      displayName: string;
+      preferredName: string | null;
+      biography: string | null;
+    } | null;
+  }>({
+    jar: actor.jar,
+    query: `query Person($id: UUID!) { person(id: $id) { displayName preferredName biography } }`,
+    variables: { id: personId },
+  });
+  expect(persisted.body?.data?.person).toEqual({
+    displayName: "Research Subject",
+    preferredName: null,
+    biography: "Edited biography",
+  });
+  expectNoBrowserFailures();
+});
+
 test("authenticated research core preserves tenant and claim boundaries", async ({
   browser,
   page,
