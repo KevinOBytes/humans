@@ -68,14 +68,14 @@ passed for commit `521e4d2`, including quality, generated artifacts, production
 build, PostgreSQL/Redis/MinIO integration, Compose lifecycle, image security,
 secret scan, dependency policy, and the Chromium browser acceptance suite.
 The protected-cron bootstrap fix is deployed to Vercel production as
-`dpl_3VkaNbYAbAksvFP74HSkUfzNBebv`; the bounded hosted smoke passes the custom
+`dpl_Acx92xwdPKa3mCAdj5EhWVSuibtm`; the bounded hosted smoke passes the custom
 hostname, liveness, readiness, PostgreSQL/Redis/storage probes, unauthenticated
 GraphQL boundary, and protected jobs boundary. Repeated scheduled `200` logs
 were verified on the prior deployment; the new deployment's scheduled request
 is not yet observed. Hosted authenticated production acceptance and the
 remaining matrix are still open.
 
-Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_3VkaNbYAbAksvFP74HSkUfzNBebv` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
+Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_Acx92xwdPKa3mCAdj5EhWVSuibtm` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
 Bounded HUM-FR-003 local Compose recovery evidence (2026-09-07): the isolated production-image smoke now executes the explicit administrator bootstrap across create, idempotent repeat, deliberate credential deletion, and credential recovery before starting the app and worker, then verifies exactly one credential remains. This strengthens the local release contract only; hosted Vercel repeat/recovery and operator-run evidence remain unverified.
 
