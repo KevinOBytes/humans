@@ -3667,10 +3667,23 @@ export function createPeopleService(context: ResearchServiceContext) {
             id: string;
             state:
               "pending" | "reviewing" | "accepted" | "rejected" | "cancelled";
-            reviewedAt: Date | null;
+            reviewedAt: Date | string | null;
             reviewedBy: string | null;
             reviewReason: string | null;
           }[];
+        };
+        const snapshotTimestamp = (
+          value: Date | string | null,
+        ): Date | null => {
+          if (value === null || value instanceof Date) return value;
+          const parsed = new Date(value);
+          if (Number.isNaN(parsed.getTime())) {
+            throw createGraphQLError(
+              "PRECONDITION_FAILED",
+              "The merge snapshot contains an invalid review timestamp.",
+            );
+          }
+          return parsed;
         };
         const status =
           snapshot.loser?.status &&
@@ -3804,7 +3817,7 @@ export function createPeopleService(context: ResearchServiceContext) {
               .update(identityCandidates)
               .set({
                 state: candidate.state,
-                reviewedAt: candidate.reviewedAt,
+                reviewedAt: snapshotTimestamp(candidate.reviewedAt),
                 reviewedBy: candidate.reviewedBy,
                 reviewReason: candidate.reviewReason,
                 version: sql`${identityCandidates.version} + 1`,
