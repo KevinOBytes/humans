@@ -57,7 +57,6 @@ const webServerEnv: Record<string, string> & NodeJS.ProcessEnv = {
   GRAPH_PERFORMANCE_TEST_RUNTIME: graphPerformance ? "1" : "0",
   GRAPH_PERFORMANCE_DIAGNOSTIC_SECRET:
     "graph-reference-diagnostic-secret-2026-isolated-runtime",
-  DEBUG_GRAPHQL_ERRORS: "1",
 };
 
 function policyServerEnv(
