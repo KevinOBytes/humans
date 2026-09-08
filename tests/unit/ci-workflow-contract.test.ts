@@ -114,6 +114,7 @@ describe("CI workflow contract", () => {
       "quality",
       "generated-drift",
       "database-integration",
+      "browser-integration",
       "production-build",
       "compose-lifecycle",
       "dependency-policy",
@@ -145,7 +146,7 @@ describe("CI workflow contract", () => {
     expect(workflow).toContain("node-version: 24");
     expect(
       workflow.match(/corepack pnpm install --frozen-lockfile/g)?.length,
-    ).toBe(6);
+    ).toBe(7);
 
     const requiredCommands = [
       "corepack pnpm format:check",
@@ -157,6 +158,7 @@ describe("CI workflow contract", () => {
       "corepack pnpm auth:schema:check",
       "corepack pnpm codegen:check",
       "corepack pnpm test:db",
+      "corepack pnpm test:e2e",
       "corepack pnpm build",
       "corepack pnpm test:compose:config",
       "corepack pnpm compose:images:verify",
