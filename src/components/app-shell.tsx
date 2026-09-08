@@ -118,6 +118,7 @@ export function AppShell({
           <main
             id="main-content"
             tabIndex={-1}
+            suppressHydrationWarning
             className="px-4 py-7 sm:px-6 lg:px-10 lg:py-10"
           >
             {children}

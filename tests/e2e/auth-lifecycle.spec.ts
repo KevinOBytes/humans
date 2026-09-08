@@ -388,7 +388,7 @@ test("real registration, recovery, reset, and revoked-session states stay generi
   await page.getByLabel(/email or username/iu).fill(registrationEmail);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/$/u);
+  await expect(page).toHaveURL(/\/dashboard$/u);
 
   const secondContext = await browser.newContext();
   const secondPage = await secondContext.newPage();
@@ -396,7 +396,7 @@ test("real registration, recovery, reset, and revoked-session states stay generi
   await secondPage.getByLabel(/email or username/iu).fill(registrationEmail);
   await secondPage.getByLabel("Password").fill(password);
   await secondPage.getByRole("button", { name: "Sign in" }).click();
-  await expect(secondPage).toHaveURL(/\/$/u);
+  await expect(secondPage).toHaveURL(/\/dashboard$/u);
   const [registeredUser] = await fixture.database
     .select({ id: users.id })
     .from(users)

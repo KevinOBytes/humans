@@ -165,7 +165,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await expectAxeClean(page);
   await page.goto("/people");
   await expect(
-    page.getByRole("heading", { name: "People", exact: true }),
+    page.getByRole("heading", { name: "Entities", exact: true }),
   ).toBeVisible();
   await expectAxeClean(page);
 
