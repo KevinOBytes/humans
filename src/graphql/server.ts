@@ -412,6 +412,9 @@ export function createGraphQLHandler(
       errorMessage: publicErrorMessage("INTERNAL"),
       isDev: false,
       maskError(error, message) {
+        if (process.env.DEBUG_GRAPHQL_ERRORS === "1") {
+          console.error("[graphql mask]", error);
+        }
         const expected = expectedGraphQLError(error);
         if (expected) {
           return createGraphQLError(expected.code, expected.message, {
