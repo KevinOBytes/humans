@@ -223,7 +223,12 @@ export function ReconciliationReview({
       }));
       return;
     }
-    const next = candidateFromMutation(result.data, candidate);
+    const next = {
+      ...candidateFromMutation(result.data, candidate),
+      // Keep the local state aligned with the explicit decision the user just
+      // saved even if an older GraphQL response omits the enum field.
+      state: draft.state,
+    } satisfies ReconciliationCandidate;
     setCandidates((current) =>
       current.map((item) => (item.id === candidate.id ? next : item)),
     );
