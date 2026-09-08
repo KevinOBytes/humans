@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 type JobsRunRouteDependencies = {
+  bootstrap?: () => Promise<void>;
   getSecret(): string | undefined;
   run(): Promise<JobRunSummary>;
 };
@@ -65,6 +66,7 @@ export function createJobsRunHandler(input: JobsRunRouteDependencies) {
       );
     }
     try {
+      await input.bootstrap?.();
       const summary = await input.run();
       return json(
         { success: true, summary, requestId: correlationId },
@@ -98,7 +100,26 @@ async function runDefaultBatch(): Promise<JobRunSummary> {
   return defaultRunner();
 }
 
+async function bootstrapConfiguredAdministrator(): Promise<void> {
+  const configured = [
+    process.env.ADMIN_EMAIL,
+    process.env.ADMIN_USERNAME,
+    process.env.ADMIN_DISPLAY_NAME,
+    process.env.ADMIN_PASSWORD,
+  ].every((value) => Boolean(value?.trim()));
+  if (!configured) return;
+
+  const [{ db }, { parseBootstrapAdminEnv }, { bootstrapAdmin }] =
+    await Promise.all([
+      import("@/db/client"),
+      import("@/lib/env/server-schema"),
+      import("@/modules/auth/bootstrap-admin"),
+    ]);
+  await bootstrapAdmin(db, parseBootstrapAdminEnv(process.env));
+}
+
 export const GET = createJobsRunHandler({
+  bootstrap: bootstrapConfiguredAdministrator,
   getSecret: () => process.env.CRON_SECRET,
   run: runDefaultBatch,
 });

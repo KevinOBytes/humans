@@ -39,6 +39,34 @@ describe("bounded Vercel job route", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it("runs configured administrator bootstrap before the protected batch", async () => {
+    const bootstrap = vi.fn(async () => undefined);
+    const run = vi.fn(async () => ({
+      claimed: 0,
+      completed: 0,
+      deadLettered: 0,
+      deferred: 0,
+    }));
+    const handler = createJobsRunHandler({
+      bootstrap,
+      getSecret: () => secret,
+      run,
+    });
+
+    const response = await handler(
+      new Request("https://humans.example/api/jobs/run", {
+        headers: { authorization: `Bearer ${secret}` },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledOnce();
+    expect(bootstrap.mock.invocationCallOrder[0]).toBeLessThan(
+      run.mock.invocationCallOrder[0],
+    );
+  });
+
   it.each([undefined, "", "Bearer wrong", `bearer ${secret}`])(
     "rejects a missing or non-exact authorization value",
     async (authorization) => {
