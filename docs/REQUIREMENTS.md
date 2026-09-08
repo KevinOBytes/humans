@@ -129,6 +129,14 @@ identifier/contact/birth-date signals and the complete Chromium suite.
 
 Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_FDiSVUNCAaFWuytmWW6htUzThduf` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
+Bounded local Compose evidence (2026-09-08): server-rendered GraphQL uses an
+internal `http://app:3000` target while preserving the public browser origin,
+and loopback HTTP uses ordinary cookies under an explicit Docker-only policy.
+After rebuilding the current image, the live local stack passed sign-in,
+workspace activation, person creation, and cleanup with PostgreSQL, Redis, and
+MinIO healthy. Hosted authentication and the broader provider matrix remain
+open.
+
 Bounded HUM-FR-003 local Compose recovery evidence (2026-09-07): the isolated production-image smoke now executes the explicit administrator bootstrap across create, idempotent repeat, deliberate credential deletion, and credential recovery before starting the app and worker, then verifies exactly one credential remains. This strengthens the local release contract only; hosted Vercel repeat/recovery and operator-run evidence remain unverified.
 
 Bounded HUM-FR-003 sign-in bootstrap evidence (2026-09-08): email and username

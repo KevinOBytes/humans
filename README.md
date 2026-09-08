@@ -58,11 +58,10 @@ command line or expose them to the long-running application roles. The base
 stack does not start Ollama; configure an external AI provider or explicitly
 start the Ollama overlay before treating AI as available.
 
-Keep `AUTH_SECURE_COOKIES=true`. Secure cookies are supported by browsers on
-the `http://localhost` loopback exception used by the default Compose binding;
-non-loopback self-hosts must serve `NEXT_PUBLIC_APP_URL` over HTTPS through a
-trusted edge. Production validation rejects `AUTH_SECURE_COOKIES=false` in
-every deployment mode.
+The default local Compose install uses plain HTTP on loopback, so keep
+`AUTH_SECURE_COOKIES=false` there. Set it to `true` for Vercel and every
+non-loopback self-host served over HTTPS. Production validation rejects the
+insecure value outside an explicit Docker loopback URL.
 
 Registration defaults to invitation-only. Set `AUTH_REGISTRATION_MODE` to
 `disabled`, `invite_only`, or `public` for the intended deployment and review

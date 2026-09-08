@@ -75,11 +75,12 @@ and worker continue to consume the ordinary `.env` contract documented by
 project's protected environment-variable store rather than committing or
 printing the rendered file.
 
-Keep `AUTH_SECURE_COOKIES=true`. Browsers support secure cookies on the
-`http://localhost` loopback exception used by the default Compose binding. A
-non-loopback self-host must terminate HTTPS for `NEXT_PUBLIC_APP_URL` through a
-trusted edge. Production validation rejects `AUTH_SECURE_COOKIES=false` in
-every deployment mode; there is no supported insecure-cookie Compose override.
+The default loopback Compose install uses plain HTTP, so keep
+`AUTH_SECURE_COOKIES=false` for that local-only mode. Set it to `true` when
+`NEXT_PUBLIC_APP_URL` is HTTPS, including every non-loopback self-host behind a
+trusted edge and every Vercel deployment. Production validation permits the
+insecure value only for an explicit Docker loopback URL; it rejects it for
+public or non-loopback deployments.
 
 Set `AUTH_REGISTRATION_MODE=invite_only` for the default self-hosted posture,
 or explicitly choose `disabled` or `public`. Registration-mode changes require

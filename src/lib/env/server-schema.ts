@@ -164,6 +164,8 @@ const commonServerEnv = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   NEXT_PUBLIC_APP_URL: applicationUrl,
+  /** Optional server-to-server URL used when the public URL is not reachable from the app container. */
+  INTERNAL_APP_URL: applicationUrl.optional(),
   DATABASE_URL: z.url({ protocol: /^postgres(?:ql)?$/ }),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
   REDIS_TOKEN: z.string().optional(),
@@ -319,7 +321,12 @@ export const serverEnvSchema = z
       });
     }
 
-    if (!env.AUTH_SECURE_COOKIES) {
+    const application = new URL(env.NEXT_PUBLIC_APP_URL);
+    const loopbackHttpDocker =
+      env.DEPLOYMENT_MODE === "docker" &&
+      application.protocol === "http:" &&
+      ["127.0.0.1", "localhost", "::1"].includes(application.hostname);
+    if (!env.AUTH_SECURE_COOKIES && !loopbackHttpDocker) {
       context.addIssue({
         code: "custom",
         path: ["AUTH_SECURE_COOKIES"],
