@@ -9,6 +9,9 @@ x-app-environment: &app-environment
   NODE_ENV: production
   DEPLOYMENT_MODE: docker
   NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+  # Server-side GraphQL calls stay on the Compose network. Keep the public URL
+  # above browser-facing so non-default host ports do not break SSR pages.
+  INTERNAL_APP_URL: http://app:3000
   DATABASE_URL: postgresql://${POSTGRES_USER:-humans}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in an ignored .env file}@postgres:5432/${POSTGRES_DB:-humans}
   REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in an ignored .env file}@redis:6379
   STORAGE_PROVIDER: minio
@@ -21,7 +24,9 @@ x-app-environment: &app-environment
   STORAGE_BUCKET_PUBLIC: "false"
   AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in an ignored .env file}
   AUTH_REGISTRATION_MODE: ${AUTH_REGISTRATION_MODE:-invite_only}
-  AUTH_SECURE_COOKIES: ${AUTH_SECURE_COOKIES:-true}
+  # The default loopback install is plain HTTP, so it needs ordinary cookies.
+  # Set AUTH_SECURE_COOKIES=true whenever NEXT_PUBLIC_APP_URL is HTTPS.
+  AUTH_SECURE_COOKIES: ${AUTH_SECURE_COOKIES:-false}
   AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:-http://localhost:3000}
   AUTH_ENCRYPTION_KEY: ${AUTH_ENCRYPTION_KEY:?Set AUTH_ENCRYPTION_KEY in an ignored .env file}
   DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Set DATA_ENCRYPTION_KEY in an ignored .env file}

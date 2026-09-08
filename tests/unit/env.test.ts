@@ -261,6 +261,19 @@ describe("parseServerEnv", () => {
     ).toThrow(/AUTH_SECURE_COOKIES/);
   });
 
+  it("allows an explicit insecure-cookie exception for loopback Docker HTTP", () => {
+    expect(() =>
+      parseServerEnv({
+        ...productionEnv,
+        DEPLOYMENT_MODE: "docker",
+        TRUSTED_PROXY_MODE: "none",
+        NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+        AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+        AUTH_SECURE_COOKIES: "false",
+      }),
+    ).not.toThrow();
+  });
+
   it("supports secure production cookies on the loopback application origin", () => {
     expect(() =>
       parseServerEnv({

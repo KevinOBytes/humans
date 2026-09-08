@@ -46,13 +46,15 @@ export async function executeServerGraphQL<
   const requestHeaders = await headers();
   const cookie = sessionCookie(requestHeaders.get("cookie"));
   const env = getServerEnv();
-  const origin = new URL(env.NEXT_PUBLIC_APP_URL).origin;
-  const response = await fetch(new URL("/api/graphql", origin), {
+  const targetOrigin = new URL(env.INTERNAL_APP_URL ?? env.NEXT_PUBLIC_APP_URL)
+    .origin;
+  const publicOrigin = new URL(env.NEXT_PUBLIC_APP_URL).origin;
+  const response = await fetch(new URL("/api/graphql", targetOrigin), {
     method: "POST",
     cache: "no-store",
     headers: {
       "content-type": "application/json",
-      origin,
+      origin: publicOrigin,
       ...(cookie ? { cookie } : {}),
     },
     body: JSON.stringify({ query: document.toString(), variables }),

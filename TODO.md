@@ -81,6 +81,13 @@ observed. That protected route now runs the configured `ADMIN_*` bootstrap
 before the job batch. Authenticated sign-in/person creation and
 external-provider acceptance remain open.
 
+Latest local Compose evidence (2026-09-08): server-rendered GraphQL now uses an
+internal `http://app:3000` target while preserving the public browser origin,
+and loopback HTTP uses ordinary cookies by explicit Docker-only policy. After
+rebuilding the current image, the live local stack passed sign-in, workspace
+activation, person creation, and cleanup with PostgreSQL, Redis, and MinIO
+healthy. Hosted authentication and the broader provider matrix remain open.
+
 `HUM-FR-017` remains complete and intentionally absent: PostgreSQL integration
 coverage includes the short-transaction upload-attempt fence, non-blocking
 cancellation, late-object cleanup, successful completion, and lease-expiry
