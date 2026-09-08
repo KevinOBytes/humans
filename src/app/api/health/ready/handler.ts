@@ -16,6 +16,34 @@ export interface ReadinessOptions {
   timeoutMs?: number;
 }
 
+export interface ReadinessRetryOptions {
+  attempts?: number;
+  delayMs?: number;
+}
+
+export async function retryReadinessCheck(
+  check: () => Promise<void>,
+  options: ReadinessRetryOptions = {},
+): Promise<void> {
+  const attempts = Math.max(1, options.attempts ?? 3);
+  const delayMs = Math.max(0, options.delayMs ?? 250);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await check();
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1 && delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 async function checkBeforeDeadline(
   check: () => Promise<void>,
   timeoutMs: number,
@@ -106,9 +134,13 @@ const defaultProbes: readonly ReadinessProbe[] = [
   },
   {
     name: "redis",
-    check: async () => {
-      await getRedisStore().get("__humans:health:ready");
-    },
+    check: () =>
+      retryReadinessCheck(
+        async () => {
+          await getRedisStore().get("__humans:health:ready");
+        },
+        { attempts: 3, delayMs: 250 },
+      ),
   },
   {
     name: "storage",

@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { GET as getLiveness } from "@/app/api/health/live/route";
-import { createReadinessHandler } from "@/app/api/health/ready/handler";
+import {
+  createReadinessHandler,
+  retryReadinessCheck,
+} from "@/app/api/health/ready/handler";
 
 describe("liveness", () => {
   it("returns a non-secret status", async () => {
@@ -15,6 +18,22 @@ describe("liveness", () => {
 });
 
 describe("readiness", () => {
+  it("retries a dependency check after a transient connection failure", async () => {
+    let attempts = 0;
+
+    await expect(
+      retryReadinessCheck(
+        async () => {
+          attempts += 1;
+          if (attempts < 2) throw new Error("connection reset");
+        },
+        { delayMs: 0 },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(attempts).toBe(2);
+  });
+
   it("reports each successful required dependency", async () => {
     const getReadiness = createReadinessHandler([
       { name: "configuration", check: async () => undefined },
