@@ -123,7 +123,7 @@ test("expired invitations can be re-issued from member administration", async ({
     .getByText(email, { exact: true })
     .locator("..")
     .locator("..");
-  await expect(row.getByText("expired", { exact: false })).toBeVisible();
+  await expect(row.getByText(/viewer · expired/)).toBeVisible();
   await expect(row.getByRole("button", { name: "Re-invite" })).toBeVisible();
   await expect(row.getByRole("button", { name: "Cancel" })).toBeDisabled();
 
