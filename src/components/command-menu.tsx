@@ -25,6 +25,7 @@ export function CommandMenu({
   canViewGraph,
   canViewImports,
   canViewSearch,
+  canViewReconciliation,
 }: {
   canCreatePerson: boolean;
   canViewAnalyst: boolean;
@@ -32,6 +33,7 @@ export function CommandMenu({
   canViewGraph: boolean;
   canViewImports: boolean;
   canViewSearch: boolean;
+  canViewReconciliation?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -53,6 +55,9 @@ export function CommandMenu({
         : []),
       ...(canViewGraph ? [{ href: "/graph", label: "Graph" as const }] : []),
       ...(canViewSearch ? [{ href: "/search", label: "Search" as const }] : []),
+      ...(canViewReconciliation
+        ? [{ href: "/reconciliation", label: "Reconciliation" as const }]
+        : []),
       ...(canViewEvidence
         ? [{ href: "/evidence", label: "Evidence" as const }]
         : []),
@@ -70,6 +75,7 @@ export function CommandMenu({
       canViewGraph,
       canViewImports,
       canViewSearch,
+      canViewReconciliation,
     ],
   );
   const visible = commands.filter((item) =>

@@ -35,6 +35,9 @@ describe("AppShell", () => {
     expect(screen.getByRole("main")).toHaveTextContent("Research content");
     expect(screen.getByRole("link", { name: "Dashboard" })).toBeVisible();
     expect(screen.getByRole("link", { name: "People" })).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Reconciliation" }),
+    ).toHaveAttribute("href", "/reconciliation");
     expect(screen.getByRole("link", { name: "Add person" })).toBeVisible();
     expect(
       screen.queryByRole("link", { name: /graph|search|imports/i }),

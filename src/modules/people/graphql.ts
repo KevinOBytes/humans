@@ -491,6 +491,18 @@ const IdentityCandidate = builder
       id: t.expose("id", { type: "UUID" }),
       firstPersonId: t.expose("firstPersonId", { type: "UUID" }),
       secondPersonId: t.expose("secondPersonId", { type: "UUID" }),
+      firstPerson: t.field({
+        type: Person,
+        nullable: true,
+        resolve: (row, _args, context) =>
+          context.loaders.person.load(row.firstPersonId),
+      }),
+      secondPerson: t.field({
+        type: Person,
+        nullable: true,
+        resolve: (row, _args, context) =>
+          context.loaders.person.load(row.secondPersonId),
+      }),
       score: t.float({ resolve: (row) => Number(row.score) }),
       matchSignals: t.field({
         type: "JSON",

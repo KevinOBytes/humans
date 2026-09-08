@@ -798,6 +798,12 @@ query IdentityCandidates($limit: Int) {
     id
     firstPersonId
     secondPersonId
+    firstPerson {
+      ...PersonSummary
+    }
+    secondPerson {
+      ...PersonSummary
+    }
     score
     matchSignals
     state
@@ -812,6 +818,12 @@ mutation ReviewIdentityCandidate($input: ReviewIdentityCandidateInput!) {
     id
     firstPersonId
     secondPersonId
+    firstPerson {
+      ...PersonSummary
+    }
+    secondPerson {
+      ...PersonSummary
+    }
     score
     state
     reviewReason
