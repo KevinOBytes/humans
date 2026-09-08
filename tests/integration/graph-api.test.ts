@@ -329,7 +329,7 @@ liveDescribe("graph API", () => {
     const neighborhoodResult = await fixture.execute<{
       graph: {
         edges: Array<{ id: string; source: string; target: string }>;
-        nodes: Array<{ id: string }>;
+        nodes: Array<{ id: string; displayName: string }>;
       };
     }>({
       jar: owner.jar,

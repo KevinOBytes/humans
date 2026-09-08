@@ -24,6 +24,11 @@ type ExtractionRun = {
   structuredOutput?: unknown;
 };
 
+type StatusMessage = {
+  kind: "success" | "error";
+  message: string;
+};
+
 function errorMessage(result: { errors: readonly { message: string }[] }) {
   return (
     result.errors[0]?.message ||
@@ -60,7 +65,7 @@ export function FileExtractionControls({
   const [open, setOpen] = useState(false);
   const [runs, setRuns] = useState<ExtractionRun[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const [status, setStatus] = useState<StatusMessage | null>(null);
 
   async function refreshRuns() {
     const result = await executeBrowserGraphQL(FileExtractionRunsDocument, {
@@ -101,20 +106,24 @@ export function FileExtractionControls({
                 runId: runId!,
               });
       if (!result.ok) throw new Error(errorMessage(result));
-      setStatus(
-        action === "request"
-          ? "Extraction requested."
-          : action === "cancel"
-            ? "Extraction cancelled."
-            : "Extraction retry requested.",
-      );
+      setStatus({
+        kind: "success",
+        message:
+          action === "request"
+            ? "Extraction requested."
+            : action === "cancel"
+              ? "Extraction cancelled."
+              : "Extraction retry requested.",
+      });
       await refreshRuns();
     } catch (error) {
-      setStatus(
-        error instanceof Error && error.message
-          ? error.message
-          : "The extraction request could not be completed.",
-      );
+      setStatus({
+        kind: "error",
+        message:
+          error instanceof Error && error.message
+            ? error.message
+            : "The extraction request could not be completed.",
+      });
     } finally {
       setBusy(null);
     }
@@ -130,11 +139,13 @@ export function FileExtractionControls({
     try {
       await refreshRuns();
     } catch (error) {
-      setStatus(
-        error instanceof Error && error.message
-          ? error.message
-          : "Extraction history could not be loaded.",
-      );
+      setStatus({
+        kind: "error",
+        message:
+          error instanceof Error && error.message
+            ? error.message
+            : "Extraction history could not be loaded.",
+      });
       setRuns([]);
     }
   }
@@ -264,9 +275,9 @@ export function FileExtractionControls({
           {status ? (
             <p
               className="text-muted-foreground mt-2 text-xs"
-              role={status.includes("could not") ? "alert" : "status"}
+              role={status.kind === "error" ? "alert" : "status"}
             >
-              {status}
+              {status.message}
             </p>
           ) : null}
         </section>
