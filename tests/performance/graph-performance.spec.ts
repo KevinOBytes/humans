@@ -319,14 +319,17 @@ test("production GraphQL reports p95, response bytes, and bounded SQL query coun
   const maxBytes = Math.max(...samples.map((sample) => sample.bytes));
   await testInfo.attach("graph-api-performance.json", {
     body: Buffer.from(
-      JSON.stringify({ concurrent: { maxBytes, maxQueryCount, p95Ms }, full }),
+      JSON.stringify({
+        concurrent: { maxBytes, maxQueryCount, p95Ms, samples },
+        full,
+      }),
     ),
     contentType: "application/json",
   });
   testInfo.annotations.push({
     type: "graph-api-performance",
     description: JSON.stringify({
-      concurrent: { maxBytes, maxQueryCount, p95Ms },
+      concurrent: { maxBytes, maxQueryCount, p95Ms, samples },
       full,
     }),
   });

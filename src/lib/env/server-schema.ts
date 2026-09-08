@@ -167,6 +167,10 @@ const commonServerEnv = z.object({
   /** Optional server-to-server URL used when the public URL is not reachable from the app container. */
   INTERNAL_APP_URL: applicationUrl.optional(),
   DATABASE_URL: z.url({ protocol: /^postgres(?:ql)?$/ }),
+  DATABASE_POOL_MAX: z.preprocess(
+    (value) => (value === "" || value === undefined ? undefined : value),
+    z.coerce.number().int().min(1).max(20).optional(),
+  ),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
   REDIS_TOKEN: z.string().optional(),
   STORAGE_PROVIDER: z.enum(["minio", "r2", "s3"]),

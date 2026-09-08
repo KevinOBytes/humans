@@ -17,6 +17,7 @@ export const databaseConnection = postgres(serverEnv.DATABASE_URL, {
     ? { debug: recordDatabaseQuery }
     : {}),
   prepare: false,
+  ...(serverEnv.DATABASE_POOL_MAX ? { max: serverEnv.DATABASE_POOL_MAX } : {}),
 });
 
 export const db = drizzle(databaseConnection, { schema });

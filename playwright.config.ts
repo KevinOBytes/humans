@@ -20,6 +20,7 @@ const webServerEnv: Record<string, string> & NodeJS.ProcessEnv = {
   DEPLOYMENT_MODE: "docker",
   NEXT_PUBLIC_APP_URL: baseURL,
   DATABASE_URL: databaseUrl,
+  ...(graphPerformance ? { DATABASE_POOL_MAX: "20" } : {}),
   REDIS_URL: process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6379",
   STORAGE_PROVIDER: "minio",
   STORAGE_ENDPOINT:
