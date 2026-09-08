@@ -521,6 +521,11 @@ export type FileGrantMethod = "GET" | "PUT";
 export type FileScanState =
   "CLEAN" | "ERROR" | "INFECTED" | "NOT_REQUIRED" | "PENDING";
 
+export type GenerateIdentityCandidatesInput = {
+  idempotencyKey?: string | null | undefined;
+  limit?: number | null | undefined;
+};
+
 export type GraphAnalysisAlgorithm =
   "DEGREE" | "LOUVAIN_COMMUNITY" | "PAGERANK";
 
@@ -3701,6 +3706,26 @@ export type ReviewIdentityCandidateMutation = {
     secondPerson: {
       " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
     } | null;
+  };
+};
+
+export type GenerateIdentityCandidatesMutationVariables = Exact<{
+  input: GenerateIdentityCandidatesInput;
+}>;
+
+export type GenerateIdentityCandidatesMutation = {
+  generateIdentityCandidates: {
+    createdCount: number | null;
+    requestId: string | null;
+    candidates: Array<{
+      id: string | null;
+      firstPersonId: string | null;
+      secondPersonId: string | null;
+      score: number | null;
+      matchSignals: unknown;
+      state: IdentityCandidateState | null;
+      version: number | null;
+    }>;
   };
 };
 
@@ -8852,6 +8877,31 @@ export const ReviewIdentityCandidateDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ReviewIdentityCandidateMutation,
   ReviewIdentityCandidateMutationVariables
+>;
+export const GenerateIdentityCandidatesDocument = new TypedDocumentString(
+  `
+    mutation GenerateIdentityCandidates($input: GenerateIdentityCandidatesInput!) {
+  generateIdentityCandidates(input: $input) {
+    candidates {
+      id
+      firstPersonId
+      secondPersonId
+      score
+      matchSignals
+      state
+      version
+    }
+    createdCount
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:51fb4c2a8c804bb9c684ed027e05168cbfe49a0b417256661bef81e7459611be",
+  },
+) as unknown as TypedDocumentString<
+  GenerateIdentityCandidatesMutation,
+  GenerateIdentityCandidatesMutationVariables
 >;
 export const CreateFactDefinitionDocument = new TypedDocumentString(
   `

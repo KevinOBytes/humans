@@ -832,6 +832,22 @@ mutation ReviewIdentityCandidate($input: ReviewIdentityCandidateInput!) {
   }
 }
 
+mutation GenerateIdentityCandidates($input: GenerateIdentityCandidatesInput!) {
+  generateIdentityCandidates(input: $input) {
+    candidates {
+      id
+      firstPersonId
+      secondPersonId
+      score
+      matchSignals
+      state
+      version
+    }
+    createdCount
+    requestId
+  }
+}
+
 mutation CreateFactDefinition($input: CreateFactDefinitionInput!) {
   createFactDefinition(input: $input) {
     factDefinition {
