@@ -179,6 +179,7 @@ liveDescribe("webhook lifecycle acceptance", () => {
     expect(url).toBe("https://hooks.example.test/humans");
     const body = String(request?.body);
     const headers = new Headers(request?.headers);
+    expect(request?.redirect).toBe("error");
     const timestamp = Number(headers.get("x-humans-signature-timestamp"));
     expect(
       verifyWebhookSignature({
