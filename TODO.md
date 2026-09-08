@@ -53,6 +53,12 @@ integration contract, real PostgreSQL integration, Compose lifecycle,
 production build, quality, generated-artifact drift, dependency policy, image
 security, and secret scanning.
 
+Latest repository gate (2026-09-08): GitHub Actions run `34257740775` for
+commit `cd4723d` passed all 9 checks, including live identity-candidate
+generation, the Chromium browser suite, real PostgreSQL integration, Compose
+lifecycle, production build, quality, generated-artifact drift, dependency
+policy, image security, and secret scanning.
+
 Latest hosted evidence (2026-09-08): the sign-in bootstrap, reconciliation
 workspace, and Redis-restart readiness fix are deployed to Vercel production as
 `dpl_GDviAwHkuiDAj8LGNrapZg6pBtfg`; the custom hostname,
