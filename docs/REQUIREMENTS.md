@@ -80,6 +80,14 @@ were verified on the prior deployment; the new deployment's scheduled request
 is not yet observed. Hosted authenticated production acceptance and the
 remaining matrix are still open.
 
+Latest bounded release evidence (2026-09-08): GitHub Actions run `34247133041`
+passed for commit `c23ce86`, including the reconciliation browser review
+journey, quality, generated artifacts, production build, PostgreSQL/Redis/MinIO
+integration, Compose lifecycle, image security, secret scan, and dependency
+policy. The browser suite proves owner review persistence and viewer read-only
+controls for a seeded workspace candidate; candidate generation,
+merge/unmerge, provider acceptance, and the broader matrix remain open.
+
 Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_GDviAwHkuiDAj8LGNrapZg6pBtfg` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
 Bounded HUM-FR-003 local Compose recovery evidence (2026-09-07): the isolated production-image smoke now executes the explicit administrator bootstrap across create, idempotent repeat, deliberate credential deletion, and credential recovery before starting the app and worker, then verifies exactly one credential remains. This strengthens the local release contract only; hosted Vercel repeat/recovery and operator-run evidence remain unverified.
@@ -98,8 +106,11 @@ Bounded HUM-FR-010 reconciliation UI evidence (2026-09-08): the protected
 both person projections, displays match signals and score, and supports
 permission-aware reviewing, rejecting, and cancelling with bounded reasons,
 optimistic rollback, version checks, durable idempotency keys, and focused
-unit coverage. Live candidate generation, merge/unmerge browser acceptance,
-and the full conflict matrix remain unverified.
+unit coverage. `tests/e2e/reconciliation.spec.ts` adds CI-backed browser
+acceptance proving an owner can inspect a seeded candidate, persist a
+version-checked `ACCEPTED` decision with a bounded reason, and that a viewer can
+inspect but cannot change it. Live candidate generation, merge/unmerge browser
+acceptance, and the full conflict matrix remain unverified.
 
 ## Functional requirements
 
