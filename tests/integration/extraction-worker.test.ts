@@ -67,7 +67,7 @@ class ExtractionStore implements ObjectStore {
 }
 
 liveDescribe("durable extraction worker", () => {
-  let fixture: ResearchFixture;
+  let fixture!: ResearchFixture;
   let store: ExtractionStore;
 
   beforeAll(() => {
@@ -271,19 +271,24 @@ liveDescribe("durable extraction worker", () => {
 
 minioDescribe("durable extraction worker against MinIO", () => {
   const bucket = process.env.TEST_STORAGE_BUCKET ?? "humans-private";
-  const endpoint = process.env.TEST_STORAGE_ENDPOINT!;
-  const client = new S3Client({
-    ...s3ClientConfig({ endpoint, provider: "minio" }),
-    region: process.env.TEST_STORAGE_REGION ?? "us-east-1",
-    credentials: {
-      accessKeyId: process.env.TEST_STORAGE_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.TEST_STORAGE_SECRET_ACCESS_KEY!,
-    },
-  });
-  const store = new S3ObjectStore(client, bucket);
+  const endpoint = process.env.TEST_STORAGE_ENDPOINT;
+  // A skipped suite's callback is still evaluated by Vitest. Do not build an
+  // S3 client from an absent endpoint during the ordinary non-live test run.
+  const client = endpoint
+    ? new S3Client({
+        ...s3ClientConfig({ endpoint, provider: "minio" }),
+        region: process.env.TEST_STORAGE_REGION ?? "us-east-1",
+        credentials: {
+          accessKeyId: process.env.TEST_STORAGE_ACCESS_KEY_ID!,
+          secretAccessKey: process.env.TEST_STORAGE_SECRET_ACCESS_KEY!,
+        },
+      })
+    : null;
+  const store = client ? new S3ObjectStore(client, bucket) : null;
   let fixture: ResearchFixture;
 
   beforeAll(async () => {
+    if (!client || !store) return;
     fixture = new ResearchFixture();
     try {
       await client.send(new HeadBucketCommand({ Bucket: bucket }));
@@ -292,11 +297,12 @@ minioDescribe("durable extraction worker against MinIO", () => {
     }
   });
   beforeEach(async () => {
+    if (!fixture) return;
     await fixture.reset();
   });
   afterAll(async () => {
-    client.destroy();
-    await fixture.close();
+    client?.destroy();
+    await fixture?.close();
   });
 
   async function seed(input: {
@@ -304,6 +310,7 @@ minioDescribe("durable extraction worker against MinIO", () => {
     detectedType: string;
     extractor: string;
   }) {
+    if (!store || !fixture) throw new Error("MinIO fixture is unavailable");
     const actor = await fixture.createActor("owner");
     const fileId = newId();
     const runId = newId();
@@ -337,7 +344,7 @@ minioDescribe("durable extraction worker against MinIO", () => {
       state: "pending",
       createdBy: actor.userId,
     });
-    await client.send(
+    await client!.send(
       new PutObjectCommand({
         Bucket: bucket,
         Key: storageObjectKey(actor.workspaceId, storageKey),
@@ -356,7 +363,7 @@ minioDescribe("durable extraction worker against MinIO", () => {
     });
     const handler = createExtractionHandler({
       database: fixture.database,
-      objectStore: store,
+      objectStore: store!,
     });
 
     await handler(
@@ -385,7 +392,7 @@ minioDescribe("durable extraction worker against MinIO", () => {
     });
     const handler = createExtractionHandler({
       database: fixture.database,
-      objectStore: store,
+      objectStore: store!,
     });
 
     await expect(
@@ -412,7 +419,7 @@ minioDescribe("durable extraction worker against MinIO", () => {
     });
     const handler = createExtractionHandler({
       database: fixture.database,
-      objectStore: store,
+      objectStore: store!,
     });
 
     await expect(

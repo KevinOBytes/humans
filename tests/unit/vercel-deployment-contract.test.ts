@@ -1,15 +1,13 @@
 import { spawn } from "node:child_process";
-import {
-  createServer,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
 import { readFileSync } from "node:fs";
-import { once } from "node:events";
 
 import { describe, expect, it } from "vitest";
 
 import { clientEnvSchema } from "@/lib/env/client";
+import {
+  parseSmokeConfig,
+  runSmoke as runSmokeTransport,
+} from "../../scripts/vercel-deployment-smoke-lib.mjs";
 
 type SmokeResult = {
   exitCode: number | null;
@@ -55,40 +53,6 @@ function runSmoke(overrides: SmokeOverrides = {}): Promise<SmokeResult> {
     child.once("error", reject);
     child.once("close", (exitCode) => resolve({ exitCode, stderr, stdout }));
   });
-}
-
-async function closeServer(
-  server: ReturnType<typeof createServer>,
-): Promise<void> {
-  if (!server.listening) return;
-  server.close();
-  await once(server, "close");
-}
-
-async function listen(
-  handler: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<{ server: ReturnType<typeof createServer>; url: string }> {
-  const server = createServer(handler);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    await closeServer(server);
-    throw new Error("local smoke server did not expose a TCP address");
-  }
-  return { server, url: `http://127.0.0.1:${address.port}` };
-}
-
-function json(response: ServerResponse, status: number, body: unknown): void {
-  const requestId =
-    typeof body === "object" && body !== null && "requestId" in body
-      ? String(body.requestId)
-      : undefined;
-  response.writeHead(status, {
-    "content-type": "application/json",
-    ...(requestId ? { "x-request-id": requestId } : {}),
-  });
-  response.end(JSON.stringify(body));
 }
 
 describe("Vercel deployment parity contract", () => {
@@ -171,98 +135,138 @@ describe("Vercel deployment parity contract", () => {
 
   it("runs reachability and unauthenticated boundaries without an optional cron credential", async () => {
     const requests: Array<{ authorization: string | null; path: string }> = [];
-    const { server, url } = await listen((request, response) => {
-      requests.push({
-        authorization: request.headers.authorization ?? null,
-        path: request.url ?? "",
-      });
-      if (request.url === "/api/health/live") {
-        json(response, 200, { status: "ok" });
-      } else if (request.url === "/api/health/ready") {
-        json(response, 200, { status: "ready" });
-      } else if (request.url === "/api/graphql") {
-        json(response, 401, { errors: [{ message: "unauthenticated" }] });
-      } else if (request.url === "/api/jobs/run") {
-        json(response, 401, {
-          success: false,
-          code: "UNAUTHENTICATED",
-          requestId: "018f0000-0000-7000-8000-000000000001",
-        });
-      } else {
-        json(response, 404, { error: "not found" });
-      }
+    const config = parseSmokeConfig({
+      ...process.env,
+      VERCEL_SMOKE_URL: "https://smoke.example.test",
     });
-
-    try {
-      const result = await runSmoke({ VERCEL_SMOKE_URL: url });
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Vercel smoke passed for");
-      expect(requests).toEqual([
-        { path: "/api/health/live", authorization: null },
-        { path: "/api/health/ready", authorization: null },
-        { path: "/api/graphql", authorization: null },
-        { path: "/api/jobs/run", authorization: "Bearer invalid" },
-      ]);
-    } finally {
-      await closeServer(server);
-    }
+    const fetchImpl = async (
+      input: Parameters<typeof fetch>[0],
+      init: RequestInit = {},
+    ) => {
+      const url =
+        typeof input === "string"
+          ? new URL(input)
+          : input instanceof URL
+            ? input
+            : new URL(input.url);
+      const path = url.pathname;
+      requests.push({
+        authorization: new Headers(init.headers).get("authorization"),
+        path,
+      });
+      const bodies: Record<
+        string,
+        { status: number; body: unknown; requestId?: string }
+      > = {
+        "/api/health/live": { status: 200, body: { status: "ok" } },
+        "/api/health/ready": { status: 200, body: { status: "ready" } },
+        "/api/graphql": {
+          status: 401,
+          body: { errors: [{ message: "unauthenticated" }] },
+        },
+        "/api/jobs/run": {
+          status: 401,
+          body: {
+            success: false,
+            code: "UNAUTHENTICATED",
+            requestId: "018f0000-0000-7000-8000-000000000001",
+          },
+          requestId: "018f0000-0000-7000-8000-000000000001",
+        },
+      };
+      const result = bodies[path];
+      if (!result)
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+        });
+      return new Response(JSON.stringify(result.body), {
+        status: result.status,
+        headers: result.requestId
+          ? { "x-request-id": result.requestId }
+          : undefined,
+      });
+    };
+    await runSmokeTransport({ ...config!, fetchImpl });
+    expect(requests).toEqual([
+      { path: "/api/health/live", authorization: null },
+      { path: "/api/health/ready", authorization: null },
+      { path: "/api/graphql", authorization: null },
+      { path: "/api/jobs/run", authorization: "Bearer invalid" },
+    ]);
   });
 
   it("passes the exact optional cron credential only to the protected job route", async () => {
     const cronSecret = "local-smoke-cron-secret";
     const requests: Array<{ authorization: string | null; path: string }> = [];
-    const { server, url } = await listen((request, response) => {
-      requests.push({
-        authorization: request.headers.authorization ?? null,
-        path: request.url ?? "",
-      });
-      if (request.url === "/api/health/live") {
-        json(response, 200, { status: "ok" });
-      } else if (request.url === "/api/health/ready") {
-        json(response, 200, { status: "ready" });
-      } else if (request.url === "/api/graphql") {
-        json(response, 403, { errors: [{ message: "forbidden" }] });
-      } else if (
-        request.url === "/api/jobs/run" &&
-        request.headers.authorization === "Bearer invalid"
-      ) {
-        json(response, 401, {
-          success: false,
-          code: "UNAUTHENTICATED",
-          requestId: "018f0000-0000-7000-8000-000000000002",
-        });
-      } else if (
-        request.url === "/api/jobs/run" &&
-        request.headers.authorization === `Bearer ${cronSecret}`
-      ) {
-        json(response, 200, {
-          success: true,
-          summary: { claimed: 0, completed: 0, deadLettered: 0, deferred: 0 },
-          requestId: "018f0000-0000-7000-8000-000000000003",
-        });
-      } else {
-        json(response, 403, { success: false });
-      }
+    const config = parseSmokeConfig({
+      ...process.env,
+      VERCEL_SMOKE_URL: "https://smoke.example.test",
+      VERCEL_SMOKE_CRON_SECRET: cronSecret,
     });
-
-    try {
-      const result = await runSmoke({
-        VERCEL_SMOKE_URL: url,
-        VERCEL_SMOKE_CRON_SECRET: cronSecret,
-      });
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Vercel smoke passed for");
-      expect(requests.at(-1)).toEqual({
-        path: "/api/jobs/run",
-        authorization: `Bearer ${cronSecret}`,
-      });
-      expect(
-        requests
-          .filter(({ path }) => path === "/api/jobs/run")
-          .map(({ authorization }) => authorization),
-      ).toEqual(["Bearer invalid", `Bearer ${cronSecret}`]);
-    } finally {
-      await closeServer(server);
-    }
+    const fetchImpl = async (
+      input: Parameters<typeof fetch>[0],
+      init: RequestInit = {},
+    ) => {
+      const url =
+        typeof input === "string"
+          ? new URL(input)
+          : input instanceof URL
+            ? input
+            : new URL(input.url);
+      const path = url.pathname;
+      const authorization = new Headers(init.headers).get("authorization");
+      requests.push({ path, authorization });
+      if (path === "/api/health/live") {
+        return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      }
+      if (path === "/api/health/ready") {
+        return new Response(JSON.stringify({ status: "ready" }), {
+          status: 200,
+        });
+      }
+      if (path === "/api/graphql") {
+        return new Response(
+          JSON.stringify({ errors: [{ message: "forbidden" }] }),
+          { status: 403 },
+        );
+      }
+      if (authorization === "Bearer invalid") {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "UNAUTHENTICATED",
+            requestId: "018f0000-0000-7000-8000-000000000002",
+          }),
+          {
+            status: 401,
+            headers: { "x-request-id": "018f0000-0000-7000-8000-000000000002" },
+          },
+        );
+      }
+      if (authorization === `Bearer ${cronSecret}`) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            summary: { claimed: 0, completed: 0, deadLettered: 0, deferred: 0 },
+            requestId: "018f0000-0000-7000-8000-000000000003",
+          }),
+          {
+            status: 200,
+            headers: { "x-request-id": "018f0000-0000-7000-8000-000000000003" },
+          },
+        );
+      }
+      return new Response(JSON.stringify({ success: false }), { status: 403 });
+    };
+    await runSmokeTransport({ ...config!, fetchImpl });
+    expect(requests.at(-1)).toEqual({
+      path: "/api/jobs/run",
+      authorization: `Bearer ${cronSecret}`,
+    });
+    expect(
+      requests
+        .filter(({ path }) => path === "/api/jobs/run")
+        .map(({ authorization }) => authorization),
+    ).toEqual(["Bearer invalid", `Bearer ${cronSecret}`]);
   });
 });
