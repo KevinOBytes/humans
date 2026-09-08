@@ -59,7 +59,7 @@ export type GraphPersonRow = Pick<
   typeof people.$inferSelect,
   "id" | "displayName" | "sortName" | "status" | "sensitivity" | "version"
 >;
-export type GraphRelationshipRow = {
+export type GraphEdgeRow = {
   id: string;
   sourcePersonId: string;
   targetPersonId: string;
@@ -78,6 +78,8 @@ export type GraphRelationshipRow = {
   forwardLabel: string;
   inverseLabel: string;
   directed: boolean;
+};
+export type GraphRelationshipRow = GraphEdgeRow & {
   source: GraphPersonRow;
   target: GraphPersonRow;
 };
@@ -140,7 +142,7 @@ function relationshipFilter(filter: NormalizedGraphFilter) {
   );
 }
 
-function graphEdgeSelection() {
+function graphEdgeColumns() {
   return {
     id: relationships.id,
     sourcePersonId: relationships.sourcePersonId,
@@ -160,6 +162,12 @@ function graphEdgeSelection() {
     forwardLabel: relationshipTypes.forwardLabel,
     inverseLabel: relationshipTypes.inverseLabel,
     directed: relationshipTypes.directed,
+  };
+}
+
+function graphEdgeSelection() {
+  return {
+    ...graphEdgeColumns(),
     source: personSelection(sourcePeople),
     target: personSelection(targetPeople),
   };
@@ -562,22 +570,44 @@ export function createGraphRepository(database: Database) {
         ),
       });
     },
-    listVisibleEdgesAmongPeople(input: {
+    listVisibleEdgesAmongVisiblePeople(input: {
       workspaceId: string;
       personIds: readonly string[];
       filter: NormalizedGraphFilter;
       relationshipVisibility: GraphVisibilityFactory;
-      personVisibility: GraphVisibilityFactory;
       limit: number;
     }) {
       if (!input.personIds.length) return Promise.resolve([]);
-      return edges({
-        ...input,
-        extra: and(
-          inArray(relationships.sourcePersonId, [...input.personIds]),
-          inArray(relationships.targetPersonId, [...input.personIds]),
-        ),
-      });
+      // Graph callers pass IDs that were authorization-filtered in the same
+      // repeatable-read transaction. Both endpoint visibility checks have
+      // therefore already succeeded; keep the tenant and relationship checks
+      // here without rejoining and materializing the same people for every edge.
+      return database
+        .select(graphEdgeColumns())
+        .from(relationships)
+        .innerJoin(
+          relationshipTypes,
+          and(
+            eq(relationshipTypes.workspaceId, relationships.workspaceId),
+            eq(relationshipTypes.id, relationships.relationshipTypeId),
+            isNull(relationshipTypes.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(relationships.workspaceId, input.workspaceId),
+            isNull(relationships.deletedAt),
+            input.relationshipVisibility({
+              id: relationships.id,
+              sensitivity: relationships.sensitivity,
+            }),
+            relationshipFilter(input.filter),
+            inArray(relationships.sourcePersonId, [...input.personIds]),
+            inArray(relationships.targetPersonId, [...input.personIds]),
+          ),
+        )
+        .orderBy(asc(relationships.id))
+        .limit(input.limit);
     },
     async listViews(input: {
       workspaceId: string;

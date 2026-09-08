@@ -325,6 +325,37 @@ liveDescribe("graph API", () => {
       edgesTruncated: false,
       returnedEdgeCount: 1,
     });
+
+    const neighborhoodResult = await fixture.execute<{
+      graph: {
+        edges: Array<{ id: string; source: string; target: string }>;
+        nodes: Array<{ id: string; displayName: string }>;
+      };
+    }>({
+      jar: owner.jar,
+      query: GRAPH_QUERY,
+      variables: {
+        filter: {
+          mode: "NEIGHBORHOOD",
+          rootPersonIds: [ids.source],
+          depth: 1,
+          nodeLimit: 10,
+          edgeLimit: 10,
+        },
+      },
+    });
+    expect(neighborhoodResult.body?.errors).toBeUndefined();
+    expect(neighborhoodResult.body?.data?.graph.nodes).toEqual([
+      { id: ids.source, displayName: "B Source" },
+      { id: ids.target, displayName: "C Target" },
+    ]);
+    expect(neighborhoodResult.body?.data?.graph.edges).toEqual([
+      expect.objectContaining({
+        id: ids.visibleEdge,
+        source: ids.source,
+        target: ids.target,
+      }),
+    ]);
   });
 
   it("returns one generic miss when any neighborhood root is hidden", async () => {
