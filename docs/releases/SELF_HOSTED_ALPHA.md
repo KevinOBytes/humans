@@ -48,11 +48,11 @@ Cloudflare R2, and other S3-compatible services.
 
 The following evidence or capability remains open:
 
-- a verified Vercel deployment at the intended public hostname and parity
-  evidence using Neon, Upstash Redis, R2/S3, Resend, and an external AI
-  provider, including an attended one-shot administrator-bootstrap and recovery
-  record that excludes bootstrap secrets (local PostgreSQL coverage alone does
-  not establish this hosted evidence);
+- authenticated Vercel sign-in/person-creation proof and parity evidence using
+  Neon, Upstash Redis, R2/S3, Resend, and an external AI provider. The current
+  protected cron deployment invokes the validated `ADMIN_*` bootstrap before
+  each scheduled batch, but an authenticated hosted session and attended
+  repeat/recovery record remain unverified;
 - external Resend delivery and recipient acceptance, external object-storage
   acceptance, external OpenAI-compatible provider smoke, and optional Ollama
   model smoke;
@@ -73,13 +73,13 @@ Each item retains the status and MVP traceability assigned by
 `docs/REQUIREMENTS.md` and `TODO.md`. This alpha boundary does not reclassify
 any design-included work as post-MVP.
 
-The current hosted deployment `dpl_76tDQCwXFT7XDH7FWvFYhtHuwnhn` has a verified
+The current hosted deployment `dpl_9cCJMjJ6BufjT1bRf194MRadwnBD` has a verified
 `humans.kevinbytes.com` domain. Live liveness and readiness both pass, including
-PostgreSQL, Redis, and storage probes, and the bounded hosted smoke passes. This
-does not prove attended bootstrap repeat/recovery, authenticated sign-in and
-person creation, or the external-provider matrix. A production request log does
-show the configured scheduled `/api/jobs/run` request returning `200` after the
-deployment.
+PostgreSQL, Redis, and storage probes, and the bounded hosted smoke passes.
+Repeated production request logs show the configured scheduled `/api/jobs/run`
+request returning `200`; that route invokes configured administrator bootstrap
+before the worker batch. This still does not prove authenticated sign-in/person
+creation or the external-provider matrix.
 This document is not evidence of full MVP completion or production readiness.
 
 ## Operator path

@@ -255,6 +255,13 @@ requires Vercel Pro or Enterprise. Vercel Hobby currently permits cron jobs only
 once per day, so Hobby deployments must change `vercel.json` to a daily
 schedule. See [Vercel Cron usage and pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing).
 
+When all four `ADMIN_*` values are configured in Vercel, the same protected cron
+request runs the validated, idempotent administrator bootstrap before the job
+batch. It never returns or logs the password and does not rotate an existing
+credential. Hosted login still requires the actual configured
+`ADMIN_EMAIL`/`ADMIN_USERNAME` and `ADMIN_PASSWORD` values from the operator's
+secret store.
+
 Self-hosted Docker deployments do not depend on scheduled HTTP requests. The
 same digest-pinned, nonroot Distroless application image runs the standalone
 server, one-shot migration, administrator bootstrap, seed, continuous worker, and smoke launchers as

@@ -365,7 +365,7 @@ and observability failures cannot change product behavior.
 
 ## Deployment parity
 
-`DEPLOYMENT_MODE` discriminates `vercel` and `docker`, while application-level database, Redis, storage, email, auth, administrator, and AI variables stay consistent. Docker Compose includes `app`, `migrate`, `worker`, `postgres`, `redis`, `minio`, and `minio-init`; Ollama is an optional profile. The Docker worker runs continuously. Vercel uses managed equivalents and invokes the same bounded runtime through the `CRON_SECRET`-protected `/api/jobs/run` route. The committed five-minute schedule requires Vercel Pro or Enterprise; Hobby deployments must use a daily schedule under current Vercel limits.
+`DEPLOYMENT_MODE` discriminates `vercel` and `docker`, while application-level database, Redis, storage, email, auth, administrator, and AI variables stay consistent. Docker Compose includes `app`, `migrate`, `worker`, `postgres`, `redis`, `minio`, and `minio-init`; Ollama is an optional profile. The Docker worker runs continuously. Vercel uses managed equivalents and invokes the same bounded runtime through the `CRON_SECRET`-protected `/api/jobs/run` route; when all `ADMIN_*` values are present, that protected route also runs the idempotent administrator bootstrap before jobs. The committed five-minute schedule requires Vercel Pro or Enterprise; Hobby deployments must use a daily schedule under current Vercel limits.
 
 The durable executor also handles `extraction_execute` and `webhook_delivery`
 jobs. Extraction runs are workspace-scoped records linked to an uploaded file;
