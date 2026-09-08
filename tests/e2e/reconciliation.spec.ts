@@ -209,3 +209,68 @@ test("a viewer can inspect but cannot change an identity candidate", async ({
 
   await context.close();
 });
+
+test("a stale review view reports a conflict without overwriting the accepted state", async ({
+  browser,
+}) => {
+  await fixture.reset();
+  const { candidateId, owner } = await seedCandidate();
+  const firstContext = await browser.newContext();
+  const secondContext = await browser.newContext();
+  await authenticate(firstContext, owner.jar);
+  await authenticate(secondContext, owner.jar);
+  const firstPage = await firstContext.newPage();
+  const secondPage = await secondContext.newPage();
+
+  await Promise.all([
+    firstPage.goto("/reconciliation"),
+    secondPage.goto("/reconciliation"),
+  ]);
+  const firstCandidate = firstPage.getByRole("article");
+  const secondCandidate = secondPage.getByRole("article");
+  await expect(
+    firstCandidate.getByText("pending", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    secondCandidate.getByText("pending", { exact: true }),
+  ).toBeVisible();
+
+  await firstCandidate.getByLabel("Review decision").selectOption("ACCEPTED");
+  await firstCandidate
+    .getByLabel(/Reason/)
+    .fill("Accepted from the primary review view.");
+  await firstCandidate.getByRole("button", { name: "Save review" }).click();
+  await expect(
+    firstCandidate.getByText("accepted", { exact: true }),
+  ).toBeVisible();
+
+  await secondCandidate.getByLabel("Review decision").selectOption("REJECTED");
+  await secondCandidate
+    .getByLabel(/Reason/)
+    .fill("This stale view must not replace the accepted decision.");
+  await secondCandidate.getByRole("button", { name: "Save review" }).click();
+  await expect(secondCandidate.getByRole("alert")).toContainText("CONFLICT");
+  await expect(
+    secondCandidate.getByText("pending", { exact: true }),
+  ).toBeVisible();
+
+  const [row] = await fixture.database
+    .select({
+      state: identityCandidates.state,
+      reviewReason: identityCandidates.reviewReason,
+    })
+    .from(identityCandidates)
+    .where(
+      and(
+        eq(identityCandidates.id, candidateId),
+        eq(identityCandidates.workspaceId, owner.workspaceId),
+      ),
+    );
+  expect(row).toEqual({
+    state: "accepted",
+    reviewReason: "Accepted from the primary review view.",
+  });
+
+  await firstContext.close();
+  await secondContext.close();
+});

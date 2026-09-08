@@ -310,7 +310,12 @@ export function MemberAdministration() {
         </p>
       ) : null}
 
-      <div className="border-border overflow-x-auto rounded-xl border">
+      <div
+        className="border-border overflow-x-auto rounded-xl border"
+        role="region"
+        aria-label="Current workspace members table"
+        tabIndex={0}
+      >
         <Table aria-label="Current workspace members">
           <TableHeader>
             <TableRow>
