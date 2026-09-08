@@ -1287,7 +1287,7 @@ export function createPeopleService(context: ResearchServiceContext) {
       });
       if (
         !existing ||
-        existing.deletedAt ||
+        (input.idempotencyKey == null && existing.deletedAt) ||
         !(await visibleRecord("personName", existing))
       )
         throw createGraphQLError(
@@ -1767,7 +1767,7 @@ export function createPeopleService(context: ResearchServiceContext) {
       });
       if (
         !existing ||
-        existing.deletedAt ||
+        (input.idempotencyKey == null && existing.deletedAt) ||
         !(await visibleRecord("personEvent", existing))
       )
         throw createGraphQLError(
