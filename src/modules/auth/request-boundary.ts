@@ -107,9 +107,10 @@ export async function decorateAuthBoundaryResponse(
 ): Promise<Response> {
   const headers = new Headers(response.headers);
   headers.set("x-request-id", requestId);
-  if (response.status >= 400) {
-    headers.set("cache-control", "private, no-store");
-  }
+  // Successful auth responses can contain one-time credentials (for example
+  // a TOTP URI and backup codes during enrollment). Keep every auth response
+  // out of browser and intermediary caches, not only failures.
+  headers.set("cache-control", "private, no-store");
   if (response.status < 400) {
     return new Response(response.body, {
       headers,

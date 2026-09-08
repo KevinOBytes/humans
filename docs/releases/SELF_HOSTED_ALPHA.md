@@ -73,11 +73,12 @@ Each item retains the status and MVP traceability assigned by
 `docs/REQUIREMENTS.md` and `TODO.md`. This alpha boundary does not reclassify
 any design-included work as post-MVP.
 
-The current hosted deployment `dpl_9cCJMjJ6BufjT1bRf194MRadwnBD` has a verified
+The current hosted deployment `dpl_3VkaNbYAbAksvFP74HSkUfzNBebv` has a verified
 `humans.kevinbytes.com` domain. Live liveness and readiness both pass, including
 PostgreSQL, Redis, and storage probes, and the bounded hosted smoke passes.
-Repeated production request logs show the configured scheduled `/api/jobs/run`
-request returning `200`; that route invokes configured administrator bootstrap
+The prior deployment's production request logs show the configured scheduled
+`/api/jobs/run` request returning `200`; the new deployment's scheduled request
+is not yet observed. That route invokes configured administrator bootstrap
 before the worker batch. This still does not prove authenticated sign-in/person
 creation or the external-provider matrix.
 This document is not evidence of full MVP completion or production readiness.

@@ -178,6 +178,7 @@ describe("auth request client-address boundary", () => {
     );
 
     expect(success.headers.get("x-request-id")).toBe(id);
+    expect(success.headers.get("cache-control")).toBe("private, no-store");
     expect(await success.json()).toEqual({ status: true });
     expect(failure.headers.get("x-request-id")).toBe(id);
     expect(await failure.json()).toEqual({
