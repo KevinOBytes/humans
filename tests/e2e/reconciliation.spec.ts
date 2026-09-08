@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 
 import { newId } from "@/db/id";
-import { identityCandidates } from "@/db/schema/people";
+import { identityCandidates, mergeDecisions, people } from "@/db/schema/people";
 import type { CookieJar } from "../support/auth";
 import { ResearchFixture } from "../support/research-fixture";
 
@@ -66,7 +66,8 @@ test("an owner can review an identity candidate from the browser", async ({
   browser,
 }) => {
   await fixture.reset();
-  const { candidateId, owner } = await seedCandidate();
+  const { candidateId, owner, firstPersonId, secondPersonId } =
+    await seedCandidate();
   const context = await browser.newContext();
   await authenticate(context, owner.jar);
   const page = await context.newPage();
@@ -86,6 +87,77 @@ test("an owner can review an identity candidate from the browser", async ({
     .fill("Confirmed as the same person from the reviewed source set.");
   await candidate.getByRole("button", { name: "Save review" }).click();
   await expect(candidate.getByText("accepted", { exact: true })).toBeVisible();
+
+  await candidate.getByLabel("Merge winner").selectOption("first");
+  await candidate
+    .getByLabel("Merge reason")
+    .fill("Confirmed duplicate identity after source review.");
+  await candidate.getByLabel("Confirm merge").check();
+  await candidate
+    .getByRole("button", { name: "Merge selected people" })
+    .click();
+  await expect(candidate.getByText("Merge completed")).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const rows = await fixture.database
+        .select({
+          id: people.id,
+          status: people.status,
+          mergedIntoPersonId: people.mergedIntoPersonId,
+        })
+        .from(people)
+        .where(
+          and(
+            eq(people.workspaceId, owner.workspaceId),
+            eq(people.id, secondPersonId),
+          ),
+        );
+      return rows[0];
+    })
+    .toMatchObject({
+      id: secondPersonId,
+      status: "merged",
+      mergedIntoPersonId: firstPersonId,
+    });
+  await expect
+    .poll(async () => {
+      const rows = await fixture.database
+        .select({ id: mergeDecisions.id, reason: mergeDecisions.reason })
+        .from(mergeDecisions)
+        .where(eq(mergeDecisions.workspaceId, owner.workspaceId));
+      return rows;
+    })
+    .toHaveLength(1);
+
+  await candidate.getByRole("button", { name: "Undo merge" }).click();
+  await expect(candidate.getByText("Merge undone")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const rows = await fixture.database
+        .select({
+          status: people.status,
+          mergedIntoPersonId: people.mergedIntoPersonId,
+        })
+        .from(people)
+        .where(
+          and(
+            eq(people.workspaceId, owner.workspaceId),
+            eq(people.id, secondPersonId),
+          ),
+        );
+      return rows[0];
+    })
+    .toEqual({ status: "active", mergedIntoPersonId: null });
+  await expect
+    .poll(async () => {
+      const [row] = await fixture.database
+        .select({ state: identityCandidates.state })
+        .from(identityCandidates)
+        .where(eq(identityCandidates.id, candidateId));
+      return row?.state;
+    })
+    .toBe("accepted");
 
   await expect
     .poll(async () => {

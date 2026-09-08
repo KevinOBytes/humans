@@ -60,6 +60,8 @@ export default async function ReconciliationPage() {
               id: firstPerson.id,
               displayName: firstPerson.displayName,
               preferredName: firstPerson.preferredName,
+              status: firstPerson.status,
+              version: firstPerson.version,
             }
           : null,
         secondPerson: secondPerson
@@ -67,6 +69,8 @@ export default async function ReconciliationPage() {
               id: secondPerson.id,
               displayName: secondPerson.displayName,
               preferredName: secondPerson.preferredName,
+              status: secondPerson.status,
+              version: secondPerson.version,
             }
           : null,
         score,
