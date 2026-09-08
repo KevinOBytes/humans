@@ -449,6 +449,13 @@ export function createPeopleRepository(database: Database) {
                   AND ${input.evidenceVisibility}
                   AND ${input.sourceVisibility}
               )
+              OR EXISTS (
+                SELECT 1 FROM ${personFileAttachments}
+                WHERE ${personFileAttachments.workspaceId} = ${input.workspaceId}::uuid
+                  AND ${personFileAttachments.personId} = ${input.personId}::uuid
+                  AND ${personFileAttachments.fileId} = ${files.id}
+                  AND ${personFileAttachments.deletedAt} IS NULL
+              )
             )`,
           ),
         )
