@@ -98,6 +98,58 @@ test("a verified recipient can hand off and accept a workspace invitation", asyn
   await context.close();
 });
 
+test("a verified recipient can accept an administrator invitation", async ({
+  browser,
+}) => {
+  const owner = await fixture.createActor("owner");
+  const recipientEmail = `invitation-admin-${newId()}@example.test`;
+  const recipient = await fixture.createSessionActor({
+    email: recipientEmail,
+    username: `InvitationAdmin_${newId().replaceAll("-", "")}`,
+  });
+  const invitationId = newId();
+  await fixture.database.insert(invitations).values({
+    id: invitationId,
+    organizationId: owner.organizationId,
+    email: recipientEmail,
+    role: "admin",
+    status: "pending",
+    expiresAt: new Date(Date.now() + 60_000),
+    inviterId: owner.userId,
+  });
+
+  const context = await browser.newContext();
+  await authenticate(context, recipient.jar);
+  const page = await context.newPage();
+  await page.goto(`/accept-invitation#id=${invitationId}`);
+
+  await expect(
+    page.getByRole("heading", { name: "Review your invitation" }),
+  ).toBeVisible();
+  await expect(page.getByText("admin", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Accept invitation" }).click();
+  await expect(
+    page.getByRole("heading", { name: "You joined the workspace" }),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const [membership] = await fixture.database
+        .select({ role: members.role, organizationId: members.organizationId })
+        .from(members)
+        .where(
+          and(
+            eq(members.userId, recipient.userId),
+            eq(members.organizationId, owner.organizationId),
+          ),
+        );
+      return membership;
+    })
+    .toEqual({ role: "admin", organizationId: owner.organizationId });
+
+  await context.close();
+});
+
 test("expired invitations can be re-issued from member administration", async ({
   browser,
 }) => {
