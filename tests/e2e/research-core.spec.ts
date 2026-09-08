@@ -436,7 +436,9 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await expect(
     page.getByRole("heading", { name: "Names", exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Timeline", exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Ada Byron", exact: true }),
   ).toBeVisible();
