@@ -25,7 +25,12 @@ async function signIn(
   );
   await page.getByRole("button", { name: "Sign in" }).click();
   const response = await authResponse;
-  const responseBody = await response.text();
+  let responseBody = "<response body unavailable>";
+  try {
+    responseBody = await response.text();
+  } catch {
+    // A successful navigation can dispose the response before Playwright reads it.
+  }
   expect(
     response.ok(),
     `configured administrator sign-in failed (${response.status()}): ${responseBody}`,
@@ -53,7 +58,7 @@ async function activateOrCreateWorkspace(
   } else {
     await page.getByLabel("Name").fill(name);
     await page.getByLabel("Slug").fill(slug);
-    await page.getByRole("button", { name: "Create a workspace" }).click();
+    await page.getByRole("button", { name: "Create workspace" }).click();
   }
   await expect(page).toHaveURL(/\/dashboard$/u);
 }
