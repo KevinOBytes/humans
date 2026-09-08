@@ -141,6 +141,35 @@ describe("Better Auth administration boundary", () => {
     expect(delegate).toHaveBeenCalledWith(request);
   });
 
+  it.each(["/api/auth/sign-in/email", "/api/auth/sign-in/username"])(
+    "bootstraps the configured administrator before %s",
+    async (path) => {
+      const events: string[] = [];
+      const bootstrap = vi.fn(async () => {
+        events.push("bootstrap");
+      });
+      const delegate = vi.fn(async () => {
+        events.push("delegate");
+        return new Response("delegated", { status: 202 });
+      });
+      const handlers = createAuthRouteHandlers(async () => ({
+        POST: delegate,
+        bootstrap,
+      }));
+      const request = new Request(`https://humans.example.test${path}`, {
+        method: "POST",
+      });
+
+      await expect(handlers.POST(request)).resolves.toHaveProperty(
+        "status",
+        202,
+      );
+      expect(bootstrap).toHaveBeenCalledOnce();
+      expect(delegate).toHaveBeenCalledWith(request);
+      expect(events).toEqual(["bootstrap", "delegate"]);
+    },
+  );
+
   it("matches the protected boundary by exact method and pathname", async () => {
     const delegatedResponse = new Response("delegated");
     const post = vi.fn(async () => delegatedResponse);
