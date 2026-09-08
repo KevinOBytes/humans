@@ -48,9 +48,12 @@ import {
   desc,
   eq,
   getTableColumns,
+  ilike,
   inArray,
+  isNotNull,
   isNull,
   lt,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -4097,6 +4100,81 @@ export function createPeopleService(context: ResearchServiceContext) {
             ),
           )
           .orderBy(people.id);
+        const personIds = new Set(rows.map((row) => row.id));
+        const identifierRows = await database
+          .select({
+            personId: personIdentifiers.personId,
+            namespace: personIdentifiers.namespace,
+            blindIndex: personIdentifiers.blindIndex,
+          })
+          .from(personIdentifiers)
+          .where(
+            and(
+              eq(personIdentifiers.workspaceId, writeContext.workspaceId),
+              isNull(personIdentifiers.deletedAt),
+              eq(personIdentifiers.blindIndexVersion, 1),
+              isNotNull(personIdentifiers.blindIndex),
+              ne(personIdentifiers.verificationState, "revoked"),
+              sql`${personIdentifiers.validFrom} IS NULL OR ${personIdentifiers.validFrom} <= clock_timestamp()`,
+              sql`${personIdentifiers.validUntil} IS NULL OR ${personIdentifiers.validUntil} >= clock_timestamp()`,
+            ),
+          );
+        const contactAssociations = await database
+          .select({
+            personId: personContactPoints.personId,
+            contactPointId: personContactPoints.contactPointId,
+          })
+          .from(personContactPoints)
+          .where(
+            and(
+              eq(personContactPoints.workspaceId, writeContext.workspaceId),
+              isNull(personContactPoints.deletedAt),
+              sql`${personContactPoints.validFrom} IS NULL OR ${personContactPoints.validFrom} <= clock_timestamp()`,
+              sql`${personContactPoints.validUntil} IS NULL OR ${personContactPoints.validUntil} >= clock_timestamp()`,
+            ),
+          );
+        const contactPointIds = contactAssociations.map(
+          (row) => row.contactPointId,
+        );
+        const contactRows = contactPointIds.length
+          ? await database
+              .select({
+                id: contactPoints.id,
+                kind: contactPoints.kind,
+                blindIndex: contactPoints.blindIndex,
+              })
+              .from(contactPoints)
+              .where(
+                and(
+                  eq(contactPoints.workspaceId, writeContext.workspaceId),
+                  inArray(contactPoints.id, contactPointIds),
+                  isNull(contactPoints.deletedAt),
+                  eq(contactPoints.blindIndexVersion, 1),
+                ),
+              )
+          : [];
+        const contactById = new Map(contactRows.map((row) => [row.id, row]));
+        const birthDateRows = await database
+          .select({
+            personId: facts.personId,
+            fieldKey: facts.fieldKey,
+            label: facts.label,
+            valueDateStart: facts.valueDateStart,
+          })
+          .from(facts)
+          .where(
+            and(
+              eq(facts.workspaceId, writeContext.workspaceId),
+              isNull(facts.deletedAt),
+              eq(facts.valueType, "date"),
+              isNotNull(facts.valueDateStart),
+              inArray(facts.state, ["asserted", "corroborated", "unknown"]),
+              or(
+                ilike(facts.fieldKey, "%birth%"),
+                ilike(facts.label, "%birth%"),
+              ),
+            ),
+          );
         const candidates = new Map<
           string,
           {
@@ -4106,6 +4184,71 @@ export function createPeopleService(context: ResearchServiceContext) {
             score: string;
           }
         >();
+        const addCandidateSignal = (
+          leftPersonId: string,
+          rightPersonId: string,
+          signal: string,
+        ) => {
+          if (
+            leftPersonId === rightPersonId ||
+            !personIds.has(leftPersonId) ||
+            !personIds.has(rightPersonId)
+          ) {
+            return;
+          }
+          const firstPersonId =
+            leftPersonId < rightPersonId ? leftPersonId : rightPersonId;
+          const secondPersonId =
+            leftPersonId < rightPersonId ? rightPersonId : leftPersonId;
+          const key = `${firstPersonId}:${secondPersonId}`;
+          const existing = candidates.get(key);
+          if (existing) {
+            existing.matchSignals[signal] = true;
+            existing.score = Math.min(
+              0.99,
+              0.78 + Object.keys(existing.matchSignals).length * 0.07,
+            ).toFixed(3);
+            return;
+          }
+          candidates.set(key, {
+            firstPersonId,
+            secondPersonId,
+            matchSignals: { [signal]: true },
+            score: "0.850",
+          });
+        };
+        const addGroupedSignals = (
+          values: readonly { personId: string; key: string }[],
+          signal: string,
+        ) => {
+          const grouped = new Map<string, string[]>();
+          for (const value of values) {
+            if (!personIds.has(value.personId) || !value.key) continue;
+            const group = grouped.get(value.key) ?? [];
+            group.push(value.personId);
+            grouped.set(value.key, group);
+          }
+          for (const group of grouped.values()) {
+            const uniquePersonIds = [...new Set(group)];
+            for (
+              let firstIndex = 0;
+              firstIndex < uniquePersonIds.length;
+              firstIndex += 1
+            ) {
+              for (
+                let secondIndex = firstIndex + 1;
+                secondIndex < uniquePersonIds.length;
+                secondIndex += 1
+              ) {
+                addCandidateSignal(
+                  uniquePersonIds[firstIndex]!,
+                  uniquePersonIds[secondIndex]!,
+                  signal,
+                );
+              }
+            }
+          }
+        };
         for (let firstIndex = 0; firstIndex < rows.length; firstIndex += 1) {
           const first = rows[firstIndex]!;
           const firstNames = {
@@ -4113,7 +4256,6 @@ export function createPeopleService(context: ResearchServiceContext) {
             sortName: normalizeIdentityName(first.sortName),
             preferredName: normalizeIdentityName(first.preferredName),
           };
-          if (firstNames.displayName.length < 3) continue;
           for (
             let secondIndex = firstIndex + 1;
             secondIndex < rows.length;
@@ -4125,35 +4267,61 @@ export function createPeopleService(context: ResearchServiceContext) {
               sortName: normalizeIdentityName(second.sortName),
               preferredName: normalizeIdentityName(second.preferredName),
             };
-            const matchSignals: Record<string, boolean> = {};
-            if (firstNames.displayName === secondNames.displayName) {
-              matchSignals.sharedDisplayName = true;
+            if (
+              firstNames.displayName.length >= 3 &&
+              firstNames.displayName === secondNames.displayName
+            ) {
+              addCandidateSignal(first.id, second.id, "sharedDisplayName");
             }
             if (
               firstNames.sortName.length >= 3 &&
               firstNames.sortName === secondNames.sortName
             ) {
-              matchSignals.sharedSortName = true;
+              addCandidateSignal(first.id, second.id, "sharedSortName");
             }
             if (
               firstNames.preferredName.length >= 3 &&
               firstNames.preferredName === secondNames.preferredName
             ) {
-              matchSignals.sharedPreferredName = true;
+              addCandidateSignal(first.id, second.id, "sharedPreferredName");
             }
-            if (!Object.keys(matchSignals).length) continue;
-            const firstPersonId = first.id < second.id ? first.id : second.id;
-            const secondPersonId = first.id < second.id ? second.id : first.id;
-            const key = `${firstPersonId}:${secondPersonId}`;
-            const signalCount = Object.keys(matchSignals).length;
-            candidates.set(key, {
-              firstPersonId,
-              secondPersonId,
-              matchSignals,
-              score: Math.min(0.99, 0.78 + signalCount * 0.07).toFixed(3),
-            });
           }
         }
+        addGroupedSignals(
+          identifierRows.flatMap((row) =>
+            row.blindIndex
+              ? [
+                  {
+                    personId: row.personId,
+                    key: `${row.namespace}\u0000${row.blindIndex}`,
+                  },
+                ]
+              : [],
+          ),
+          "sharedIdentifier",
+        );
+        addGroupedSignals(
+          contactAssociations.flatMap((association) => {
+            const contact = contactById.get(association.contactPointId);
+            return contact
+              ? [
+                  {
+                    personId: association.personId,
+                    key: `${contact.kind}\u0000${contact.blindIndex}`,
+                  },
+                ]
+              : [];
+          }),
+          "sharedContact",
+        );
+        addGroupedSignals(
+          birthDateRows.flatMap((row) =>
+            row.valueDateStart
+              ? [{ personId: row.personId, key: row.valueDateStart }]
+              : [],
+          ),
+          "sharedBirthDate",
+        );
         const inserted: (typeof identityCandidates.$inferSelect)[] = [];
         for (const candidate of [...candidates.values()].slice(0, limit)) {
           const now = new Date();
