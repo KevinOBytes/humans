@@ -22,13 +22,14 @@ selection/editor flow, real PostgreSQL integration, Compose lifecycle,
 production build, quality, generated-artifact drift, dependency policy, image
 security, and secret scanning.
 
-Latest hosted evidence (2026-09-08): verified commit `f2ad282` is deployed to
-Vercel production as `dpl_76tDQCwXFT7XDH7FWvFYhtHuwnhn`; the custom hostname,
+Latest hosted evidence (2026-09-08): the protected-cron bootstrap fix is
+deployed to Vercel production as `dpl_9cCJMjJ6BufjT1bRf194MRadwnBD`; the custom hostname,
 liveness, readiness, PostgreSQL/Redis/storage probes, unauthenticated GraphQL
 boundary, and protected jobs boundary all passed the bounded smoke. A Vercel
-production request log also records the scheduled `/api/jobs/run` request as
-`200` after deployment. Hosted bootstrap, authenticated sign-in/person
-creation, and external-provider acceptance remain open.
+production request log records repeated scheduled `/api/jobs/run` requests as
+`200` after deployment; that protected route now runs the configured `ADMIN_*`
+bootstrap before the job batch. Authenticated sign-in/person creation and
+external-provider acceptance remain open.
 
 `HUM-FR-017` remains complete and intentionally absent: PostgreSQL integration
 coverage includes the short-transaction upload-attempt fence, non-blocking
@@ -38,7 +39,7 @@ recovery.
 ## Functional
 
 - [ ] `HUM-FR-003` Complete hosted release evidence and recovery acceptance for the implemented explicit, idempotent administrator bootstrap.
-- Bounded HUM-FR-003 local Compose evidence (2026-09-07): the isolated production-image smoke now runs administrator bootstrap three times across create, idempotent repeat, and deliberate credential deletion/recovery, then verifies exactly one credential before app startup. Hosted Vercel repeat/recovery and operator-run evidence remain open.
+- Bounded HUM-FR-003 local Compose evidence (2026-09-07): the isolated production-image smoke now runs administrator bootstrap three times across create, idempotent repeat, and deliberate credential deletion/recovery, then verifies exactly one credential before app startup. The protected Vercel cron now invokes the same validated bootstrap when all `ADMIN_*` values are configured; hosted authenticated sign-in and repeat/recovery proof remain open.
 - [ ] `HUM-FR-004` Complete the recipient acceptance, administrator-role, resend/removal, responsive/RTL/zoom, provider-failure, and cancel/acceptance race matrix for the implemented workspace invitation and member-management boundary.
 - Bounded HUM-FR-004 invitation lock-order evidence: acceptance now takes the same workspace advisory lock as administrative cancellation before invitation row locking; live PostgreSQL coverage proves cancellation-first completion without deadlock, `UNAVAILABLE` acceptance, and no membership side effect. External provider/browser and exhaustive role/recipient coverage remain open.
 - [ ] `HUM-FR-005` Complete live policy/grant/hold/deletion/consent acceptance, retention-worker enforcement, and the full role/resource matrix for the now-implemented audited mutation boundary.
@@ -51,7 +52,7 @@ recovery.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes. A focused live policy-settings matrix now covers owner access-policy success, administrator workspace-default success, viewer/foreign denial, optimistic retries, validation rollback, redacted audit output, and durable `UpdateAccessPolicy` plus `UpdateWorkspaceDefaults` replay/concurrency boundaries; provider and whole-settings coverage remain open.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search/graph envelopes, centralized browser/server GraphQL error contract (including malformed-payload handling, header-authoritative IDs, and known-code secret-message normalization), and representative all-code/redaction matrix. Direct route codes are inventoried in `docs/ARCHITECTURE.md`; the scheduled `/api/jobs/run` route now emits stable `UNAUTHENTICATED`/`INTERNAL` codes with an `x-request-id`, and a typed direct-route client covers invitation handoff/acceptance and two-factor state changes, while adoption across every direct route and the whole-product failure matrix remain open.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks; provider, browser, and interruption coverage remain open.
-- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_76tDQCwXFT7XDH7FWvFYhtHuwnhn` is Ready and serves `humans.kevinbytes.com` from the verified current `main` tree; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment, and a Vercel production request log records the scheduled `/api/jobs/run` request as `200`. Hosted bootstrap repeat/recovery, sign-in/create-person acceptance after this deployment, and the full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command; the attempted command safely stopped before mutation when it encountered the local Compose-style database host, so hosted bootstrap remains unverified.
+- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_9cCJMjJ6BufjT1bRf194MRadwnBD` is Ready and serves `humans.kevinbytes.com` from the verified current `main` tree; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment, and repeated Vercel production request logs record the scheduled `/api/jobs/run` request as `200`. The protected route now invokes configured administrator bootstrap before jobs. Authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
 
 ## Non-functional
 
