@@ -77,7 +77,9 @@ The current hosted deployment `dpl_76tDQCwXFT7XDH7FWvFYhtHuwnhn` has a verified
 `humans.kevinbytes.com` domain. Live liveness and readiness both pass, including
 PostgreSQL, Redis, and storage probes, and the bounded hosted smoke passes. This
 does not prove attended bootstrap repeat/recovery, authenticated sign-in and
-person creation, authorized cron execution, or the external-provider matrix.
+person creation, or the external-provider matrix. A production request log does
+show the configured scheduled `/api/jobs/run` request returning `200` after the
+deployment.
 This document is not evidence of full MVP completion or production readiness.
 
 ## Operator path
