@@ -18,26 +18,33 @@ const secretAccessKey = process.env.TEST_STORAGE_SECRET_ACCESS_KEY;
 const liveDescribe =
   endpoint && accessKeyId && secretAccessKey ? describe : describe.skip;
 liveDescribe("real MinIO upload and download", () => {
-  const client = new S3Client({
-    ...s3ClientConfig({ endpoint: endpoint!, provider: "minio" }),
-    region: process.env.TEST_STORAGE_REGION ?? "us-east-1",
-    credentials: {
-      accessKeyId: accessKeyId!,
-      secretAccessKey: secretAccessKey!,
-    },
-  });
-  const store = new S3ObjectStore(client, bucket);
+  // Vitest still evaluates a skipped suite's callback while registering its
+  // tests. Keep all provider construction conditional so a normal unit run
+  // never attempts to parse an absent/invalid live endpoint.
+  const client = endpoint
+    ? new S3Client({
+        ...s3ClientConfig({ endpoint, provider: "minio" }),
+        region: process.env.TEST_STORAGE_REGION ?? "us-east-1",
+        credentials: {
+          accessKeyId: accessKeyId!,
+          secretAccessKey: secretAccessKey!,
+        },
+      })
+    : null;
+  const store = client ? new S3ObjectStore(client, bucket) : null;
 
   beforeAll(async () => {
+    if (!client || !store) return;
     try {
       await client.send(new HeadBucketCommand({ Bucket: bucket }));
     } catch {
       await client.send(new CreateBucketCommand({ Bucket: bucket }));
     }
   });
-  afterAll(() => client.destroy());
+  afterAll(() => client?.destroy());
 
   it("round-trips a checksum-bound private object through signed grants", async () => {
+    if (!store) return;
     const workspaceId = `minio-${randomUUID()}`;
     const key = `imports/${randomUUID()}.csv`;
     const body = new TextEncoder().encode(
