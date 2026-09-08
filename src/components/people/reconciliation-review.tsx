@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { executeBrowserGraphQL } from "@/graphql/client";
+import { executeBrowserGraphQL, type GraphQLResult } from "@/graphql/client";
 import {
   ReviewIdentityCandidateDocument,
   type IdentityCandidateState,
@@ -148,9 +148,13 @@ export function ReconciliationReview({
     setCandidates((current) =>
       current.map((item) => (item.id === candidate.id ? optimistic : item)),
     );
-    const result = await executeBrowserGraphQL(
-      ReviewIdentityCandidateDocument,
-      {
+    const restoreCandidate = () =>
+      setCandidates((current) =>
+        current.map((item) => (item.id === candidate.id ? candidate : item)),
+      );
+    let result: GraphQLResult<ReviewIdentityCandidateMutation>;
+    try {
+      result = await executeBrowserGraphQL(ReviewIdentityCandidateDocument, {
         input: {
           id: candidate.id,
           expectedVersion: candidate.version,
@@ -158,17 +162,31 @@ export function ReconciliationReview({
           reason,
           idempotencyKey: crypto.randomUUID(),
         },
-      },
-    );
+      });
+    } catch {
+      restoreCandidate();
+      setFeedback((current) => ({
+        ...current,
+        [candidate.id]: {
+          code: "REQUEST_FAILED",
+          fallback: "The reconciliation review could not be saved.",
+          issues: [],
+        },
+      }));
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete(candidate.id);
+        return next;
+      });
+      return;
+    }
     setBusy((current) => {
       const next = new Set(current);
       next.delete(candidate.id);
       return next;
     });
     if (!result.ok) {
-      setCandidates((current) =>
-        current.map((item) => (item.id === candidate.id ? candidate : item)),
-      );
+      restoreCandidate();
       setFeedback((current) => ({
         ...current,
         [candidate.id]: transportMutationFeedback(

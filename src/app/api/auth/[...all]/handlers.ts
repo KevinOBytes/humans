@@ -1,9 +1,10 @@
 export type AuthMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 type AuthHandler = (request: Request) => Promise<Response>;
 type AuthRouteHandlers = Record<AuthMethod, AuthHandler>;
-type AuthHandlerLoader = () => Promise<
-  Partial<Record<AuthMethod, (request: Request) => Promise<Response>>>
->;
+type LoadedAuthRouteHandlers = Partial<AuthRouteHandlers> & {
+  bootstrap?: () => Promise<void>;
+};
+type AuthHandlerLoader = () => Promise<LoadedAuthRouteHandlers>;
 type InfrastructureLogger = {
   log(event: {
     event: "auth.infrastructure.failure";
@@ -24,6 +25,10 @@ const protectedPostPaths = new Set([
 const wrappedLifecyclePostPaths = new Set([
   "/api/auth/organization/accept-invitation",
   "/api/auth/two-factor/disable",
+]);
+const administratorBootstrapPaths = new Set([
+  "/api/auth/sign-in/email",
+  "/api/auth/sign-in/username",
 ]);
 
 const requestIdPattern =
@@ -103,6 +108,16 @@ function isProtectedAdministrationRequest(
   return pathname !== undefined && protectedPostPaths.has(pathname);
 }
 
+function shouldBootstrapAdministrator(
+  method: AuthMethod,
+  request: Request,
+): boolean {
+  return (
+    method === "POST" &&
+    administratorBootstrapPaths.has(normalizedPathname(request) ?? "")
+  );
+}
+
 function administrationDisabledResponse(request: Request): Response {
   return boundaryError(request, {
     code: "AUTH_ADMINISTRATION_DISABLED",
@@ -117,9 +132,9 @@ function lifecycleWrapperRequiredResponse(request: Request): Response {
   });
 }
 
-let routeHandlers: Promise<AuthRouteHandlers> | undefined;
+let routeHandlers: Promise<LoadedAuthRouteHandlers> | undefined;
 
-function getRouteHandlers(): Promise<AuthRouteHandlers> {
+function getRouteHandlers(): Promise<LoadedAuthRouteHandlers> {
   routeHandlers ??= Promise.all([
     import("better-auth/next-js"),
     import("@/lib/env/server"),
@@ -144,6 +159,21 @@ function getRouteHandlers(): Promise<AuthRouteHandlers> {
     ]) => {
       const env = getServerEnv();
       const handlers = toNextJsHandler(auth) as AuthRouteHandlers;
+      const bootstrap = async () => {
+        const configured = [
+          process.env.ADMIN_EMAIL,
+          process.env.ADMIN_USERNAME,
+          process.env.ADMIN_DISPLAY_NAME,
+          process.env.ADMIN_PASSWORD,
+        ].every((value) => Boolean(value?.trim()));
+        if (!configured) return;
+        const [{ parseBootstrapAdminEnv }, { bootstrapAdmin }] =
+          await Promise.all([
+            import("@/lib/env/server-schema"),
+            import("@/modules/auth/bootstrap-admin"),
+          ]);
+        await bootstrapAdmin(db, parseBootstrapAdminEnv(process.env));
+      };
       const emailSender = createEmailSender(env);
       const inviteSignUp = createTransactionalInviteSignUpHandler({
         database: db,
@@ -217,7 +247,7 @@ function getRouteHandlers(): Promise<AuthRouteHandlers> {
                 deploymentMode: env.DEPLOYMENT_MODE,
                 mode: "none" as const,
               };
-      return Object.fromEntries(
+      const routeHandlers = Object.fromEntries(
         Object.entries(handlers).map(([method, handler]) => [
           method,
           async (request: Request) => {
@@ -242,6 +272,7 @@ function getRouteHandlers(): Promise<AuthRouteHandlers> {
           },
         ]),
       ) as AuthRouteHandlers;
+      return { ...routeHandlers, bootstrap };
     },
   );
   return routeHandlers;
@@ -273,6 +304,10 @@ function lazyAuthHandler(
     }
     try {
       const handlers = await loadHandlers();
+      const prepared = request;
+      if (shouldBootstrapAdministrator(method, prepared)) {
+        await handlers.bootstrap?.();
+      }
       const handler = handlers[method];
       if (!handler) {
         return boundaryError(

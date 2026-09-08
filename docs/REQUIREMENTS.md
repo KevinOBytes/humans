@@ -79,6 +79,23 @@ Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_
 
 Bounded HUM-FR-003 local Compose recovery evidence (2026-09-07): the isolated production-image smoke now executes the explicit administrator bootstrap across create, idempotent repeat, deliberate credential deletion, and credential recovery before starting the app and worker, then verifies exactly one credential remains. This strengthens the local release contract only; hosted Vercel repeat/recovery and operator-run evidence remain unverified.
 
+Bounded HUM-FR-003 sign-in bootstrap evidence (2026-09-08): email and username
+sign-in requests now invoke the same idempotent configured-administrator
+bootstrap before Better Auth delegates, so a fresh hosted database does not
+require waiting for the first scheduled job. The route is a no-op when
+`ADMIN_*` is incomplete and rejects API-key interactive requests before
+bootstrap; focused route tests prove bootstrap-before-delegate ordering and
+correlation. Hosted credential acceptance and repeat/recovery proof remain
+unverified.
+
+Bounded HUM-FR-010 reconciliation UI evidence (2026-09-08): the protected
+`/reconciliation` workspace now loads workspace-scoped identity candidates with
+both person projections, displays match signals and score, and supports
+permission-aware reviewing, rejecting, and cancelling with bounded reasons,
+optimistic rollback, version checks, durable idempotency keys, and focused
+unit coverage. Live candidate generation, merge/unmerge browser acceptance,
+and the full conflict matrix remain unverified.
+
 ## Functional requirements
 
 | ID           | Requirement                                                                                                                                                                                                                                                                                                                                         | Verification                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Status     |
