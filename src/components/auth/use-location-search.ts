@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 const subscribe = () => () => undefined;
 
@@ -32,16 +32,27 @@ export function useEphemeralHashParam(name: string): {
     ready: boolean;
     value: string | null;
   }>({ ready: false, value: null });
+  const capturedValue = useRef<{ name: string; value: string | null } | null>(
+    null,
+  );
 
   useEffect(() => {
     let active = true;
-    const hashParameters = new URLSearchParams(
-      window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "",
-    );
-    const parameters = hashParameters.has(name)
-      ? hashParameters
-      : new URLSearchParams(window.location.search);
-    const value = parameters.get(name)?.trim() || null;
+    let value: string | null;
+    if (capturedValue.current?.name === name) {
+      value = capturedValue.current.value;
+    } else {
+      const hashParameters = new URLSearchParams(
+        window.location.hash.startsWith("#")
+          ? window.location.hash.slice(1)
+          : "",
+      );
+      const parameters = hashParameters.has(name)
+        ? hashParameters
+        : new URLSearchParams(window.location.search);
+      value = parameters.get(name)?.trim() || null;
+      capturedValue.current = { name, value };
+    }
     const scrub = () => {
       const searchParameters = new URLSearchParams(window.location.search);
       searchParameters.delete(name);
@@ -58,7 +69,6 @@ export function useEphemeralHashParam(name: string): {
     });
     return () => {
       active = false;
-      scrub();
     };
   }, [name]);
 

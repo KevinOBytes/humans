@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { useEphemeralHashParam } from "@/components/auth/use-location-search";
@@ -47,5 +48,19 @@ describe("ephemeral reset token state", () => {
     expect(result.current.value).toBe("query-reset-secret");
     expect(window.location.href).not.toContain("query-reset-secret");
     expect(window.location.search).toBe("");
+  });
+
+  it("keeps the captured token through StrictMode effect replay", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/reset-password#token=strict-mode-reset-secret",
+    );
+    const { result } = renderHook(() => useEphemeralHashParam("token"), {
+      wrapper: StrictMode,
+    });
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.value).toBe("strict-mode-reset-secret");
   });
 });
