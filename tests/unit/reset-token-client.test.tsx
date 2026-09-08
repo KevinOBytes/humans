@@ -34,4 +34,18 @@ describe("ephemeral reset token state", () => {
     expect(result.current.value).toBeNull();
     expect(window.location.hash).toBe("");
   });
+
+  it("also captures a query token when a proxy cannot preserve the fragment", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/reset-password?token=query-reset-secret",
+    );
+    const { result } = renderHook(() => useEphemeralHashParam("token"));
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.value).toBe("query-reset-secret");
+    expect(window.location.href).not.toContain("query-reset-secret");
+    expect(window.location.search).toBe("");
+  });
 });

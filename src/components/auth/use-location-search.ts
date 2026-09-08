@@ -35,16 +35,23 @@ export function useEphemeralHashParam(name: string): {
 
   useEffect(() => {
     let active = true;
-    const parameters = new URLSearchParams(
+    const hashParameters = new URLSearchParams(
       window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "",
     );
+    const parameters = hashParameters.has(name)
+      ? hashParameters
+      : new URLSearchParams(window.location.search);
     const value = parameters.get(name)?.trim() || null;
-    const scrub = () =>
+    const scrub = () => {
+      const searchParameters = new URLSearchParams(window.location.search);
+      searchParameters.delete(name);
+      const search = searchParameters.toString();
       window.history.replaceState(
         window.history.state,
         "",
-        `${window.location.pathname}${window.location.search}`,
+        `${window.location.pathname}${search ? `?${search}` : ""}`,
       );
+    };
     scrub();
     queueMicrotask(() => {
       if (active) setCaptured({ ready: true, value });

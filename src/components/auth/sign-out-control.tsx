@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { authClient } from "@/modules/auth/auth-client";
 
@@ -11,6 +11,11 @@ export function SignOutControl({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
+  const ready = useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false,
+  );
 
   async function signOut() {
     setPending(true);
@@ -34,7 +39,7 @@ export function SignOutControl({
       <button
         type="button"
         onClick={signOut}
-        disabled={pending}
+        disabled={pending || !ready}
         className="text-muted-foreground hover:text-foreground rounded-md px-2 py-1 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
       >
         {pending ? "Signing out…" : "Sign out"}
