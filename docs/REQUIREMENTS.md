@@ -1,5 +1,14 @@
 # MVP requirements
 
+Current release-candidate evidence (2026-09-07): GitHub Actions run
+`34175736114` for commit `6986c6e` passed the complete repository gate,
+including quality, generated artifacts, production build, PostgreSQL/Redis/
+MinIO integration, Compose lifecycle, image security, secret scan, dependency
+policy, and the 22-test Chromium browser acceptance suite. This is bounded CI
+evidence for the current tree; it does not close the hosted/provider,
+whole-product, or measured-production requirements that remain marked
+**Incomplete** below.
+
 This matrix converts the approved Humans design into numbered, verifiable acceptance requirements. Full MVP completion requires this current matrix and the release evidence defined by `HUM-NFR-018`, including the Vercel deployment contract in `HUM-FR-035`. The current usable self-hosted alpha and MVP release-candidate boundary is recorded in `docs/releases/SELF_HOSTED_ALPHA.md`; it does not redefine or move incomplete design requirements outside the MVP. `TODO.md` contains every row marked **Incomplete**. A requirement changes to **Complete** only when its stated tests or runtime checks pass in the current repository state.
 
 Bounded HUM-NFR-008 people, fact, evidence, file-upload, webhook, and settings evidence (2026-08-05): `createPerson`, generated `CreateFact`, generated `CreateEvidenceItem`, generated `completeUpload`, generated `sendWebhookTestEvent`, `UpdateAccessPolicy`, `UpdateWorkspaceDefaults`, and the generated access-policy/resource-grant create/update/archive mutations now support durable HMAC response-reference replay. Live PostgreSQL acceptance proves replay without duplicate effects, true concurrent convergence, malformed-reference rejection, expiry takeover, and workspace fencing for the previously covered mutation seams; the policy/grant test specifically proves concurrent create convergence, update malformed-reference rejection and expiry takeover, archive replay, optimistic versions, redacted audits, and a foreign-workspace create claim. Generated upload completion additionally proves one file, upload-completed audit, and storage-usage effect under an overlapped verification barrier. The evidence path preserves source/file authorization, checksum validation, audit/search writes, and legacy callers, while the webhook path also commits its delivery and durable job in the same transaction, the fact path preserves temporal/confidence validation, and the settings policy/grant paths preserve optimistic versions and redacted audit behavior. Remaining people mutations and the retryable job/settings matrix remain open.
