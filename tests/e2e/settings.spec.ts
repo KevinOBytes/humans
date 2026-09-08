@@ -309,6 +309,7 @@ test("authenticated users can keyboard-sign-out without retaining workspace acce
 
   const signOut = page.getByRole("button", { name: "Sign out" });
   await expect(signOut).toBeVisible();
+  await expect(signOut).toBeEnabled();
   await signOut.focus();
   await expect(signOut).toBeFocused();
   await page.keyboard.press("Enter");

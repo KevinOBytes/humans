@@ -472,9 +472,11 @@ test("graph keyboard access, reduced motion, system dark mode, and narrow zoom r
     );
   }
 
-  await page
-    .getByRole("button", { name: "Edit selected neighborhood" })
-    .click();
+  const editNeighborhood = page.getByRole("button", {
+    name: "Edit selected neighborhood",
+  });
+  await expect(editNeighborhood).toBeEnabled();
+  await editNeighborhood.click();
   const editor = page.getByRole("dialog", { name: "Edit neighborhood" });
   await expect(editor).toBeVisible();
   const firstEditorNode = page
@@ -531,9 +533,11 @@ test("relationship editor performs only explicitly confirmed mutations", async (
     page.getByRole("heading", { name: "Visual graph" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Details for Alpha Person" }).click();
-  await page
-    .getByRole("button", { name: "Edit selected neighborhood" })
-    .click();
+  const editNeighborhood = page.getByRole("button", {
+    name: "Edit selected neighborhood",
+  });
+  await expect(editNeighborhood).toBeEnabled();
+  await editNeighborhood.click();
 
   await page
     .getByRole("combobox", { name: "Relationship source" })
@@ -547,9 +551,8 @@ test("relationship editor performs only explicitly confirmed mutations", async (
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Details for Alpha Person" }).click();
-  await page
-    .getByRole("button", { name: "Edit selected neighborhood" })
-    .click();
+  await expect(editNeighborhood).toBeEnabled();
+  await editNeighborhood.click();
   await page
     .getByRole("combobox", { name: "Existing relationship" })
     .selectOption({ index: 1 });
@@ -566,9 +569,8 @@ test("relationship editor performs only explicitly confirmed mutations", async (
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Details for Alpha Person" }).click();
-  await page
-    .getByRole("button", { name: "Edit selected neighborhood" })
-    .click();
+  await expect(editNeighborhood).toBeEnabled();
+  await editNeighborhood.click();
   await page
     .getByRole("combobox", { name: "Existing relationship" })
     .selectOption({ index: 1 });
