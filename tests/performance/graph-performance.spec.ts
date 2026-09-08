@@ -780,7 +780,7 @@ test("public, dashboard, people, and editor route boundaries stay inside compres
   const peopleRoute = await measureAuthenticatedRoute(
     browser,
     "/people",
-    "People",
+    "Entities",
   );
   for (const route of [publicRoute, dashboard, peopleRoute]) {
     expect(route.urls.length).toBeGreaterThan(0);
