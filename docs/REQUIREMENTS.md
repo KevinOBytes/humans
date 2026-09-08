@@ -88,6 +88,13 @@ policy. The browser suite proves owner review persistence and viewer read-only
 controls for a seeded workspace candidate; candidate generation,
 merge/unmerge, provider acceptance, and the broader matrix remain open.
 
+Current bounded release evidence (2026-09-08): GitHub Actions run `34251787033`
+passed for commit `996d774` with all 9 checks green. The browser suite now also
+proves configured administrator email and username sign-in after a fresh
+database reset, including creating/selecting the first workspace before the
+dashboard. This is local Compose/CI evidence; hosted Vercel credential
+acceptance and repeat/recovery remain unverified.
+
 Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_GDviAwHkuiDAj8LGNrapZg6pBtfg` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
 Bounded HUM-FR-003 local Compose recovery evidence (2026-09-07): the isolated production-image smoke now executes the explicit administrator bootstrap across create, idempotent repeat, deliberate credential deletion, and credential recovery before starting the app and worker, then verifies exactly one credential remains. This strengthens the local release contract only; hosted Vercel repeat/recovery and operator-run evidence remain unverified.
@@ -98,8 +105,9 @@ bootstrap before Better Auth delegates, so a fresh hosted database does not
 require waiting for the first scheduled job. The route is a no-op when
 `ADMIN_*` is incomplete and rejects API-key interactive requests before
 bootstrap; focused route tests prove bootstrap-before-delegate ordering and
-correlation. Hosted credential acceptance and repeat/recovery proof remain
-unverified.
+correlation. `tests/e2e/admin-bootstrap.spec.ts` adds CI-backed browser proof
+for both configured identifiers and the first-workspace gate. Hosted
+credential acceptance and repeat/recovery proof remain unverified.
 
 Bounded HUM-FR-010 reconciliation UI evidence (2026-09-08): the protected
 `/reconciliation` workspace now loads workspace-scoped identity candidates with

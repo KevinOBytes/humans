@@ -34,6 +34,12 @@ review journey, real PostgreSQL integration, Compose lifecycle, production
 build, quality, generated-artifact drift, dependency policy, image security,
 and secret scanning.
 
+Current repository gate (2026-09-08): GitHub Actions run `34251787033` for
+commit `996d774` passed all 9 checks, including configured administrator email
+and username sign-in through the first-workspace gate, real PostgreSQL
+integration, Compose lifecycle, production build, quality, generated-artifact
+drift, dependency policy, image security, and secret scanning.
+
 Latest hosted evidence (2026-09-08): the sign-in bootstrap, reconciliation
 workspace, and Redis-restart readiness fix are deployed to Vercel production as
 `dpl_GDviAwHkuiDAj8LGNrapZg6pBtfg`; the custom hostname,
@@ -55,6 +61,7 @@ recovery.
 - [ ] `HUM-FR-003` Complete hosted release evidence and recovery acceptance for the implemented explicit, idempotent administrator bootstrap.
 - Bounded HUM-FR-003 local Compose evidence (2026-09-07): the isolated production-image smoke now runs administrator bootstrap three times across create, idempotent repeat, and deliberate credential deletion/recovery, then verifies exactly one credential before app startup. The protected Vercel cron now invokes the same validated bootstrap when all `ADMIN_*` values are configured; hosted authenticated sign-in and repeat/recovery proof remain open.
 - Bounded HUM-FR-003 sign-in bootstrap evidence (2026-09-08): email and username sign-in requests now invoke the same idempotent configured-administrator bootstrap before Better Auth delegates, so a fresh hosted database does not require waiting for the first scheduled job. The route remains no-op when `ADMIN_*` is incomplete, blocks API-key interactive requests before bootstrap, and has ordering/correlation unit coverage; hosted credential acceptance and repeat/recovery proof remain open.
+- Bounded HUM-FR-003 administrator browser evidence (2026-09-08): `tests/e2e/admin-bootstrap.spec.ts` proves the configured email and username credentials authenticate after a fresh database reset, and that the administrator can create/select the first workspace before reaching the dashboard. Hosted Vercel credential acceptance and repeat/recovery proof remain open.
 - [ ] `HUM-FR-004` Complete the recipient acceptance, administrator-role, resend/removal, responsive/RTL/zoom, provider-failure, and cancel/acceptance race matrix for the implemented workspace invitation and member-management boundary.
 - Bounded HUM-FR-004 invitation lock-order evidence: acceptance now takes the same workspace advisory lock as administrative cancellation before invitation row locking; live PostgreSQL coverage proves cancellation-first completion without deadlock, `UNAVAILABLE` acceptance, and no membership side effect. External provider/browser and exhaustive role/recipient coverage remain open.
 - Bounded HUM-FR-004 expired-invitation recovery evidence: the owner/admin settings control now offers `Re-invite` for expired invitations, reusing the audited issue flow so the expired row is replaced with a fresh, idempotent invitation; focused component coverage verifies the email/role handoff. External provider/browser and exhaustive role/recipient coverage remain open.
