@@ -116,6 +116,11 @@ audits; the Chromium suite, Compose lifecycle, production build,
 generated-artifact, dependency, image-security, and secret-scan checks also
 passed.
 
+Latest bounded release evidence (2026-09-08): GitHub Actions run `34259980544`
+passed for commit `4916f10` after rerunning its transient browser failure. All
+9 checks are green, including PostgreSQL fixtures for protected
+identifier/contact/birth-date signals and the complete Chromium suite.
+
 Bounded HUM-FR-035 deployment evidence (2026-09-08): production deployment `dpl_GDviAwHkuiDAj8LGNrapZg6pBtfg` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
 Bounded HUM-FR-003 local Compose recovery evidence (2026-09-07): the isolated production-image smoke now executes the explicit administrator bootstrap across create, idempotent repeat, deliberate credential deletion, and credential recovery before starting the app and worker, then verifies exactly one credential remains. This strengthens the local release contract only; hosted Vercel repeat/recovery and operator-run evidence remain unverified.

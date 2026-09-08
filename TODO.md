@@ -59,6 +59,11 @@ generation, the Chromium browser suite, real PostgreSQL integration, Compose
 lifecycle, production build, quality, generated-artifact drift, dependency
 policy, image security, and secret scanning.
 
+Latest repository gate (2026-09-08): GitHub Actions run `34259980544` for
+commit `4916f10` passed after the failed browser job was rerun; all 9 checks
+are green, including the protected identifier/contact/birth-date candidate
+fixtures in the PostgreSQL seam and the full Chromium suite.
+
 Latest hosted evidence (2026-09-08): the sign-in bootstrap, reconciliation
 workspace, and Redis-restart readiness fix are deployed to Vercel production as
 `dpl_GDviAwHkuiDAj8LGNrapZg6pBtfg`; the custom hostname,
