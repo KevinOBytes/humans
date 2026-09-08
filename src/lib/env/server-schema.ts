@@ -143,6 +143,22 @@ const applicationUrl = z.string().transform((value, context) => {
   return new URL(value.trim()).href;
 });
 
+const storageEndpoint = z.url().superRefine((value, context) => {
+  const endpoint = new URL(value);
+  const authority = value.match(/^[a-z][a-z\d+.-]*:\/\/([^/?#]*)/iu)?.[1] ?? "";
+  if (
+    !["http:", "https:"].includes(endpoint.protocol) ||
+    authority.includes("@") ||
+    endpoint.hostname.length === 0
+  ) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "STORAGE_ENDPOINT must be an HTTP(S) URL without credentials or an empty host",
+    });
+  }
+});
+
 const commonServerEnv = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -152,7 +168,7 @@ const commonServerEnv = z.object({
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
   REDIS_TOKEN: z.string().optional(),
   STORAGE_PROVIDER: z.enum(["minio", "r2", "s3"]),
-  STORAGE_ENDPOINT: z.url(),
+  STORAGE_ENDPOINT: storageEndpoint,
   STORAGE_REGION: z.string().min(1),
   STORAGE_BUCKET: z.string().min(3),
   STORAGE_ACCESS_KEY_ID: z.string().min(1),

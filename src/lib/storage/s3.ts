@@ -39,10 +39,30 @@ export interface ObjectStoreConfigInput {
 export function objectStoreConfig(
   input: ObjectStoreConfigInput,
 ): Pick<S3ClientConfig, "endpoint" | "forcePathStyle"> {
+  let endpoint: URL;
+  try {
+    endpoint = new URL(input.endpoint);
+  } catch {
+    throw new TypeError("Invalid storage endpoint.");
+  }
+  const authority =
+    input.endpoint.match(/^[a-z][a-z\d+.-]*:\/\/([^/?#]*)/iu)?.[1] ?? "";
+  if (
+    !["http:", "https:"].includes(endpoint.protocol) ||
+    authority.includes("@") ||
+    endpoint.hostname.length === 0
+  ) {
+    throw new TypeError("Invalid storage endpoint.");
+  }
+
   return {
     endpoint: input.endpoint,
     forcePathStyle:
-      input.provider === "minio" ? true : (input.forcePathStyle ?? false),
+      input.provider === "minio"
+        ? true
+        : input.provider === "r2"
+          ? false
+          : (input.forcePathStyle ?? false),
   };
 }
 

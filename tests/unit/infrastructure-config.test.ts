@@ -185,6 +185,16 @@ describe("redisConnectionConfig", () => {
     });
     expect(result.url).not.toContain("redis-password");
   });
+
+  it.each([
+    ["HTTP", "http://redis.example.com"],
+    ["HTTPS", "https://redis.example.com"],
+    ["malformed", "not-a-url"],
+  ])("rejects %s URLs when an Upstash token is supplied", (_case, url) => {
+    expect(() =>
+      redisConnectionConfig({ url, token: "upstash-rest-token" }),
+    ).toThrow(/Redis URL/i);
+  });
 });
 
 describe("container configuration", () => {

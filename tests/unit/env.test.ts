@@ -372,6 +372,16 @@ describe("parseServerEnv", () => {
     ).toThrow(/STORAGE_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)/);
   });
 
+  it.each([
+    ["credentials", "https://user:password@storage.example.com"],
+    ["empty userinfo", "https://@storage.example.com"],
+    ["non-HTTP protocol", "ftp://storage.example.com"],
+  ])("rejects storage endpoints containing %s", (_case, STORAGE_ENDPOINT) => {
+    expect(() =>
+      parseServerEnv({ ...productionEnv, STORAGE_ENDPOINT }),
+    ).toThrow(/STORAGE_ENDPOINT/);
+  });
+
   it("does not require or expose bootstrap-only administrator credentials", () => {
     const source: NodeJS.ProcessEnv = { ...productionEnv };
     delete source.ADMIN_PASSWORD;
