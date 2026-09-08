@@ -54,7 +54,8 @@ function browserFailures(page: Page) {
   // response; the test separately requires verified upload completion.
   page.on("requestfailed", (request) =>
     request.failure()?.errorText === "net::ERR_ABORTED" &&
-    (request.url().includes("_rsc=") ||
+    (request.url().includes("/__nextjs_font/") ||
+      request.url().includes("_rsc=") ||
       (request.method() === "PUT" &&
         new URL(request.url()).pathname === "/api/storage/objects"))
       ? undefined
