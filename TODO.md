@@ -8,6 +8,14 @@ reclassify any design requirement as post-MVP. Remove an item only in the same
 change that updates `docs/REQUIREMENTS.md` to **Complete** and records passing
 test or runtime evidence.
 
+Release evidence (2026-09-07): GitHub Actions run `34175736114` for commit
+`6986c6e` passed the complete repository gate, including quality, generated
+artifacts, production build, PostgreSQL/Redis/MinIO integration, Compose
+lifecycle, image security, secret scan, dependency policy, and the 22-test
+Chromium browser acceptance suite. This closes the recent CI/browser
+regression tranche but does not close the broader incomplete requirements
+below, which still require hosted/provider and whole-product evidence.
+
 `HUM-FR-017` remains complete and intentionally absent: PostgreSQL integration
 coverage includes the short-transaction upload-attempt fence, non-blocking
 cancellation, late-object cleanup, successful completion, and lease-expiry
