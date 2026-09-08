@@ -1978,6 +1978,74 @@ liveDescribe("research write transactions", () => {
     ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
   });
 
+  it("generates workspace-scoped identity candidates from repeated names idempotently", async () => {
+    const actor = await fixture.createActor();
+    const context = await serviceContext(fixture, actor, [
+      "person:create",
+      "person:read",
+      "person:merge",
+    ]);
+    const peopleService = createPeopleService(context);
+    const first = await peopleService.create({
+      displayName: "Jane Doe",
+      sortName: "Doe, Jane",
+    });
+    const second = await peopleService.create({
+      displayName: "  jane   doe ",
+      sortName: "DOE, JANE",
+    });
+    const unrelated = await peopleService.create({
+      displayName: "Ada Lovelace",
+    });
+    if (!first.resource || !second.resource || !unrelated.resource) {
+      throw new Error("Expected candidate-generation people to be created.");
+    }
+
+    const [generated, replayed] = await Promise.all([
+      peopleService.generateIdentityCandidates({
+        limit: 10,
+        idempotencyKey: "identity-candidate-generate-v1",
+      }),
+      peopleService.generateIdentityCandidates({
+        limit: 10,
+        idempotencyKey: "identity-candidate-generate-v1",
+      }),
+    ]);
+    expect(generated).toHaveLength(1);
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0]).toMatchObject({
+      id: generated[0]!.id,
+      firstPersonId: first.resource.id,
+      secondPersonId: second.resource.id,
+      score: "0.920",
+      state: "pending",
+      matchSignals: {
+        sharedDisplayName: true,
+        sharedSortName: true,
+      },
+    });
+
+    const repeated = await peopleService.generateIdentityCandidates({
+      limit: 10,
+    });
+    expect(repeated).toEqual([]);
+    const [auditCount] = await fixture.database
+      .select({ count: count() })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, actor.workspaceId),
+          eq(auditEvents.action, "person.identity_candidate.create"),
+        ),
+      );
+    expect(Number(auditCount?.count)).toBe(1);
+    const stored = await fixture.database
+      .select({ firstPersonId: identityCandidates.firstPersonId })
+      .from(identityCandidates)
+      .where(eq(identityCandidates.workspaceId, actor.workspaceId));
+    expect(stored).toEqual([{ firstPersonId: generated[0]!.firstPersonId }]);
+  });
+
   it("fences repeated merge and unmerge attempts without changing the restored ownership", async () => {
     const actor = await fixture.createActor();
     const context = await serviceContext(fixture, actor, [

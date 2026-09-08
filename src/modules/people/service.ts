@@ -122,6 +122,32 @@ const PERSON_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const PERSON_RECORD_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const PERSON_REFERENCE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+const IDENTITY_CANDIDATE_LIMIT = 100;
+
+function normalizeIdentityName(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/gu, " ");
+}
+
+function identityCandidateLimit(value: number | null | undefined): number {
+  if (value == null) return 25;
+  if (
+    !Number.isSafeInteger(value) ||
+    value < 1 ||
+    value > IDENTITY_CANDIDATE_LIMIT
+  ) {
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "Identity candidate generation limit is invalid.",
+    );
+  }
+  return value;
+}
 const PERSON_NAME_KINDS = new Set([
   "legal",
   "preferred",
@@ -613,6 +639,54 @@ export function createPeopleService(context: ResearchServiceContext) {
       );
     }
     return row;
+  }
+
+  async function replayGeneratedIdentityCandidates(
+    responseReference: Readonly<
+      Record<string, string | number | boolean | null>
+    >,
+  ): Promise<(typeof identityCandidates.$inferSelect)[]> {
+    const encodedIds = responseReference.candidateIds;
+    if (typeof encodedIds !== "string") {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    let ids: string[];
+    try {
+      const parsed = JSON.parse(encodedIds) as unknown;
+      if (
+        !Array.isArray(parsed) ||
+        parsed.some(
+          (id) => typeof id !== "string" || !PERSON_REFERENCE_UUID.test(id),
+        )
+      ) {
+        throw new Error("invalid candidate IDs");
+      }
+      ids = parsed;
+    } catch {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    if (!ids.length) return [];
+    const rows = await context.database
+      .select()
+      .from(identityCandidates)
+      .where(
+        and(
+          eq(identityCandidates.workspaceId, context.workspaceId),
+          inArray(identityCandidates.id, ids),
+          isNull(identityCandidates.deletedAt),
+        ),
+      );
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return ids.flatMap((id) => {
+      const row = byId.get(id);
+      return row ? [row] : [];
+    });
   }
 
   async function maintainPersonSearch(
@@ -3981,6 +4055,179 @@ export function createPeopleService(context: ResearchServiceContext) {
           sql`${identityCandidates.createdAt} asc`,
         )
         .limit(Math.min(100, Math.max(1, input.limit ?? 25)));
+    },
+    async generateIdentityCandidates(
+      input: {
+        limit?: number | null;
+        idempotencyKey?: string | null;
+      } = {},
+    ): Promise<(typeof identityCandidates.$inferSelect)[]> {
+      if (!context.permissions.has("person:merge")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Identity candidate generation is not permitted.",
+        );
+      }
+      const limit = identityCandidateLimit(input.limit);
+      const persist = async (
+        writeContext: ResearchServiceContext,
+        database: typeof context.database,
+      ) => {
+        await database.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${writeContext.workspaceId}, 0))`,
+        );
+        const rows = await database
+          .select({
+            id: people.id,
+            displayName: people.displayName,
+            sortName: people.sortName,
+            preferredName: people.preferredName,
+          })
+          .from(people)
+          .where(
+            and(
+              eq(people.workspaceId, writeContext.workspaceId),
+              isNull(people.deletedAt),
+              inArray(people.status, [
+                "active",
+                "unknown",
+                "deceased",
+                "missing",
+              ]),
+            ),
+          )
+          .orderBy(people.id);
+        const candidates = new Map<
+          string,
+          {
+            firstPersonId: string;
+            secondPersonId: string;
+            matchSignals: Record<string, boolean>;
+            score: string;
+          }
+        >();
+        for (let firstIndex = 0; firstIndex < rows.length; firstIndex += 1) {
+          const first = rows[firstIndex]!;
+          const firstNames = {
+            displayName: normalizeIdentityName(first.displayName),
+            sortName: normalizeIdentityName(first.sortName),
+            preferredName: normalizeIdentityName(first.preferredName),
+          };
+          if (firstNames.displayName.length < 3) continue;
+          for (
+            let secondIndex = firstIndex + 1;
+            secondIndex < rows.length;
+            secondIndex += 1
+          ) {
+            const second = rows[secondIndex]!;
+            const secondNames = {
+              displayName: normalizeIdentityName(second.displayName),
+              sortName: normalizeIdentityName(second.sortName),
+              preferredName: normalizeIdentityName(second.preferredName),
+            };
+            const matchSignals: Record<string, boolean> = {};
+            if (firstNames.displayName === secondNames.displayName) {
+              matchSignals.sharedDisplayName = true;
+            }
+            if (
+              firstNames.sortName.length >= 3 &&
+              firstNames.sortName === secondNames.sortName
+            ) {
+              matchSignals.sharedSortName = true;
+            }
+            if (
+              firstNames.preferredName.length >= 3 &&
+              firstNames.preferredName === secondNames.preferredName
+            ) {
+              matchSignals.sharedPreferredName = true;
+            }
+            if (!Object.keys(matchSignals).length) continue;
+            const firstPersonId = first.id < second.id ? first.id : second.id;
+            const secondPersonId = first.id < second.id ? second.id : first.id;
+            const key = `${firstPersonId}:${secondPersonId}`;
+            const signalCount = Object.keys(matchSignals).length;
+            candidates.set(key, {
+              firstPersonId,
+              secondPersonId,
+              matchSignals,
+              score: Math.min(0.99, 0.78 + signalCount * 0.07).toFixed(3),
+            });
+          }
+        }
+        const inserted: (typeof identityCandidates.$inferSelect)[] = [];
+        for (const candidate of [...candidates.values()].slice(0, limit)) {
+          const now = new Date();
+          const [row] = await database
+            .insert(identityCandidates)
+            .values({
+              id: newId(),
+              workspaceId: writeContext.workspaceId,
+              firstPersonId: candidate.firstPersonId,
+              secondPersonId: candidate.secondPersonId,
+              matchSignals: candidate.matchSignals,
+              score: candidate.score,
+              createdAt: now,
+              createdBy: writeContext.actor.principalId,
+              updatedAt: now,
+              updatedBy: writeContext.actor.principalId,
+            })
+            .onConflictDoNothing({
+              target: [
+                identityCandidates.workspaceId,
+                identityCandidates.firstPersonId,
+                identityCandidates.secondPersonId,
+              ],
+            })
+            .returning();
+          if (!row) continue;
+          inserted.push(row);
+          await createAuditService(writeContext).write(database, {
+            action: "person.identity_candidate.create",
+            resourceKind: "identity_candidate",
+            resourceId: row.id,
+            sensitivity: "internal",
+            changedFields: [
+              "firstPersonId",
+              "secondPersonId",
+              "matchSignals",
+              "score",
+            ],
+            metadata: { score: row.score, signals: row.matchSignals },
+          });
+        }
+        return inserted;
+      };
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Idempotent identity candidate generation is not configured.",
+          );
+        }
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "person.identity-candidate.generate",
+          requestMaterial: { limit },
+          secret,
+        });
+        const result = await runPrincipalIdempotentResearchWrite<{
+          candidateIds: string;
+        }>(context, idempotency, ["person:merge"], async (scopedContext) => {
+          const generated = await persist(
+            scopedContext,
+            scopedContext.database,
+          );
+          return {
+            candidateIds: JSON.stringify(generated.map((row) => row.id)),
+          };
+        });
+        return replayGeneratedIdentityCandidates(result.responseReference);
+      }
+      return writeTransaction(context, async (database) =>
+        persist(context, database),
+      );
     },
     async reviewIdentityCandidate(input: {
       id: string;

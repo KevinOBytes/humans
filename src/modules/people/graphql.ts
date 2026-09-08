@@ -589,6 +589,15 @@ const ReviewIdentityCandidateInput = builder.inputType(
     }),
   },
 );
+const GenerateIdentityCandidatesInput = builder.inputType(
+  "GenerateIdentityCandidatesInput",
+  {
+    fields: (t) => ({
+      limit: t.int(),
+      idempotencyKey: t.string(),
+    }),
+  },
+);
 
 const CreatePersonInput = builder.inputType("CreatePersonInput", {
   fields: (t) => ({
@@ -756,6 +765,26 @@ const PersonPayload = builder
 function payload(outcome: MutationOutcome<PersonRow>): PersonPayloadShape {
   return { ...outcome, person: outcome.resource };
 }
+
+type IdentityCandidateGenerationPayloadShape = {
+  candidates: IdentityCandidateRow[];
+  createdCount: number;
+  requestId: string;
+};
+const IdentityCandidateGenerationPayload = builder
+  .objectRef<IdentityCandidateGenerationPayloadShape>(
+    "IdentityCandidateGenerationPayload",
+  )
+  .implement({
+    fields: (t) => ({
+      candidates: t.expose("candidates", {
+        type: [IdentityCandidate],
+        nullable: { items: false, list: false },
+      }),
+      createdCount: t.exposeInt("createdCount"),
+      requestId: t.exposeString("requestId"),
+    }),
+  });
 
 type PersonNamePayloadShape = MutationOutcome<PersonNameRow> & {
   name: PersonNameRow | null;
@@ -1174,6 +1203,26 @@ export function registerPeopleGraphQL(): void {
           state: args.input.state.toLowerCase() as
             "pending" | "reviewing" | "accepted" | "rejected" | "cancelled",
         });
+      },
+    }),
+    generateIdentityCandidates: t.field({
+      type: IdentityCandidateGenerationPayload,
+      nullable: false,
+      args: {
+        input: t.arg({
+          type: GenerateIdentityCandidatesInput,
+          required: true,
+        }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "merge");
+        const candidates =
+          await context.services.people.generateIdentityCandidates(args.input);
+        return {
+          candidates,
+          createdCount: candidates.length,
+          requestId: context.requestId,
+        };
       },
     }),
   }));
