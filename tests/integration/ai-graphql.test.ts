@@ -482,7 +482,7 @@ liveDescribe("canonical AI analyst GraphQL API", () => {
       toolCalls: [
         {
           inputSummary: { personCount: 1 },
-          name: "getperson",
+          name: "getPerson",
           resultSummary: { personCount: 1, resultCount: 1 },
           state: "COMPLETED",
         },
