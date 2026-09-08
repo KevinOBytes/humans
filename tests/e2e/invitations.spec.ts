@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 
@@ -278,6 +279,58 @@ test("owners can resend and cancel pending invitations and remove a member", asy
       return { invitation: invitation?.status, removedMember };
     })
     .toEqual({ invitation: "canceled", removedMember: undefined });
+
+  await context.close();
+});
+
+test("member administration remains usable at mobile width, RTL, and 200% zoom", async ({
+  browser,
+}) => {
+  const owner = await fixture.createActor("owner");
+  const email = `responsive-invitation-${newId()}@example.test`;
+  await fixture.database.insert(invitations).values({
+    id: newId(),
+    organizationId: owner.organizationId,
+    email,
+    role: "contributor",
+    status: "pending",
+    expiresAt: new Date(Date.now() + 60_000),
+    inviterId: owner.userId,
+  });
+
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
+  await authenticate(context, owner.jar);
+  const page = await context.newPage();
+  await page.goto("/settings/members");
+  await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
+  await expect(page.getByText(email, { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+
+  await page.evaluate(() => {
+    document.documentElement.dir = "rtl";
+  });
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });
+  await expect(page.getByText(email, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resend" })).toBeVisible();
+  await cdp.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
 
   await context.close();
 });

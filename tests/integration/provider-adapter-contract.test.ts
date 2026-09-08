@@ -160,7 +160,11 @@ describe.runIf(runRedis)("Redis provider adapter contract", () => {
 
 const upstashRestUrl = process.env.UPSTASH_REDIS_REST_URL;
 const upstashRestToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-const runUpstashRest = Boolean(upstashRestUrl && upstashRestToken);
+const externalProviderContractsEnabled =
+  process.env.RUN_EXTERNAL_PROVIDER_CONTRACTS === "true";
+const runUpstashRest =
+  externalProviderContractsEnabled &&
+  Boolean(upstashRestUrl && upstashRestToken);
 
 describe.runIf(runUpstashRest)(
   "Upstash Redis REST provider adapter contract",
@@ -193,106 +197,117 @@ describe.runIf(runUpstashRest)(
 const storageEndpoint = process.env.TEST_STORAGE_ENDPOINT;
 const storageAccessKeyId = process.env.TEST_STORAGE_ACCESS_KEY_ID;
 const storageSecretAccessKey = process.env.TEST_STORAGE_SECRET_ACCESS_KEY;
-const runStorage = Boolean(
-  storageEndpoint && storageAccessKeyId && storageSecretAccessKey,
-);
 const configuredStorageProvider = process.env.TEST_STORAGE_PROVIDER;
-const storageProvider: ObjectStoreProvider =
-  configuredStorageProvider === "r2" || configuredStorageProvider === "s3"
-    ? configuredStorageProvider
-    : "minio";
+function storageProviderFromEnvironment(
+  value: string | undefined,
+): ObjectStoreProvider {
+  if (value === undefined || value === "minio") return "minio";
+  if (value === "r2" || value === "s3") return value;
+  throw new TypeError("TEST_STORAGE_PROVIDER must be one of minio, r2, or s3");
+}
 
-describe.runIf(runStorage)("S3-compatible provider adapter contract", () => {
-  const bucket = process.env.TEST_STORAGE_BUCKET ?? "humans-provider-contract";
-  const client = new S3Client({
-    ...s3ClientConfig({
-      endpoint: storageEndpoint!,
-      provider: storageProvider,
-    }),
-    region: process.env.TEST_STORAGE_REGION ?? "us-east-1",
-    credentials: {
-      accessKeyId: storageAccessKeyId!,
-      secretAccessKey: storageSecretAccessKey!,
-    },
+const storageProvider = storageProviderFromEnvironment(
+  configuredStorageProvider,
+);
+const runStorage =
+  Boolean(storageEndpoint && storageAccessKeyId && storageSecretAccessKey) &&
+  (storageProvider === "minio" || externalProviderContractsEnabled);
+
+if (runStorage) {
+  describe("S3-compatible provider adapter contract", () => {
+    const bucket =
+      process.env.TEST_STORAGE_BUCKET ?? "humans-provider-contract";
+    const client = new S3Client({
+      ...s3ClientConfig({
+        endpoint: storageEndpoint!,
+        provider: storageProvider,
+      }),
+      region: process.env.TEST_STORAGE_REGION ?? "us-east-1",
+      credentials: {
+        accessKeyId: storageAccessKeyId!,
+        secretAccessKey: storageSecretAccessKey!,
+      },
+    });
+    const store = new S3ObjectStore(client, bucket);
+
+    beforeAll(async () => {
+      try {
+        await client.send(new HeadBucketCommand({ Bucket: bucket }));
+      } catch (error) {
+        const candidate = error as {
+          name?: unknown;
+          $metadata?: { httpStatusCode?: unknown };
+          $response?: { statusCode?: unknown };
+        };
+        const statusCode =
+          candidate.$metadata?.httpStatusCode ??
+          candidate.$response?.statusCode;
+        const missingBucket =
+          statusCode === 404 ||
+          candidate.name === "NotFound" ||
+          candidate.name === "NoSuchBucket";
+        if (!missingBucket) throw error;
+        await client.send(new CreateBucketCommand({ Bucket: bucket }));
+      }
+    });
+
+    afterAll(() => client.destroy());
+
+    it("round-trips a tenant-bound checksum object through signed operations", async () => {
+      const workspaceId = `provider-contract-${randomUUID()}`;
+      const key = `evidence/${randomUUID()}.txt`;
+      const body = Buffer.from("provider adapter contract\n", "utf8");
+      const checksum = createHash("sha256").update(body).digest("hex");
+
+      const upload = await store.createUpload({
+        actorId: "provider-contract-actor",
+        uploadSessionId: randomUUID(),
+        sessionExpiresAt: new Date(Date.now() + 60_000),
+        workspaceId,
+        key,
+        contentType: "text/plain",
+        bytes: body.byteLength,
+        checksumSha256: checksum,
+      });
+      const uploaded = await fetch(upload.url, {
+        method: upload.method,
+        headers: upload.headers,
+        body,
+      });
+      expect([200, 204]).toContain(uploaded.status);
+
+      await expect(store.exists({ workspaceId, key })).resolves.toBe(true);
+      await expect(
+        store.exists({ workspaceId: `${workspaceId}-other`, key }),
+      ).resolves.toBe(false);
+      await expect(
+        store.getMetadata({ workspaceId, key }),
+      ).resolves.toMatchObject({
+        bytes: body.byteLength,
+      });
+
+      const opened = await store.openRead(
+        { workspaceId, key },
+        { maxBytes: body.byteLength },
+      );
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of opened?.body ?? []) chunks.push(chunk);
+      expect(Buffer.concat(chunks)).toEqual(body);
+
+      const download = await store.createDownload({
+        workspaceId,
+        key,
+        fileName: "evidence.txt",
+      });
+      const downloaded = await fetch(download.url, {
+        method: download.method,
+        headers: download.headers,
+      });
+      expect(downloaded.status).toBe(200);
+      expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(body);
+
+      await store.delete({ workspaceId, key });
+      await expect(store.exists({ workspaceId, key })).resolves.toBe(false);
+    });
   });
-  const store = new S3ObjectStore(client, bucket);
-
-  beforeAll(async () => {
-    try {
-      await client.send(new HeadBucketCommand({ Bucket: bucket }));
-    } catch (error) {
-      const candidate = error as {
-        name?: unknown;
-        $metadata?: { httpStatusCode?: unknown };
-        $response?: { statusCode?: unknown };
-      };
-      const statusCode =
-        candidate.$metadata?.httpStatusCode ?? candidate.$response?.statusCode;
-      const missingBucket =
-        statusCode === 404 ||
-        candidate.name === "NotFound" ||
-        candidate.name === "NoSuchBucket";
-      if (!missingBucket) throw error;
-      await client.send(new CreateBucketCommand({ Bucket: bucket }));
-    }
-  });
-
-  afterAll(() => client.destroy());
-
-  it("round-trips a tenant-bound checksum object through signed operations", async () => {
-    const workspaceId = `provider-contract-${randomUUID()}`;
-    const key = `evidence/${randomUUID()}.txt`;
-    const body = Buffer.from("provider adapter contract\n", "utf8");
-    const checksum = createHash("sha256").update(body).digest("hex");
-
-    const upload = await store.createUpload({
-      actorId: "provider-contract-actor",
-      uploadSessionId: randomUUID(),
-      sessionExpiresAt: new Date(Date.now() + 60_000),
-      workspaceId,
-      key,
-      contentType: "text/plain",
-      bytes: body.byteLength,
-      checksumSha256: checksum,
-    });
-    const uploaded = await fetch(upload.url, {
-      method: upload.method,
-      headers: upload.headers,
-      body,
-    });
-    expect([200, 204]).toContain(uploaded.status);
-
-    await expect(store.exists({ workspaceId, key })).resolves.toBe(true);
-    await expect(
-      store.exists({ workspaceId: `${workspaceId}-other`, key }),
-    ).resolves.toBe(false);
-    await expect(
-      store.getMetadata({ workspaceId, key }),
-    ).resolves.toMatchObject({
-      bytes: body.byteLength,
-    });
-
-    const opened = await store.openRead(
-      { workspaceId, key },
-      { maxBytes: body.byteLength },
-    );
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of opened?.body ?? []) chunks.push(chunk);
-    expect(Buffer.concat(chunks)).toEqual(body);
-
-    const download = await store.createDownload({
-      workspaceId,
-      key,
-      fileName: "evidence.txt",
-    });
-    const downloaded = await fetch(download.url, {
-      method: download.method,
-      headers: download.headers,
-    });
-    expect(downloaded.status).toBe(200);
-    expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(body);
-
-    await store.delete({ workspaceId, key });
-    await expect(store.exists({ workspaceId, key })).resolves.toBe(false);
-  });
-});
+}
