@@ -16,6 +16,13 @@ Chromium browser acceptance suite. This closes the recent CI/browser
 regression tranche but does not close the broader incomplete requirements
 below, which still require hosted/provider and whole-product evidence.
 
+Latest hosted evidence (2026-09-08): verified commit `f2ad282` is deployed to
+Vercel production as `dpl_76tDQCwXFT7XDH7FWvFYhtHuwnhn`; the custom hostname,
+liveness, readiness, PostgreSQL/Redis/storage probes, unauthenticated GraphQL
+boundary, and protected jobs boundary all passed the bounded smoke. Hosted
+bootstrap, authenticated sign-in/person creation, authorized cron execution,
+and external-provider acceptance remain open.
+
 `HUM-FR-017` remains complete and intentionally absent: PostgreSQL integration
 coverage includes the short-transaction upload-attempt fence, non-blocking
 cancellation, late-object cleanup, successful completion, and lease-expiry
@@ -37,7 +44,7 @@ recovery.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes. A focused live policy-settings matrix now covers owner access-policy success, administrator workspace-default success, viewer/foreign denial, optimistic retries, validation rollback, redacted audit output, and durable `UpdateAccessPolicy` plus `UpdateWorkspaceDefaults` replay/concurrency boundaries; provider and whole-settings coverage remain open.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search/graph envelopes, centralized browser/server GraphQL error contract (including malformed-payload handling, header-authoritative IDs, and known-code secret-message normalization), and representative all-code/redaction matrix. Direct route codes are inventoried in `docs/ARCHITECTURE.md`; the scheduled `/api/jobs/run` route now emits stable `UNAUTHENTICATED`/`INTERNAL` codes with an `x-request-id`, and a typed direct-route client covers invitation handoff/acceptance and two-factor state changes, while adoption across every direct route and the whole-product failure matrix remain open.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks; provider, browser, and interruption coverage remain open.
-- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Vercel has a verified `humans.kevinbytes.com` domain, current production deployment `dpl_Coq3VJZTJ1TX45HobGCvH6VqbKPB` from public GitHub `main` (`5a92e6316d925eed699e37a3280a1dc0d56aa330`), production `DATABASE_URL`/`REDIS_URL`, and production/preview R2 `STORAGE_*` variables for the private `humans-private` bucket; the exact Vercel-linked Neon project has all 29 migrations and the restricted admin bootstrap. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary on this deployment. The authorized scheduled-job run, hosted bootstrap repeat/recovery, sign-in/create-person acceptance after this deployment, and full hosted provider matrix remain release work; `ADMIN_*` are configured in Vercel Preview/Production for the explicit bootstrap flow, but secret-backed cron execution remains unverified.
+- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_76tDQCwXFT7XDH7FWvFYhtHuwnhn` is Ready and serves `humans.kevinbytes.com` from the verified current `main` tree; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs boundary after this deployment. The authorized scheduled-job run, hosted bootstrap repeat/recovery, sign-in/create-person acceptance after this deployment, and full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command; the attempted command safely stopped before mutation when it encountered the local Compose-style database host, so hosted bootstrap remains unverified.
 
 ## Non-functional
 
