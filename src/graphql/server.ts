@@ -112,17 +112,22 @@ export function createGraphQLInternalErrorResponse(
   });
 }
 
-function httpErrorResponse(input: {
+export function httpErrorResponse(input: {
   code: GraphQLErrorCode;
   message?: string;
   requestId: string;
   status: number;
 }): Response {
+  // This helper is also used for errors raised while constructing the
+  // authenticated context, before Yoga's result policy can normalize them.
+  // Keep that early HTTP boundary subject to the same closed-message policy
+  // as execution errors so a provider/database exception cannot cross it.
+  const message = normalizeGraphQLErrorMessage(input.code, input.message);
   return Response.json(
     {
       errors: [
         {
-          message: input.message ?? publicErrorMessage(input.code),
+          message,
           extensions: {
             code: input.code,
             requestId: input.requestId,

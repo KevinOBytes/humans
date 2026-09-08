@@ -122,11 +122,16 @@ export function MemberAdministration() {
 
   async function invitationAction(
     invitation: Invitation,
-    action: "cancel" | "resend",
+    action: "cancel" | "resend" | "reinvite",
   ) {
     if (
       busy ||
-      (action === "cancel" && !window.confirm("Cancel this invitation?"))
+      ((action === "cancel" || action === "reinvite") &&
+        !window.confirm(
+          action === "cancel"
+            ? "Cancel this invitation?"
+            : "Send a new invitation to this address?",
+        ))
     )
       return;
     setBusy(true);
@@ -147,6 +152,29 @@ export function MemberAdministration() {
           : {
               kind: "error",
               message: "The invitation could not be updated.",
+            },
+      );
+      await load(offset);
+      return;
+    }
+    if (action === "reinvite") {
+      const result = await executeBrowserGraphQL(
+        IssueWorkspaceInvitationDocument,
+        {
+          input: {
+            email: invitation.email,
+            role: invitation.role as WorkspaceAdministrationRole,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        },
+      );
+      setBusy(false);
+      setFeedback(
+        result.ok
+          ? mutationMessage(result.data.issueWorkspaceInvitation.code)
+          : {
+              kind: "error",
+              message: "The invitation could not be reissued.",
             },
       );
       await load(offset);
@@ -411,10 +439,15 @@ export function MemberAdministration() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={busy || invitation.status === "EXPIRED"}
-                    onClick={() => void invitationAction(invitation, "resend")}
+                    disabled={busy}
+                    onClick={() =>
+                      void invitationAction(
+                        invitation,
+                        invitation.status === "EXPIRED" ? "reinvite" : "resend",
+                      )
+                    }
                   >
-                    Resend
+                    {invitation.status === "EXPIRED" ? "Re-invite" : "Resend"}
                   </Button>
                   <Button
                     type="button"
