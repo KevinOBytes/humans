@@ -173,6 +173,8 @@ export function PersonResearchPanel({
   const acceptedCount = suggestions.filter(
     (suggestion) => suggestion.accepted,
   ).length;
+  const allAccepted =
+    suggestions.length > 0 && acceptedCount === suggestions.length;
 
   return (
     <section className="border-border bg-muted/30 mt-6 rounded-2xl border p-5">
@@ -222,10 +224,35 @@ export function PersonResearchPanel({
           <div>
             <h3 className="font-semibold">Review suggestions</h3>
             <p className="text-muted-foreground mt-1 text-xs">
-              {provider}. Edit any draft, then check only the fields you want to
-              save.
+              {provider}. AI filled these drafts from the cited sources. Edit
+              anything that needs correction, then accept only the fields you
+              want to save.
             </p>
           </div>
+          <Label
+            className="border-border bg-card flex items-center gap-3 rounded-xl border p-3"
+            htmlFor="person-research-accept-all"
+          >
+            <input
+              id="person-research-accept-all"
+              type="checkbox"
+              checked={allAccepted}
+              onChange={(event) => {
+                const accepted = event.currentTarget.checked;
+                setSuggestions((current) =>
+                  current.map((suggestion) => ({ ...suggestion, accepted })),
+                );
+              }}
+              aria-label="Accept all suggested fields"
+              className="size-4"
+            />
+            <span>
+              <span className="block">Accept all suggested fields</span>
+              <span className="text-muted-foreground mt-0.5 block text-xs font-normal">
+                {acceptedCount} of {suggestions.length} accepted
+              </span>
+            </span>
+          </Label>
           {suggestions.map((suggestion, index) => {
             const label = labels[suggestion.field];
             const inputId = `research-${suggestion.field}-${index}`;
@@ -255,6 +282,11 @@ export function PersonResearchPanel({
                   />
                   Apply {label}
                 </Label>
+                {suggestion.accepted ? (
+                  <span className="text-primary mt-2 block text-xs font-semibold">
+                    ✓ Accepted for saving
+                  </span>
+                ) : null}
                 <Label className="mt-3 block" htmlFor={inputId}>
                   {label} suggestion
                 </Label>

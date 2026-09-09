@@ -146,6 +146,33 @@ describe("PersonResearchPanel", () => {
     });
   });
 
+  it("lets the reviewer accept all auto-filled fields in one check", async () => {
+    const user = userEvent.setup();
+    render(<PersonResearchPanel person={person} canUpdate />);
+    await runResearch(user);
+
+    const acceptAll = screen.getByRole("checkbox", {
+      name: "Accept all suggested fields",
+    });
+    expect(acceptAll).not.toBeChecked();
+    await user.click(acceptAll);
+
+    expect(
+      screen.getByRole("checkbox", { name: "Apply Display name" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Apply Biography" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Apply selected fields" }),
+    ).toBeEnabled();
+
+    await user.click(acceptAll);
+    expect(
+      screen.getByRole("checkbox", { name: "Apply Display name" }),
+    ).not.toBeChecked();
+  });
+
   it("preserves edited selections and reports a version conflict", async () => {
     const user = userEvent.setup();
     render(<PersonResearchPanel person={person} canUpdate />);
