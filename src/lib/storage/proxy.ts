@@ -24,6 +24,8 @@ import type {
 const proxyPath = "/api/storage/objects";
 const MAX_PROXY_BYTES = 50 * 1024 * 1024;
 const PROXY_TIMEOUT_MS = 60_000;
+const requestIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type UploadGrant = {
   version: 2;
@@ -264,10 +266,36 @@ function grantForRequest(
   return grant;
 }
 
-function failure(status: number): Response {
+export function storageRequestId(request: Request): string {
+  const candidate = request.headers.get("x-request-id")?.trim();
+  return candidate && requestIdPattern.test(candidate)
+    ? candidate.toLowerCase()
+    : crypto.randomUUID();
+}
+
+function errorCode(
+  status: number,
+): "FORBIDDEN" | "INTERNAL" | "INVALID_INPUT" | "NOT_FOUND" | "UNAUTHORIZED" {
+  if (status === 400) return "INVALID_INPUT";
+  if (status === 401) return "UNAUTHORIZED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  return "INTERNAL";
+}
+
+export function storageErrorResponse(
+  status: number,
+  requestId: string,
+): Response {
   return Response.json(
-    { status: "error" },
-    { status, headers: { "cache-control": "private, no-store" } },
+    { status: "error", code: errorCode(status), requestId },
+    {
+      status,
+      headers: {
+        "cache-control": "private, no-store",
+        "x-request-id": requestId,
+      },
+    },
   );
 }
 
@@ -328,6 +356,7 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
   const now = options.now ?? Date.now;
   return {
     PUT: async (request) => {
+      const requestId = storageRequestId(request);
       let grant: UploadGrant;
       try {
         grant = grantForRequest(
@@ -346,7 +375,10 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
           throw new ProxyRequestError(400);
         }
       } catch (error) {
-        return failure(error instanceof ProxyRequestError ? error.status : 403);
+        return storageErrorResponse(
+          error instanceof ProxyRequestError ? error.status : 403,
+          requestId,
+        );
       }
 
       const controller = new AbortController();
@@ -412,13 +444,16 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
             );
           },
         );
-        if (!authorized) return failure(403);
+        if (!authorized) return storageErrorResponse(403, requestId);
         return new Response(null, {
           status: 204,
-          headers: { "cache-control": "private, no-store" },
+          headers: {
+            "cache-control": "private, no-store",
+            "x-request-id": requestId,
+          },
         });
       } catch {
-        return failure(invalidBody ? 400 : 503);
+        return storageErrorResponse(invalidBody ? 400 : 503, requestId);
       } finally {
         clearTimeout(timeout);
         request.signal.removeEventListener("abort", abort);
@@ -426,6 +461,7 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
     },
 
     GET: async (request) => {
+      const requestId = storageRequestId(request);
       let grant: DownloadGrant;
       try {
         grant = grantForRequest(
@@ -435,7 +471,10 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
           now(),
         ) as DownloadGrant;
       } catch (error) {
-        return failure(error instanceof ProxyRequestError ? error.status : 403);
+        return storageErrorResponse(
+          error instanceof ProxyRequestError ? error.status : 403,
+          requestId,
+        );
       }
       try {
         const result = await options.client.send(
@@ -445,7 +484,7 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
           }),
         );
         const body = responseBody(result.Body);
-        if (!body) return failure(404);
+        if (!body) return storageErrorResponse(404, requestId);
         return new Response(body, {
           status: 200,
           headers: {
@@ -456,10 +495,11 @@ export function createStorageProxyHandlers(options: StorageProxyOptions): {
             "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(validateFileName(grant.fileName))}`,
             "cache-control": "private, no-store",
             "x-content-type-options": "nosniff",
+            "x-request-id": requestId,
           },
         });
       } catch (error) {
-        return failure(downloadFailureStatus(error));
+        return storageErrorResponse(downloadFailureStatus(error), requestId);
       }
     },
   };

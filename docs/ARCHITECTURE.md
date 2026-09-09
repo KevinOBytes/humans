@@ -95,15 +95,18 @@ Auth catch-all emits `AUTH_SERVICE_UNAVAILABLE`, `AUTH_REQUEST_FAILED`,
 `AUTH_API_KEY_INTERACTIVE_FORBIDDEN`, and `AUTH_METHOD_NOT_ALLOWED`. Each
 JSON failure includes a request ID in the body and `x-request-id` response
 header, and route handlers use no-store responses. These listed account/auth
-route codes are not
-silently coerced into GraphQL codes; invitation handoff/acceptance and two-factor
-state changes now use a browser-safe typed direct-route client with allowlisted
-codes and fail-closed malformed responses. The remaining cross-surface error
-matrix and adoption across every direct route are tracked in `TODO.md`. Health probes,
-the cron job trigger, and the storage proxy use separate operational envelopes
-and headers (including service-specific success/error behavior); they are not
-represented by the account/auth inventory above and remain part of the
-whole-product failure matrix.
+route codes are not silently coerced into GraphQL codes; invitation
+handoff/acceptance and two-factor state changes now use a browser-safe typed
+direct-route client with allowlisted codes and fail-closed malformed responses.
+The storage proxy uses its own redacted `INVALID_INPUT`, `UNAUTHORIZED`,
+`FORBIDDEN`, `NOT_FOUND`, and `INTERNAL` envelope for upload, download, and
+unmatched-path failures, with a validated `x-request-id` echoed in both the
+body and response headers. The remaining cross-surface error matrix and
+adoption across every direct route are tracked in `TODO.md`. Health probes and
+the cron job trigger use separate operational envelopes and headers (including
+service-specific success/error behavior); they are not represented by the
+account/auth inventory above and remain part of the whole-product failure
+matrix.
 
 Invitation links reach the browser as fragments and are scrubbed synchronously.
 The client exchanges the identifier for a short-lived AES-GCM handoff stored in
