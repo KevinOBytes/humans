@@ -249,6 +249,10 @@ test("person research requires consent and applies only selected edited fields",
   const biographyApply = page.getByRole("checkbox", {
     name: "Apply Biography",
   });
+  const acceptAll = page.getByRole("checkbox", {
+    name: "Accept all suggested fields",
+  });
+  await expect(acceptAll).not.toBeChecked();
   await expect(displayNameApply).not.toBeChecked();
   await expect(preferredNameApply).not.toBeChecked();
   await expect(biographyApply).not.toBeChecked();
@@ -256,6 +260,14 @@ test("person research requires consent and applies only selected edited fields",
     page.getByRole("button", { name: "Apply selected fields" }),
   ).toBeDisabled();
 
+  await acceptAll.check();
+  await expect(displayNameApply).toBeChecked();
+  await expect(preferredNameApply).toBeChecked();
+  await expect(biographyApply).toBeChecked();
+  await expect(page.getByText("Accepted for saving").first()).toBeVisible();
+
+  await displayNameApply.uncheck();
+  await preferredNameApply.uncheck();
   await page.getByLabel("Biography suggestion").fill("Edited biography");
   await biographyApply.check();
   await expect(displayNameApply).not.toBeChecked();
