@@ -10,10 +10,20 @@ import {
 
 describe("liveness", () => {
   it("returns a non-secret status", async () => {
-    const response = await getLiveness();
+    const request = new Request("http://localhost/api/health/live", {
+      headers: { "x-request-id": "019fe224-a0cd-76e4-92ac-9d28795c2cca" },
+    });
+    const response = await getLiveness(request);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok", service: "humans" });
+    expect(await response.json()).toEqual({
+      status: "ok",
+      service: "humans",
+      requestId: "019fe224-a0cd-76e4-92ac-9d28795c2cca",
+    });
+    expect(response.headers.get("x-request-id")).toBe(
+      "019fe224-a0cd-76e4-92ac-9d28795c2cca",
+    );
   });
 });
 
@@ -42,7 +52,10 @@ describe("readiness", () => {
       { name: "storage", check: async () => undefined },
     ]);
 
-    const response = await getReadiness();
+    const request = new Request("http://localhost/api/health/ready", {
+      headers: { "x-request-id": "019fe224-a0cd-76e4-92ac-9d28795c2cca" },
+    });
+    const response = await getReadiness(request);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -54,6 +67,7 @@ describe("readiness", () => {
         redis: "ok",
         storage: "ok",
       },
+      requestId: "019fe224-a0cd-76e4-92ac-9d28795c2cca",
     });
   });
 
@@ -70,7 +84,9 @@ describe("readiness", () => {
       },
     ]);
 
-    const response = await getReadiness();
+    const response = await getReadiness(
+      new Request("http://localhost/api/health/ready"),
+    );
     const body = await response.json();
 
     expect(response.status).toBe(503);
@@ -78,6 +94,7 @@ describe("readiness", () => {
       status: "unavailable",
       service: "humans",
       dependencies: { configuration: "ok", redis: "failed" },
+      requestId: expect.any(String),
     });
     expect(JSON.stringify(body)).not.toContain("super-secret");
     expect(JSON.stringify(body)).not.toContain("redis://");
@@ -97,7 +114,9 @@ describe("readiness", () => {
     );
 
     const startedAt = performance.now();
-    const response = await getReadiness();
+    const response = await getReadiness(
+      new Request("http://localhost/api/health/ready"),
+    );
     const elapsedMs = performance.now() - startedAt;
 
     expect(elapsedMs).toBeLessThan(80);
@@ -106,6 +125,7 @@ describe("readiness", () => {
       status: "unavailable",
       service: "humans",
       dependencies: { storage: "failed" },
+      requestId: expect.any(String),
     });
   });
 
@@ -124,7 +144,9 @@ describe("readiness", () => {
       { timeoutMs: 5 },
     );
 
-    const response = await getReadiness();
+    const response = await getReadiness(
+      new Request("http://localhost/api/health/ready"),
+    );
     rejectProbe?.(new Error("late secret-bearing rejection"));
     await new Promise((resolve) => setTimeout(resolve, 0));
 

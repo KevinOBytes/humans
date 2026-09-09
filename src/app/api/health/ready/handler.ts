@@ -3,6 +3,7 @@ import postgres from "postgres";
 // Route-safe implementation kept outside Next.js's reserved route module.
 
 import { getServerEnv } from "@/lib/env/server";
+import { correlationHeaders, requestCorrelationId } from "@/lib/api/request-id";
 import { createRedisStore, type RedisStore } from "@/lib/redis";
 import { createObjectStore } from "@/lib/storage/s3";
 import type { ObjectStore } from "@/lib/storage/types";
@@ -70,8 +71,9 @@ async function checkBeforeDeadline(
 export function createReadinessHandler(
   probes: readonly ReadinessProbe[],
   options: ReadinessOptions = {},
-): () => Promise<Response> {
-  return async () => {
+): (request: Request) => Promise<Response> {
+  return async (request) => {
+    const requestId = requestCorrelationId(request);
     const results = await Promise.all(
       probes.map(({ check }) =>
         checkBeforeDeadline(check, options.timeoutMs ?? 2_500),
@@ -90,8 +92,9 @@ export function createReadinessHandler(
         status: ready ? "ready" : "unavailable",
         service: "humans",
         dependencies,
+        requestId,
       },
-      { status: ready ? 200 : 503 },
+      { status: ready ? 200 : 503, headers: correlationHeaders(requestId) },
     );
   };
 }
