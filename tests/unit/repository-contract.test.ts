@@ -160,7 +160,11 @@ describe("public repository contract", () => {
     const readme = read("README.md");
 
     expect(readme).toContain("cp .env.example .env.local");
-    for (const script of ["db:migrate", "admin:bootstrap"]) {
+    for (const script of [
+      "db:migrate",
+      "admin:bootstrap",
+      "admin:rotate-password",
+    ]) {
       expect(packageJson.scripts[script]).toMatch(
         /^node --env-file-if-exists=\.env\.local /u,
       );
