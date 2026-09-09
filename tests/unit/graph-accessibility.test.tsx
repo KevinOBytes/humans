@@ -729,6 +729,8 @@ describe("RelationshipEditor", () => {
     await user.click(
       screen.getByRole("button", { name: "Create relationship" }),
     );
+    expect(mutationAdapter.create).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm create" }));
     expect(mutationAdapter.create).toHaveBeenCalledWith({
       relationshipTypeId: IDS.typeDirected,
       sensitivity: "INTERNAL",
