@@ -76,10 +76,19 @@ authentication/SSR fix, browser acceptance, real PostgreSQL integration,
 Compose lifecycle, production build, generated drift, dependency policy,
 image security, and secret scanning.
 
+Current repository gate (2026-09-09): GitHub Actions run `34298190513` passed
+for commit `f1ada49` with all 9 checks green, including the storage-proxy
+correlation/stable-error contract, PostgreSQL/Redis integration, Compose
+lifecycle, production build, browser acceptance, quality, generated drift,
+dependency policy, image security, and secret scanning. Dependabot PR #120 was
+closed after its Better Auth 1.7.2 branch failed the real Compose signup smoke
+because the upgraded runtime requires an `accounts.issuer` field absent from
+the current auth schema.
+
 Latest hosted evidence (2026-09-08): the sign-in bootstrap, reconciliation
 workspace, local-compose authentication fix, and member-table accessibility fix
 are deployed to Vercel production as
-`dpl_7MkGJssc5FYL4i9yuG4bgtbCTZ8T`; the custom hostname,
+`dpl_GLPrTRKxNWTyUUf1pRx9FrmN35Dt`; the custom hostname,
 liveness, readiness, PostgreSQL/Redis/storage probes, unauthenticated GraphQL
 boundary, and protected jobs boundary all passed the bounded smoke. A prior
 Vercel production request log records repeated scheduled `/api/jobs/run`
@@ -128,7 +137,7 @@ recovery.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes. A focused live policy-settings matrix now covers owner access-policy success, administrator workspace-default success, viewer/foreign denial, optimistic retries, validation rollback, redacted audit output, and durable `UpdateAccessPolicy` plus `UpdateWorkspaceDefaults` replay/concurrency boundaries; provider and whole-settings coverage remain open.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search/graph envelopes, centralized browser/server GraphQL error contract (including malformed-payload handling, header-authoritative IDs, and known-code secret-message normalization), and representative all-code/redaction matrix. Direct route codes are inventoried in `docs/ARCHITECTURE.md`; the scheduled `/api/jobs/run` route now emits stable `UNAUTHENTICATED`/`INTERNAL` codes with an `x-request-id`, the storage proxy now emits redacted stable upload/download/unmatched-path envelopes with correlated headers, and a typed direct-route client covers invitation handoff/acceptance and two-factor state changes, while adoption across every direct route and the whole-product failure matrix remain open.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks; provider, browser, and interruption coverage remain open.
-- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_7MkGJssc5FYL4i9yuG4bgtbCTZ8T` is Ready and serves `humans.kevinbytes.com` from the merged `main` tree; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. The protected route invokes configured administrator bootstrap before jobs, and sign-in requests bootstrap the configured account before credential validation. Authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
+- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_GLPrTRKxNWTyUUf1pRx9FrmN35Dt` is Ready and serves `humans.kevinbytes.com` from the fully green `main` commit `f1ada49`; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. The protected route invokes configured administrator bootstrap before jobs, and sign-in requests bootstrap the configured account before credential validation. Authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
 
 ## Non-functional
 
@@ -154,5 +163,5 @@ recovery.
 - [ ] `HUM-NFR-009` Complete responsive and whole-product accessibility acceptance beyond the tested Task 12 search and graph-analysis controls/results. Profile semantic sections, keyboard tab activation, and RTL/200% zoom no-overflow/axe evidence are bounded additions; full responsive primary-journey coverage remains open.
 - [ ] `HUM-NFR-011` Complete the remaining whole-product PostgreSQL, Redis, storage, GraphQL, browser, and CI matrix beyond the Task 12 foundation and Task 18 live upgrade/concurrency/browser/Compose suite.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage.
-- [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. The current tree now has a passing Node 24 production build in CI, 216 test files with 1,349 tests passed and 572 intentional skips locally, lint, typecheck, formatting, generated drift, focused graph/performance checks, and an isolated PostgreSQL/Redis/MinIO Compose smoke with administrator recovery; the full current matrix, hosted authenticated/provider/runtime proof, and all remaining TODO rows are still outstanding.
+- [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. The current tree now has a fully green Node 24 repository gate (`34298190513`, commit `f1ada49`), 216 test files with 1,349 tests passed and 572 intentional skips locally, lint, typecheck, formatting, generated drift, focused graph/performance checks, and an isolated PostgreSQL/Redis/MinIO Compose smoke with administrator recovery; the full current matrix, hosted authenticated/provider/runtime proof, and all remaining TODO rows are still outstanding.
 - [ ] `HUM-NFR-020` Meet and continuously verify the production latency, concurrency, graph-frame-rate, Web Vitals, and bundle budgets beyond Task 12 bounds and indexed-plan evidence. The disposable Node 24 performance harness now passes the representative 10,000-person/25,000-edge GraphQL read, graph render/FPS/WebGL recovery, and public/dashboard/entities/editor bundle checks; mutation, upload, hosted Web Vitals, and hosted-performance evidence remain open.
