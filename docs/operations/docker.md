@@ -154,6 +154,20 @@ is lost before that production flow is approved, stop the application, follow
 an audited database recovery procedure to remove only the affected credential,
 then rerun bootstrap and rotate/remove the bootstrap secret immediately.
 
+When the existing credential is known to be lost and the operator has an
+attended, audited recovery window, use the separate explicit rotation command
+instead of deleting database rows:
+
+```sh
+pnpm admin:rotate-password
+```
+
+This command takes the same PostgreSQL advisory lock, reconciles the configured
+administrator identity, replaces only that user's Better Auth credential hash,
+and prints no password material. It is never called by a request handler or by
+the ordinary bootstrap command. Treat `ADMIN_PASSWORD` as a one-shot operator
+secret and remove or rotate it after successful recovery.
+
 For a source-based or hosted deployment, run the equivalent one-shot command
 from a restricted release environment with the production database and normal
 server configuration available:

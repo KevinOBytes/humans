@@ -13,6 +13,11 @@ export type BootstrapAdminResult = {
   userId: string;
   created: boolean;
   reconciled: boolean;
+  passwordRotated?: boolean;
+};
+
+export type BootstrapAdminOptions = {
+  rotatePassword?: boolean;
 };
 
 const advisoryLockName = "humans:bootstrap-admin:v1";
@@ -32,6 +37,7 @@ function normalizeUsername(value: string): string {
 export async function bootstrapAdmin(
   database: Database,
   env: BootstrapAdminEnv,
+  options: BootstrapAdminOptions = {},
 ): Promise<BootstrapAdminResult> {
   const email = normalizeEmail(env.ADMIN_EMAIL);
   const username = normalizeUsername(env.ADMIN_USERNAME);
@@ -92,7 +98,12 @@ export async function bootstrapAdmin(
         updatedAt: now,
       });
 
-      return { userId, created: true, reconciled: false };
+      return {
+        userId,
+        created: true,
+        reconciled: false,
+        ...(options.rotatePassword ? { passwordRotated: true } : {}),
+      };
     }
 
     const identityChanged =
@@ -130,6 +141,7 @@ export async function bootstrapAdmin(
       .limit(1);
 
     let credentialCreated = false;
+    let passwordRotated = false;
     if (!credential) {
       const now = new Date();
       const passwordHash = await hashPassword(env.ADMIN_PASSWORD);
@@ -143,12 +155,21 @@ export async function bootstrapAdmin(
         updatedAt: now,
       });
       credentialCreated = true;
+      passwordRotated = Boolean(options.rotatePassword);
+    } else if (options.rotatePassword) {
+      const passwordHash = await hashPassword(env.ADMIN_PASSWORD);
+      await transaction
+        .update(accounts)
+        .set({ password: passwordHash, updatedAt: new Date() })
+        .where(eq(accounts.id, credential.id));
+      passwordRotated = true;
     }
 
     return {
       userId: existing.id,
       created: false,
-      reconciled: identityChanged || credentialCreated,
+      reconciled: identityChanged || credentialCreated || passwordRotated,
+      ...(passwordRotated ? { passwordRotated: true } : {}),
     };
   });
 }

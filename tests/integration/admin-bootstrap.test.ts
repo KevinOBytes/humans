@@ -234,6 +234,42 @@ liveDescribe("administrator bootstrap", () => {
     expect(credential?.password).toBe(changedHash);
   });
 
+  it("rotates the existing credential only when the explicit option is enabled", async () => {
+    const initial = await bootstrapAdmin(database!, testAdminEnv);
+    const replacementPassword = "Explicit rotation password! 2026";
+    const replacementEnv = {
+      ...testAdminEnv,
+      ADMIN_PASSWORD: replacementPassword,
+    };
+
+    const result = await bootstrapAdmin(database!, replacementEnv, {
+      rotatePassword: true,
+    });
+    const [credential] = await database!
+      .select()
+      .from(accounts)
+      .where(eq(accounts.userId, initial.userId));
+
+    expect(result).toMatchObject({
+      userId: initial.userId,
+      created: false,
+      reconciled: true,
+      passwordRotated: true,
+    });
+    await expect(
+      verifyPassword({
+        hash: credential!.password!,
+        password: replacementPassword,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      verifyPassword({
+        hash: credential!.password!,
+        password: testAdminEnv.ADMIN_PASSWORD,
+      }),
+    ).resolves.toBe(false);
+  });
+
   it("uses Better Auth's password format for the initial credential", async () => {
     const result = await bootstrapAdmin(database!, testAdminEnv);
     const [credential] = await database!
@@ -298,9 +334,10 @@ liveDescribe("administrator bootstrap", () => {
   });
 
   it("keeps migration separate from the explicit bootstrap entrypoint", async () => {
-    const [migrationSource, bootstrapSource] = await Promise.all([
+    const [migrationSource, bootstrapSource, rotateSource] = await Promise.all([
       readFile("src/db/migrate.ts", "utf8"),
       readFile("src/db/bootstrap-admin-entry.ts", "utf8"),
+      readFile("src/db/rotate-admin-password-entry.ts", "utf8"),
     ]);
 
     expect(migrationSource).toContain("await migrate(");
@@ -308,5 +345,7 @@ liveDescribe("administrator bootstrap", () => {
     expect(bootstrapSource).toContain("await bootstrapAdmin(");
     expect(bootstrapSource).toContain("parseBootstrapAdminEnv(process.env)");
     expect(bootstrapSource).toContain("invokedPath === import.meta.url");
+    expect(rotateSource).toContain("rotatePassword: true");
+    expect(rotateSource).toContain("invokedPath === import.meta.url");
   });
 });

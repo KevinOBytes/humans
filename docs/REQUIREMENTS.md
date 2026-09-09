@@ -133,6 +133,8 @@ passed for commit `4916f10` after rerunning its transient browser failure. All
 9 checks are green, including PostgreSQL fixtures for protected
 identifier/contact/birth-date signals and the complete Chromium suite.
 
+Bounded HUM-FR-003 operator recovery evidence (2026-09-09): the repository now exposes a separate `pnpm admin:rotate-password` attended command that calls the locked bootstrap service with `rotatePassword: true`; ordinary bootstrap and request-time sign-in/jobs bootstrap remain non-rotating. Live hosted execution and mailbox/recovery acceptance remain open.
+
 Bounded HUM-FR-035 deployment evidence (2026-09-09): production deployment `dpl_Fzfu4kwtxcMwDZuUCSmvN5k6BcRp` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
 Current deployment evidence (2026-09-08): production deployment

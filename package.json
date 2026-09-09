@@ -45,6 +45,7 @@
     "db:drift:check": "node scripts/check-drizzle-drift.mjs",
     "db:migrate": "node --env-file-if-exists=.env.local --conditions react-server --import tsx src/db/migrate.ts",
     "admin:bootstrap": "node --env-file-if-exists=.env.local --conditions react-server --import tsx src/db/bootstrap-admin-entry.ts",
+    "admin:rotate-password": "node --env-file-if-exists=.env.local --conditions react-server --import tsx src/db/rotate-admin-password-entry.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:check": "drizzle-kit check",
     "auth:schema:generate": "auth generate --config scripts/better-auth-schema.ts --output .tmp/better-auth-schema.ts --yes",
