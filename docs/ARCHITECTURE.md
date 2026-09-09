@@ -320,6 +320,35 @@ event. Reads and exports reauthorize the whole manifest in SQL before page
 limits. JSON exports use a versioned envelope; CSV exports use a fixed column
 set and neutralize spreadsheet-formula prefixes.
 
+## Person web-research provenance
+
+The `personWebResearch` operation is a draft-enrichment boundary, not a
+person-write shortcut. It requires explicit consent and the `person:read`,
+`analysis:create`, and `analysis:run` permissions, loads the person through the
+workspace-scoped people service, and sends only the confirmed public name (and
+the bounded biography for public records) to the configured search/model
+providers. Contacts, locations, relationships, notes, identifiers, and
+restricted fields never enter provider input.
+
+Search output is treated as untrusted data. The Brave adapter uses a fixed
+HTTPS endpoint with redirect rejection; response URLs must be public HTTPS
+URLs, and model suggestions must reference an exact URL returned by that same
+search. Before returning, the service validates the source and suggestion
+limits and, when configured by the GraphQL context, writes one immutable
+`person_web_research_runs` row. The row is workspace/person scoped by a
+composite foreign key and stores only the provider/model disclosure, a SHA-256
+search-query hash, consent timestamp, actor principal, validated source
+snapshots, and bounded editable suggestions. The generated response returns
+the row UUID as `runId`, allowing an operator to correlate a draft with its
+source snapshot without exposing the search query or provider credentials.
+
+These snapshots preserve research provenance; they do not make a claim true
+and do not update a person. The reviewer must explicitly accept individual
+fields (or the bounded accept-all control), after which the existing optimistic
+person mutation performs the only record write. Retention deletion, source to
+evidence-item promotion, and live external-provider acceptance remain separate
+release requirements.
+
 ## Cited AI analyst execution
 
 The browser analyst imports only generated `StartAiAnalysis`, `AiRun`, and

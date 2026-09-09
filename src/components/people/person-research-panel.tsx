@@ -72,6 +72,7 @@ export function PersonResearchPanel({
   const [suggestions, setSuggestions] = useState<DraftSuggestion[]>([]);
   const [sources, setSources] = useState<ResearchSource[]>([]);
   const [provider, setProvider] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<MutationFeedbackView | null>(null);
   const [saved, setSaved] = useState(false);
   const [version, setVersion] = useState(person.version);
@@ -80,6 +81,7 @@ export function PersonResearchPanel({
     setResearching(true);
     setFeedback(null);
     setSaved(false);
+    setRunId(null);
     let result: GraphQLResult<PersonWebResearchMutation>;
     try {
       result = await executeBrowserGraphQL(PersonWebResearchDocument, {
@@ -113,6 +115,7 @@ export function PersonResearchPanel({
     }
     setSuggestions(drafts);
     setSources(researchResult.sources);
+    setRunId(researchResult.runId);
     setProvider(`${researchResult.provider} · ${researchResult.model}`);
   }
 
@@ -228,6 +231,13 @@ export function PersonResearchPanel({
               anything that needs correction, then accept only the fields you
               want to save.
             </p>
+            {runId ? (
+              <p className="text-muted-foreground mt-2 text-xs" role="status">
+                Provenance recorded as research run{" "}
+                <code className="text-foreground">{runId}</code>. This snapshot
+                preserves the validated sources used for these drafts.
+              </p>
+            ) : null}
           </div>
           <Label
             className="border-border bg-card flex items-center gap-3 rounded-xl border p-3"

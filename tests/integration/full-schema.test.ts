@@ -48,6 +48,7 @@ const requiredTables = [
   "idempotencyKeys",
   "webhooks",
   "webhookDeliveries",
+  "personWebResearchRuns",
 ] as const;
 
 describe("approved schema surface", () => {

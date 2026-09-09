@@ -60,6 +60,7 @@ const workspaceTableNames = [
   "jobs",
   "webhookDeliveries",
   "webhooks",
+  "personWebResearchRuns",
   "externalRecords",
   "identityCandidates",
   "mergeDecisions",

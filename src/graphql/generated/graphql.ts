@@ -3585,6 +3585,7 @@ export type PersonWebResearchMutationVariables = Exact<{
 export type PersonWebResearchMutation = {
   personWebResearch: {
     personId: string;
+    runId: string | null;
     provider: string;
     model: string;
     sources: Array<{ title: string; url: string; snippet: string }>;
@@ -8661,6 +8662,7 @@ export const PersonWebResearchDocument = new TypedDocumentString(
     mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) {
   personWebResearch(personId: $personId, consent: $consent) {
     personId
+    runId
     provider
     model
     sources {
@@ -8677,7 +8679,7 @@ export const PersonWebResearchDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:3b4e7d075d85cd38299d0e380e296e20099997eb86b73879335ccd638ccf5b32",
+    hash: "sha256:57c69cba2a9ff468e9be6d7a79eaf302c8cf55284f7a96c47162b69953ca8861",
   },
 ) as unknown as TypedDocumentString<
   PersonWebResearchMutation,

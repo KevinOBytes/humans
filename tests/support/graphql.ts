@@ -42,6 +42,7 @@ import {
 } from "@/modules/search/metrics";
 import type { SearchRuntime } from "@/modules/search/service";
 import type { AiAnalysisRuntime } from "@/modules/ai/service";
+import type { PersonResearchRuntime } from "@/modules/people/research";
 
 import {
   CookieJar,
@@ -276,6 +277,7 @@ export class GraphQLFixture {
       importRuntime?: ImportServiceRuntime;
       settingsRuntime?: WorkspaceMemberRuntime;
       aiRuntime?: AiAnalysisRuntime;
+      personResearchRuntime?: PersonResearchRuntime;
     } = {},
   ) {
     this.connection = createTestConnection(16, () => {
@@ -356,6 +358,7 @@ export class GraphQLFixture {
           disclosure: { model: "graphql-test-model", provider: "OLLAMA" },
         },
       },
+      personResearchRuntime: this.options.personResearchRuntime,
     });
   }
 

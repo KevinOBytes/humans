@@ -87,5 +87,4 @@ export const personWebResearchRuns = pgTable(
   ],
 );
 
-export type PersonWebResearchRunRow =
-  typeof personWebResearchRuns.$inferSelect;
+export type PersonWebResearchRunRow = typeof personWebResearchRuns.$inferSelect;

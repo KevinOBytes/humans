@@ -8,6 +8,7 @@ export * from "./files";
 export * from "./graph";
 export * from "./locations";
 export * from "./operations";
+export * from "./person-research";
 export * from "./people";
 export * from "./principals";
 export * from "./privacy";
