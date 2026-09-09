@@ -147,7 +147,7 @@ describe("runtime artifact packaging contract", () => {
     ).not.toThrow();
     expect(() =>
       assertRequiredRuntimePackageIdentities(
-        [...packages, { name: "@opentelemetry/api", version: "1.9.0" }],
+        [...packages, { name: "@opentelemetry/api", version: "1.9.1" }],
         "linux",
         "arm64",
       ),
@@ -258,7 +258,7 @@ describe("runtime artifact packaging contract", () => {
     );
     expect(packageJson.devDependencies.esbuild).toBe("0.28.1");
     expect(packageJson.devDependencies["@vercel/nft"]).toBe("1.10.2");
-    expect(packageJson.dependencies["@opentelemetry/api"]).toBe("1.9.0");
+    expect(packageJson.dependencies["@opentelemetry/api"]).toBe("1.9.1");
     expect(dockerfile).toContain("pnpm runtime:build");
     expect(dockerfile).toContain("/app/.next/runtime-root/ /app/");
     expect(dockerfile).not.toContain(

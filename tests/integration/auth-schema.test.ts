@@ -25,11 +25,11 @@ const runtimeAuthSource = readFileSync(
 
 describe("Better Auth schema", () => {
   it("pins one compatible Better Auth package family", () => {
-    expect(packageJson.dependencies["better-auth"]).toBe("1.6.26");
+    expect(packageJson.dependencies["better-auth"]).toBe("1.7.2");
     expect(packageJson.dependencies["@better-auth/drizzle-adapter"]).toBe(
-      "1.6.26",
+      "1.7.2",
     );
-    expect(packageJson.dependencies["@better-auth/api-key"]).toBe("1.6.26");
+    expect(packageJson.dependencies["@better-auth/api-key"]).toBe("1.7.2");
     expect(packageJson.devDependencies.auth).toBe("1.6.23");
   });
 

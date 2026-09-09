@@ -60,12 +60,23 @@ export default function TwoFactorEnrollment({
     setPending(true);
 
     try {
-      const response = await authClient.twoFactor.enable({ password });
+      const response = await authClient.twoFactor.enable({
+        method: "totp",
+        password,
+      });
 
       if (response.error || !response.data) {
         setPassword("");
         setError(
           "We couldn't start two-step verification. Check your password and try again.",
+        );
+        return;
+      }
+
+      if (response.data.method !== "totp") {
+        setPassword("");
+        setError(
+          "Authenticator setup is unavailable for this account. Contact an administrator.",
         );
         return;
       }
