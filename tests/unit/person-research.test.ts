@@ -94,10 +94,14 @@ describe("person web research", () => {
     );
   });
   it("returns an auditable run reference when persistence is configured", async () => {
-    const persist = vi.fn(async () => ({ runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5" }));
+    const persist = vi.fn(async () => ({
+      runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
+    }));
     const { service } = setup({ persist });
 
-    await expect(service.run({ personId, consent: true })).resolves.toMatchObject({
+    await expect(
+      service.run({ personId, consent: true }),
+    ).resolves.toMatchObject({
       runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
     });
     expect(persist).toHaveBeenCalledWith(
@@ -112,6 +116,19 @@ describe("person web research", () => {
     expect(JSON.stringify(persist.mock.calls)).not.toContain(
       "Do not disclose internal biography",
     );
+  });
+  it("fails closed when the provenance snapshot cannot be recorded", async () => {
+    const persist = vi.fn(async () => {
+      throw new Error("database details must not cross the API boundary");
+    });
+    const { service } = setup({ persist });
+
+    await expect(
+      service.run({ personId, consent: true }),
+    ).rejects.toMatchObject({
+      message: "The research result could not be recorded.",
+      extensions: { code: "INTERNAL" },
+    });
   });
   it.each(permissions)(
     "requires %s before contacting either provider",

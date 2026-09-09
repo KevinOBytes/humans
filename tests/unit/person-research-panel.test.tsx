@@ -32,6 +32,7 @@ const person = {
 
 const researchResult = {
   personId: person.id,
+  runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
   provider: "openai-compatible",
   model: "research-model",
   sources: [
@@ -88,6 +89,10 @@ describe("PersonResearchPanel", () => {
     ).toBeDisabled();
 
     await runResearch(user);
+
+    expect(
+      screen.getByText(/Provenance recorded as research run/),
+    ).toHaveTextContent(researchResult.runId);
 
     expect(executeBrowser).toHaveBeenCalledWith(PersonWebResearchDocument, {
       personId: person.id,

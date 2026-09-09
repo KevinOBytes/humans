@@ -44,6 +44,7 @@ const PersonResearchResultObject = builder
   .implement({
     fields: (t) => ({
       personId: t.expose("personId", { type: "UUID", nullable: false }),
+      runId: t.expose("runId", { type: "UUID", nullable: true }),
       sources: t.expose("sources", {
         type: [PersonResearchSourceObject],
         nullable: false,

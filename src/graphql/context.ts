@@ -2,7 +2,9 @@ import { getSessionCookie } from "better-auth/cookies";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { apiKeys, members } from "@/db/schema/auth";
+import { personWebResearchRuns } from "@/db/schema/person-research";
 import { workspaces } from "@/db/schema/workspaces";
+import { newId } from "@/db/id";
 import {
   verifyOrganizationApiKeyCredential,
   type BetterAuthRuntime,
@@ -215,6 +217,23 @@ function createServices(input: {
       workspaceId: input.context.workspaceId,
       operationLimiter: input.operationLimiter,
       runtime: input.personResearchRuntime,
+      persistResearch: async (research) => {
+        const runId = newId();
+        await input.database.insert(personWebResearchRuns).values({
+          id: runId,
+          workspaceId: input.context.workspaceId,
+          personId: research.personId,
+          provider: research.provider,
+          model: research.model,
+          queryHash: research.queryHash,
+          sourceCount: research.sources.length,
+          sources: research.sources,
+          suggestions: research.suggestions,
+          consentedAt: research.consentedAt,
+          createdBy: input.context.actor.principalId,
+        });
+        return { runId };
+      },
     }),
     facts: createFactsService(
       {

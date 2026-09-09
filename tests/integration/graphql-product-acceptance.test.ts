@@ -8,6 +8,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { auditEvents } from "@/db/schema/operations";
 import { facts } from "@/db/schema/facts";
+import { personWebResearchRuns } from "@/db/schema/person-research";
 import { locationMutationIdempotency } from "@/db/schema/locations";
 import {
   AiRunDocument,
@@ -88,6 +89,97 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     expectGraphQLError(await research(viewer), "FORBIDDEN");
     expectGraphQLError(await research(foreign), "NOT_FOUND");
     expectGraphQLError(await research(owner), "PROVIDER_UNAVAILABLE");
+  });
+
+  it("persists validated person research provenance in the active workspace", async () => {
+    const sources = [
+      {
+        url: "https://example.org/research-subject",
+        title: "Public research profile",
+        snippet: "A public profile excerpt.",
+      },
+    ];
+    const persisted = new ResearchFixture({
+      personResearchRuntime: {
+        search: {
+          search: async () => sources,
+        },
+        provider: {
+          baseUrlFingerprint: "47".repeat(32),
+          disclosure: { model: "research-test-model", provider: "OLLAMA" },
+          generate: async () => ({
+            type: "answer" as const,
+            answer: JSON.stringify({
+              suggestions: [
+                {
+                  field: "biography",
+                  value: "A public research profile.",
+                  sourceUrls: [sources[0]!.url],
+                },
+              ],
+            }),
+            citations: [],
+          }),
+        },
+      },
+    });
+    await persisted.reset();
+    try {
+      const owner = await persisted.createActor();
+      const created = await persisted.createPerson(owner, {
+        displayName: "Public research subject",
+        sensitivity: "PUBLIC",
+      });
+      const personId = created.body?.data?.createPerson?.person?.id;
+      expect(personId).toBeTruthy();
+      const result = await persisted.execute<{
+        personWebResearch: {
+          personId: string;
+          runId: string | null;
+          suggestions: Array<{
+            field: string;
+            value: string;
+            sourceUrls: string[];
+          }>;
+        };
+      }>({
+        jar: owner.jar,
+        query:
+          "mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) { personWebResearch(personId: $personId, consent: $consent) { personId runId suggestions { field value sourceUrls } } }",
+        variables: { personId, consent: true },
+      });
+      expect(result.body?.errors).toBeUndefined();
+      const runId = result.body?.data?.personWebResearch.runId;
+      expect(runId).toMatch(/^[0-9a-f-]{36}$/u);
+      const [run] = await persisted.database
+        .select()
+        .from(personWebResearchRuns)
+        .where(
+          and(
+            eq(personWebResearchRuns.workspaceId, owner.workspaceId),
+            eq(personWebResearchRuns.id, runId!),
+            eq(personWebResearchRuns.personId, personId!),
+          ),
+        );
+      expect(run).toMatchObject({
+        workspaceId: owner.workspaceId,
+        personId,
+        provider: "OLLAMA",
+        model: "research-test-model",
+        sourceCount: 1,
+        createdBy: owner.principalId,
+      });
+      expect(run?.sources).toEqual(sources);
+      expect(run?.suggestions).toEqual([
+        {
+          field: "biography",
+          value: "A public research profile.",
+          sourceUrls: [sources[0]!.url],
+        },
+      ]);
+    } finally {
+      await persisted.close();
+    }
   });
 
   it("creates, updates, lists, and archives names and timeline events with optimistic versions", async () => {

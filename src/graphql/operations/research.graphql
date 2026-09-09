@@ -712,6 +712,7 @@ mutation UpdatePerson($input: UpdatePersonInput!) {
 mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) {
   personWebResearch(personId: $personId, consent: $consent) {
     personId
+    runId
     provider
     model
     sources {
