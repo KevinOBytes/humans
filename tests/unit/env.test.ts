@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { clientEnvSchema } from "@/lib/env/client";
 import {
+  parseAdminOperationEnv,
   parseBootstrapAdminEnv,
   parseServerEnv,
   type ServerEnv,
@@ -545,6 +546,40 @@ describe("parseBootstrapAdminEnv", () => {
   ])("rejects a %s bootstrap password", (_case, ADMIN_PASSWORD) => {
     expect(() =>
       parseBootstrapAdminEnv({ ...productionEnv, ADMIN_PASSWORD }),
+    ).toThrow(/ADMIN_PASSWORD/);
+  });
+});
+
+describe("parseAdminOperationEnv", () => {
+  it("accepts only database and administrator settings for attended recovery", () => {
+    expect(
+      parseAdminOperationEnv({
+        NODE_ENV: "production",
+        DATABASE_URL: productionEnv.DATABASE_URL,
+        ADMIN_EMAIL: productionEnv.ADMIN_EMAIL,
+        ADMIN_USERNAME: productionEnv.ADMIN_USERNAME,
+        ADMIN_DISPLAY_NAME: productionEnv.ADMIN_DISPLAY_NAME,
+        ADMIN_PASSWORD: productionEnv.ADMIN_PASSWORD,
+      }),
+    ).toEqual({
+      DATABASE_URL: productionEnv.DATABASE_URL,
+      ADMIN_EMAIL: productionEnv.ADMIN_EMAIL,
+      ADMIN_USERNAME: productionEnv.ADMIN_USERNAME,
+      ADMIN_DISPLAY_NAME: productionEnv.ADMIN_DISPLAY_NAME,
+      ADMIN_PASSWORD: productionEnv.ADMIN_PASSWORD,
+    });
+  });
+
+  it("keeps the bootstrap password safety checks for attended recovery", () => {
+    expect(() =>
+      parseAdminOperationEnv({
+        NODE_ENV: "production",
+        DATABASE_URL: productionEnv.DATABASE_URL,
+        ADMIN_EMAIL: productionEnv.ADMIN_EMAIL,
+        ADMIN_USERNAME: productionEnv.ADMIN_USERNAME,
+        ADMIN_DISPLAY_NAME: productionEnv.ADMIN_DISPLAY_NAME,
+        ADMIN_PASSWORD: "replace-with-a-password",
+      }),
     ).toThrow(/ADMIN_PASSWORD/);
   });
 });

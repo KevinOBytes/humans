@@ -168,6 +168,30 @@ and prints no password material. It is never called by a request handler or by
 the ordinary bootstrap command. Treat `ADMIN_PASSWORD` as a one-shot operator
 secret and remove or rotate it after successful recovery.
 
+The attended bootstrap and rotation entrypoints intentionally parse only
+`DATABASE_URL` and the four `ADMIN_*` values. They do not require the unrelated
+Redis, object-storage, Resend, or AI variables used by the application. For a
+hosted recovery, obtain the Neon connection string and replacement administrator
+values from the deployment's approved secret manager, write them to a temporary
+0600 file such as `.env.admin-recovery`, and run the entrypoint directly from a
+restricted Node 24 release checkout:
+
+```sh
+node --env-file=.env.admin-recovery --conditions=react-server --import tsx \
+  src/db/rotate-admin-password-entry.ts
+rm -f .env.admin-recovery
+```
+
+The file must contain only `DATABASE_URL`, `ADMIN_EMAIL`,
+`ADMIN_USERNAME`, `ADMIN_DISPLAY_NAME`, and `ADMIN_PASSWORD`; do not put the
+password in a command argument or shell history. Vercel protected/hidden
+variables are not a recovery transport: do not try to obtain plaintext values
+with `vercel env pull`. Source the database credential from Neon or the
+approved secret manager instead, keep the Vercel runtime variables unchanged,
+and record only the redacted result and timestamp. This operation still
+requires an explicit operator-controlled database credential and never runs
+inside a Vercel function.
+
 For a source-based or hosted deployment, run the equivalent one-shot command
 from a restricted release environment with the production database and normal
 server configuration available:
