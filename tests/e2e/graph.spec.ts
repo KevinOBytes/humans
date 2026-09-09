@@ -557,6 +557,10 @@ test("relationship editor performs only explicitly confirmed mutations", async (
     .selectOption({ label: "Beta Person" });
   await page.getByRole("button", { name: "Create relationship" }).click();
   await expect(
+    page.getByRole("button", { name: "Confirm create" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Confirm create" }).click();
+  await expect(
     page.getByText("2 relationships loaded", { exact: true }),
   ).toBeVisible();
 

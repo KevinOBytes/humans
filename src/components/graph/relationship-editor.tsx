@@ -185,6 +185,13 @@ export function RelationshipEditor({
     "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED"
   >("INTERNAL");
   const [pendingChange, setPendingChange] = useState<
+    | {
+        kind: "create";
+        relationshipTypeId: string;
+        sensitivity: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+        sourcePersonId: string;
+        targetPersonId: string;
+      }
     | { kind: "archive"; edge: EditorEdge }
     | {
         kind: "update";
@@ -205,7 +212,7 @@ export function RelationshipEditor({
         current,
       ),
     );
-  async function createRelationship() {
+  function reviewCreateRelationship() {
     if (
       !sourcePersonId ||
       !targetPersonId ||
@@ -217,47 +224,64 @@ export function RelationshipEditor({
       pending
     )
       return;
-    setPending(true);
-    const saved = await mutationAdapter.create({
-      sourcePersonId,
-      targetPersonId,
+    setPendingChange({
+      kind: "create",
       relationshipTypeId,
       sensitivity: createSensitivity,
+      sourcePersonId,
+      targetPersonId,
     });
-    setPending(false);
-    if (saved) {
-      setStatus("Relationship saved. Refreshing the canonical graph.");
-      onMutationComplete?.();
-    } else {
-      setStatus("Relationship was not saved.");
-    }
+    setStatus("Confirm the new relationship before saving.");
   }
 
   async function confirmChange() {
     if (!pendingChange || !mutationAdapter || pending) return;
     setPending(true);
-    const expectedVersion = pendingChange.edge.data?.version;
-    const relationshipId = pendingChange.edge.data?.relationshipId;
-    if (expectedVersion === undefined || !relationshipId) {
-      setPending(false);
-      setStatus("The relationship version is unavailable; no change was sent.");
-      return;
+    let saved: boolean | undefined;
+    if (pendingChange.kind === "create") {
+      saved = await mutationAdapter.create?.({
+        relationshipTypeId: pendingChange.relationshipTypeId,
+        sensitivity: pendingChange.sensitivity,
+        sourcePersonId: pendingChange.sourcePersonId,
+        targetPersonId: pendingChange.targetPersonId,
+      });
+    } else {
+      const expectedVersion = pendingChange.edge.data?.version;
+      const relationshipId = pendingChange.edge.data?.relationshipId;
+      if (expectedVersion === undefined || !relationshipId) {
+        setPending(false);
+        setStatus(
+          "The relationship version is unavailable; no change was sent.",
+        );
+        return;
+      }
+      saved =
+        pendingChange.kind === "archive"
+          ? await mutationAdapter.archive?.({
+              expectedVersion,
+              relationshipId,
+            })
+          : await mutationAdapter.update?.({
+              expectedVersion,
+              relationshipId,
+              sensitivity: pendingChange.sensitivity,
+            });
     }
-    const saved =
-      pendingChange.kind === "archive"
-        ? await mutationAdapter.archive?.({ expectedVersion, relationshipId })
-        : await mutationAdapter.update?.({
-            expectedVersion,
-            relationshipId,
-            sensitivity: pendingChange.sensitivity,
-          });
     setPending(false);
     if (saved) {
       setPendingChange(null);
-      setStatus("Relationship changed. Refreshing the canonical graph.");
+      setStatus(
+        pendingChange.kind === "create"
+          ? "Relationship saved. Refreshing the canonical graph."
+          : "Relationship changed. Refreshing the canonical graph.",
+      );
       onMutationComplete?.();
     } else {
-      setStatus("Relationship was not changed.");
+      setStatus(
+        pendingChange.kind === "create"
+          ? "Relationship was not saved."
+          : "Relationship was not changed.",
+      );
     }
   }
 
@@ -454,9 +478,9 @@ export function RelationshipEditor({
                   !relationshipTypeId ||
                   pending
                 }
-                onClick={createRelationship}
+                onClick={reviewCreateRelationship}
               >
-                {pending ? "Saving…" : "Create relationship"}
+                Create relationship
               </Button>
               {!mutationAdapter?.create ? (
                 <p className="text-muted-foreground text-xs">
@@ -557,14 +581,26 @@ export function RelationshipEditor({
             {pendingChange ? (
               <div className="border-border bg-muted mt-5 rounded-xl border p-4">
                 <p className="text-sm font-semibold">
-                  {pendingChange.kind === "archive"
-                    ? "Archive relationship?"
-                    : "Update relationship?"}
+                  {pendingChange.kind === "create"
+                    ? "Create relationship?"
+                    : pendingChange.kind === "archive"
+                      ? "Archive relationship?"
+                      : "Update relationship?"}
                 </p>
                 <p className="text-muted-foreground mt-2 text-xs">
-                  The request will include expected version{" "}
-                  {pendingChange.edge.data?.version}. The canonical graph
-                  changes only after server success.
+                  {pendingChange.kind === "create" ? (
+                    <>
+                      {people.get(pendingChange.sourcePersonId)} →{" "}
+                      {people.get(pendingChange.targetPersonId)} will use the
+                      selected relationship type and sensitivity.
+                    </>
+                  ) : (
+                    <>
+                      The request will include expected version{" "}
+                      {pendingChange.edge.data?.version}.
+                    </>
+                  )}{" "}
+                  The canonical graph changes only after server success.
                 </p>
                 <div className="mt-4 flex gap-2">
                   <Button
@@ -573,9 +609,11 @@ export function RelationshipEditor({
                     aria-label={`Confirm ${pendingChange.kind}`}
                     disabled={
                       pending ||
-                      (pendingChange.kind === "archive"
-                        ? !mutationAdapter?.archive
-                        : !mutationAdapter?.update)
+                      (pendingChange.kind === "create"
+                        ? !mutationAdapter?.create
+                        : pendingChange.kind === "archive"
+                          ? !mutationAdapter?.archive
+                          : !mutationAdapter?.update)
                     }
                     onClick={confirmChange}
                   >
