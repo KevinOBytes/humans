@@ -135,10 +135,10 @@ identifier/contact/birth-date signals and the complete Chromium suite.
 
 Bounded HUM-FR-003 operator recovery evidence (2026-09-09): the repository now exposes a separate `pnpm admin:rotate-password` attended command that calls the locked bootstrap service with `rotatePassword: true`; ordinary bootstrap and request-time sign-in/jobs bootstrap remain non-rotating. Live hosted execution and mailbox/recovery acceptance remain open.
 
-Bounded HUM-FR-035 deployment evidence (2026-09-09): production deployment `dpl_GLPrTRKxNWTyUUf1pRx9FrmN35Dt` is Ready and serves `humans.kevinbytes.com` from the fully green `main` commit `f1ada49`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
+Bounded HUM-FR-035 deployment evidence (2026-09-09): production deployment `dpl_8rbBgB8mKSzupo8c15ADuYTN3LxD` is Ready and serves `humans.kevinbytes.com`. The fresh bounded hosted smoke passes homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. That route invokes the validated `ADMIN_*` bootstrap before jobs when configured, and sign-in requests invoke it before credential validation. Hosted authenticated sign-in/create-person acceptance and external-provider acceptance remain open, and protected Vercel secrets were not exported.
 
 Current deployment evidence (2026-09-09): production deployment
-`dpl_GLPrTRKxNWTyUUf1pRx9FrmN35Dt` is Ready and aliases
+`dpl_8rbBgB8mKSzupo8c15ADuYTN3LxD` is Ready and aliases
 `humans.kevinbytes.com`. Live probes return homepage 200, liveness 200,
 readiness 200 with PostgreSQL/Redis/storage healthy, unauthenticated GraphQL
 401 with the stable `UNAUTHENTICATED` envelope, and protected jobs 401 with its
