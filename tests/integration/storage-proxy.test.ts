@@ -411,8 +411,53 @@ describe("local storage proxy", () => {
     const response = await handlers.GET(grantRequest(download));
 
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ status: "error" });
+    expect(await response.json()).toMatchObject({
+      status: "error",
+      code: "NOT_FOUND",
+      requestId: response.headers.get("x-request-id"),
+    });
     expect(client.commands).toEqual(["GetObjectCommand"]);
+  });
+
+  it("returns a stable redacted error envelope with the caller correlation ID", async () => {
+    const error = Object.assign(new Error("secret object detail"), {
+      name: "NoSuchKey",
+      $metadata: { httpStatusCode: 404 },
+    });
+    const client = new FailingDownloadClient(error);
+    const store = createObjectStore(baseEnv);
+    const handlers = createStorageProxyHandlers({
+      client: client as unknown as S3Client,
+      bucket: baseEnv.STORAGE_BUCKET,
+      secret: baseEnv.DATA_ENCRYPTION_KEY,
+      executeAuthorizedUpload: allowUpload,
+    });
+    const download = await store.createDownload({
+      workspaceId: "workspace-a",
+      key: "missing.txt",
+      fileName: "missing.txt",
+    });
+    const correlationId = "A4E128F2-C057-43E9-BF32-7B0E30CC2CF1";
+
+    const response = await handlers.GET(
+      new Request(download.url, {
+        headers: {
+          ...download.headers,
+          "x-request-id": correlationId,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-request-id")).toBe(
+      correlationId.toLowerCase(),
+    );
+    expect(await response.json()).toEqual({
+      status: "error",
+      code: "NOT_FOUND",
+      requestId: correlationId.toLowerCase(),
+    });
   });
 
   it("returns fixed 404 for ambiguous object absence without probing the bucket", async () => {
@@ -437,7 +482,11 @@ describe("local storage proxy", () => {
     const response = await handlers.GET(grantRequest(download));
 
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ status: "error" });
+    expect(await response.json()).toMatchObject({
+      status: "error",
+      code: "NOT_FOUND",
+      requestId: response.headers.get("x-request-id"),
+    });
     expect(client.commands).toEqual(["GetObjectCommand"]);
   });
 
@@ -463,7 +512,11 @@ describe("local storage proxy", () => {
     const response = await handlers.GET(grantRequest(download));
 
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ status: "error" });
+    expect(await response.json()).toMatchObject({
+      status: "error",
+      code: "INTERNAL",
+      requestId: response.headers.get("x-request-id"),
+    });
     expect(client.commands).toEqual(["GetObjectCommand"]);
   });
 
@@ -499,7 +552,9 @@ describe("local storage proxy", () => {
     const responseText = await response.text();
 
     expect(response.status).toBe(503);
-    expect(responseText).toBe('{"status":"error"}');
+    expect(responseText).toContain('"status":"error"');
+    expect(responseText).toContain('"code":"INTERNAL"');
+    expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
     expect(responseText).not.toContain("secret");
     expect(responseText).not.toContain("storage.internal");
     expect(client.commands).toEqual(["GetObjectCommand"]);
