@@ -35,6 +35,7 @@ function setup(
     configured?: boolean;
     answer?: unknown;
     sources?: unknown;
+    persist?: (input: unknown) => Promise<{ runId: string }>;
   } = {},
 ) {
   const search = vi.fn<
@@ -74,6 +75,7 @@ function setup(
       options.configured === false
         ? undefined
         : { search: { search }, provider },
+    persistResearch: options.persist,
   });
   return { service, search, generate };
 }
@@ -88,6 +90,26 @@ describe("person web research", () => {
     });
     expect(search.mock.calls[0]).toEqual(["Ada", expect.any(AbortSignal)]);
     expect(JSON.stringify(generate.mock.calls)).not.toContain(
+      "Do not disclose internal biography",
+    );
+  });
+  it("returns an auditable run reference when persistence is configured", async () => {
+    const persist = vi.fn(async () => ({ runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5" }));
+    const { service } = setup({ persist });
+
+    await expect(service.run({ personId, consent: true })).resolves.toMatchObject({
+      runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
+    });
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personId,
+        provider: "OLLAMA",
+        model: "test-model",
+        sources,
+        suggestions: [suggestion],
+      }),
+    );
+    expect(JSON.stringify(persist.mock.calls)).not.toContain(
       "Do not disclose internal biography",
     );
   });
