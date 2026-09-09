@@ -458,6 +458,25 @@ export const bootstrapAdminEnvSchema = z
 
 export type BootstrapAdminEnv = z.infer<typeof bootstrapAdminEnvSchema>;
 
+/**
+ * Environment required by the attended administrator bootstrap/recovery
+ * commands. Keep this smaller than ServerEnv so an operator can run a
+ * one-shot database operation without exporting unrelated provider secrets.
+ */
+export const adminOperationEnvSchema = z
+  .object({
+    DATABASE_URL: z.url({ protocol: /^postgres(?:ql)?$/ }),
+    ADMIN_EMAIL: bootstrapAdminEnvSchema.shape.ADMIN_EMAIL,
+    ADMIN_USERNAME: bootstrapAdminEnvSchema.shape.ADMIN_USERNAME,
+    ADMIN_DISPLAY_NAME: bootstrapAdminEnvSchema.shape.ADMIN_DISPLAY_NAME,
+    ADMIN_PASSWORD: bootstrapAdminEnvSchema.shape.ADMIN_PASSWORD,
+  })
+  .superRefine((env, context) => {
+    addProductionSecretIssue(context, "ADMIN_PASSWORD", env.ADMIN_PASSWORD, 16);
+  });
+
+export type AdminOperationEnv = z.infer<typeof adminOperationEnvSchema>;
+
 export function parseServerEnv(source: NodeJS.ProcessEnv): ServerEnv {
   return serverEnvSchema.parse(source);
 }
@@ -466,4 +485,10 @@ export function parseBootstrapAdminEnv(
   source: NodeJS.ProcessEnv,
 ): BootstrapAdminEnv {
   return bootstrapAdminEnvSchema.parse(source);
+}
+
+export function parseAdminOperationEnv(
+  source: NodeJS.ProcessEnv,
+): AdminOperationEnv {
+  return adminOperationEnvSchema.parse(source);
 }

@@ -4,16 +4,12 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import * as schema from "@/db/schema";
-import {
-  parseBootstrapAdminEnv,
-  parseServerEnv,
-} from "@/lib/env/server-schema";
+import { parseAdminOperationEnv } from "@/lib/env/server-schema";
 import { bootstrapAdmin } from "@/modules/auth/bootstrap-admin";
 
 export async function main(): Promise<void> {
-  const runtimeEnv = parseServerEnv(process.env);
-  const bootstrapEnv = parseBootstrapAdminEnv(process.env);
-  const connection = postgres(runtimeEnv.DATABASE_URL, {
+  const env = parseAdminOperationEnv(process.env);
+  const connection = postgres(env.DATABASE_URL, {
     max: 1,
     onnotice: () => undefined,
     prepare: false,
@@ -21,7 +17,7 @@ export async function main(): Promise<void> {
   const database = drizzle(connection, { schema });
 
   try {
-    const result = await bootstrapAdmin(database, bootstrapEnv);
+    const result = await bootstrapAdmin(database, env);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } finally {
     await connection.end();

@@ -343,7 +343,8 @@ liveDescribe("administrator bootstrap", () => {
     expect(migrationSource).toContain("await migrate(");
     expect(migrationSource).not.toContain("bootstrapAdmin");
     expect(bootstrapSource).toContain("await bootstrapAdmin(");
-    expect(bootstrapSource).toContain("parseBootstrapAdminEnv(process.env)");
+    expect(bootstrapSource).toContain("parseAdminOperationEnv(process.env)");
+    expect(rotateSource).toContain("parseAdminOperationEnv(process.env)");
     expect(bootstrapSource).toContain("invokedPath === import.meta.url");
     expect(rotateSource).toContain("rotatePassword: true");
     expect(rotateSource).toContain("invokedPath === import.meta.url");
