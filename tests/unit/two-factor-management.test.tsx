@@ -76,6 +76,7 @@ describe("enabled two-factor management", () => {
   it("removes the QR and manual secret immediately after TOTP verification", async () => {
     auth.enable.mockResolvedValue({
       data: {
+        method: "totp",
         totpURI:
           "otpauth://totp/Humans:test?secret=ABCDEFGHIJKLMNOP&issuer=Humans",
         backupCodes: ["backup-one", "backup-two"],
@@ -92,6 +93,10 @@ describe("enabled two-factor management", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Begin secure setup" }),
     );
+    expect(auth.enable).toHaveBeenCalledWith({
+      method: "totp",
+      password: "password",
+    });
     expect(screen.getByText("ABCDEFGHIJKLMNOP")).toBeInTheDocument();
     await userEvent.type(
       screen.getByLabelText("Authentication code"),
@@ -110,6 +115,7 @@ describe("enabled two-factor management", () => {
   it("wipes the QR and backup-code presentation after explicit finish", async () => {
     auth.enable.mockResolvedValue({
       data: {
+        method: "totp",
         totpURI:
           "otpauth://totp/Humans:finish-test?secret=FINISHSECRET&issuer=Humans",
         backupCodes: ["finish-backup-one", "finish-backup-two"],
@@ -145,5 +151,28 @@ describe("enabled two-factor management", () => {
     expect(screen.queryByText("FINISHSECRET")).not.toBeInTheDocument();
     expect(screen.queryByText("finish-backup-one")).not.toBeInTheDocument();
     expect(screen.queryByText("finish-backup-two")).not.toBeInTheDocument();
+  });
+
+  it("does not treat an OTP response as authenticator enrollment", async () => {
+    auth.enable.mockResolvedValue({
+      data: { method: "otp" },
+      error: null,
+    });
+    render(<TwoFactorEnrollment twoFactorEnabled={false} />);
+
+    await userEvent.type(screen.getByLabelText("Current password"), "password");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Begin secure setup" }),
+    );
+
+    expect(
+      screen.getByText(
+        "Authenticator setup is unavailable for this account. Contact an administrator.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Current password")).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: "Begin secure setup" }),
+    ).toBeInTheDocument();
   });
 });
