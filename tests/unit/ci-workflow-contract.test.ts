@@ -15,7 +15,7 @@ const officialActions = new Map([
   ],
   [
     "pnpm/action-setup",
-    { sha: "0977fd99725f1db4007ccb2928dbb4e90d06cc86", tag: "v6.0.10" },
+    { sha: "ea17c68df8912ef543352723c149a84f56e3d413", tag: "v6.1.0" },
   ],
   [
     "actions/upload-artifact",
@@ -38,8 +38,8 @@ const officialActions = new Map([
   [
     "docker/setup-buildx-action",
     {
-      sha: "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
-      tag: "v4.2.0",
+      sha: "37fe631027851001ddb9b187196cc803df7f5f0e",
+      tag: "v4.3.0",
     },
   ],
   [
@@ -55,7 +55,7 @@ const officialActions = new Map([
   ],
   [
     "anchore/sbom-action",
-    { sha: "e22c389904149dbc22b58101806040fa8d37a610", tag: "v0.24.0" },
+    { sha: "3ad7283483fc7af8ff2b4ea19663c2d5ca935e26", tag: "v0.24.2" },
   ],
 ]);
 
