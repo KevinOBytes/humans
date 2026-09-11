@@ -199,12 +199,10 @@ export function previewExport(input: {
       expiresAt,
       hmacKey: input.hmacKey,
     }),
-    provenanceManifest: input.rows
-      .slice(0, 500)
-      .map((row) => ({
-        rowId: row.id,
-        sourceIds: [...new Set(row.sourceIds ?? [])],
-      })),
+    provenanceManifest: input.rows.slice(0, 500).map((row) => ({
+      rowId: row.id,
+      sourceIds: [...new Set(row.sourceIds ?? [])],
+    })),
   };
 }
 
