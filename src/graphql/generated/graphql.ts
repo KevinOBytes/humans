@@ -220,6 +220,8 @@ export type CreateFactInput = {
   confidenceExplanation?: string | null | undefined;
   confidenceMethod?: string | null | undefined;
   definitionId: string;
+  governanceCaseReference?: string | null | undefined;
+  governancePurpose?: string | null | undefined;
   idempotencyKey?: string | null | undefined;
   language?: string | null | undefined;
   observedAt?: string | null | undefined;
@@ -804,6 +806,8 @@ export type ReviseFactInput = {
   changeReason?: string | null | undefined;
   confidence?: number | null | undefined;
   expectedVersion: number;
+  governanceCaseReference?: string | null | undefined;
+  governancePurpose?: string | null | undefined;
   id: string;
   idempotencyKey?: string | null | undefined;
   reviewState?: FactReviewState | null | undefined;

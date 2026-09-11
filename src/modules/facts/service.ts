@@ -20,6 +20,7 @@ import {
   type ResearchResponseReference,
 } from "@/modules/audit/transactions";
 import type { Connection, MutationOutcome } from "@/modules/people/service";
+import { checkPurposeCoverage } from "@/modules/governance/coverage";
 
 import {
   createFactsRepository,
@@ -107,6 +108,8 @@ type FactCreateInput = {
   observedAt?: string | null;
   supersedesFactId?: string | null;
   language?: string | null;
+  governancePurpose?: string | null;
+  governanceCaseReference?: string | null;
 };
 
 function factCreateRequestMaterial(
@@ -1278,6 +1281,28 @@ export function createFactsService(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
+      const governed = ["confidential", "restricted"].includes(
+        input.sensitivity ?? definition.defaultSensitivity,
+      );
+      if (governed || input.governancePurpose) {
+        if (!input.governancePurpose)
+          throw createGraphQLError(
+            "FORBIDDEN",
+            "A governed purpose is required for this fact.",
+          );
+        const coverage = await checkPurposeCoverage(context, {
+          personId: input.personId,
+          fieldDefinitionId: definition.id,
+          purpose: input.governancePurpose,
+          caseReference: input.governanceCaseReference,
+          scope: "write",
+        });
+        if (!coverage.allowed)
+          throw createGraphQLError(
+            "FORBIDDEN",
+            "Consent coverage is required.",
+          );
+      }
       const value = validateFactValue(definition.allowedValueType, input.value);
       const confidence = validateUnitDecimal(input.confidence ?? 1, {
         min: 0,
@@ -1548,6 +1573,8 @@ export function createFactsService(
       reviewState?: string | null;
       sensitivity?: string | null;
       changeReason?: string | null;
+      governancePurpose?: string | null;
+      governanceCaseReference?: string | null;
     }): Promise<FactOutcome> {
       const current = await repository.getFact({
         workspaceId: context.workspaceId,
@@ -1558,6 +1585,30 @@ export function createFactsService(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
+      if (
+        ["confidential", "restricted"].includes(
+          input.sensitivity ?? current.sensitivity,
+        ) ||
+        input.governancePurpose
+      ) {
+        if (!input.governancePurpose)
+          throw createGraphQLError(
+            "FORBIDDEN",
+            "A governed purpose is required for this fact.",
+          );
+        const coverage = await checkPurposeCoverage(context, {
+          personId: current.personId,
+          fieldDefinitionId: current.factDefinitionId,
+          purpose: input.governancePurpose,
+          caseReference: input.governanceCaseReference,
+          scope: "write",
+        });
+        if (!coverage.allowed)
+          throw createGraphQLError(
+            "FORBIDDEN",
+            "Consent coverage is required.",
+          );
+      }
       const requestedVersionIssues = versionIssues(input.expectedVersion);
       if (requestedVersionIssues.length)
         return invalid<FactRow>(requestedVersionIssues);
