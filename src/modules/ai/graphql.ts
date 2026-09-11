@@ -235,6 +235,8 @@ const StartAiAnalysisInput = builder.inputType("StartAiAnalysisInput", {
     idempotencyKey: t.string({ required: true }),
     question: t.string({ required: true }),
     scope: t.field({ type: AiAnalysisScopeInput }),
+    governancePurpose: t.string(),
+    governanceCaseReference: t.string(),
   }),
 });
 
@@ -322,6 +324,8 @@ export function registerAiGraphQL(): void {
         return context.services.ai.startAiAnalysis({
           idempotencyKey: args.input.idempotencyKey,
           question: args.input.question,
+          governancePurpose: args.input.governancePurpose,
+          governanceCaseReference: args.input.governanceCaseReference,
           ...(args.input.scope
             ? {
                 scope: {

@@ -904,6 +904,8 @@ export type SendWebhookTestEventInput = {
 export type Sensitivity = "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
 export type StartAiAnalysisInput = {
+  governanceCaseReference?: string | null | undefined;
+  governancePurpose?: string | null | undefined;
   idempotencyKey: string;
   question: string;
   scope?: AiAnalysisScopeInput | null | undefined;

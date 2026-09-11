@@ -8,6 +8,7 @@ import {
   resourceVisibilitySql,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
+import { checkPurposeCoverage } from "@/modules/governance/coverage";
 import {
   derivePrincipalResearchIdempotency,
   runPrincipalIdempotentResearchWrite,
@@ -43,6 +44,8 @@ export type StartAiAnalysisInput = Readonly<{
     evidenceIds?: readonly string[];
     personIds?: readonly string[];
   }>;
+  governancePurpose?: string | null;
+  governanceCaseReference?: string | null;
 }>;
 
 export type AiAnalysisRuntime = AiRepositoryRuntime &
@@ -73,6 +76,8 @@ function normalizeStartInput(input: StartAiAnalysisInput): {
   idempotencyKey: string;
   question: string;
   scope: AiScope;
+  governancePurpose: string | null;
+  governanceCaseReference: string | null;
 } {
   if (
     !input ||
@@ -81,7 +86,11 @@ function normalizeStartInput(input: StartAiAnalysisInput): {
     Object.getPrototypeOf(input) !== Object.prototype ||
     Object.keys(input).some(
       (key) =>
-        key !== "idempotencyKey" && key !== "question" && key !== "scope",
+        key !== "idempotencyKey" &&
+        key !== "question" &&
+        key !== "scope" &&
+        key !== "governancePurpose" &&
+        key !== "governanceCaseReference",
     ) ||
     typeof input.question !== "string" ||
     typeof input.idempotencyKey !== "string"
@@ -115,7 +124,19 @@ function normalizeStartInput(input: StartAiAnalysisInput): {
     evidenceIds: normalizeIds(scopeValue?.evidenceIds),
     personIds: normalizeIds(scopeValue?.personIds),
   });
-  return { idempotencyKey: input.idempotencyKey, question, scope };
+  return {
+    idempotencyKey: input.idempotencyKey,
+    question,
+    scope,
+    governancePurpose:
+      typeof input.governancePurpose === "string"
+        ? input.governancePurpose.trim() || null
+        : null,
+    governanceCaseReference:
+      typeof input.governanceCaseReference === "string"
+        ? input.governanceCaseReference.trim() || null
+        : null,
+  };
 }
 
 function validateRuntime(runtime: AiAnalysisRuntime): void {
@@ -387,6 +408,26 @@ export function createAiAnalysisService(
             scopedContext,
             normalized.scope,
           );
+          if (normalized.governancePurpose || containsRestrictedScope) {
+            if (!normalized.governancePurpose)
+              throw createGraphQLError(
+                "FORBIDDEN",
+                "A governed purpose is required for this analysis.",
+              );
+            for (const personId of normalized.scope.personIds) {
+              const coverage = await checkPurposeCoverage(scopedContext, {
+                personId,
+                purpose: normalized.governancePurpose,
+                caseReference: normalized.governanceCaseReference,
+                scope: "ai_operation",
+              });
+              if (!coverage.allowed)
+                throw createGraphQLError(
+                  "FORBIDDEN",
+                  "Consent coverage is required.",
+                );
+            }
+          }
           return createAiRepository(
             scopedContext.database,
             repositoryRuntime,
