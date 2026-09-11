@@ -43,12 +43,67 @@ export const legalHoldStateEnum = pgEnum("legal_hold_state", [
   "released",
 ]);
 
+export const privacyRequestTypeEnum = pgEnum("privacy_request_type", [
+  "access",
+  "correction",
+  "export",
+  "restriction",
+  "consent_withdrawal",
+  "deletion",
+]);
+export const privacyRequestStateEnum = pgEnum("privacy_request_state", [
+  "requested",
+  "reviewing",
+  "approved",
+  "rejected",
+  "fulfilling",
+  "completed",
+  "cancelled",
+]);
+export const privacyPropagationStateEnum = pgEnum("privacy_propagation_state", [
+  "pending",
+  "succeeded",
+  "failed",
+  "not_applicable",
+]);
+
 export const consentStatusEnum = pgEnum("consent_status", [
   "granted",
   "denied",
   "withdrawn",
   "expired",
   "unknown",
+]);
+
+export const lawfulBasisEnum = pgEnum("lawful_basis", [
+  "consent",
+  "contract",
+  "legal_obligation",
+  "vital_interests",
+  "public_task",
+  "legitimate_interests",
+]);
+
+export const withdrawalEffectEnum = pgEnum("withdrawal_effect", [
+  "stop_processing",
+  "restrict_processing",
+  "retain_under_hold",
+]);
+
+export const governanceScopeEnum = pgEnum("governance_scope", [
+  "read",
+  "restricted_read",
+  "write",
+  "export",
+  "ai_operation",
+]);
+
+export const approvalStateEnum = pgEnum("approval_state", [
+  "requested",
+  "approved",
+  "rejected",
+  "revoked",
+  "expired",
 ]);
 
 export const personStatusEnum = pgEnum("person_status", [

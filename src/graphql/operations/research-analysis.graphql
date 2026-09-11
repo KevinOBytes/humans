@@ -1,0 +1,64 @@
+query ResearchAnalysis($input: ResearchAnalysisInput!) {
+  researchAnalysis(input: $input) {
+    kind
+    rows
+    appliedFilters
+    limit
+    redactedFieldCount
+    explanation {
+      sourceRows
+      returnedRows
+      timeWindow
+      filters
+      omittedFields
+      methodology
+    }
+  }
+}
+
+mutation PreviewImport($input: PreviewImportInput!) {
+  previewImport(input: $input) {
+    format
+    workspaceId
+    purpose
+    caseId
+    rows {
+      rowNumber
+      externalKey
+      projected
+      issues {
+        code
+        message
+        rowNumber
+        path
+      }
+      duplicateCandidateIds
+    }
+    schemaColumns
+    provenanceDefaults
+    commitToken
+    expiresAt
+    duplicateStrategy
+    issues {
+      code
+      message
+      rowNumber
+      path
+    }
+  }
+}
+
+mutation PreviewExport($input: PreviewExportInput!) {
+  previewExport(input: $input) {
+    workspaceId
+    purpose
+    caseId
+    redactionProfile
+    rows
+    fieldCounts
+    approvalRequired
+    expiresAt
+    commitToken
+    provenanceManifest
+  }
+}

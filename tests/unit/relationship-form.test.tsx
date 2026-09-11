@@ -40,6 +40,7 @@ describe("RelationshipForm", () => {
         sourcePersonId="person-a"
       />,
     );
+    await user.click(screen.getByRole("checkbox"));
     await user.click(screen.getByRole("button", { name: "Add relationship" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(

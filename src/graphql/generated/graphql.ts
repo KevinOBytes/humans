@@ -8,6 +8,12 @@ export type Incremental<T> =
       [P in keyof T]?: P extends " $fragmentName" | "__typename" ? T[P] : never;
     };
 import type { DocumentTypeDecoration } from "@graphql-typed-document-node/core";
+export type AcceptAiSuggestionInput = {
+  expectedVersion: number;
+  explicitConfirmed: boolean;
+  id: string;
+};
+
 export type AccessPolicyInput = {
   idempotencyKey?: string | null | undefined;
   name: string;
@@ -38,6 +44,16 @@ export type AiFailureCode =
 export type AiProvider = "COMPATIBLE" | "OLLAMA" | "OPENAI";
 
 export type AiResourceKind = "EVIDENCE" | "PERSON";
+
+export type AiReviewBatchInput = {
+  approved: boolean;
+  suggestions: Array<AiReviewBatchItem>;
+};
+
+export type AiReviewBatchItem = {
+  expectedVersion: number;
+  id: string;
+};
 
 export type AiRunState =
   "CANCELLED" | "COMPLETED" | "FAILED" | "PENDING" | "RUNNING";
@@ -130,18 +146,41 @@ export type AuditEventFilterInput = {
 
 export type AuditOutcome = "FAILURE" | "SUCCESS";
 
+export type ConsentCoverageReason =
+  | "CASE_NOT_PERMITTED"
+  | "COVERED"
+  | "EXPIRED"
+  | "FIELD_NOT_PERMITTED"
+  | "LEGAL_HOLD"
+  | "MISSING_CONSENT"
+  | "WITHDRAWN";
+
+export type ConsentScope =
+  "AI_OPERATION" | "EXPORT" | "READ" | "RESTRICTED_READ" | "WRITE";
+
+export type ConsentScopeInput = {
+  caseReference?: string | null | undefined;
+  fieldDefinitionId?: string | null | undefined;
+  scope: ConsentScope;
+};
+
 export type ConsentStatus =
   "DENIED" | "EXPIRED" | "GRANTED" | "UNKNOWN" | "WITHDRAWN";
 
 export type CreateConsentInput = {
+  collectionMethod?: string | null | undefined;
   effectiveFrom: string;
   effectiveUntil?: string | null | undefined;
   evidenceId?: string | null | undefined;
   idempotencyKey?: string | null | undefined;
+  lawfulBasis?: LawfulBasis | null | undefined;
+  noticeVersion?: string | null | undefined;
   personId: string;
   purpose: string;
+  scopes?: Array<ConsentScopeInput> | null | undefined;
   source: string;
   status: ConsentStatus;
+  withdrawalEffect?: WithdrawalEffect | null | undefined;
 };
 
 export type CreateDeletionRequestInput = {
@@ -197,6 +236,8 @@ export type CreateFactInput = {
   confidenceExplanation?: string | null | undefined;
   confidenceMethod?: string | null | undefined;
   definitionId: string;
+  governanceCaseReference?: string | null | undefined;
+  governancePurpose?: string | null | undefined;
   idempotencyKey?: string | null | undefined;
   language?: string | null | undefined;
   observedAt?: string | null | undefined;
@@ -360,12 +401,29 @@ export type CreatePlaceInput = {
   sensitivity?: Sensitivity | null | undefined;
 };
 
+export type CreatePrivacyRequestInput = {
+  caseId?: string | null | undefined;
+  dueAt: string;
+  executeAfter?: string | null | undefined;
+  fileIds?: Array<string> | null | undefined;
+  idempotencyKey: string;
+  personIds?: Array<string> | null | undefined;
+  purpose?: string | null | undefined;
+  requestType: PrivacyRequestType;
+};
+
 export type CreateRelationshipInput = {
+  caseId?: string | null | undefined;
   confidence?: number | null | undefined;
+  creationMethod?: string | null | undefined;
+  explicitConfirmed: boolean;
+  governancePurpose: string;
   idempotencyKey?: string | null | undefined;
   labelOverride?: string | null | undefined;
   metadata?: unknown;
+  observedAt?: string | null | undefined;
   relationshipTypeId: string;
+  reviewState?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   sourcePersonId: string;
   state?: string | null | undefined;
@@ -444,6 +502,11 @@ export type CreateWebhookInput = {
   url: string;
 };
 
+export type DeferAiSuggestionInput = {
+  expectedVersion: number;
+  id: string;
+};
+
 export type DeletionBehavior =
   "ANONYMIZE" | "HARD_DELETE" | "REVIEW" | "SOFT_DELETE";
 
@@ -455,6 +518,9 @@ export type DeletionRequestState =
   | "EXPORTING"
   | "REJECTED"
   | "REVIEWING";
+
+export type ExportRedactionProfile =
+  "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
 export type ExtractionRunState =
   "CANCELLED" | "COMPLETED" | "ERROR" | "PENDING" | "PROCESSING";
@@ -526,6 +592,12 @@ export type GenerateIdentityCandidatesInput = {
   limit?: number | null | undefined;
 };
 
+export type GovernanceScope =
+  "AI_OPERATION" | "EXPORT" | "READ" | "RESTRICTED_READ" | "WRITE";
+
+export type GovernanceWithdrawalEffect =
+  "RESTRICT_PROCESSING" | "RETAIN_UNDER_HOLD" | "STOP_PROCESSING";
+
 export type GraphAnalysisAlgorithm =
   "DEGREE" | "LOUVAIN_COMMUNITY" | "PAGERANK";
 
@@ -593,6 +665,8 @@ export type ImportFormat = "CSV" | "JSON";
 
 export type ImportMode = "COMMIT" | "DRY_RUN";
 
+export type ImportPreviewFormat = "CSV" | "DOCUMENT" | "JSON";
+
 export type ImportState =
   | "COMPLETED"
   | "COMPLETED_WITH_ERRORS"
@@ -609,7 +683,28 @@ export type IssueWorkspaceInvitationInput = {
   role: WorkspaceAdministrationRole;
 };
 
+export type LawfulBasis =
+  | "CONSENT"
+  | "CONTRACT"
+  | "LEGAL_OBLIGATION"
+  | "LEGITIMATE_INTERESTS"
+  | "PUBLIC_TASK"
+  | "VITAL_INTERESTS";
+
 export type LifecycleState = "ACTIVE" | "ARCHIVED" | "INACTIVE";
+
+export type LinkEvidenceAssertionInput = {
+  caseId?: string | null | undefined;
+  confidence: number;
+  evidenceId: string;
+  explicitConfirmed: boolean;
+  locator: string;
+  purpose: string;
+  quote: string;
+  resourceId: string;
+  resourceKind: string;
+  role: string;
+};
 
 export type LinkFactEvidenceInput = {
   evidenceItemId: string;
@@ -706,7 +801,41 @@ export type PrepareImportInput = {
   mode?: ImportMode | null | undefined;
 };
 
+export type PreviewExportInput = {
+  caseId?: string | null | undefined;
+  first?: number | null | undefined;
+  purpose: string;
+  query: string;
+  redactionProfile: ExportRedactionProfile;
+};
+
+export type PreviewImportInput = {
+  caseId?: string | null | undefined;
+  content: string;
+  format: ImportPreviewFormat;
+  mapping?: unknown;
+  purpose: string;
+};
+
+export type PrivacyRequestType =
+  | "ACCESS"
+  | "CONSENT_WITHDRAWAL"
+  | "CORRECTION"
+  | "DELETION"
+  | "EXPORT"
+  | "RESTRICTION";
+
+export type PrivacyResourceKind = "FILE" | "PERSON";
+
+export type PrivacyReviewState = "APPROVED" | "REJECTED" | "REVIEWING";
+
 export type ProtectedSearchKind = "PERSON_IDENTIFIER" | "PHONE";
+
+export type RejectAiSuggestionInput = {
+  expectedVersion: number;
+  id: string;
+  reason: string;
+};
 
 export type RelationshipMultiplicity =
   "MANY_TO_MANY" | "MANY_TO_ONE" | "ONE_TO_MANY" | "ONE_TO_ONE";
@@ -747,6 +876,27 @@ export type RerunGraphAnalysisInput = {
   snapshotId: string;
 };
 
+export type ResearchAnalysisInput = {
+  caseId?: string | null | undefined;
+  first?: number | null | undefined;
+  from?: string | null | undefined;
+  kind: ResearchAnalysisKind;
+  query: string;
+  relationshipState?: Array<string> | null | undefined;
+  reviewState?: Array<string> | null | undefined;
+  sensitivities?: Array<Sensitivity> | null | undefined;
+  sourceReliabilityMax?: number | null | undefined;
+  sourceReliabilityMin?: number | null | undefined;
+  until?: string | null | undefined;
+};
+
+export type ResearchAnalysisKind =
+  | "CONTRADICTIONS"
+  | "DUPLICATE_CANDIDATES"
+  | "GRAPH_METRICS"
+  | "SOURCE_COMPARISON"
+  | "TIMELINE";
+
 export type ReviewDeletionRequestInput = {
   expectedVersion: number;
   id: string;
@@ -767,6 +917,8 @@ export type ReviseFactInput = {
   changeReason?: string | null | undefined;
   confidence?: number | null | undefined;
   expectedVersion: number;
+  governanceCaseReference?: string | null | undefined;
+  governancePurpose?: string | null | undefined;
   id: string;
   idempotencyKey?: string | null | undefined;
   reviewState?: FactReviewState | null | undefined;
@@ -863,6 +1015,8 @@ export type SendWebhookTestEventInput = {
 export type Sensitivity = "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
 export type StartAiAnalysisInput = {
+  governanceCaseReference?: string | null | undefined;
+  governancePurpose?: string | null | undefined;
   idempotencyKey: string;
   question: string;
   scope?: AiAnalysisScopeInput | null | undefined;
@@ -1063,12 +1217,19 @@ export type UpdatePlaceInput = {
 };
 
 export type UpdateRelationshipInput = {
+  caseId?: string | null | undefined;
   confidence?: number | null | undefined;
+  creationMethod?: string | null | undefined;
+  evidenceAssertionId?: string | null | undefined;
   expectedVersion: number;
+  explicitConfirmed: boolean;
+  governancePurpose: string;
   id: string;
   idempotencyKey?: string | null | undefined;
   labelOverride?: string | null | undefined;
   metadata?: unknown;
+  observedAt?: string | null | undefined;
+  reviewState?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   state?: string | null | undefined;
   strength?: number | null | undefined;
@@ -1156,12 +1317,91 @@ export type WebhookIdInput = {
   id: string;
 };
 
+export type WithdrawalEffect =
+  "RESTRICT_PROCESSING" | "RETAIN_UNDER_HOLD" | "STOP_PROCESSING";
+
 export type WorkspaceAdministrationRole =
   "ADMIN" | "ANALYST" | "CONTRIBUTOR" | "VIEWER";
 
 export type WorkspaceInvitationActionInput = {
   actionId: string;
   idempotencyKey: string;
+};
+
+export type AiReviewFieldsFragment = {
+  id: string;
+  personId: string;
+  caseId: string | null;
+  purpose: string;
+  fieldKey: string;
+  proposedValue: unknown;
+  currentValue: string | null;
+  evidenceReferences: unknown;
+  confidence: number;
+  uncertainty: string;
+  provider: string;
+  model: string;
+  researchRunId: string;
+  promptPolicyVersion: string;
+  status: string;
+  version: number;
+  acceptedResourceId: string | null;
+  acceptedResourceKind: string | null;
+  decisionReason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+} & { " $fragmentName"?: "AiReviewFieldsFragment" };
+
+export type PendingAiSuggestionsQueryVariables = Exact<{
+  personId: string;
+  purpose: string;
+  caseId?: string | null | undefined;
+}>;
+
+export type PendingAiSuggestionsQuery = {
+  pendingAiSuggestions: Array<{
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  }>;
+};
+
+export type AcceptAiSuggestionMutationVariables = Exact<{
+  input: AcceptAiSuggestionInput;
+}>;
+
+export type AcceptAiSuggestionMutation = {
+  acceptAiSuggestion: {
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  };
+};
+
+export type RejectAiSuggestionMutationVariables = Exact<{
+  input: RejectAiSuggestionInput;
+}>;
+
+export type RejectAiSuggestionMutation = {
+  rejectAiSuggestion: {
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  };
+};
+
+export type DeferAiSuggestionMutationVariables = Exact<{
+  input: DeferAiSuggestionInput;
+}>;
+
+export type DeferAiSuggestionMutation = {
+  deferAiSuggestion: {
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  };
+};
+
+export type ReviewAiBatchMutationVariables = Exact<{
+  input: AiReviewBatchInput;
+}>;
+
+export type ReviewAiBatchMutation = {
+  reviewAiBatch: Array<{
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  }>;
 };
 
 export type AnalystPublicRunFragment = {
@@ -1231,6 +1471,141 @@ export type CancelAiAnalysisMutationVariables = Exact<{
 export type CancelAiAnalysisMutation = {
   cancelAiAnalysis: {
     " $fragmentRefs"?: { AnalystPublicRunFragment: AnalystPublicRunFragment };
+  } | null;
+};
+
+export type ResearchCasesQueryVariables = Exact<{
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type ResearchCasesQuery = {
+  researchCases: {
+    nodes: Array<{
+      id: string | null;
+      title: string | null;
+      purpose: string | null;
+      state: string | null;
+      version: number | null;
+      createdAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type ResearchCaseQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type ResearchCaseQuery = {
+  researchCase: {
+    id: string | null;
+    title: string | null;
+    purpose: string | null;
+    state: string | null;
+    version: number | null;
+  } | null;
+};
+
+export type CaseTimelineQueryVariables = Exact<{
+  caseId: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type CaseTimelineQuery = {
+  caseTimeline: {
+    nodes: Array<{
+      id: string | null;
+      resourceKind: string | null;
+      resourceId: string | null;
+      observedAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type CreateResearchCaseMutationVariables = Exact<{
+  title: string;
+  purpose: string;
+}>;
+
+export type CreateResearchCaseMutation = {
+  createResearchCase: {
+    id: string | null;
+    title: string | null;
+    purpose: string | null;
+    state: string | null;
+    version: number | null;
+  } | null;
+};
+
+export type AddCaseMemberMutationVariables = Exact<{
+  caseId: string;
+  principalId: string;
+  role?: string | null | undefined;
+}>;
+
+export type AddCaseMemberMutation = {
+  addCaseMember: {
+    id: string | null;
+    principalId: string | null;
+    role: string | null;
+    version: number | null;
+  } | null;
+};
+
+export type LinkCaseResourceMutationVariables = Exact<{
+  caseId: string;
+  resourceId: string;
+  resourceKind: string;
+  explicitConfirmed: boolean;
+}>;
+
+export type LinkCaseResourceMutation = {
+  linkCaseResource: {
+    id: string | null;
+    resourceKind: string | null;
+    resourceId: string | null;
+    observedAt: string | null;
+  } | null;
+};
+
+export type LinkEvidenceAssertionMutationVariables = Exact<{
+  input: LinkEvidenceAssertionInput;
+}>;
+
+export type LinkEvidenceAssertionMutation = {
+  linkEvidenceAssertion: {
+    id: string | null;
+    evidenceId: string | null;
+    resourceKind: string | null;
+    resourceId: string | null;
+    locator: string | null;
+    quote: string | null;
+    role: string | null;
+    confidence: number | null;
+    informationCredibility: number | null;
+    sourceReliability: number | null;
+    reviewState: string | null;
+    version: number | null;
+    auditReference: string | null;
+  } | null;
+};
+
+export type ReviewEvidenceAssertionMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  state: string;
+  reason: string;
+}>;
+
+export type ReviewEvidenceAssertionMutation = {
+  reviewEvidenceAssertion: {
+    id: string | null;
+    reviewState: string | null;
+    version: number | null;
+    auditReference: string | null;
   } | null;
 };
 
@@ -1735,6 +2110,108 @@ export type RetryWorkspaceImportMutation = {
       message: string;
       path: Array<string>;
     }> | null;
+  } | null;
+};
+
+export type ConsentCoverageQueryVariables = Exact<{
+  personId: string;
+  purpose: string;
+  scope: GovernanceScope;
+  fieldDefinitionId?: string | null | undefined;
+  caseReference?: string | null | undefined;
+}>;
+
+export type ConsentCoverageQuery = {
+  consentCoverage: {
+    allowed: boolean | null;
+    reason: ConsentCoverageReason | null;
+    consentRecordId: string | null;
+    policyId: string | null;
+  } | null;
+};
+
+export type AccessApprovalsQueryVariables = Exact<{
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type AccessApprovalsQuery = {
+  accessApprovals: {
+    nodes: Array<{
+      id: string | null;
+      state: string | null;
+      reason: string | null;
+      version: number | null;
+      createdAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type GovernanceCreateConsentRecordMutationVariables = Exact<{
+  input: CreateConsentInput;
+}>;
+
+export type GovernanceCreateConsentRecordMutation = {
+  createConsentRecord: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type WithdrawConsentMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  idempotencyKey: string;
+  withdrawalEffect?: GovernanceWithdrawalEffect | null | undefined;
+}>;
+
+export type WithdrawConsentMutation = {
+  withdrawConsent: {
+    id: string | null;
+    status: string | null;
+    withdrawalEffect: string | null;
+    version: number | null;
+    withdrawnAt: string | null;
+  } | null;
+};
+
+export type RequestAccessApprovalMutationVariables = Exact<{
+  personId: string;
+  fieldDefinitionId: string;
+  purpose: string;
+  reason: string;
+  caseReference?: string | null | undefined;
+  idempotencyKey: string;
+}>;
+
+export type RequestAccessApprovalMutation = {
+  requestAccessApproval: {
+    id: string | null;
+    state: string | null;
+    reason: string | null;
+    version: number | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type ReviewAccessApprovalMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  state: string;
+  reason: string;
+  idempotencyKey: string;
+}>;
+
+export type ReviewAccessApprovalMutation = {
+  reviewAccessApproval: {
+    id: string | null;
+    state: string | null;
+    reason: string | null;
+    version: number | null;
+    createdAt: string | null;
   } | null;
 };
 
@@ -2638,6 +3115,159 @@ export type ArchivePersonAddressMutation = {
   };
 };
 
+export type PrivacyRequestFieldsFragment = {
+  id: string | null;
+  requestType: PrivacyRequestType | null;
+  state: string | null;
+  version: number | null;
+  dueAt: string | null;
+  executeAfter: string | null;
+  completedAt: string | null;
+  auditReference: string | null;
+} & { " $fragmentName"?: "PrivacyRequestFieldsFragment" };
+
+export type PrivacyRequestsQueryVariables = Exact<{
+  first?: number | null | undefined;
+  afterId?: string | null | undefined;
+}>;
+
+export type PrivacyRequestsQuery = {
+  privacyRequests: {
+    endId: string | null;
+    hasMore: boolean | null;
+    nodes: Array<{
+      " $fragmentRefs"?: {
+        PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+      };
+    }> | null;
+  } | null;
+};
+
+export type PrivacyRequestQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type PrivacyRequestQuery = {
+  privacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+  privacyProcessorPropagations: Array<{
+    id: string | null;
+    processor: string | null;
+    state: string | null;
+    attempts: number | null;
+    resultCode: string | null;
+    auditReference: string | null;
+  }> | null;
+};
+
+export type CreatePrivacyRequestMutationVariables = Exact<{
+  input: CreatePrivacyRequestInput;
+}>;
+
+export type CreatePrivacyRequestMutation = {
+  createPrivacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+};
+
+export type ReviewPrivacyRequestMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  state: PrivacyReviewState;
+  verificationEvidenceId?: string | null | undefined;
+}>;
+
+export type ReviewPrivacyRequestMutation = {
+  reviewPrivacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+};
+
+export type FulfillPrivacyRequestMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  completionEvidenceId?: string | null | undefined;
+}>;
+
+export type FulfillPrivacyRequestMutation = {
+  fulfillPrivacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+};
+
+export type CancelPrivacyRequestMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+}>;
+
+export type CancelPrivacyRequestMutation = {
+  cancelPrivacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+};
+
+export type PrivacyRetentionQueryVariables = Exact<{
+  resourceKind: PrivacyResourceKind;
+  resourceId: string;
+  first?: number | null | undefined;
+}>;
+
+export type PrivacyRetentionQuery = {
+  retentionDecision: {
+    state: string | null;
+    policyId: string | null;
+    reason: string | null;
+  } | null;
+  privacyLegalHolds: Array<{
+    id: string | null;
+    state: string | null;
+    version: number | null;
+    auditReference: string | null;
+  }> | null;
+};
+
+export type CreatePrivacyLegalHoldMutationVariables = Exact<{
+  resourceKind: PrivacyResourceKind;
+  resourceId: string;
+  reason: string;
+  authority: string;
+}>;
+
+export type CreatePrivacyLegalHoldMutation = {
+  createPrivacyLegalHold: {
+    id: string | null;
+    state: string | null;
+    version: number | null;
+    auditReference: string | null;
+  } | null;
+};
+
+export type ReleasePrivacyLegalHoldMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  reason: string;
+}>;
+
+export type ReleasePrivacyLegalHoldMutation = {
+  releasePrivacyLegalHold: {
+    id: string | null;
+    state: string | null;
+    version: number | null;
+    auditReference: string | null;
+  } | null;
+};
+
 export type UpsertRetentionPolicyMutationVariables = Exact<{
   input: UpsertRetentionPolicyInput;
 }>;
@@ -2714,6 +3344,83 @@ export type ReviewDeletionRequestMutation = {
     code: string | null;
     requestId: string | null;
   };
+};
+
+export type ResearchAnalysisQueryVariables = Exact<{
+  input: ResearchAnalysisInput;
+}>;
+
+export type ResearchAnalysisQuery = {
+  researchAnalysis: {
+    kind: ResearchAnalysisKind | null;
+    rows: unknown;
+    appliedFilters: unknown;
+    limit: number | null;
+    redactedFieldCount: number | null;
+    explanation: {
+      sourceRows: number | null;
+      returnedRows: number | null;
+      timeWindow: unknown;
+      filters: unknown;
+      omittedFields: Array<string> | null;
+      methodology: string | null;
+    } | null;
+  } | null;
+};
+
+export type PreviewImportMutationVariables = Exact<{
+  input: PreviewImportInput;
+}>;
+
+export type PreviewImportMutation = {
+  previewImport: {
+    format: string | null;
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    schemaColumns: Array<string> | null;
+    provenanceDefaults: unknown;
+    commitToken: string | null;
+    expiresAt: string | null;
+    duplicateStrategy: string | null;
+    rows: Array<{
+      rowNumber: number | null;
+      externalKey: string | null;
+      projected: unknown;
+      duplicateCandidateIds: Array<string> | null;
+      issues: Array<{
+        code: string | null;
+        message: string | null;
+        rowNumber: number | null;
+        path: Array<string> | null;
+      }> | null;
+    }> | null;
+    issues: Array<{
+      code: string | null;
+      message: string | null;
+      rowNumber: number | null;
+      path: Array<string> | null;
+    }> | null;
+  } | null;
+};
+
+export type PreviewExportMutationVariables = Exact<{
+  input: PreviewExportInput;
+}>;
+
+export type PreviewExportMutation = {
+  previewExport: {
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    rows: unknown;
+    fieldCounts: unknown;
+    approvalRequired: boolean | null;
+    expiresAt: string | null;
+    commitToken: string | null;
+    provenanceManifest: unknown;
+  } | null;
 };
 
 export type PersonSummaryFragment = {
@@ -3580,6 +4287,8 @@ export type UpdatePersonMutation = {
 export type PersonWebResearchMutationVariables = Exact<{
   personId: string;
   consent: boolean;
+  purpose: string;
+  caseId?: string | null | undefined;
 }>;
 
 export type PersonWebResearchMutation = {
@@ -4801,6 +5510,34 @@ export class TypedDocumentString<TResult, TVariables>
     return this.value;
   }
 }
+export const AiReviewFieldsFragmentDoc = new TypedDocumentString(
+  `
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}
+    `,
+  { fragmentName: "AiReviewFields" },
+) as unknown as TypedDocumentString<AiReviewFieldsFragment, unknown>;
 export const AnalystPublicRunFragmentDoc = new TypedDocumentString(
   `
     fragment AnalystPublicRun on AiRun {
@@ -4966,6 +5703,21 @@ export const LocationMutationOutcomeFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "LocationMutationOutcome" },
 ) as unknown as TypedDocumentString<LocationMutationOutcomeFragment, unknown>;
+export const PrivacyRequestFieldsFragmentDoc = new TypedDocumentString(
+  `
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}
+    `,
+  { fragmentName: "PrivacyRequestFields" },
+) as unknown as TypedDocumentString<PrivacyRequestFieldsFragment, unknown>;
 export const PersonSummaryFragmentDoc = new TypedDocumentString(
   `
     fragment PersonSummary on Person {
@@ -5153,6 +5905,191 @@ export const SearchWorkbenchSavedQueryFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "SearchWorkbenchSavedQuery" },
 ) as unknown as TypedDocumentString<SearchWorkbenchSavedQueryFragment, unknown>;
+export const PendingAiSuggestionsDocument = new TypedDocumentString(
+  `
+    query PendingAiSuggestions($personId: UUID!, $purpose: String!, $caseId: UUID) {
+  pendingAiSuggestions(personId: $personId, purpose: $purpose, caseId: $caseId) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:e4e36ac98f6ddb6458e479e3b110580da947ad959a4942bb4830af64ec5b6c3d",
+  },
+) as unknown as TypedDocumentString<
+  PendingAiSuggestionsQuery,
+  PendingAiSuggestionsQueryVariables
+>;
+export const AcceptAiSuggestionDocument = new TypedDocumentString(
+  `
+    mutation AcceptAiSuggestion($input: AcceptAiSuggestionInput!) {
+  acceptAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:b4e049d257028a85bea19302b73abb714efb80d34891722d055e3d76675f414b",
+  },
+) as unknown as TypedDocumentString<
+  AcceptAiSuggestionMutation,
+  AcceptAiSuggestionMutationVariables
+>;
+export const RejectAiSuggestionDocument = new TypedDocumentString(
+  `
+    mutation RejectAiSuggestion($input: RejectAiSuggestionInput!) {
+  rejectAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:0e7b09e72322863ac287f935dc846be17db6fbecd085bb4dc5b695b3d13fd9aa",
+  },
+) as unknown as TypedDocumentString<
+  RejectAiSuggestionMutation,
+  RejectAiSuggestionMutationVariables
+>;
+export const DeferAiSuggestionDocument = new TypedDocumentString(
+  `
+    mutation DeferAiSuggestion($input: DeferAiSuggestionInput!) {
+  deferAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:6a39281a6df2092047f4a87abec388307843ccd3701ecf132d64153c1f5e3bb4",
+  },
+) as unknown as TypedDocumentString<
+  DeferAiSuggestionMutation,
+  DeferAiSuggestionMutationVariables
+>;
+export const ReviewAiBatchDocument = new TypedDocumentString(
+  `
+    mutation ReviewAiBatch($input: AiReviewBatchInput!) {
+  reviewAiBatch(input: $input) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:b896e82c2e8260a9821016acad5676b828d3af0c546396d8760cc9d178a5aa91",
+  },
+) as unknown as TypedDocumentString<
+  ReviewAiBatchMutation,
+  ReviewAiBatchMutationVariables
+>;
 export const StartAiAnalysisDocument = new TypedDocumentString(
   `
     mutation StartAiAnalysis($input: StartAiAnalysisInput!) {
@@ -5308,6 +6245,185 @@ export const CancelAiAnalysisDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   CancelAiAnalysisMutation,
   CancelAiAnalysisMutationVariables
+>;
+export const ResearchCasesDocument = new TypedDocumentString(
+  `
+    query ResearchCases($first: Int, $after: String) {
+  researchCases(first: $first, after: $after) {
+    nodes {
+      id
+      title
+      purpose
+      state
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:86f1c6933c9ffb7b247e4af02f5b2498ba7093ca0d5ee7a68d35ed3acad6952e",
+  },
+) as unknown as TypedDocumentString<
+  ResearchCasesQuery,
+  ResearchCasesQueryVariables
+>;
+export const ResearchCaseDocument = new TypedDocumentString(
+  `
+    query ResearchCase($id: UUID!) {
+  researchCase(id: $id) {
+    id
+    title
+    purpose
+    state
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:070bb6d47f959216b37e1832c6e63b116d51446b77de9627f92c83b9df4d95d0",
+  },
+) as unknown as TypedDocumentString<
+  ResearchCaseQuery,
+  ResearchCaseQueryVariables
+>;
+export const CaseTimelineDocument = new TypedDocumentString(
+  `
+    query CaseTimeline($caseId: UUID!, $first: Int, $after: String) {
+  caseTimeline(caseId: $caseId, first: $first, after: $after) {
+    nodes {
+      id
+      resourceKind
+      resourceId
+      observedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:2eea8b890f45a05497f3e7992959094cb6b4b1e812642682703e23e746c9d86c",
+  },
+) as unknown as TypedDocumentString<
+  CaseTimelineQuery,
+  CaseTimelineQueryVariables
+>;
+export const CreateResearchCaseDocument = new TypedDocumentString(
+  `
+    mutation CreateResearchCase($title: String!, $purpose: String!) {
+  createResearchCase(title: $title, purpose: $purpose) {
+    id
+    title
+    purpose
+    state
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:e553d66ef51cc990718f7c29e82e5627109b42ca89b1f12d5f8c8f7c82529462",
+  },
+) as unknown as TypedDocumentString<
+  CreateResearchCaseMutation,
+  CreateResearchCaseMutationVariables
+>;
+export const AddCaseMemberDocument = new TypedDocumentString(
+  `
+    mutation AddCaseMember($caseId: UUID!, $principalId: UUID!, $role: String) {
+  addCaseMember(caseId: $caseId, principalId: $principalId, role: $role) {
+    id
+    principalId
+    role
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:8f3eeff6e26ba3d230164bfecca9c895f487671bc9f92bf9fd465cc75672efca",
+  },
+) as unknown as TypedDocumentString<
+  AddCaseMemberMutation,
+  AddCaseMemberMutationVariables
+>;
+export const LinkCaseResourceDocument = new TypedDocumentString(
+  `
+    mutation LinkCaseResource($caseId: UUID!, $resourceId: UUID!, $resourceKind: String!, $explicitConfirmed: Boolean!) {
+  linkCaseResource(
+    caseId: $caseId
+    resourceId: $resourceId
+    resourceKind: $resourceKind
+    explicitConfirmed: $explicitConfirmed
+  ) {
+    id
+    resourceKind
+    resourceId
+    observedAt
+  }
+}
+    `,
+  {
+    hash: "sha256:e716b3dfe854691d7b582b2701a72a6a212eca6e54529f97afcd9df13dbe4916",
+  },
+) as unknown as TypedDocumentString<
+  LinkCaseResourceMutation,
+  LinkCaseResourceMutationVariables
+>;
+export const LinkEvidenceAssertionDocument = new TypedDocumentString(
+  `
+    mutation LinkEvidenceAssertion($input: LinkEvidenceAssertionInput!) {
+  linkEvidenceAssertion(input: $input) {
+    id
+    evidenceId
+    resourceKind
+    resourceId
+    locator
+    quote
+    role
+    confidence
+    informationCredibility
+    sourceReliability
+    reviewState
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:c8b50ed88ede001fa0f2eb0776029e1df1ab5a3e70487cdf09e601af44f12dbb",
+  },
+) as unknown as TypedDocumentString<
+  LinkEvidenceAssertionMutation,
+  LinkEvidenceAssertionMutationVariables
+>;
+export const ReviewEvidenceAssertionDocument = new TypedDocumentString(
+  `
+    mutation ReviewEvidenceAssertion($id: UUID!, $expectedVersion: Int!, $state: String!, $reason: String!) {
+  reviewEvidenceAssertion(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    reason: $reason
+  ) {
+    id
+    reviewState
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:f0155805446f3227931a0714db9ac360f0bb61edf8890bfcc727cb5dbd01b971",
+  },
+) as unknown as TypedDocumentString<
+  ReviewEvidenceAssertionMutation,
+  ReviewEvidenceAssertionMutationVariables
 >;
 export const DashboardOverviewDocument = new TypedDocumentString(
   `
@@ -6006,6 +7122,148 @@ export const RetryWorkspaceImportDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   RetryWorkspaceImportMutation,
   RetryWorkspaceImportMutationVariables
+>;
+export const ConsentCoverageDocument = new TypedDocumentString(
+  `
+    query ConsentCoverage($personId: UUID!, $purpose: String!, $scope: GovernanceScope!, $fieldDefinitionId: UUID, $caseReference: String) {
+  consentCoverage(
+    personId: $personId
+    purpose: $purpose
+    scope: $scope
+    fieldDefinitionId: $fieldDefinitionId
+    caseReference: $caseReference
+  ) {
+    allowed
+    reason
+    consentRecordId
+    policyId
+  }
+}
+    `,
+  {
+    hash: "sha256:f37034d05cf483e1944a9b218b30f29475c967dea6aa4a7a69d5c579c50bb32d",
+  },
+) as unknown as TypedDocumentString<
+  ConsentCoverageQuery,
+  ConsentCoverageQueryVariables
+>;
+export const AccessApprovalsDocument = new TypedDocumentString(
+  `
+    query AccessApprovals($first: Int, $after: String) {
+  accessApprovals(first: $first, after: $after) {
+    nodes {
+      id
+      state
+      reason
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:2f7c1dee8f114c2fe18b7df0adbdc1d65500dd467752dd8a9e8d00b335149cf7",
+  },
+) as unknown as TypedDocumentString<
+  AccessApprovalsQuery,
+  AccessApprovalsQueryVariables
+>;
+export const GovernanceCreateConsentRecordDocument = new TypedDocumentString(
+  `
+    mutation GovernanceCreateConsentRecord($input: CreateConsentInput!) {
+  createConsentRecord(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:df558651356ee6ceb4cfc01baa48aba1b55a01fca6d6290e9dd12cafb9a18da3",
+  },
+) as unknown as TypedDocumentString<
+  GovernanceCreateConsentRecordMutation,
+  GovernanceCreateConsentRecordMutationVariables
+>;
+export const WithdrawConsentDocument = new TypedDocumentString(
+  `
+    mutation WithdrawConsent($id: UUID!, $expectedVersion: Int!, $idempotencyKey: String!, $withdrawalEffect: GovernanceWithdrawalEffect) {
+  withdrawConsent(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+    withdrawalEffect: $withdrawalEffect
+  ) {
+    id
+    status
+    withdrawalEffect
+    version
+    withdrawnAt
+  }
+}
+    `,
+  {
+    hash: "sha256:260da4c4cb4a41458d837ef29fab7292f2e971f9aa09eec969a7dc76cad3e451",
+  },
+) as unknown as TypedDocumentString<
+  WithdrawConsentMutation,
+  WithdrawConsentMutationVariables
+>;
+export const RequestAccessApprovalDocument = new TypedDocumentString(
+  `
+    mutation RequestAccessApproval($personId: UUID!, $fieldDefinitionId: UUID!, $purpose: String!, $reason: String!, $caseReference: String, $idempotencyKey: String!) {
+  requestAccessApproval(
+    personId: $personId
+    fieldDefinitionId: $fieldDefinitionId
+    purpose: $purpose
+    reason: $reason
+    caseReference: $caseReference
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    reason
+    version
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:e64eb1be0789547ee751bb488bbeb1e9c35453f4daaafff07a7a174e0e759f82",
+  },
+) as unknown as TypedDocumentString<
+  RequestAccessApprovalMutation,
+  RequestAccessApprovalMutationVariables
+>;
+export const ReviewAccessApprovalDocument = new TypedDocumentString(
+  `
+    mutation ReviewAccessApproval($id: UUID!, $expectedVersion: Int!, $state: String!, $reason: String!, $idempotencyKey: String!) {
+  reviewAccessApproval(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    reason: $reason
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    reason
+    version
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:85598ea5bab03b54ea4d30c10dd7c5f31feb4d5a83f5babb8a3b86825550c1d1",
+  },
+) as unknown as TypedDocumentString<
+  ReviewAccessApprovalMutation,
+  ReviewAccessApprovalMutationVariables
 >;
 export const GraphAnalysisRunsDocument = new TypedDocumentString(
   `
@@ -7244,6 +8502,243 @@ export const ArchivePersonAddressDocument = new TypedDocumentString(
   ArchivePersonAddressMutation,
   ArchivePersonAddressMutationVariables
 >;
+export const PrivacyRequestsDocument = new TypedDocumentString(
+  `
+    query PrivacyRequests($first: Int, $afterId: UUID) {
+  privacyRequests(first: $first, afterId: $afterId) {
+    nodes {
+      ...PrivacyRequestFields
+    }
+    endId
+    hasMore
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:c797f2c29c06126386afa982ef9a00ba741252e7635d9c6d26af1180ff867c93",
+  },
+) as unknown as TypedDocumentString<
+  PrivacyRequestsQuery,
+  PrivacyRequestsQueryVariables
+>;
+export const PrivacyRequestDocument = new TypedDocumentString(
+  `
+    query PrivacyRequest($id: UUID!) {
+  privacyRequest(id: $id) {
+    ...PrivacyRequestFields
+  }
+  privacyProcessorPropagations(requestId: $id) {
+    id
+    processor
+    state
+    attempts
+    resultCode
+    auditReference
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:82edc373c7c16e8213ba3a2a27f937ce6d979e643e8cff74d9a308bea8edcd22",
+  },
+) as unknown as TypedDocumentString<
+  PrivacyRequestQuery,
+  PrivacyRequestQueryVariables
+>;
+export const CreatePrivacyRequestDocument = new TypedDocumentString(
+  `
+    mutation CreatePrivacyRequest($input: CreatePrivacyRequestInput!) {
+  createPrivacyRequest(input: $input) {
+    ...PrivacyRequestFields
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:4e377e30fe9a948626bd16b5b6c35fa7475e68136d36206cdf4e100de7d10f30",
+  },
+) as unknown as TypedDocumentString<
+  CreatePrivacyRequestMutation,
+  CreatePrivacyRequestMutationVariables
+>;
+export const ReviewPrivacyRequestDocument = new TypedDocumentString(
+  `
+    mutation ReviewPrivacyRequest($id: UUID!, $expectedVersion: Int!, $state: PrivacyReviewState!, $verificationEvidenceId: UUID) {
+  reviewPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    verificationEvidenceId: $verificationEvidenceId
+  ) {
+    ...PrivacyRequestFields
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:880f5accdcadbdd35f48c9f539b59dad54c12c6c1918b2c2e2dea4bd5594f42d",
+  },
+) as unknown as TypedDocumentString<
+  ReviewPrivacyRequestMutation,
+  ReviewPrivacyRequestMutationVariables
+>;
+export const FulfillPrivacyRequestDocument = new TypedDocumentString(
+  `
+    mutation FulfillPrivacyRequest($id: UUID!, $expectedVersion: Int!, $completionEvidenceId: UUID) {
+  fulfillPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    completionEvidenceId: $completionEvidenceId
+  ) {
+    ...PrivacyRequestFields
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:4cadf1242130f5bcf8c8aa5bf2b8b3becf72afb6ed73fd1ea97496f3047e3be6",
+  },
+) as unknown as TypedDocumentString<
+  FulfillPrivacyRequestMutation,
+  FulfillPrivacyRequestMutationVariables
+>;
+export const CancelPrivacyRequestDocument = new TypedDocumentString(
+  `
+    mutation CancelPrivacyRequest($id: UUID!, $expectedVersion: Int!) {
+  cancelPrivacyRequest(id: $id, expectedVersion: $expectedVersion) {
+    ...PrivacyRequestFields
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:0227e11fa725e90d8df8b5de070d3cca8336fad4c9d4551daf475ed8656203b3",
+  },
+) as unknown as TypedDocumentString<
+  CancelPrivacyRequestMutation,
+  CancelPrivacyRequestMutationVariables
+>;
+export const PrivacyRetentionDocument = new TypedDocumentString(
+  `
+    query PrivacyRetention($resourceKind: PrivacyResourceKind!, $resourceId: UUID!, $first: Int) {
+  retentionDecision(resourceKind: $resourceKind, resourceId: $resourceId) {
+    state
+    policyId
+    reason
+  }
+  privacyLegalHolds(
+    resourceKind: $resourceKind
+    resourceId: $resourceId
+    first: $first
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:1381bdb8706259c5c2647addca6da0ce77bd44e250885a608cf21e3cbcdf4d01",
+  },
+) as unknown as TypedDocumentString<
+  PrivacyRetentionQuery,
+  PrivacyRetentionQueryVariables
+>;
+export const CreatePrivacyLegalHoldDocument = new TypedDocumentString(
+  `
+    mutation CreatePrivacyLegalHold($resourceKind: PrivacyResourceKind!, $resourceId: UUID!, $reason: String!, $authority: String!) {
+  createPrivacyLegalHold(
+    resourceKind: $resourceKind
+    resourceId: $resourceId
+    reason: $reason
+    authority: $authority
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:79538a1fe39134d503cfff950bfc90d2336afc080620928d408feb47ada0efbb",
+  },
+) as unknown as TypedDocumentString<
+  CreatePrivacyLegalHoldMutation,
+  CreatePrivacyLegalHoldMutationVariables
+>;
+export const ReleasePrivacyLegalHoldDocument = new TypedDocumentString(
+  `
+    mutation ReleasePrivacyLegalHold($id: UUID!, $expectedVersion: Int!, $reason: String!) {
+  releasePrivacyLegalHold(
+    id: $id
+    expectedVersion: $expectedVersion
+    reason: $reason
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:1c49b5bc51f8b7f797632fdfc098a19121f0e05ec820b53b721eb58a76b4ce3a",
+  },
+) as unknown as TypedDocumentString<
+  ReleasePrivacyLegalHoldMutation,
+  ReleasePrivacyLegalHoldMutationVariables
+>;
 export const UpsertRetentionPolicyDocument = new TypedDocumentString(
   `
     mutation UpsertRetentionPolicy($input: UpsertRetentionPolicyInput!) {
@@ -7351,6 +8846,98 @@ export const ReviewDeletionRequestDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ReviewDeletionRequestMutation,
   ReviewDeletionRequestMutationVariables
+>;
+export const ResearchAnalysisDocument = new TypedDocumentString(
+  `
+    query ResearchAnalysis($input: ResearchAnalysisInput!) {
+  researchAnalysis(input: $input) {
+    kind
+    rows
+    appliedFilters
+    limit
+    redactedFieldCount
+    explanation {
+      sourceRows
+      returnedRows
+      timeWindow
+      filters
+      omittedFields
+      methodology
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:b372690245350102b852615dccf1c8dfc85553b741335304ff4433d4ef2f7722",
+  },
+) as unknown as TypedDocumentString<
+  ResearchAnalysisQuery,
+  ResearchAnalysisQueryVariables
+>;
+export const PreviewImportDocument = new TypedDocumentString(
+  `
+    mutation PreviewImport($input: PreviewImportInput!) {
+  previewImport(input: $input) {
+    format
+    workspaceId
+    purpose
+    caseId
+    rows {
+      rowNumber
+      externalKey
+      projected
+      issues {
+        code
+        message
+        rowNumber
+        path
+      }
+      duplicateCandidateIds
+    }
+    schemaColumns
+    provenanceDefaults
+    commitToken
+    expiresAt
+    duplicateStrategy
+    issues {
+      code
+      message
+      rowNumber
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:5df2434ed7607d92cad70cafcbfbe6e4d5184af07162fd84271b203ad7ac84b5",
+  },
+) as unknown as TypedDocumentString<
+  PreviewImportMutation,
+  PreviewImportMutationVariables
+>;
+export const PreviewExportDocument = new TypedDocumentString(
+  `
+    mutation PreviewExport($input: PreviewExportInput!) {
+  previewExport(input: $input) {
+    workspaceId
+    purpose
+    caseId
+    redactionProfile
+    rows
+    fieldCounts
+    approvalRequired
+    expiresAt
+    commitToken
+    provenanceManifest
+  }
+}
+    `,
+  {
+    hash: "sha256:dcffb7283a793499f0835280a9dfa9fdbd071945a770d08520360cc422c19a6c",
+  },
+) as unknown as TypedDocumentString<
+  PreviewExportMutation,
+  PreviewExportMutationVariables
 >;
 export const ResearchViewerDocument = new TypedDocumentString(
   `
@@ -8659,8 +10246,13 @@ fragment MutationIssue on ValidationIssue {
 >;
 export const PersonWebResearchDocument = new TypedDocumentString(
   `
-    mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) {
-  personWebResearch(personId: $personId, consent: $consent) {
+    mutation PersonWebResearch($personId: UUID!, $consent: Boolean!, $purpose: String!, $caseId: UUID) {
+  personWebResearch(
+    personId: $personId
+    consent: $consent
+    purpose: $purpose
+    caseId: $caseId
+  ) {
     personId
     runId
     provider
@@ -8679,7 +10271,7 @@ export const PersonWebResearchDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:57c69cba2a9ff468e9be6d7a79eaf302c8cf55284f7a96c47162b69953ca8861",
+    hash: "sha256:b0c6d93b6899847c65e4cf9cee015916b81403c15531941aa424d3ab028aa7e9",
   },
 ) as unknown as TypedDocumentString<
   PersonWebResearchMutation,

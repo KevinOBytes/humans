@@ -709,8 +709,18 @@ mutation UpdatePerson($input: UpdatePersonInput!) {
   }
 }
 
-mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) {
-  personWebResearch(personId: $personId, consent: $consent) {
+mutation PersonWebResearch(
+  $personId: UUID!
+  $consent: Boolean!
+  $purpose: String!
+  $caseId: UUID
+) {
+  personWebResearch(
+    personId: $personId
+    consent: $consent
+    purpose: $purpose
+    caseId: $caseId
+  ) {
     personId
     runId
     provider

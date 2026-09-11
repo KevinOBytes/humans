@@ -23,6 +23,8 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 
 import type { SearchCursorPayload } from "./cursor";
 import type { NormalizedSearchInput } from "./normalization";
+import type { ResearchAnalysisRow } from "./analysis";
+import { researchAnalysisMetadataSql } from "./analysis-sql";
 
 const resultPeople = alias(people, "search_result_people");
 const sourcePersonNames = alias(personNames, "search_source_person_names");
@@ -90,10 +92,12 @@ function temporal(
 }
 
 export type TextSearchRow = {
+  analysis?: ResearchAnalysisRow;
   displayText: string;
   id: string;
   kind: NormalizedSearchInput["kinds"][number];
   rank: number;
+  sensitivity: "public" | "internal" | "confidential" | "restricted";
   subjectPersonId: string | null;
   title: string;
   updatedAt: Date | string;
@@ -217,6 +221,7 @@ export function createSearchRepository(
         );
     },
     async searchText(input: {
+      analysis?: { caseId?: string };
       cursor: Extract<SearchCursorPayload, { branch: "text" }> | null;
       search: NormalizedSearchInput & {
         match: { type: "text"; query: string };
@@ -375,6 +380,10 @@ export function createSearchRepository(
             AND ${factVisibility}
             AND ${factContributionVisibility}
             AND ${factPersonVisibility}
+            -- Full-text search has no purpose/field approval input. Keep
+            -- confidential and restricted typed values out of this channel;
+            -- governed direct reads remain the disclosure path.
+            AND d.sensitivity IN ('public', 'internal')
             AND d.search_vector @@ websearch_to_tsquery('simple'::regconfig, ${input.search.match.query})
 
           UNION ALL
@@ -579,7 +588,9 @@ export function createSearchRepository(
         )
         SELECT result_kind AS kind, result_id AS id, title_text AS title,
                subject_person_id AS "subjectPersonId",
-               display_text AS "displayText", updated_at AS "updatedAt", rank
+               display_text AS "displayText", updated_at AS "updatedAt", rank,
+               sensitivity
+               ${input.analysis ? sql`, ${researchAnalysisMetadataSql(context, input.analysis.caseId)} AS "analysis"` : sql``}
         FROM winning
         WHERE ${
           cursor

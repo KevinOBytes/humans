@@ -19,6 +19,16 @@ import {
   type CanonicalRequestMaterial,
 } from "@/modules/audit/transactions";
 import { createPeopleRepository } from "@/modules/people/repository";
+import {
+  createCasesService,
+  requireCaseResource,
+  requireResourceCoverage,
+} from "@/modules/cases/service";
+import type { RelationshipProvenanceInput } from "@/modules/cases/types";
+import { normalizeRelationshipProvenance } from "@/modules/cases/validation";
+import { normalizeGovernanceContext } from "@/modules/governance/validation";
+import { requireRelationshipPromotion } from "@/modules/evidence/assertions";
+import { requiresRelationshipPromotionReview } from "@/modules/evidence/assertions-validation";
 import type { Connection, MutationOutcome } from "@/modules/people/service";
 import {
   canonicalizeRelationshipEndpoints,
@@ -56,6 +66,61 @@ function encode(value: Record<string, unknown>) {
 const decode = decodeResearchCursor;
 const RELATIONSHIP_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const RELATIONSHIP_TYPE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+function provenanceMaterial(
+  input: RelationshipProvenanceInput,
+): CanonicalRequestMaterial {
+  return {
+    caseId: input.caseId ?? null,
+    purpose: input.governancePurpose ?? null,
+    observedAt:
+      input.observedAt == null
+        ? null
+        : new Date(input.observedAt).toISOString(),
+    creationMethod: input.creationMethod ?? null,
+    reviewState: input.reviewState ?? null,
+    explicitConfirmed: input.explicitConfirmed ?? false,
+    evidenceAssertionId: input.evidenceAssertionId ?? null,
+  };
+}
+async function governedRelationship(
+  context: ResearchServiceContext,
+  input: RelationshipProvenanceInput,
+  personIds: string[],
+  sensitivity: string,
+) {
+  const governed =
+    !!input.caseId ||
+    !!input.governancePurpose ||
+    input.creationMethod === "ai" ||
+    sensitivity === "restricted";
+  if (!governed) return null;
+  const governance = normalizeGovernanceContext({
+    governancePurpose: input.governancePurpose,
+    governanceCaseReference: input.caseId,
+  });
+  if (input.caseId) {
+    const caseRow = await createCasesService(context).getCase(input.caseId);
+    if (
+      caseRow.purpose !== governance.governancePurpose ||
+      caseRow.state !== "active"
+    )
+      throw createGraphQLError(
+        "FORBIDDEN",
+        "The case purpose is not permitted.",
+      );
+  }
+  for (const personId of [...new Set(personIds)]) {
+    const person = await requireCaseResource(context, "person", personId);
+    await requireResourceCoverage(
+      context,
+      person,
+      governance.governancePurpose!,
+      input.caseId ?? null,
+      "write",
+    );
+  }
+  return governance.governancePurpose;
+}
 const RELATIONSHIP_REFERENCE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -791,22 +856,44 @@ export function createRelationshipsService(context: ResearchServiceContext) {
         },
       };
     },
-    async create(input: {
-      idempotencyKey?: string | null;
-      sourcePersonId: string;
-      targetPersonId: string;
-      relationshipTypeId: string;
-      labelOverride?: string | null;
-      strength?: number | null;
-      confidence?: number | null;
-      state?: string | null;
-      sensitivity?: string | null;
-      temporalSemantics?: string | null;
-      temporalPrecision?: string | null;
-      validFrom?: string | Date | null;
-      validUntil?: string | Date | null;
-      metadata?: unknown;
-    }): Promise<MutationOutcome<RelationshipRow>> {
+    async create(
+      input: RelationshipProvenanceInput & {
+        idempotencyKey?: string | null;
+        sourcePersonId: string;
+        targetPersonId: string;
+        relationshipTypeId: string;
+        labelOverride?: string | null;
+        strength?: number | null;
+        confidence?: number | null;
+        state?: string | null;
+        sensitivity?: string | null;
+        temporalSemantics?: string | null;
+        temporalPrecision?: string | null;
+        validFrom?: string | Date | null;
+        validUntil?: string | Date | null;
+        metadata?: unknown;
+      },
+    ): Promise<MutationOutcome<RelationshipRow>> {
+      const provenance = normalizeRelationshipProvenance(input);
+      if (provenance.reviewState !== "unreviewed" || input.evidenceAssertionId)
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "New relationships cannot claim an existing review.",
+        );
+      if (
+        (input.caseId || input.creationMethod || input.governancePurpose) &&
+        !input.explicitConfirmed
+      )
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "Explicit confirmation is required.",
+        );
+      await governedRelationship(
+        context,
+        input,
+        [input.sourcePersonId, input.targetPersonId],
+        input.sensitivity?.toLowerCase() ?? "internal",
+      );
       await Promise.all([
         requirePerson(input.sourcePersonId),
         requirePerson(input.targetPersonId),
@@ -856,7 +943,10 @@ export function createRelationshipsService(context: ResearchServiceContext) {
         issues.push(...label.issues);
         labelOverride = label.value ?? null;
       }
-      const state = validateRelationshipState(input.state ?? "asserted");
+      const state = validateRelationshipState(
+        input.state ??
+          (provenance.creationMethod === "manual" ? "asserted" : "inferred"),
+      );
       issues.push(...state.issues);
       if (issues.length) return invalid(issues);
       if (input.idempotencyKey != null) {
@@ -872,6 +962,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
           idempotencyKey: input.idempotencyKey,
           operation: "relationship.create.graphql",
           requestMaterial: {
+            provenance: provenanceMaterial(input),
             confidence: confidence.value ?? "1",
             labelOverride,
             metadata: metadata.value as CanonicalRequestMaterial,
@@ -1005,6 +1096,10 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             sourcePersonId: source,
             targetPersonId: target,
             relationshipTypeId: type.id,
+            caseId: input.caseId,
+            observedAt: provenance.observedAt,
+            creationMethod: provenance.creationMethod,
+            reviewState: "unreviewed",
             labelOverride,
             strength: strength.value,
             confidence: confidence.value ?? "1",
@@ -1023,6 +1118,17 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             updatedBy: context.actor.principalId,
           },
         });
+        if (input.caseId)
+          await createCasesService({
+            ...context,
+            database: transaction,
+          }).linkResource({
+            caseId: input.caseId,
+            resourceKind: "relationship",
+            resourceId: created.id,
+            explicitConfirmed: true,
+            observedAt: provenance.observedAt,
+          });
         await audit.write(transaction as unknown as typeof context.database, {
           action: "relationship.create",
           resourceKind: "relationship",
@@ -1054,21 +1160,23 @@ export function createRelationshipsService(context: ResearchServiceContext) {
         return { resource: created, issues: [], code: null };
       });
     },
-    async update(input: {
-      id: string;
-      expectedVersion: number;
-      idempotencyKey?: string | null;
-      labelOverride?: string | null;
-      strength?: number | null;
-      confidence?: number | null;
-      state?: string | null;
-      sensitivity?: string | null;
-      temporalSemantics?: string | null;
-      temporalPrecision?: string | null;
-      validFrom?: string | Date | null;
-      validUntil?: string | Date | null;
-      metadata?: unknown;
-    }): Promise<MutationOutcome<RelationshipRow>> {
+    async update(
+      input: RelationshipProvenanceInput & {
+        id: string;
+        expectedVersion: number;
+        idempotencyKey?: string | null;
+        labelOverride?: string | null;
+        strength?: number | null;
+        confidence?: number | null;
+        state?: string | null;
+        sensitivity?: string | null;
+        temporalSemantics?: string | null;
+        temporalPrecision?: string | null;
+        validFrom?: string | Date | null;
+        validUntil?: string | Date | null;
+        metadata?: unknown;
+      },
+    ): Promise<MutationOutcome<RelationshipRow>> {
       const current = await repository.get({
         workspaceId: context.workspaceId,
         id: input.id,
@@ -1104,6 +1212,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
           idempotencyKey: input.idempotencyKey,
           operation: "relationship.update.graphql",
           requestMaterial: {
+            provenance: provenanceMaterial(input),
             confidence: fieldMaterial(input.confidence),
             expectedVersion: input.expectedVersion,
             id: input.id,
@@ -1185,6 +1294,56 @@ export function createRelationshipsService(context: ResearchServiceContext) {
           );
         if (locked.version !== input.expectedVersion)
           return conflict<RelationshipRow>(locked.version);
+        if (
+          (input.caseId !== undefined && input.caseId !== locked.caseId) ||
+          (input.creationMethod !== undefined &&
+            input.creationMethod !== locked.creationMethod)
+        )
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Case and creation provenance cannot be reassigned.",
+          );
+        const nextState = input.state?.trim().toLowerCase() ?? locked.state;
+        const purpose = await governedRelationship(
+          { ...context, database: transaction },
+          {
+            ...input,
+            caseId: locked.caseId,
+            creationMethod: locked.creationMethod,
+          },
+          [locked.sourcePersonId, locked.targetPersonId],
+          locked.sensitivity === "restricted"
+            ? "restricted"
+            : (input.sensitivity?.toLowerCase() ?? locked.sensitivity),
+        );
+        const promotion = requiresRelationshipPromotionReview({
+          from: locked.state,
+          to: nextState,
+          reviewState: locked.reviewState,
+        });
+        if (
+          input.reviewState !== undefined &&
+          input.reviewState !== locked.reviewState &&
+          !(promotion && input.reviewState === "approved")
+        )
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Review state requires an approved promotion.",
+          );
+        await requireRelationshipPromotion(
+          { ...context, database: transaction },
+          {
+            id: locked.id,
+            version: locked.version,
+            state: locked.state,
+            nextState,
+            reviewState: locked.reviewState,
+            caseId: locked.caseId,
+            purpose,
+            evidenceAssertionId: input.evidenceAssertionId,
+            explicitConfirmed: input.explicitConfirmed,
+          },
+        );
         const type = await scoped.getTypeForUpdate({
           workspaceId: context.workspaceId,
           id: locked.relationshipTypeId,
@@ -1198,6 +1357,11 @@ export function createRelationshipsService(context: ResearchServiceContext) {
           updatedAt: new Date(),
           updatedBy: context.actor.principalId,
         };
+        if (promotion) patch.reviewState = "approved";
+        if (input.observedAt !== undefined)
+          patch.observedAt = normalizeRelationshipProvenance({
+            observedAt: input.observedAt,
+          }).observedAt;
         const issues: ValidationIssue[] = [];
         const changed: string[] = [];
         if (input.labelOverride !== undefined) {

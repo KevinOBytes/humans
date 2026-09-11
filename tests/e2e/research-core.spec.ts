@@ -1,3 +1,7 @@
+import { personWebResearchRuns } from "@/db/schema/person-research";
+import { recordAiSuggestion } from "@/modules/ai/review-service";
+import { createGovernanceService } from "@/modules/governance/service";
+import { caseContext } from "../support/cases";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
@@ -138,158 +142,116 @@ test("anonymous protected routes use the canonical safe sign-in redirect", async
   expectNoBrowserFailures();
 });
 
-test("person research requires consent and applies only selected edited fields", async ({
+test("person research loads governed proposals and applies only the reviewed field", async ({
   context,
   page,
 }) => {
   const expectNoBrowserFailures = captureBrowserFailures(page);
   const actor = await fixture.createActor();
+  const reviewer = await fixture.createWorkspaceMember(actor, "admin");
   const created = await fixture.createPerson(actor, {
     displayName: "Research Subject",
     biography: "Original biography",
   });
   const personId = created.body?.data?.createPerson?.person?.id;
-  if (!personId) throw new Error("AI research E2E person was not created");
-
-  await authenticate(context, actor.jar);
-  await page.route("**/api/graphql", async (route) => {
-    const request = route.request();
-    if (request.method() !== "POST") return route.continue();
-    let body: { query?: unknown; variables?: unknown };
-    try {
-      body = JSON.parse(request.postData() ?? "") as typeof body;
-    } catch {
-      return route.continue();
-    }
-    if (
-      typeof body.query !== "string" ||
-      !body.query.includes("personWebResearch")
-    ) {
-      return route.continue();
-    }
-    expect(body.variables).toEqual({ personId, consent: true });
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      headers: { "x-request-id": "e2e-person-research" },
-      body: JSON.stringify({
-        data: {
-          personWebResearch: {
-            personId,
-            provider: "OLLAMA",
-            model: "fixture-model",
-            sources: [
-              {
-                title: "Public profile",
-                url: "https://example.test/research-subject",
-                snippet: "A public profile used by the browser fixture.",
-              },
-            ],
-            suggestions: [
-              {
-                field: "displayName",
-                value: "Auto Filled Name",
-                sourceUrls: ["https://example.test/research-subject"],
-              },
-              {
-                field: "preferredName",
-                value: "Auto Alias",
-                sourceUrls: ["https://example.test/research-subject"],
-              },
-              {
-                field: "biography",
-                value: "Auto-filled biography",
-                sourceUrls: ["https://example.test/research-subject"],
-              },
-            ],
-          },
-        },
-      }),
-    });
+  if (!personId) throw new Error("AI review E2E person was not created");
+  const serviceContext = await caseContext(fixture, actor);
+  const governance = createGovernanceService(serviceContext);
+  await governance.createPurposePolicy({
+    idempotencyKey: newId(),
+    purpose: "research",
+    lawfulBases: ["consent"],
+    effectiveFrom: new Date(Date.now() - 60_000),
+    state: "active",
   });
-
-  await page.goto(`/people/${personId}`);
-  await expect(
-    page.getByRole("heading", { name: "Research Subject" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("checkbox", {
-      name: /I understand and want to search public web sources/i,
-    }),
-  ).toBeVisible();
+  await governance.recordConsent({
+    idempotencyKey: newId(),
+    personId,
+    purpose: "research",
+    scopes: ["read", "write", "ai_operation"],
+    lawfulBasis: "consent",
+    effectiveFrom: new Date(Date.now() - 60_000),
+  });
+  const runId = newId();
+  const source = {
+    url: "https://example.org/profile",
+    title: "Synthetic profile",
+    snippet: "Synthetic public profile excerpt",
+  };
+  const proposals = [
+    { field: "displayName", value: "Proposed name", sourceUrls: [source.url] },
+    {
+      field: "biography",
+      value: "Reviewed biography",
+      sourceUrls: [source.url],
+    },
+  ];
+  await fixture.database.insert(personWebResearchRuns).values({
+    id: runId,
+    workspaceId: actor.workspaceId,
+    personId,
+    governancePurpose: "research",
+    provider: "COMPATIBLE",
+    model: "synthetic",
+    queryHash: "a1".repeat(32),
+    sources: [source],
+    suggestions: proposals,
+    sourceCount: 1,
+    consentedAt: new Date(),
+    createdBy: actor.principalId,
+  });
+  for (const proposal of proposals)
+    await recordAiSuggestion(serviceContext, {
+      personId,
+      purpose: "research",
+      fieldKey: proposal.field,
+      proposedValue: { version: 1, kind: "profile", value: proposal.value },
+      evidenceReferences: [
+        {
+          kind: "web",
+          url: source.url,
+          locator: source.title,
+          quote: source.snippet,
+        },
+      ],
+      confidence: 0.5,
+      uncertainty: "Verify identity",
+      provider: "COMPATIBLE",
+      model: "synthetic",
+      researchRunId: runId,
+      runKind: "web",
+      promptPolicyVersion: "synthetic-v1",
+    });
+  await authenticate(context, reviewer.jar);
+  await page.goto("/people/" + personId);
   await expect(
     page.getByRole("button", { name: "Research this person" }),
   ).toBeDisabled();
-
-  await page
-    .getByRole("checkbox", {
-      name: /I understand and want to search public web sources/i,
-    })
-    .check();
-  await page.getByRole("button", { name: "Research this person" }).click();
-  await expect(page.getByLabel("Display name suggestion")).toHaveValue(
-    "Auto Filled Name",
-  );
-  await expect(page.getByLabel("Preferred name suggestion")).toHaveValue(
-    "Auto Alias",
-  );
-  await expect(page.getByLabel("Biography suggestion")).toHaveValue(
-    "Auto-filled biography",
-  );
+  await page.getByLabel("Governed purpose").fill("research");
+  await page.getByRole("button", { name: "Load pending reviews" }).click();
   await expect(
     page.getByRole("heading", { name: "Review suggestions" }),
   ).toBeVisible();
-
-  const displayNameApply = page.getByRole("checkbox", {
-    name: "Apply Display name",
-  });
-  const preferredNameApply = page.getByRole("checkbox", {
-    name: "Apply Preferred name",
-  });
-  const biographyApply = page.getByRole("checkbox", {
-    name: "Apply Biography",
-  });
-  const acceptAll = page.getByRole("checkbox", {
-    name: "Accept all suggested fields",
-  });
-  await expect(acceptAll).not.toBeChecked();
-  await expect(displayNameApply).not.toBeChecked();
-  await expect(preferredNameApply).not.toBeChecked();
-  await expect(biographyApply).not.toBeChecked();
+  await expect(
+    page.getByText("Reviewed biography", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Apply selected fields" }),
   ).toBeDisabled();
-
-  await acceptAll.check();
-  await expect(displayNameApply).toBeChecked();
-  await expect(preferredNameApply).toBeChecked();
-  await expect(biographyApply).toBeChecked();
-  await expect(page.getByText("Accepted for saving").first()).toBeVisible();
-
-  await displayNameApply.uncheck();
-  await preferredNameApply.uncheck();
-  await page.getByLabel("Biography suggestion").fill("Edited biography");
-  await biographyApply.check();
-  await expect(displayNameApply).not.toBeChecked();
-  await expect(preferredNameApply).not.toBeChecked();
-  await page.getByRole("button", { name: "Apply selected fields" }).click();
-  await expect(page.getByRole("status")).toHaveText("Selected fields applied.");
-
+  await page.getByRole("button", { name: "Accept biography" }).click();
+  await expect(
+    page.getByRole("button", { name: "Accept biography" }),
+  ).toHaveCount(0);
   const persisted = await fixture.execute<{
-    person: {
-      displayName: string;
-      preferredName: string | null;
-      biography: string | null;
-    } | null;
+    person: { displayName: string; biography: string | null };
   }>({
     jar: actor.jar,
-    query: `query Person($id: UUID!) { person(id: $id) { displayName preferredName biography } }`,
+    query: "query($id: UUID!) { person(id: $id) { displayName biography } }",
     variables: { id: personId },
   });
   expect(persisted.body?.data?.person).toEqual({
     displayName: "Research Subject",
-    preferredName: null,
-    biography: "Edited biography",
+    biography: "Reviewed biography",
   });
   expectNoBrowserFailures();
 });
@@ -369,7 +331,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
         label: "Date of birth",
         allowedValueType: "DATE",
         cardinality: "MANY",
-        defaultSensitivity: "INTERNAL",
+        defaultSensitivity: "PUBLIC",
       },
     },
   });
@@ -490,6 +452,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await expect(page.getByLabel("Field", { exact: true })).toHaveValue(
     factDefinitionId!,
   );
+  await page.getByLabel("Sensitivity").selectOption("PUBLIC");
   await page.getByLabel("Value").fill("1815-12-10");
   await page.getByLabel("Claim state").selectOption("ASSERTED");
   await page.getByRole("button", { name: "Add fact" }).click();
@@ -535,6 +498,26 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   }
 
   const personId = personUrl.split("/").at(-1)!;
+  const relationshipGovernance = createGovernanceService(
+    await caseContext(fixture, owner),
+  );
+  await relationshipGovernance.createPurposePolicy({
+    idempotencyKey: newId(),
+    purpose: "research",
+    lawfulBases: ["consent"],
+    effectiveFrom: new Date(Date.now() - 60_000),
+    state: "active",
+  });
+  for (const governedPersonId of [personId, relatedPersonId!]) {
+    await relationshipGovernance.recordConsent({
+      idempotencyKey: newId(),
+      personId: governedPersonId,
+      purpose: "research",
+      scopes: ["read", "write"],
+      lawfulBasis: "consent",
+      effectiveFrom: new Date(Date.now() - 60_000),
+    });
+  }
   await fixture.database.insert(personNames).values([
     {
       id: newId(),
@@ -691,6 +674,9 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await page
     .getByLabel("Related person", { exact: true })
     .selectOption({ label: "Grace Collaborator" });
+  await page
+    .getByRole("checkbox", { name: /permitted research purpose/i })
+    .check();
   await page.getByRole("button", { name: "Add relationship" }).click();
   await expect(
     page.getByRole("region", { name: "Relationships" }).getByText("Knows", {

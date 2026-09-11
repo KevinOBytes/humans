@@ -253,6 +253,8 @@ async function main() {
       query: `mutation($input: CreateRelationshipInput!) { createRelationship(input: $input) { relationship { id } code issues { code } } }`,
       variables: {
         input: {
+          governancePurpose: "research",
+          explicitConfirmed: true,
           sourcePersonId: firstPersonId,
           targetPersonId: secondPersonId,
           relationshipTypeId:

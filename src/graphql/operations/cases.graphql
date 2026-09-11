@@ -1,0 +1,109 @@
+query ResearchCases($first: Int, $after: String) {
+  researchCases(first: $first, after: $after) {
+    nodes {
+      id
+      title
+      purpose
+      state
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+query ResearchCase($id: UUID!) {
+  researchCase(id: $id) {
+    id
+    title
+    purpose
+    state
+    version
+  }
+}
+query CaseTimeline($caseId: UUID!, $first: Int, $after: String) {
+  caseTimeline(caseId: $caseId, first: $first, after: $after) {
+    nodes {
+      id
+      resourceKind
+      resourceId
+      observedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+mutation CreateResearchCase($title: String!, $purpose: String!) {
+  createResearchCase(title: $title, purpose: $purpose) {
+    id
+    title
+    purpose
+    state
+    version
+  }
+}
+mutation AddCaseMember($caseId: UUID!, $principalId: UUID!, $role: String) {
+  addCaseMember(caseId: $caseId, principalId: $principalId, role: $role) {
+    id
+    principalId
+    role
+    version
+  }
+}
+mutation LinkCaseResource(
+  $caseId: UUID!
+  $resourceId: UUID!
+  $resourceKind: String!
+  $explicitConfirmed: Boolean!
+) {
+  linkCaseResource(
+    caseId: $caseId
+    resourceId: $resourceId
+    resourceKind: $resourceKind
+    explicitConfirmed: $explicitConfirmed
+  ) {
+    id
+    resourceKind
+    resourceId
+    observedAt
+  }
+}
+mutation LinkEvidenceAssertion($input: LinkEvidenceAssertionInput!) {
+  linkEvidenceAssertion(input: $input) {
+    id
+    evidenceId
+    resourceKind
+    resourceId
+    locator
+    quote
+    role
+    confidence
+    informationCredibility
+    sourceReliability
+    reviewState
+    version
+    auditReference
+  }
+}
+mutation ReviewEvidenceAssertion(
+  $id: UUID!
+  $expectedVersion: Int!
+  $state: String!
+  $reason: String!
+) {
+  reviewEvidenceAssertion(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    reason: $reason
+  ) {
+    id
+    reviewState
+    version
+    auditReference
+  }
+}

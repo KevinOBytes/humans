@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 import * as schema from "@/db/schema";
 
 const requiredTables = [
+  "cases",
+  "caseMembers",
+  "caseResourceLinks",
+  "evidenceAssertions",
+  "evidenceAssertionReviews",
   "contactPoints",
   "personContactPoints",
   "places",
@@ -49,6 +54,11 @@ const requiredTables = [
   "webhooks",
   "webhookDeliveries",
   "personWebResearchRuns",
+  "aiReviewSuggestions",
+  "accessApprovals",
+  "consentScopes",
+  "fieldPolicies",
+  "purposePolicies",
 ] as const;
 
 describe("approved schema surface", () => {

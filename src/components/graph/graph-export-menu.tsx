@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, Download } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +38,15 @@ export function GraphExportMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [pngPending, setPngPending] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
   const downloadText = (content: string, extension: string, mime: string) => {
     downloadBlob(
       new Blob([content], { type: `${mime};charset=utf-8` }),
@@ -88,7 +97,7 @@ export function GraphExportMenu({
   }
 
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <Button
         type="button"
         variant="outline"
@@ -105,6 +114,11 @@ export function GraphExportMenu({
           id="graph-export-options"
           className="border-border bg-popover absolute right-0 z-30 mt-2 grid w-64 gap-1 rounded-xl border p-2 shadow-xl"
         >
+          <p className="text-muted-foreground px-3 py-2 text-xs">
+            Exports contain the currently loaded actor- and sensitivity-limited
+            graph. Purpose consent and case membership are not established by
+            this download menu. Verify export authority before downloading.
+          </p>
           <Button
             type="button"
             variant="ghost"

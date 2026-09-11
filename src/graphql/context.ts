@@ -58,6 +58,17 @@ import {
   type AiAnalysisRuntime,
 } from "@/modules/ai/service";
 import { createWebhooksService } from "@/modules/webhooks/service";
+import { createGovernanceService } from "@/modules/governance/service";
+import { createCasesService } from "@/modules/cases/service";
+import { createPrivacyRequestService } from "@/modules/privacy/request-service";
+import { createRetentionService } from "@/modules/privacy/retention-service";
+import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
+import {
+  createAiReviewService,
+  authorizeAiReviewScope,
+  recordAiSuggestion,
+} from "@/modules/ai/review-service";
+import { runResearchTransaction } from "@/modules/audit/transactions";
 
 import { createGraphQLError } from "./errors";
 import {
@@ -217,22 +228,95 @@ function createServices(input: {
       workspaceId: input.context.workspaceId,
       operationLimiter: input.operationLimiter,
       runtime: input.personResearchRuntime,
+      authorizeResearch: (request) =>
+        runResearchTransaction(
+          {
+            ...input.context,
+            database: input.database,
+            searchIndexMaintenance: input.searchIndexMaintenance,
+          },
+          {
+            requiredPermissions: [
+              "person:read",
+              "analysis:create",
+              "analysis:run",
+            ],
+          },
+          (scoped) =>
+            authorizeAiReviewScope(scoped, {
+              ...request,
+              purpose: request.purpose?.trim().toLowerCase() ?? "",
+            }),
+        ),
       persistResearch: async (research) => {
-        const runId = newId();
-        await input.database.insert(personWebResearchRuns).values({
-          id: runId,
-          workspaceId: input.context.workspaceId,
-          personId: research.personId,
-          provider: research.provider,
-          model: research.model,
-          queryHash: research.queryHash,
-          sourceCount: research.sources.length,
-          sources: research.sources,
-          suggestions: research.suggestions,
-          consentedAt: research.consentedAt,
-          createdBy: input.context.actor.principalId,
-        });
-        return { runId };
+        return runResearchTransaction(
+          {
+            ...input.context,
+            database: input.database,
+            searchIndexMaintenance: input.searchIndexMaintenance,
+          },
+          {
+            requiredPermissions: [
+              "person:read",
+              "analysis:create",
+              "analysis:run",
+            ],
+          },
+          async (scoped) => {
+            const runId = newId();
+            const purpose = research.purpose?.trim().toLowerCase() ?? "";
+            await authorizeAiReviewScope(scoped, {
+              personId: research.personId,
+              purpose,
+              caseId: research.caseId,
+            });
+            await scoped.database.insert(personWebResearchRuns).values({
+              id: runId,
+              workspaceId: input.context.workspaceId,
+              personId: research.personId,
+              governancePurpose: purpose,
+              governanceCaseReference: research.caseId,
+              provider: research.provider,
+              model: research.model,
+              queryHash: research.queryHash,
+              sourceCount: research.sources.length,
+              sources: research.sources,
+              suggestions: research.suggestions,
+              consentedAt: research.consentedAt,
+              createdBy: input.context.actor.principalId,
+            });
+            for (const suggestion of research.suggestions)
+              await recordAiSuggestion(scoped, {
+                personId: research.personId,
+                purpose,
+                caseId: research.caseId,
+                fieldKey: suggestion.field,
+                proposedValue: {
+                  version: 1,
+                  kind: "profile",
+                  value: suggestion.value,
+                },
+                confidence: 0,
+                uncertainty:
+                  "The provider did not supply a calibrated confidence estimate. Verify identity and each claim against the sources.",
+                evidenceReferences: suggestion.sourceUrls.map((url) => {
+                  const source = research.sources.find((s) => s.url === url)!;
+                  return {
+                    kind: "web" as const,
+                    url,
+                    locator: source.title,
+                    quote: source.snippet || source.title,
+                  };
+                }),
+                provider: research.provider,
+                model: research.model,
+                researchRunId: runId,
+                runKind: "web",
+                promptPolicyVersion: "public-profile-human-review-v1",
+              });
+            return { runId };
+          },
+        );
       },
     }),
     facts: createFactsService(
@@ -338,7 +422,18 @@ function createServices(input: {
         operationLimiter: input.operationLimiter,
         searchIndexMaintenance: input.searchIndexMaintenance,
       },
-      input.searchRuntime,
+      {
+        ...input.searchRuntime,
+        ...(input.fileRuntime?.objectStore
+          ? {
+              exportArtifacts: {
+                objectStore: input.fileRuntime.objectStore,
+                storageBucket: input.fileRuntime.storageBucket,
+                storageProvider: input.fileRuntime.storageProvider,
+              },
+            }
+          : {}),
+      },
     ),
     settings: createSettingsService({
       actor: input.context.actor,
@@ -384,6 +479,47 @@ function createServices(input: {
       requestId: input.context.requestId,
       searchIndexMaintenance: input.searchIndexMaintenance,
       workspaceId: input.context.workspaceId,
+    }),
+    governance: createGovernanceService({
+      actor: input.context.actor,
+      database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
+    cases: createCasesService({
+      actor: input.context.actor,
+      database: input.database,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
+    privacy: createPrivacyRequestService({
+      ...input.context,
+      database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+    }),
+    retention: createRetentionService({
+      ...input.context,
+      database: input.database,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+    }),
+    evidenceAssertions: createEvidenceAssertionsService({
+      actor: input.context.actor,
+      database: input.database,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
+    aiReview: createAiReviewService({
+      ...input.context,
+      database: input.database,
+      searchIndexMaintenance: input.searchIndexMaintenance,
     }),
   };
 }

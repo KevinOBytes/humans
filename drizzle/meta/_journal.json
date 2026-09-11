@@ -225,6 +225,41 @@
       "when": 1788918764083,
       "tag": "0031_person_web_research_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789101163699,
+      "tag": "0032_governance_consent_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789105554849,
+      "tag": "0033_cases_and_evidence_assertions",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1789107269607,
+      "tag": "0034_ai_review_suggestions",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1789108710480,
+      "tag": "0035_privacy_retention_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789111941208,
+      "tag": "0036_core",
+      "breakpoints": true
     }
   ]
 }

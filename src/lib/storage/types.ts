@@ -55,6 +55,19 @@ export interface ObjectMetadata {
   custom: Readonly<Record<string, string>>;
 }
 
+/**
+ * Server-originated write for generated artifacts. It is intentionally not a
+ * browser grant: callers must have already established an authorized domain
+ * record before invoking it.
+ */
+export interface InternalObjectWrite {
+  workspaceId: string;
+  key: string;
+  content: Uint8Array;
+  contentType: string;
+  checksumSha256: string;
+}
+
 export interface ObjectStore {
   createUpload(input: UploadRequest): Promise<SignedObjectRequest>;
   createDownload(input: DownloadRequest): Promise<SignedObjectRequest>;
@@ -66,4 +79,6 @@ export interface ObjectStore {
   ): Promise<ObjectRead | null>;
   exists(input: ObjectReference): Promise<boolean>;
   delete(input: ObjectReference): Promise<void>;
+  /** Optional because older/degraded storage adapters must fail closed. */
+  putInternal?(input: InternalObjectWrite): Promise<void>;
 }

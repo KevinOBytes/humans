@@ -1,0 +1,111 @@
+query ConsentCoverage(
+  $personId: UUID!
+  $purpose: String!
+  $scope: GovernanceScope!
+  $fieldDefinitionId: UUID
+  $caseReference: String
+) {
+  consentCoverage(
+    personId: $personId
+    purpose: $purpose
+    scope: $scope
+    fieldDefinitionId: $fieldDefinitionId
+    caseReference: $caseReference
+  ) {
+    allowed
+    reason
+    consentRecordId
+    policyId
+  }
+}
+
+query AccessApprovals($first: Int, $after: String) {
+  accessApprovals(first: $first, after: $after) {
+    nodes {
+      id
+      state
+      reason
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+mutation GovernanceCreateConsentRecord($input: CreateConsentInput!) {
+  createConsentRecord(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+
+mutation WithdrawConsent(
+  $id: UUID!
+  $expectedVersion: Int!
+  $idempotencyKey: String!
+  $withdrawalEffect: GovernanceWithdrawalEffect
+) {
+  withdrawConsent(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+    withdrawalEffect: $withdrawalEffect
+  ) {
+    id
+    status
+    withdrawalEffect
+    version
+    withdrawnAt
+  }
+}
+
+mutation RequestAccessApproval(
+  $personId: UUID!
+  $fieldDefinitionId: UUID!
+  $purpose: String!
+  $reason: String!
+  $caseReference: String
+  $idempotencyKey: String!
+) {
+  requestAccessApproval(
+    personId: $personId
+    fieldDefinitionId: $fieldDefinitionId
+    purpose: $purpose
+    reason: $reason
+    caseReference: $caseReference
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    reason
+    version
+    createdAt
+  }
+}
+
+mutation ReviewAccessApproval(
+  $id: UUID!
+  $expectedVersion: Int!
+  $state: String!
+  $reason: String!
+  $idempotencyKey: String!
+) {
+  reviewAccessApproval(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    reason: $reason
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    reason
+    version
+    createdAt
+  }
+}

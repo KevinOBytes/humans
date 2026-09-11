@@ -47,6 +47,22 @@ import type { GraphResult } from "@/modules/graph/types";
 import { graphResultFixture, IDS } from "@/../tests/fixtures/graph";
 
 let canvasContext: ReturnType<typeof vi.spyOn>;
+it("shows relationship interval, evidence limits and mandatory review for disputed edges", () => {
+  const result = {
+    ...graphResultFixture,
+    edges: [{ ...graphResultFixture.edges[0]!, state: "disputed" as const }],
+  };
+  render(
+    <GraphInspector
+      result={result}
+      selection={{ kind: "edge", id: result.edges[0]!.id }}
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByText(/2024-01-01/)).toBeInTheDocument();
+  expect(screen.getByText(/Source count is not available/)).toBeInTheDocument();
+  expect(screen.getByText(/requires evidence review/)).toBeInTheDocument();
+});
 beforeAll(() => {
   canvasContext = vi
     .spyOn(HTMLCanvasElement.prototype, "getContext")
@@ -732,6 +748,8 @@ describe("RelationshipEditor", () => {
     expect(mutationAdapter.create).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Confirm create" }));
     expect(mutationAdapter.create).toHaveBeenCalledWith({
+      explicitConfirmed: true,
+      governancePurpose: "research",
       relationshipTypeId: IDS.typeDirected,
       sensitivity: "INTERNAL",
       sourcePersonId: IDS.alice,
@@ -753,6 +771,8 @@ describe("RelationshipEditor", () => {
     await user.click(screen.getByRole("button", { name: "Confirm update" }));
     expect(mutationAdapter.update).toHaveBeenCalledWith({
       expectedVersion: 2,
+      explicitConfirmed: true,
+      governancePurpose: "research",
       relationshipId: IDS.directed,
       sensitivity: "CONFIDENTIAL",
     });

@@ -1,4 +1,6 @@
+import { and, eq } from "drizzle-orm";
 import { files } from "@/db/schema/files";
+import { exportArtifacts } from "@/db/schema/search";
 import { newId } from "@/db/id";
 import { createGraphQLError, publicErrorMessage } from "@/graphql/errors";
 import type { RequestOperationLimiter } from "@/graphql/operation-limiter";
@@ -17,6 +19,8 @@ import {
   runResearchTransaction,
   withResearchWriteTransaction,
 } from "@/modules/audit/transactions";
+import { createCasesService } from "@/modules/cases/service";
+import { checkPurposeCoverage } from "@/modules/governance/coverage";
 
 import {
   createFilesRepository,
@@ -1270,6 +1274,64 @@ export function createFilesService(
         }))
       ) {
         return notFound();
+      }
+      const [artifact] = await context.database
+        .select({
+          caseId: exportArtifacts.caseId,
+          expiresAt: exportArtifacts.expiresAt,
+          purpose: exportArtifacts.purpose,
+          state: exportArtifacts.state,
+        })
+        .from(exportArtifacts)
+        .where(
+          and(
+            eq(exportArtifacts.workspaceId, context.workspaceId),
+            eq(exportArtifacts.fileId, file.id),
+          ),
+        )
+        .limit(1);
+      if (artifact) {
+        // Generated exports are governed artifacts, not ordinary uploads.
+        // Re-check lifecycle, case membership, legal holds, and current
+        // purpose coverage on every download so revocation takes effect.
+        if (
+          artifact.state !== "ready" ||
+          artifact.expiresAt.getTime() <= Date.now()
+        )
+          return notFound();
+        if (artifact.caseId)
+          await createCasesService(context).getCase(artifact.caseId);
+        const metadata =
+          file.encryptionMetadata &&
+          typeof file.encryptionMetadata === "object" &&
+          !Array.isArray(file.encryptionMetadata)
+            ? (file.encryptionMetadata as Record<string, unknown>)
+            : null;
+        const subjects = Array.isArray(metadata?.governanceSubjects)
+          ? metadata.governanceSubjects
+          : [];
+        if (!subjects.length) return notFound();
+        for (const subject of subjects) {
+          if (
+            !subject ||
+            typeof subject !== "object" ||
+            typeof (subject as { personId?: unknown }).personId !== "string"
+          )
+            return notFound();
+          const governed = subject as {
+            personId: string;
+            fieldDefinitionId?: string | null;
+          };
+          const coverage = await checkPurposeCoverage(context, {
+            personId: governed.personId,
+            purpose: artifact.purpose,
+            caseReference: artifact.caseId,
+            scope: "export",
+            fieldDefinitionId: governed.fieldDefinitionId ?? null,
+            effectiveSensitivity: file.sensitivity,
+          });
+          if (!coverage.allowed) return notFound();
+        }
       }
       if (
         file.quarantineState !== "available" ||

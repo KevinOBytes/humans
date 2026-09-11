@@ -153,6 +153,14 @@ export const Relationship = builder
       }),
       relationshipTypeId: t.expose("relationshipTypeId", { type: "UUID" }),
       labelOverride: t.exposeString("labelOverride", { nullable: true }),
+      caseId: t.expose("caseId", { type: "UUID", nullable: true }),
+      observedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.observedAt?.toISOString() ?? null,
+      }),
+      creationMethod: t.exposeString("creationMethod"),
+      reviewState: t.exposeString("reviewState"),
       strength: t.float({
         nullable: true,
         resolve: (row) => (row.strength == null ? null : Number(row.strength)),
@@ -264,6 +272,12 @@ const UpdateRelationshipTypeInput = builder.inputType(
 );
 const CreateRelationshipInput = builder.inputType("CreateRelationshipInput", {
   fields: (t) => ({
+    caseId: t.field({ type: "UUID" }),
+    governancePurpose: t.string({ required: true }),
+    observedAt: t.field({ type: "DateTime" }),
+    creationMethod: t.string(),
+    reviewState: t.string(),
+    explicitConfirmed: t.boolean({ required: true }),
     idempotencyKey: t.string(),
     sourcePersonId: t.field({ type: "UUID", required: true }),
     targetPersonId: t.field({ type: "UUID", required: true }),
@@ -282,6 +296,13 @@ const CreateRelationshipInput = builder.inputType("CreateRelationshipInput", {
 });
 const UpdateRelationshipInput = builder.inputType("UpdateRelationshipInput", {
   fields: (t) => ({
+    caseId: t.field({ type: "UUID" }),
+    governancePurpose: t.string({ required: true }),
+    observedAt: t.field({ type: "DateTime" }),
+    creationMethod: t.string(),
+    reviewState: t.string(),
+    explicitConfirmed: t.boolean({ required: true }),
+    evidenceAssertionId: t.field({ type: "UUID" }),
     idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),

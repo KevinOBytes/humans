@@ -810,6 +810,9 @@ function SearchWorkbenchState({
         <p className="text-muted-foreground mt-2 max-w-3xl text-sm">
           Search only the records visible to your current workspace role. Query
           and protected values stay in this tab and are never placed in the URL.
+          Results are limited by actor and sensitivity. This search does not
+          establish consent coverage or case scope; use the person consent panel
+          and case workspace for those checks.
         </p>
       </header>
 

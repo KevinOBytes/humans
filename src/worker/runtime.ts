@@ -28,6 +28,7 @@ import {
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 import { createExtractionHandler } from "@/worker/handlers/extraction";
 import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
+import { executePrivacyPropagations } from "@/modules/privacy/propagation-worker";
 import {
   purgeExpiredAiEphemeralInputs,
   purgeExpiredAiThreads,
@@ -189,6 +190,7 @@ export function createRuntimeJobRunner(input: {
         limit: 100,
         searchIndexMaintenance,
       });
+      await executePrivacyPropagations({ database: input.database, limit: 25 });
       await purgeExpiredAiEphemeralInputs({
         database: input.database,
         limit: 100,

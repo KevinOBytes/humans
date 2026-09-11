@@ -1,5 +1,9 @@
 # MVP requirements
 
+Task 4 local checkpoint (2026-09-11): the generalized privacy lifecycle covers six request types with workspace/resource/case checks, verification-file evidence, independent reviewer approval, deadlines, optimistic transitions, idempotent creation replay, and completion evidence. Retention evaluation is deterministic and non-destructive; legal holds take precedence, and hard-delete/anonymization policies require review. New deletion fulfillment queues the existing worker instead of deleting synchronously. Processor results remain visible and retryable, with unconfigured external adapters explicitly failed rather than assumed complete. Historical deletion rows are preserved and represented explicitly without manufacturing verification evidence. Unit tests and gated lifecycle tests cover the new boundary. Live PostgreSQL migration/lifecycle proof, external search/cache/email/AI propagation adapters, complete retention enforcement, legacy-settings-path convergence, and browser acceptance remain open; HUM-FR-005 is not closed.
+
+Task 3 local checkpoint (2026-09-11): AI proposals are retained in `ai_review_suggestions` with versioned typed values, source/evidence references, confidence, uncertainty, provider/model, originating run, and prompt-policy version. Explicit human accept/reject/defer and approved batch decisions retain the original proposal and link accepted resources back to that record. Current workspace, case, source visibility and purpose coverage for AI/write are checked before acceptance; fact/relationship writes and Task 2 evidence assertions share the decision transaction. AI-created relationships remain inferred; acceptance is not independent evidence approval or an adverse decision. This supersedes the older web-research description below: the browser no longer sends AI suggestions directly to `UpdatePerson`, and original proposals are not editable in the review queue. Focused validation/queue tests, updated panel tests, and gated `ai-review-lifecycle.test.ts` cover this boundary. Live PostgreSQL/browser/provider verification, retention deletion/expiry for retained provenance, and HUM-FR-023 closure remain open.
+
 Current release-candidate evidence (2026-09-07): GitHub Actions run
 `34175736114` for commit `6986c6e` passed the complete repository gate,
 including quality, generated artifacts, production build, PostgreSQL/Redis/
@@ -83,6 +87,8 @@ Bounded HUM-NFR-008 note-domain evidence (2026-08-08): generated GraphQL `create
 Bounded HUM-NFR-008 graph-view evidence (2026-08-08): generated GraphQL `createGraphView`, `updateGraphView`, and `archiveGraphView` accept optional principal-bound durable idempotency keys. Focused live PostgreSQL acceptance proves concurrent replay, one audit effect and durable claim per operation, changed-material conflicts, and archived-response replay; the remaining retryable mutation matrix remains open.
 
 Bounded HUM-FR-023/HUM-FR-028 person-enrichment evidence (2026-09-08): the person create form now defaults lifecycle status to ACTIVE, omits blank optional values, and accepts a bounded confidence score with an explanation. An owner/editor can explicitly consent to a public web lookup; the generated `personWebResearch` operation enforces workspace visibility, sensitivity, permissions, rate limits, safe HTTPS source URLs, bounded provider output, and OpenAI-compatible model disclosure. The profile renders source-backed suggestions as editable, auto-filled drafts with an unchecked per-field acceptance control and an explicit accept-all control; only selected allowlisted presentation fields are sent through the existing optimistic `UpdatePerson` mutation. Each configured run now records an immutable workspace/person-scoped `person_web_research_runs` snapshot containing the provider/model disclosure, hashed search query, validated public sources, bounded suggestions, consent timestamp, and actor principal, and returns a generated `runId` for auditability. `tests/unit/person-research.test.ts`, `tests/unit/person-research-panel.test.tsx`, and the live generated-GraphQL acceptance cover the persistence and redaction boundary. Fact creation also exposes a workspace-scoped person picker for `PERSON_REFERENCE` definitions and validates the selected UUID before submission. Research snapshots are provenance records rather than accepted facts: no person record changes before review, no sensitive/private fields are sent to the provider, and external source content remains untrusted display text. Live provider credentials, the full source/evidence-item linkage workflow, browser/provider matrix, and the broader retention/reconciliation requirements remain open.
+
+Bounded HUM-FR-029 editor-safety evidence (2026-09-08): the React Flow neighborhood editor now routes relationship creation through the same explicit review and confirmation boundary as update and archive operations. A draft create stores only the authorized, capped neighborhood IDs and selected sensitivity/type; no create mutation is sent until `Confirm create` is activated. `tests/unit/graph-accessibility.test.tsx` and `tests/e2e/graph.spec.ts` cover the no-write-before-confirmation and successful confirmed create journey. Graph editing breadth, performance, and the remaining browser/provider matrix remain open.
 
 Bounded HUM-FR-029 editor-safety evidence (2026-09-08): the React Flow neighborhood editor now routes relationship creation through the same explicit review and confirmation boundary as update and archive operations. A draft create stores only the authorized, capped neighborhood IDs and selected sensitivity/type; no create mutation is sent until `Confirm create` is activated. `tests/unit/graph-accessibility.test.tsx` and `tests/e2e/graph.spec.ts` cover the no-write-before-confirmation and successful confirmed create journey. Graph editing breadth, performance, and the remaining browser/provider matrix remain open.
 
@@ -471,6 +477,79 @@ Vercel/DNS/provider credentials, the complete browser matrix, or measured
 production performance evidence.
 
 ## Traceability rules
+
+### Consent-governed research Task 5 bounded UI checkpoint
+
+Person records now expose explicit-purpose consent checks through generated GraphQL.
+`/cases` provides membership-scoped case listing and paginated linked-resource
+timelines; switching cases clears old results before requesting new ones. Fact cards
+show sensitivity and review state alongside existing confidence, time and evidence.
+Graph edges show evidence-state color/text, editor dash patterns and inspector time
+intervals; the existing confirmation/versioned mutation adapter is unchanged.
+Focused component tests cover bounded denials, coverage invalidation, case-result
+clearing and independent synthetic competing claims. No acceptance row is closed:
+full privacy/hold/case administration UI, per-field coverage, graph source/case
+metadata, export previews, legacy backfill and hosted migration remain open.
+See `docs/operations/consent-governance.md` for verification limits.
+
+Task 5 follow-up: non-public fact values/provenance/temporal context are withheld in
+server-built profile and contradiction projections until request-bound field
+disclosure exists. Sensitive fact detail queries and selection controls are also
+withheld. A read-only Privacy Requests panel exposes person retention/hold metadata
+and authorized request lookup without asserting person association or processor
+completion. Fourteen focused tests pass; complete person-surface governance remains
+open, including overview/contacts/files and authenticated field-disclosure proof.
+
+### Consent-governed research Task 6 bounded analysis/import/export checkpoint
+
+The analysis fidelity follow-up replaces synthetic title-as-value and requested
+sensitivity metadata with a projection of the same authorized SQL search winners.
+It reads real relationship endpoints/state/review/dates, public fact context,
+visible source reliability, and active membership-scoped case links. Directed
+degree counts distinct relationship IDs; source comparisons separate subjects and
+count distinct cited sources, and missing values are not contradictions. Focused
+unit tests prove zero reliability bounds and these analysis rules, and compile the
+emitted SQL membership/provenance contract. Runtime PostgreSQL proof remains open.
+Facets apply to a maximum 100-hit sample, not workspace-wide aggregation; consent
+status is explicitly unsupported pending purpose-specific coverage semantics, and
+fact-to-source comparison joins and non-public fact disclosure remain open.
+
+Generated `researchAnalysis`, `previewImport`, and `previewExport` operations now
+provide bounded, workspace- and purpose-scoped analysis, CSV/JSON/document import
+previews, redaction-preserving export previews, provenance manifests, and expiring
+scope-bound commit tokens. Focused tests cover facet normalization, temporal/source
+analysis, duplicate/contradiction reporting, schema mapping, duplicate flagging,
+redaction, token expiry, and API-key scope/rate decisions. These previews do not
+write domain data, and descriptive graph metrics explicitly carry a no-adverse-
+inference methodology. No acceptance row is closed: durable import/export
+execution, database-backed facet aggregation, persisted bulk/break-glass audit
+controls, key/session integration, and live database/provider/object-storage/browser
+evidence remain open.
+
+The follow-up security review hardened this boundary without marking an acceptance
+row complete: import commit tokens no longer serialize signing/encryption material;
+export rows preserve their authorized sensitivity and field provenance; relationship
+source and target subjects plus fact field definitions are checked for purpose
+coverage; case exports require a linked case resource; and generated artifact
+downloads re-check state, expiry, case membership, legal holds and current coverage.
+Unapproved high-sensitivity commits fail closed, and non-public typed fact values are
+not exposed through unscoped full-text search. Governed export artifacts retain a
+durable writing/failed state, and the same idempotency-bound commit can replay the
+deterministic object-store write after a process crash or provider timeout;
+concurrent retries reconcile to one ready artifact. Automated stale-artifact
+reconciliation, reviewed approval records, retention cleanup, and live
+database/provider/browser acceptance remain required.
+
+### Consent-governed research Task 2 backend checkpoint
+
+The branch adds case membership and resource links, shared visibility narrowing,
+versioned evidence assertions with redacted audits, independent relationship
+assertion reviews, and confirmation-gated inferred-to-documented promotion.
+Generated GraphQL operations and migration 0033 are included. Supported
+assertion/link targets are person, fact, and relationship; other resource kinds
+remain outside this backend checkpoint. No acceptance row is closed: disposable
+PostgreSQL lifecycle and whole-product browser/runtime evidence are still required.
+See the Task 2 SDD report for local commands and explicitly skipped live tests.
 
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.

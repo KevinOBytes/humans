@@ -90,6 +90,7 @@ export type GraphExplorerProps = {
   relationshipTypesTruncated?: boolean;
   result: GraphResult;
   savedViewAdapter?: GraphSavedViewAdapter;
+  onRefresh?: () => void;
   workspaceIdentity: string;
 };
 
@@ -163,6 +164,7 @@ export function GraphExplorer({
   relationshipTypesTruncated = false,
   result: initialResult,
   savedViewAdapter,
+  onRefresh,
   workspaceIdentity,
 }: GraphExplorerProps) {
   const generationRef = useRef(0);
@@ -229,7 +231,12 @@ export function GraphExplorer({
     });
     setResult(initialResult);
     setFilter("");
-    setSelected(null);
+    setSelected((current) =>
+      current?.kind === "node" &&
+      initialResult.nodes.some((node) => node.id === current.id)
+        ? current
+        : null,
+    );
     setPathMode(false);
     setPath(null);
     setPathEndpoints([]);
@@ -321,6 +328,8 @@ export function GraphExplorer({
               {
                 input: {
                   expectedVersion,
+                  explicitConfirmed: true,
+                  governancePurpose: "research",
                   id: relationshipId,
                   sensitivity,
                 },
@@ -794,7 +803,7 @@ export function GraphExplorer({
           onClose={() => setEditorOpen(false)}
           onMutationComplete={() => {
             setEditorOpen(false);
-            window.location.reload();
+            onRefresh?.();
           }}
         />
       ) : null}

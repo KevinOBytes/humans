@@ -1,5 +1,17 @@
 # Product and interface design
 
+## Consent-governed research surfaces
+
+The person `Consent & Purpose` section requires an explicit purpose and operation,
+with optional field/case scope. Denials use bounded explanations; successful checks
+are explicitly request-specific. The case workspace shows membership-scoped cases
+and linked resources without substituting workspace-wide results. Fact cards keep
+competing claims independent and show sensitivity/review context. Graph asserted,
+corroborated, disputed, disproven, inferred and inactive states have distinct colors
+and textual labels; the focused editor also uses dash patterns. Missing graph
+source-count and case metadata are labelled unavailable, not zero or approved.
+Complete consent/privacy administration and export-preview UI remain future work.
+
 ## Product principles
 
 Humans presents research claims with their provenance and uncertainty. The interface must not silently collapse contradictory facts, imply certainty that the data does not support, or hide why a result is visible. Security state, processing state, and model/provider disclosure should be understandable without exposing secrets.

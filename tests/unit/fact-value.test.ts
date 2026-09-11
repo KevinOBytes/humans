@@ -82,4 +82,22 @@ describe("fact draft parsing", () => {
       }),
     ).toBe("Referenced file");
   });
+
+  it("renders GraphQL date scalars as calendar dates", () => {
+    expect(
+      factDisplayValue({
+        fileId: null,
+        text: null,
+        dateStart: "1815-12-10T00:00:00.000Z",
+        dateEnd: "1815-12-11T00:00:00.000Z",
+        decimal: null,
+        boolean: null,
+        timestamp: null,
+        json: null,
+        referencedPersonId: null,
+        placeId: null,
+        unit: null,
+      }),
+    ).toBe("1815-12-10 – 1815-12-11");
+  });
 });
