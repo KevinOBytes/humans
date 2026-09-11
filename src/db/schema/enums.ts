@@ -51,6 +51,37 @@ export const consentStatusEnum = pgEnum("consent_status", [
   "unknown",
 ]);
 
+export const lawfulBasisEnum = pgEnum("lawful_basis", [
+  "consent",
+  "contract",
+  "legal_obligation",
+  "vital_interests",
+  "public_task",
+  "legitimate_interests",
+]);
+
+export const withdrawalEffectEnum = pgEnum("withdrawal_effect", [
+  "stop_processing",
+  "restrict_processing",
+  "retain_under_hold",
+]);
+
+export const governanceScopeEnum = pgEnum("governance_scope", [
+  "read",
+  "restricted_read",
+  "write",
+  "export",
+  "ai_operation",
+]);
+
+export const approvalStateEnum = pgEnum("approval_state", [
+  "requested",
+  "approved",
+  "rejected",
+  "revoked",
+  "expired",
+]);
+
 export const personStatusEnum = pgEnum("person_status", [
   "active",
   "deceased",

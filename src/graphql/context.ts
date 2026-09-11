@@ -58,6 +58,7 @@ import {
   type AiAnalysisRuntime,
 } from "@/modules/ai/service";
 import { createWebhooksService } from "@/modules/webhooks/service";
+import { createGovernanceService } from "@/modules/governance/service";
 
 import { createGraphQLError } from "./errors";
 import {
@@ -385,6 +386,7 @@ function createServices(input: {
       searchIndexMaintenance: input.searchIndexMaintenance,
       workspaceId: input.context.workspaceId,
     }),
+    governance: createGovernanceService({ actor: input.context.actor, database: input.database, idempotencyHmacKey: input.aiRuntime.hmacKey, permissions: input.context.permissions, requestId: input.context.requestId, searchIndexMaintenance: input.searchIndexMaintenance, workspaceId: input.context.workspaceId }),
   };
 }
 

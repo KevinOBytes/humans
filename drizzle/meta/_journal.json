@@ -225,6 +225,13 @@
       "when": 1788918764083,
       "tag": "0031_person_web_research_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789101163699,
+      "tag": "0032_governance_consent_scope",
+      "breakpoints": true
     }
   ]
 }

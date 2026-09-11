@@ -6,6 +6,7 @@ export * from "./evidence";
 export * from "./facts";
 export * from "./files";
 export * from "./graph";
+export * from "./governance";
 export * from "./locations";
 export * from "./operations";
 export * from "./person-research";

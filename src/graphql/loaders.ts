@@ -40,6 +40,7 @@ import type { SettingsService } from "@/modules/settings/service";
 import type { LocationsService } from "@/modules/locations/service";
 import type { createAiAnalysisService } from "@/modules/ai/service";
 import type { createWebhooksService } from "@/modules/webhooks/service";
+import type { GovernanceService } from "@/modules/governance/service";
 
 export type SafeWorkspace = {
   id: string;
@@ -66,6 +67,7 @@ export type GraphQLServices = {
   locations: LocationsService;
   ai: ReturnType<typeof createAiAnalysisService>;
   webhooks: ReturnType<typeof createWebhooksService>;
+  governance: GovernanceService;
 };
 
 export type GraphQLLoaders = {

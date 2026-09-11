@@ -12,7 +12,12 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { consentStatusEnum, deletionRequestStateEnum } from "./enums";
+import {
+  consentStatusEnum,
+  deletionRequestStateEnum,
+  lawfulBasisEnum,
+  withdrawalEffectEnum,
+} from "./enums";
 import { evidenceItems } from "./evidence";
 import { files } from "./files";
 import { people } from "./people";
@@ -35,6 +40,15 @@ export const consentRecords = pgTable(
     effectiveFrom: domainTimestamp("effective_from").notNull(),
     effectiveUntil: domainTimestamp("effective_until"),
     evidenceId: uuid("evidence_id"),
+    noticeVersion: text("notice_version"),
+    collectionMethod: text("collection_method"),
+    lawfulBasis: lawfulBasisEnum("lawful_basis"),
+    lawfulBasisMetadata: jsonb("lawful_basis_metadata"),
+    withdrawalEffect: withdrawalEffectEnum("withdrawal_effect"),
+    withdrawnAt: domainTimestamp("withdrawn_at"),
+    withdrawnBy: text("withdrawn_by"),
+    reviewedAt: domainTimestamp("reviewed_at"),
+    reviewedBy: text("reviewed_by"),
     version: integer("version").default(1).notNull(),
     createdAt: domainTimestamp("created_at").defaultNow().notNull(),
     createdBy: text("created_by").notNull(),
@@ -66,6 +80,7 @@ export const consentRecords = pgTable(
       "consent_records_effective_interval_check",
       sql`${table.effectiveUntil} IS NULL OR ${table.effectiveUntil} >= ${table.effectiveFrom}`,
     ),
+    check("consent_records_version_check", sql`${table.version} > 0`),
   ],
 );
 

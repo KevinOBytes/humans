@@ -130,6 +130,15 @@ export type AuditEventFilterInput = {
 
 export type AuditOutcome = "FAILURE" | "SUCCESS";
 
+export type ConsentCoverageReason =
+  | "CASE_NOT_PERMITTED"
+  | "COVERED"
+  | "EXPIRED"
+  | "FIELD_NOT_PERMITTED"
+  | "LEGAL_HOLD"
+  | "MISSING_CONSENT"
+  | "WITHDRAWN";
+
 export type ConsentStatus =
   "DENIED" | "EXPIRED" | "GRANTED" | "UNKNOWN" | "WITHDRAWN";
 
@@ -525,6 +534,9 @@ export type GenerateIdentityCandidatesInput = {
   idempotencyKey?: string | null | undefined;
   limit?: number | null | undefined;
 };
+
+export type GovernanceScope =
+  "AI_OPERATION" | "EXPORT" | "READ" | "RESTRICTED_READ" | "WRITE";
 
 export type GraphAnalysisAlgorithm =
   "DEGREE" | "LOUVAIN_COMMUNITY" | "PAGERANK";
@@ -1735,6 +1747,104 @@ export type RetryWorkspaceImportMutation = {
       message: string;
       path: Array<string>;
     }> | null;
+  } | null;
+};
+
+export type ConsentCoverageQueryVariables = Exact<{
+  personId: string;
+  purpose: string;
+  scope: GovernanceScope;
+  fieldDefinitionId?: string | null | undefined;
+  caseReference?: string | null | undefined;
+}>;
+
+export type ConsentCoverageQuery = {
+  consentCoverage: {
+    allowed: boolean | null;
+    reason: ConsentCoverageReason | null;
+    consentRecordId: string | null;
+    policyId: string | null;
+  } | null;
+};
+
+export type AccessApprovalsQueryVariables = Exact<{
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type AccessApprovalsQuery = {
+  accessApprovals: {
+    nodes: Array<{
+      id: string | null;
+      state: string | null;
+      reason: string | null;
+      version: number | null;
+      createdAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type GovernanceCreateConsentRecordMutationVariables = Exact<{
+  input: CreateConsentInput;
+}>;
+
+export type GovernanceCreateConsentRecordMutation = {
+  createConsentRecord: {
+    id: string | null;
+    version: number | null;
+    code: string | null;
+    requestId: string | null;
+  };
+};
+
+export type WithdrawConsentMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+}>;
+
+export type WithdrawConsentMutation = {
+  withdrawConsent: {
+    id: string | null;
+    state: string | null;
+    reason: string | null;
+    version: number | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type RequestAccessApprovalMutationVariables = Exact<{
+  personId: string;
+  fieldDefinitionId: string;
+  purpose: string;
+  reason: string;
+  caseReference?: string | null | undefined;
+}>;
+
+export type RequestAccessApprovalMutation = {
+  requestAccessApproval: {
+    id: string | null;
+    state: string | null;
+    reason: string | null;
+    version: number | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type ReviewAccessApprovalMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  state: string;
+  reason: string;
+}>;
+
+export type ReviewAccessApprovalMutation = {
+  reviewAccessApproval: {
+    id: string | null;
+    state: string | null;
+    reason: string | null;
+    version: number | null;
+    createdAt: string | null;
   } | null;
 };
 
@@ -6006,6 +6116,141 @@ export const RetryWorkspaceImportDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   RetryWorkspaceImportMutation,
   RetryWorkspaceImportMutationVariables
+>;
+export const ConsentCoverageDocument = new TypedDocumentString(
+  `
+    query ConsentCoverage($personId: UUID!, $purpose: String!, $scope: GovernanceScope!, $fieldDefinitionId: UUID, $caseReference: String) {
+  consentCoverage(
+    personId: $personId
+    purpose: $purpose
+    scope: $scope
+    fieldDefinitionId: $fieldDefinitionId
+    caseReference: $caseReference
+  ) {
+    allowed
+    reason
+    consentRecordId
+    policyId
+  }
+}
+    `,
+  {
+    hash: "sha256:f37034d05cf483e1944a9b218b30f29475c967dea6aa4a7a69d5c579c50bb32d",
+  },
+) as unknown as TypedDocumentString<
+  ConsentCoverageQuery,
+  ConsentCoverageQueryVariables
+>;
+export const AccessApprovalsDocument = new TypedDocumentString(
+  `
+    query AccessApprovals($first: Int, $after: String) {
+  accessApprovals(first: $first, after: $after) {
+    nodes {
+      id
+      state
+      reason
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:2f7c1dee8f114c2fe18b7df0adbdc1d65500dd467752dd8a9e8d00b335149cf7",
+  },
+) as unknown as TypedDocumentString<
+  AccessApprovalsQuery,
+  AccessApprovalsQueryVariables
+>;
+export const GovernanceCreateConsentRecordDocument = new TypedDocumentString(
+  `
+    mutation GovernanceCreateConsentRecord($input: CreateConsentInput!) {
+  createConsentRecord(input: $input) {
+    id
+    version
+    code
+    requestId
+  }
+}
+    `,
+  {
+    hash: "sha256:df558651356ee6ceb4cfc01baa48aba1b55a01fca6d6290e9dd12cafb9a18da3",
+  },
+) as unknown as TypedDocumentString<
+  GovernanceCreateConsentRecordMutation,
+  GovernanceCreateConsentRecordMutationVariables
+>;
+export const WithdrawConsentDocument = new TypedDocumentString(
+  `
+    mutation WithdrawConsent($id: UUID!, $expectedVersion: Int!) {
+  withdrawConsent(id: $id, expectedVersion: $expectedVersion) {
+    id
+    state
+    reason
+    version
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:ec577013b01977afd31cf8ed962438c260b0b7aacd692b92fb7150965ceccc65",
+  },
+) as unknown as TypedDocumentString<
+  WithdrawConsentMutation,
+  WithdrawConsentMutationVariables
+>;
+export const RequestAccessApprovalDocument = new TypedDocumentString(
+  `
+    mutation RequestAccessApproval($personId: UUID!, $fieldDefinitionId: UUID!, $purpose: String!, $reason: String!, $caseReference: String) {
+  requestAccessApproval(
+    personId: $personId
+    fieldDefinitionId: $fieldDefinitionId
+    purpose: $purpose
+    reason: $reason
+    caseReference: $caseReference
+  ) {
+    id
+    state
+    reason
+    version
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:5e2275ff5c78d0f30985d55d4d4f42efae99da0e83a4d9202861880a93c5a992",
+  },
+) as unknown as TypedDocumentString<
+  RequestAccessApprovalMutation,
+  RequestAccessApprovalMutationVariables
+>;
+export const ReviewAccessApprovalDocument = new TypedDocumentString(
+  `
+    mutation ReviewAccessApproval($id: UUID!, $expectedVersion: Int!, $state: String!, $reason: String!) {
+  reviewAccessApproval(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    reason: $reason
+  ) {
+    id
+    state
+    reason
+    version
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:db22b3abe88366da845e8b2d59bf1ea495d2f5d6fca126cdea8ea7971c2e47ff",
+  },
+) as unknown as TypedDocumentString<
+  ReviewAccessApprovalMutation,
+  ReviewAccessApprovalMutationVariables
 >;
 export const GraphAnalysisRunsDocument = new TypedDocumentString(
   `
