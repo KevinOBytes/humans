@@ -80,12 +80,17 @@ function database() {
       }),
     }),
   };
+  let joined = false;
   const selectChain = {
     from: () => selectChain,
+    innerJoin: () => {
+      joined = true;
+      return selectChain;
+    },
     where: () => selectChain,
     limit: async () => {
-      const row = [...doubles.policies.values()][0];
-      return row ? [row] : [];
+      const row = [...doubles.policies.values()].at(-1);
+      return row ? (joined ? [{ approval: row }] : [row]) : [];
     },
   };
   return {
@@ -107,7 +112,7 @@ function service() {
     },
     database: database(),
     idempotencyHmacKey: "ab".repeat(32),
-    permissions: new Set(["workspace:update"]),
+    permissions: new Set(["workspace:update", "person:read"]),
     requestId: "request",
     searchIndexMaintenance: { apply: async () => undefined },
     workspaceId: "workspace",
@@ -151,5 +156,27 @@ describe("governance mutation idempotency", () => {
 
     expect(doubles.inserts).toBe(1);
     expect(doubles.auditWrites).toBe(1);
+  });
+
+  it("keeps a default approval expiry stable across delayed retries", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    const governance = service();
+    doubles.policies.set("visible-person", { id: "person" });
+    const approvalInput = {
+      idempotencyKey: "approval-key",
+      personId: "person",
+      fieldDefinitionId: "field",
+      purpose: "research",
+      reason: "Documented need",
+    } as const;
+
+    const first = await governance.requestApproval(approvalInput);
+    vi.setSystemTime(new Date("2026-01-01T00:05:00Z"));
+    const replayed = await governance.requestApproval(approvalInput);
+
+    expect(replayed.id).toBe(first.id);
+    expect(doubles.inserts).toBe(1);
+    vi.useRealTimers();
   });
 });

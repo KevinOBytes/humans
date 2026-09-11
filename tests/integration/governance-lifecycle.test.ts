@@ -373,7 +373,23 @@ liveDescribe(
         purpose: "research",
         reason: "Documented need",
       });
-      await governance.reviewApproval({
+      const reviewer = await fixture.createWorkspaceMember(actor, "admin");
+      const [reviewerSession] = await fixture.database
+        .select()
+        .from(sessions)
+        .where(eq(sessions.userId, reviewer.userId))
+        .limit(1);
+      await createGovernanceService({
+        ...context,
+        actor: {
+          type: "user",
+          id: reviewer.userId,
+          principalId: reviewer.principalId,
+          memberId: reviewer.memberId,
+          sessionId: reviewerSession!.id,
+          role: "admin",
+        },
+      }).reviewApproval({
         idempotencyKey: newId(),
         id: approval.id,
         expectedVersion: 1,
