@@ -38,6 +38,8 @@ export type RelationshipEditorMutationAdapter = {
     relationshipId: string;
   }) => Promise<boolean>;
   create?: (input: {
+    explicitConfirmed: boolean;
+    governancePurpose: string;
     relationshipTypeId: string;
     sensitivity: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
     sourcePersonId: string;
@@ -45,6 +47,8 @@ export type RelationshipEditorMutationAdapter = {
   }) => Promise<boolean>;
   update?: (input: {
     expectedVersion: number;
+    explicitConfirmed: boolean;
+    governancePurpose: string;
     relationshipId: string;
     sensitivity: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
   }) => Promise<boolean>;
@@ -242,6 +246,8 @@ export function RelationshipEditor({
     let saved: boolean | undefined;
     if (pendingChange.kind === "create") {
       saved = await mutationAdapter.create?.({
+        explicitConfirmed: true,
+        governancePurpose: "research",
         relationshipTypeId: pendingChange.relationshipTypeId,
         sensitivity: pendingChange.sensitivity,
         sourcePersonId: pendingChange.sourcePersonId,
@@ -265,6 +271,8 @@ export function RelationshipEditor({
             })
           : await mutationAdapter.update?.({
               expectedVersion,
+              explicitConfirmed: true,
+              governancePurpose: "research",
               relationshipId,
               sensitivity: pendingChange.sensitivity,
             });

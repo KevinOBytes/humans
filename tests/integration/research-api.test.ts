@@ -39,6 +39,33 @@ function required<T>(value: T | null | undefined): T {
   return value;
 }
 
+async function grantResearchCoverage(
+  fixture: ResearchFixture,
+  actor: Awaited<ReturnType<ResearchFixture["createActor"]>>,
+  personIds: readonly string[],
+) {
+  const governance = createGovernanceService(
+    await caseContext(fixture, actor),
+  );
+  await governance.createPurposePolicy({
+    idempotencyKey: newId(),
+    purpose: "research",
+    lawfulBases: ["consent"],
+    effectiveFrom: new Date(Date.now() - 60_000),
+    state: "active",
+  });
+  for (const personId of personIds) {
+    await governance.recordConsent({
+      idempotencyKey: newId(),
+      personId,
+      purpose: "research",
+      scopes: ["read", "write"],
+      lawfulBasis: "consent",
+      effectiveFrom: new Date(Date.now() - 60_000),
+    });
+  }
+}
+
 liveDescribe("research API", () => {
   let fixture: ResearchFixture;
 
@@ -1215,6 +1242,7 @@ liveDescribe("research API", () => {
     });
     const sourceId = required(source.body?.data?.createPerson?.person?.id);
     const targetId = required(target.body?.data?.createPerson?.person?.id);
+    await grantResearchCoverage(fixture, owner, [sourceId, targetId]);
     const type = await fixture.execute<{
       createRelationshipType: { relationshipType: { id: string } | null };
     }>({
@@ -1265,6 +1293,8 @@ liveDescribe("research API", () => {
         `,
         variables: {
           input: {
+            governancePurpose: "research",
+            explicitConfirmed: true,
             sourcePersonId: sourceId,
             targetPersonId: targetId,
             relationshipTypeId,
@@ -1327,7 +1357,14 @@ liveDescribe("research API", () => {
             }
           }
         `,
-        variables: { input: { id: relationshipId, ...input } },
+        variables: {
+          input: {
+            id: relationshipId,
+            governancePurpose: "research",
+            explicitConfirmed: true,
+            ...input,
+          },
+        },
       });
     const partial = await update({
       expectedVersion: 1,
@@ -2096,6 +2133,7 @@ liveDescribe("research API", () => {
     });
     const personAId = required(personA.body?.data?.createPerson?.person?.id);
     const personBId = required(personB.body?.data?.createPerson?.person?.id);
+    await grantResearchCoverage(fixture, owner, [personAId, personBId]);
     const definition = await fixture.execute<{
       createFactDefinition: { factDefinition: { id: string } | null };
     }>({
@@ -2264,6 +2302,8 @@ liveDescribe("research API", () => {
       `,
       variables: {
         input: {
+          governancePurpose: "research",
+          explicitConfirmed: true,
           sourcePersonId: personAId,
           targetPersonId: personBId,
           relationshipTypeId:
@@ -2301,7 +2341,13 @@ liveDescribe("research API", () => {
           }
         `,
         variables: {
-          input: { id: relationshipId, expectedVersion: 1, ...patch },
+          input: {
+            id: relationshipId,
+            expectedVersion: 1,
+            governancePurpose: "research",
+            explicitConfirmed: true,
+            ...patch,
+          },
         },
       });
     for (const patch of [
@@ -2356,6 +2402,7 @@ liveDescribe("research API", () => {
     const second = await fixture.createPerson(owner, { displayName: "Second" });
     const firstId = required(first.body?.data?.createPerson?.person?.id);
     const secondId = required(second.body?.data?.createPerson?.person?.id);
+    await grantResearchCoverage(fixture, owner, [firstId, secondId]);
     const createType = async (key: string, directed: boolean) =>
       fixture.execute<{
         createRelationshipType: { relationshipType: { id: string } | null };
@@ -2433,6 +2480,8 @@ liveDescribe("research API", () => {
         `,
         variables: {
           input: {
+            governancePurpose: "research",
+            explicitConfirmed: true,
             relationshipTypeId,
             sourcePersonId,
             targetPersonId,
@@ -3327,6 +3376,7 @@ liveDescribe("research API", () => {
     const ids = people.map((result) =>
       required(result.body?.data?.createPerson?.person?.id),
     );
+    await grantResearchCoverage(fixture, owner, ids);
     const type = await fixture.execute<{
       createRelationshipType: { relationshipType: { id: string } | null };
     }>({
@@ -3378,6 +3428,8 @@ liveDescribe("research API", () => {
         `,
         variables: {
           input: {
+            governancePurpose: "research",
+            explicitConfirmed: true,
             sourcePersonId: ids[0],
             targetPersonId,
             relationshipTypeId:
@@ -3413,6 +3465,7 @@ liveDescribe("research API", () => {
     });
     const sourceId = required(source.body?.data?.createPerson?.person?.id);
     const targetId = required(target.body?.data?.createPerson?.person?.id);
+    await grantResearchCoverage(fixture, owner, [sourceId, targetId]);
     const type = await fixture.execute<{
       createRelationshipType: { relationshipType: { id: string } | null };
     }>({
@@ -3457,6 +3510,8 @@ liveDescribe("research API", () => {
         `,
         variables: {
           input: {
+            governancePurpose: "research",
+            explicitConfirmed: true,
             sourcePersonId: sourceId,
             targetPersonId: targetId,
             relationshipTypeId,
@@ -3507,14 +3562,21 @@ liveDescribe("research API", () => {
     );
     const source = await fixture.createPerson(owner, {
       displayName: "Grant-race source",
-      sensitivity: "CONFIDENTIAL",
     });
     const target = await fixture.createPerson(owner, {
       displayName: "Grant-race target",
-      sensitivity: "CONFIDENTIAL",
     });
     const sourceId = required(source.body?.data?.createPerson?.person?.id);
     const targetId = required(target.body?.data?.createPerson?.person?.id);
+    await grantResearchCoverage(fixture, owner, [sourceId, targetId]);
+    await fixture.database
+      .update(people)
+      .set({ sensitivity: "confidential" })
+      .where(eq(people.id, sourceId));
+    await fixture.database
+      .update(people)
+      .set({ sensitivity: "confidential" })
+      .where(eq(people.id, targetId));
     const type = await fixture.execute<{
       createRelationshipType: { relationshipType: { id: string } | null };
     }>({
@@ -3583,6 +3645,8 @@ liveDescribe("research API", () => {
         `,
         variables: {
           input: {
+            governancePurpose: "research",
+            explicitConfirmed: true,
             sourcePersonId: sourceId,
             targetPersonId: targetId,
             relationshipTypeId,

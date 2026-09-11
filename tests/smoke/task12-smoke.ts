@@ -434,6 +434,8 @@ async function main() {
       }`,
       variables: {
         input: {
+          governancePurpose: "research",
+          explicitConfirmed: true,
           relationshipTypeId: relationshipType.id,
           sourcePersonId: firstPersonId,
           targetPersonId: secondPersonId,

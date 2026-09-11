@@ -748,6 +748,8 @@ describe("RelationshipEditor", () => {
     expect(mutationAdapter.create).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Confirm create" }));
     expect(mutationAdapter.create).toHaveBeenCalledWith({
+      explicitConfirmed: true,
+      governancePurpose: "research",
       relationshipTypeId: IDS.typeDirected,
       sensitivity: "INTERNAL",
       sourcePersonId: IDS.alice,
@@ -769,6 +771,8 @@ describe("RelationshipEditor", () => {
     await user.click(screen.getByRole("button", { name: "Confirm update" }));
     expect(mutationAdapter.update).toHaveBeenCalledWith({
       expectedVersion: 2,
+      explicitConfirmed: true,
+      governancePurpose: "research",
       relationshipId: IDS.directed,
       sensitivity: "CONFIDENTIAL",
     });

@@ -1481,6 +1481,8 @@ liveDescribe("research authorization", () => {
       `,
       variables: {
         input: {
+          governancePurpose: "research",
+          explicitConfirmed: true,
           sourcePersonId: subjectId,
           targetPersonId: targetId,
           relationshipTypeId:

@@ -416,8 +416,8 @@ export type CreateRelationshipInput = {
   caseId?: string | null | undefined;
   confidence?: number | null | undefined;
   creationMethod?: string | null | undefined;
-  explicitConfirmed?: boolean | null | undefined;
-  governancePurpose?: string | null | undefined;
+  explicitConfirmed: boolean;
+  governancePurpose: string;
   idempotencyKey?: string | null | undefined;
   labelOverride?: string | null | undefined;
   metadata?: unknown;
@@ -1222,8 +1222,8 @@ export type UpdateRelationshipInput = {
   creationMethod?: string | null | undefined;
   evidenceAssertionId?: string | null | undefined;
   expectedVersion: number;
-  explicitConfirmed?: boolean | null | undefined;
-  governancePurpose?: string | null | undefined;
+  explicitConfirmed: boolean;
+  governancePurpose: string;
   id: string;
   idempotencyKey?: string | null | undefined;
   labelOverride?: string | null | undefined;

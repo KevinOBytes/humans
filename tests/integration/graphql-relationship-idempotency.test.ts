@@ -2,6 +2,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
+import { newId } from "@/db/id";
 
 import {
   ArchiveRelationshipDocument,
@@ -12,8 +13,10 @@ import {
 import { auditEvents } from "@/db/schema/operations";
 import { locationMutationIdempotency } from "@/db/schema/locations";
 import { relationships } from "@/db/schema/relationships";
+import { createGovernanceService } from "@/modules/governance/service";
 
 import { expectGraphQLError, type SessionActor } from "../support/graphql";
+import { caseContext } from "../support/cases";
 import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -45,6 +48,26 @@ liveDescribe("relationship edge mutation idempotency", () => {
       target.body?.data?.createPerson?.person?.id,
       "target person",
     );
+    const governance = createGovernanceService(
+      await caseContext(fixture, actor),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    for (const personId of [sourceId, targetId]) {
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId,
+        purpose: "research",
+        scopes: ["read", "write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+    }
     const type = await fixture.execute<{
       createRelationshipType: { relationshipType: { id: string } | null };
     }>({
@@ -77,6 +100,8 @@ liveDescribe("relationship edge mutation idempotency", () => {
     const foreignSetup = await relationshipSetup(foreign, "Foreign Edge");
     const input = {
       idempotencyKey: "relationship-create-replay-v1",
+      governancePurpose: "research",
+      explicitConfirmed: true,
       sourcePersonId: ownerSetup.sourceId,
       targetPersonId: ownerSetup.targetId,
       relationshipTypeId: ownerSetup.relationshipTypeId,
@@ -188,6 +213,8 @@ liveDescribe("relationship edge mutation idempotency", () => {
       query: CreateRelationshipDocument,
       variables: {
         input: {
+          governancePurpose: "research",
+          explicitConfirmed: true,
           sourcePersonId: setup.sourceId,
           targetPersonId: setup.targetId,
           relationshipTypeId: setup.relationshipTypeId,
@@ -202,6 +229,8 @@ liveDescribe("relationship edge mutation idempotency", () => {
     const updateInput = {
       id: relationship.id,
       expectedVersion: relationship.version,
+      governancePurpose: "research",
+      explicitConfirmed: true,
       idempotencyKey: "relationship-update-replay-v1",
       labelOverride: "updated label",
       strength: 0.7,
@@ -242,6 +271,8 @@ liveDescribe("relationship edge mutation idempotency", () => {
     const omittedLabelInput = {
       id: relationship.id,
       expectedVersion: updatedRelationship.version,
+      governancePurpose: "research",
+      explicitConfirmed: true,
       idempotencyKey: "relationship-update-presence-v1",
       strength: 0.8,
     };

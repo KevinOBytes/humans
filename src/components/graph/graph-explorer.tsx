@@ -321,6 +321,8 @@ export function GraphExplorer({
               {
                 input: {
                   expectedVersion,
+                  explicitConfirmed: true,
+                  governancePurpose: "research",
                   id: relationshipId,
                   sensitivity,
                 },

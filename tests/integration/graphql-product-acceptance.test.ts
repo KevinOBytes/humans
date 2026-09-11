@@ -797,6 +797,8 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
         query: CreateRelationshipDocument,
         variables: {
           input: {
+            governancePurpose: "research",
+            explicitConfirmed: true,
             relationshipTypeId: relationshipType.relationshipType.id,
             sourcePersonId: firstPerson.person.id,
             targetPersonId: secondPerson.person.id,
