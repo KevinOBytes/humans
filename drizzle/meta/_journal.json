@@ -246,6 +246,13 @@
       "when": 1789107269607,
       "tag": "0034_ai_review_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1789108710480,
+      "tag": "0035_privacy_retention_controls",
+      "breakpoints": true
     }
   ]
 }

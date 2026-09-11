@@ -43,6 +43,30 @@ export const legalHoldStateEnum = pgEnum("legal_hold_state", [
   "released",
 ]);
 
+export const privacyRequestTypeEnum = pgEnum("privacy_request_type", [
+  "access",
+  "correction",
+  "export",
+  "restriction",
+  "consent_withdrawal",
+  "deletion",
+]);
+export const privacyRequestStateEnum = pgEnum("privacy_request_state", [
+  "requested",
+  "reviewing",
+  "approved",
+  "rejected",
+  "fulfilling",
+  "completed",
+  "cancelled",
+]);
+export const privacyPropagationStateEnum = pgEnum("privacy_propagation_state", [
+  "pending",
+  "succeeded",
+  "failed",
+  "not_applicable",
+]);
+
 export const consentStatusEnum = pgEnum("consent_status", [
   "granted",
   "denied",

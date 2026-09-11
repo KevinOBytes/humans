@@ -74,6 +74,12 @@ export type GraphQLServices = {
   webhooks: ReturnType<typeof createWebhooksService>;
   governance: GovernanceService;
   cases: CasesService;
+  privacy: ReturnType<
+    typeof import("@/modules/privacy/request-service").createPrivacyRequestService
+  >;
+  retention: ReturnType<
+    typeof import("@/modules/privacy/retention-service").createRetentionService
+  >;
   evidenceAssertions: EvidenceAssertionsService;
 };
 

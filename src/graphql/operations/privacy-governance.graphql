@@ -1,0 +1,125 @@
+fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}
+query PrivacyRequests($first: Int, $afterId: UUID) {
+  privacyRequests(first: $first, afterId: $afterId) {
+    nodes {
+      ...PrivacyRequestFields
+    }
+    endId
+    hasMore
+  }
+}
+query PrivacyRequest($id: UUID!) {
+  privacyRequest(id: $id) {
+    ...PrivacyRequestFields
+  }
+  privacyProcessorPropagations(requestId: $id) {
+    id
+    processor
+    state
+    attempts
+    resultCode
+    auditReference
+  }
+}
+mutation CreatePrivacyRequest($input: CreatePrivacyRequestInput!) {
+  createPrivacyRequest(input: $input) {
+    ...PrivacyRequestFields
+  }
+}
+mutation ReviewPrivacyRequest(
+  $id: UUID!
+  $expectedVersion: Int!
+  $state: PrivacyReviewState!
+  $verificationEvidenceId: UUID
+) {
+  reviewPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    verificationEvidenceId: $verificationEvidenceId
+  ) {
+    ...PrivacyRequestFields
+  }
+}
+mutation FulfillPrivacyRequest(
+  $id: UUID!
+  $expectedVersion: Int!
+  $completionEvidenceId: UUID
+) {
+  fulfillPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    completionEvidenceId: $completionEvidenceId
+  ) {
+    ...PrivacyRequestFields
+  }
+}
+mutation CancelPrivacyRequest($id: UUID!, $expectedVersion: Int!) {
+  cancelPrivacyRequest(id: $id, expectedVersion: $expectedVersion) {
+    ...PrivacyRequestFields
+  }
+}
+query PrivacyRetention(
+  $resourceKind: PrivacyResourceKind!
+  $resourceId: UUID!
+  $first: Int
+) {
+  retentionDecision(resourceKind: $resourceKind, resourceId: $resourceId) {
+    state
+    policyId
+    reason
+  }
+  privacyLegalHolds(
+    resourceKind: $resourceKind
+    resourceId: $resourceId
+    first: $first
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}
+mutation CreatePrivacyLegalHold(
+  $resourceKind: PrivacyResourceKind!
+  $resourceId: UUID!
+  $reason: String!
+  $authority: String!
+) {
+  createPrivacyLegalHold(
+    resourceKind: $resourceKind
+    resourceId: $resourceId
+    reason: $reason
+    authority: $authority
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}
+mutation ReleasePrivacyLegalHold(
+  $id: UUID!
+  $expectedVersion: Int!
+  $reason: String!
+) {
+  releasePrivacyLegalHold(
+    id: $id
+    expectedVersion: $expectedVersion
+    reason: $reason
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}

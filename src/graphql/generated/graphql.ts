@@ -401,6 +401,17 @@ export type CreatePlaceInput = {
   sensitivity?: Sensitivity | null | undefined;
 };
 
+export type CreatePrivacyRequestInput = {
+  caseId?: string | null | undefined;
+  dueAt: string;
+  executeAfter?: string | null | undefined;
+  fileIds?: Array<string> | null | undefined;
+  idempotencyKey: string;
+  personIds?: Array<string> | null | undefined;
+  purpose?: string | null | undefined;
+  requestType: PrivacyRequestType;
+};
+
 export type CreateRelationshipInput = {
   caseId?: string | null | undefined;
   confidence?: number | null | undefined;
@@ -784,6 +795,18 @@ export type PrepareImportInput = {
   mappingId: string;
   mode?: ImportMode | null | undefined;
 };
+
+export type PrivacyRequestType =
+  | "ACCESS"
+  | "CONSENT_WITHDRAWAL"
+  | "CORRECTION"
+  | "DELETION"
+  | "EXPORT"
+  | "RESTRICTION";
+
+export type PrivacyResourceKind = "FILE" | "PERSON";
+
+export type PrivacyReviewState = "APPROVED" | "REJECTED" | "REVIEWING";
 
 export type ProtectedSearchKind = "PERSON_IDENTIFIER" | "PHONE";
 
@@ -3045,6 +3068,159 @@ export type ArchivePersonAddressMutation = {
       };
     }>;
   };
+};
+
+export type PrivacyRequestFieldsFragment = {
+  id: string | null;
+  requestType: PrivacyRequestType | null;
+  state: string | null;
+  version: number | null;
+  dueAt: string | null;
+  executeAfter: string | null;
+  completedAt: string | null;
+  auditReference: string | null;
+} & { " $fragmentName"?: "PrivacyRequestFieldsFragment" };
+
+export type PrivacyRequestsQueryVariables = Exact<{
+  first?: number | null | undefined;
+  afterId?: string | null | undefined;
+}>;
+
+export type PrivacyRequestsQuery = {
+  privacyRequests: {
+    endId: string | null;
+    hasMore: boolean | null;
+    nodes: Array<{
+      " $fragmentRefs"?: {
+        PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+      };
+    }> | null;
+  } | null;
+};
+
+export type PrivacyRequestQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type PrivacyRequestQuery = {
+  privacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+  privacyProcessorPropagations: Array<{
+    id: string | null;
+    processor: string | null;
+    state: string | null;
+    attempts: number | null;
+    resultCode: string | null;
+    auditReference: string | null;
+  }> | null;
+};
+
+export type CreatePrivacyRequestMutationVariables = Exact<{
+  input: CreatePrivacyRequestInput;
+}>;
+
+export type CreatePrivacyRequestMutation = {
+  createPrivacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+};
+
+export type ReviewPrivacyRequestMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  state: PrivacyReviewState;
+  verificationEvidenceId?: string | null | undefined;
+}>;
+
+export type ReviewPrivacyRequestMutation = {
+  reviewPrivacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+};
+
+export type FulfillPrivacyRequestMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  completionEvidenceId?: string | null | undefined;
+}>;
+
+export type FulfillPrivacyRequestMutation = {
+  fulfillPrivacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+};
+
+export type CancelPrivacyRequestMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+}>;
+
+export type CancelPrivacyRequestMutation = {
+  cancelPrivacyRequest: {
+    " $fragmentRefs"?: {
+      PrivacyRequestFieldsFragment: PrivacyRequestFieldsFragment;
+    };
+  } | null;
+};
+
+export type PrivacyRetentionQueryVariables = Exact<{
+  resourceKind: PrivacyResourceKind;
+  resourceId: string;
+  first?: number | null | undefined;
+}>;
+
+export type PrivacyRetentionQuery = {
+  retentionDecision: {
+    state: string | null;
+    policyId: string | null;
+    reason: string | null;
+  } | null;
+  privacyLegalHolds: Array<{
+    id: string | null;
+    state: string | null;
+    version: number | null;
+    auditReference: string | null;
+  }> | null;
+};
+
+export type CreatePrivacyLegalHoldMutationVariables = Exact<{
+  resourceKind: PrivacyResourceKind;
+  resourceId: string;
+  reason: string;
+  authority: string;
+}>;
+
+export type CreatePrivacyLegalHoldMutation = {
+  createPrivacyLegalHold: {
+    id: string | null;
+    state: string | null;
+    version: number | null;
+    auditReference: string | null;
+  } | null;
+};
+
+export type ReleasePrivacyLegalHoldMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  reason: string;
+}>;
+
+export type ReleasePrivacyLegalHoldMutation = {
+  releasePrivacyLegalHold: {
+    id: string | null;
+    state: string | null;
+    version: number | null;
+    auditReference: string | null;
+  } | null;
 };
 
 export type UpsertRetentionPolicyMutationVariables = Exact<{
@@ -5405,6 +5581,21 @@ export const LocationMutationOutcomeFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "LocationMutationOutcome" },
 ) as unknown as TypedDocumentString<LocationMutationOutcomeFragment, unknown>;
+export const PrivacyRequestFieldsFragmentDoc = new TypedDocumentString(
+  `
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}
+    `,
+  { fragmentName: "PrivacyRequestFields" },
+) as unknown as TypedDocumentString<PrivacyRequestFieldsFragment, unknown>;
 export const PersonSummaryFragmentDoc = new TypedDocumentString(
   `
     fragment PersonSummary on Person {
@@ -8185,6 +8376,243 @@ export const ArchivePersonAddressDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ArchivePersonAddressMutation,
   ArchivePersonAddressMutationVariables
+>;
+export const PrivacyRequestsDocument = new TypedDocumentString(
+  `
+    query PrivacyRequests($first: Int, $afterId: UUID) {
+  privacyRequests(first: $first, afterId: $afterId) {
+    nodes {
+      ...PrivacyRequestFields
+    }
+    endId
+    hasMore
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:c797f2c29c06126386afa982ef9a00ba741252e7635d9c6d26af1180ff867c93",
+  },
+) as unknown as TypedDocumentString<
+  PrivacyRequestsQuery,
+  PrivacyRequestsQueryVariables
+>;
+export const PrivacyRequestDocument = new TypedDocumentString(
+  `
+    query PrivacyRequest($id: UUID!) {
+  privacyRequest(id: $id) {
+    ...PrivacyRequestFields
+  }
+  privacyProcessorPropagations(requestId: $id) {
+    id
+    processor
+    state
+    attempts
+    resultCode
+    auditReference
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:82edc373c7c16e8213ba3a2a27f937ce6d979e643e8cff74d9a308bea8edcd22",
+  },
+) as unknown as TypedDocumentString<
+  PrivacyRequestQuery,
+  PrivacyRequestQueryVariables
+>;
+export const CreatePrivacyRequestDocument = new TypedDocumentString(
+  `
+    mutation CreatePrivacyRequest($input: CreatePrivacyRequestInput!) {
+  createPrivacyRequest(input: $input) {
+    ...PrivacyRequestFields
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:4e377e30fe9a948626bd16b5b6c35fa7475e68136d36206cdf4e100de7d10f30",
+  },
+) as unknown as TypedDocumentString<
+  CreatePrivacyRequestMutation,
+  CreatePrivacyRequestMutationVariables
+>;
+export const ReviewPrivacyRequestDocument = new TypedDocumentString(
+  `
+    mutation ReviewPrivacyRequest($id: UUID!, $expectedVersion: Int!, $state: PrivacyReviewState!, $verificationEvidenceId: UUID) {
+  reviewPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    verificationEvidenceId: $verificationEvidenceId
+  ) {
+    ...PrivacyRequestFields
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:880f5accdcadbdd35f48c9f539b59dad54c12c6c1918b2c2e2dea4bd5594f42d",
+  },
+) as unknown as TypedDocumentString<
+  ReviewPrivacyRequestMutation,
+  ReviewPrivacyRequestMutationVariables
+>;
+export const FulfillPrivacyRequestDocument = new TypedDocumentString(
+  `
+    mutation FulfillPrivacyRequest($id: UUID!, $expectedVersion: Int!, $completionEvidenceId: UUID) {
+  fulfillPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    completionEvidenceId: $completionEvidenceId
+  ) {
+    ...PrivacyRequestFields
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:4cadf1242130f5bcf8c8aa5bf2b8b3becf72afb6ed73fd1ea97496f3047e3be6",
+  },
+) as unknown as TypedDocumentString<
+  FulfillPrivacyRequestMutation,
+  FulfillPrivacyRequestMutationVariables
+>;
+export const CancelPrivacyRequestDocument = new TypedDocumentString(
+  `
+    mutation CancelPrivacyRequest($id: UUID!, $expectedVersion: Int!) {
+  cancelPrivacyRequest(id: $id, expectedVersion: $expectedVersion) {
+    ...PrivacyRequestFields
+  }
+}
+    fragment PrivacyRequestFields on PrivacyRequest {
+  id
+  requestType
+  state
+  version
+  dueAt
+  executeAfter
+  completedAt
+  auditReference
+}`,
+  {
+    hash: "sha256:0227e11fa725e90d8df8b5de070d3cca8336fad4c9d4551daf475ed8656203b3",
+  },
+) as unknown as TypedDocumentString<
+  CancelPrivacyRequestMutation,
+  CancelPrivacyRequestMutationVariables
+>;
+export const PrivacyRetentionDocument = new TypedDocumentString(
+  `
+    query PrivacyRetention($resourceKind: PrivacyResourceKind!, $resourceId: UUID!, $first: Int) {
+  retentionDecision(resourceKind: $resourceKind, resourceId: $resourceId) {
+    state
+    policyId
+    reason
+  }
+  privacyLegalHolds(
+    resourceKind: $resourceKind
+    resourceId: $resourceId
+    first: $first
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:1381bdb8706259c5c2647addca6da0ce77bd44e250885a608cf21e3cbcdf4d01",
+  },
+) as unknown as TypedDocumentString<
+  PrivacyRetentionQuery,
+  PrivacyRetentionQueryVariables
+>;
+export const CreatePrivacyLegalHoldDocument = new TypedDocumentString(
+  `
+    mutation CreatePrivacyLegalHold($resourceKind: PrivacyResourceKind!, $resourceId: UUID!, $reason: String!, $authority: String!) {
+  createPrivacyLegalHold(
+    resourceKind: $resourceKind
+    resourceId: $resourceId
+    reason: $reason
+    authority: $authority
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:79538a1fe39134d503cfff950bfc90d2336afc080620928d408feb47ada0efbb",
+  },
+) as unknown as TypedDocumentString<
+  CreatePrivacyLegalHoldMutation,
+  CreatePrivacyLegalHoldMutationVariables
+>;
+export const ReleasePrivacyLegalHoldDocument = new TypedDocumentString(
+  `
+    mutation ReleasePrivacyLegalHold($id: UUID!, $expectedVersion: Int!, $reason: String!) {
+  releasePrivacyLegalHold(
+    id: $id
+    expectedVersion: $expectedVersion
+    reason: $reason
+  ) {
+    id
+    state
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:1c49b5bc51f8b7f797632fdfc098a19121f0e05ec820b53b721eb58a76b4ce3a",
+  },
+) as unknown as TypedDocumentString<
+  ReleasePrivacyLegalHoldMutation,
+  ReleasePrivacyLegalHoldMutationVariables
 >;
 export const UpsertRetentionPolicyDocument = new TypedDocumentString(
   `

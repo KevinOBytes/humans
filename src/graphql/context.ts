@@ -60,6 +60,8 @@ import {
 import { createWebhooksService } from "@/modules/webhooks/service";
 import { createGovernanceService } from "@/modules/governance/service";
 import { createCasesService } from "@/modules/cases/service";
+import { createPrivacyRequestService } from "@/modules/privacy/request-service";
+import { createRetentionService } from "@/modules/privacy/retention-service";
 import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
 import {
   createAiReviewService,
@@ -483,6 +485,17 @@ function createServices(input: {
       requestId: input.context.requestId,
       searchIndexMaintenance: input.searchIndexMaintenance,
       workspaceId: input.context.workspaceId,
+    }),
+    privacy: createPrivacyRequestService({
+      ...input.context,
+      database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+    }),
+    retention: createRetentionService({
+      ...input.context,
+      database: input.database,
+      searchIndexMaintenance: input.searchIndexMaintenance,
     }),
     evidenceAssertions: createEvidenceAssertionsService({
       actor: input.context.actor,
