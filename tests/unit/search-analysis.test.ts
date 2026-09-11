@@ -196,6 +196,23 @@ describe("governed research analysis", () => {
     ).toEqual(["open"]);
   });
 
+  it("retains intervals with an open start when filtering earlier dates", () => {
+    expect(
+      filterResearchRows(
+        [
+          {
+            id: "open-start",
+            workspaceId,
+            validUntil: "2030-01-01T00:00:00Z",
+            observedAt: "2025-01-01T00:00:00Z",
+          },
+        ],
+        { workspaceId, purpose: "review" },
+        { temporalRange: { until: "2022-01-01T00:00:00Z" } },
+      ).map((row) => row.id),
+    ).toEqual(["open-start"]);
+  });
+
   it("never compares unrelated subjects or treats missing values as contradictions", () => {
     const result = analyzeResearch({
       kind: "CONTRADICTIONS",

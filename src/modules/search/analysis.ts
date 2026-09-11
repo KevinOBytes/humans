@@ -209,7 +209,12 @@ export function filterResearchRows(
         normalized.relationshipState.includes(row.relationshipState ?? ""),
     )
     .filter((row) => {
-      const start = timestamp(row.validFrom ?? row.observedAt);
+      const start =
+        row.validFrom != null
+          ? timestamp(row.validFrom)
+          : row.validUntil != null
+            ? Number.NEGATIVE_INFINITY
+            : timestamp(row.observedAt);
       const end =
         row.validUntil != null
           ? timestamp(row.validUntil)
