@@ -498,6 +498,20 @@ and authorized request lookup without asserting person association or processor
 completion. Fourteen focused tests pass; complete person-surface governance remains
 open, including overview/contacts/files and authenticated field-disclosure proof.
 
+### Consent-governed research Task 6 bounded analysis/import/export checkpoint
+
+Generated `researchAnalysis`, `previewImport`, and `previewExport` operations now
+provide bounded, workspace- and purpose-scoped analysis, CSV/JSON/document import
+previews, redaction-preserving export previews, provenance manifests, and expiring
+scope-bound commit tokens. Focused tests cover facet normalization, temporal/source
+analysis, duplicate/contradiction reporting, schema mapping, duplicate flagging,
+redaction, token expiry, and API-key scope/rate decisions. These previews do not
+write domain data, and descriptive graph metrics explicitly carry a no-adverse-
+inference methodology. No acceptance row is closed: durable import/export
+execution, database-backed facet aggregation, persisted bulk/break-glass audit
+controls, key/session integration, and live database/provider/object-storage/browser
+evidence remain open.
+
 ### Consent-governed research Task 2 backend checkpoint
 
 The branch adds case membership and resource links, shared visibility narrowing,

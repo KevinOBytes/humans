@@ -1,5 +1,17 @@
 # MVP closure and production hardening backlog
 
+Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
+source-comparison, duplicate, contradiction and descriptive graph analysis now
+apply workspace, purpose, sensitivity, consent, temporal, reliability, review and
+relationship facets with redaction explanations. CSV/JSON/document import previews
+validate mappings, flag duplicates without merging, preserve provenance defaults and
+issue expiring scope-bound commit tokens. Export previews redact by sensitivity and
+preserve provenance manifests. API-key scope, tenant, expiry, revocation and rate
+decisions are covered by focused tests. No requirement row is closed: durable
+import/export execution, database-backed facet aggregation, bulk/break-glass audit
+records, key last-used/rotation/session integration, and live provider/database/
+object-storage/browser evidence remain open.
+
 Task 5 follow-up: non-public fact values/provenance/temporal context and selection
 actions are withheld until request-bound field disclosure is implemented. The new
 read-only Privacy Requests panel shows person retention/hold metadata and authorized
