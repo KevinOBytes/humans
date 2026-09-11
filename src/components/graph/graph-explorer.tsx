@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   CircleDot,
@@ -91,6 +90,7 @@ export type GraphExplorerProps = {
   relationshipTypesTruncated?: boolean;
   result: GraphResult;
   savedViewAdapter?: GraphSavedViewAdapter;
+  onRefresh?: () => void;
   workspaceIdentity: string;
 };
 
@@ -164,9 +164,9 @@ export function GraphExplorer({
   relationshipTypesTruncated = false,
   result: initialResult,
   savedViewAdapter,
+  onRefresh,
   workspaceIdentity,
 }: GraphExplorerProps) {
-  const router = useRouter();
   const generationRef = useRef(0);
   const effectiveSavedViewAdapter = useMemo(
     () =>
@@ -803,7 +803,7 @@ export function GraphExplorer({
           onClose={() => setEditorOpen(false)}
           onMutationComplete={() => {
             setEditorOpen(false);
-            router.refresh();
+            onRefresh?.();
           }}
         />
       ) : null}
