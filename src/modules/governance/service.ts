@@ -287,6 +287,12 @@ export function createGovernanceService(context: ResearchServiceContext) {
       caseReference?: string | null;
       expiresAt?: Date | null;
     }) {
+      if (!context.permissions.has("person:read")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "This operation is not permitted.",
+        );
+      }
       const reason = validateApprovalReason(input.reason);
       if (!reason.value)
         throw createGraphQLError(

@@ -101,8 +101,10 @@ export function registerGovernanceGraphQL() {
         fieldDefinitionId: t.arg({ type: "UUID" }),
         caseReference: t.arg.string(),
       },
-      resolve: (_root, args, context) =>
-        context.services.governance.getCoverage(args),
+      resolve: (_root, args, context) => {
+        requirePermission(context, "person", "read");
+        return context.services.governance.getCoverage(args);
+      },
     }),
     accessApprovals: t.field({
       type: ApprovalConnection,
@@ -136,8 +138,10 @@ export function registerGovernanceGraphQL() {
         reason: t.arg.string({ required: true }),
         caseReference: t.arg.string(),
       },
-      resolve: async (_root, args, context) =>
-        context.services.governance.requestApproval(args) as never,
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "read");
+        return context.services.governance.requestApproval(args) as never;
+      },
     }),
     reviewAccessApproval: t.field({
       type: Approval,
