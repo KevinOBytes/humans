@@ -498,6 +498,26 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   }
 
   const personId = personUrl.split("/").at(-1)!;
+  const relationshipGovernance = createGovernanceService(
+    await caseContext(fixture, owner),
+  );
+  await relationshipGovernance.createPurposePolicy({
+    idempotencyKey: newId(),
+    purpose: "research",
+    lawfulBases: ["consent"],
+    effectiveFrom: new Date(Date.now() - 60_000),
+    state: "active",
+  });
+  for (const governedPersonId of [personId, relatedPersonId!]) {
+    await relationshipGovernance.recordConsent({
+      idempotencyKey: newId(),
+      personId: governedPersonId,
+      purpose: "research",
+      scopes: ["read", "write"],
+      lawfulBasis: "consent",
+      effectiveFrom: new Date(Date.now() - 60_000),
+    });
+  }
   await fixture.database.insert(personNames).values([
     {
       id: newId(),
@@ -654,6 +674,9 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await page
     .getByLabel("Related person", { exact: true })
     .selectOption({ label: "Grace Collaborator" });
+  await page
+    .getByRole("checkbox", { name: /permitted research purpose/i })
+    .check();
   await page.getByRole("button", { name: "Add relationship" }).click();
   await expect(
     page.getByRole("region", { name: "Relationships" }).getByText("Knows", {
