@@ -1,6 +1,16 @@
 "use client";
 
-import type { ImportPreview } from "@/modules/imports/preview";
+type ImportPreview = Readonly<{
+  purpose: string;
+  caseId: string | null;
+  expiresAt: string;
+  issues: readonly Readonly<{ code: string; message: string }>[];
+  rows: readonly Readonly<{
+    rowNumber: number;
+    externalKey: string | null;
+    issues: readonly Readonly<{ code: string; message: string }>[];
+  }>[];
+}>;
 
 export function ImportPreviewPanel({
   preview,
