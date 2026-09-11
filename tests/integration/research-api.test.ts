@@ -407,7 +407,7 @@ liveDescribe("research API", () => {
     const governance = createGovernanceService(
       await caseContext(fixture, owner),
     );
-    await governance.createPurposePolicy({
+    const policy = await governance.createPurposePolicy({
       idempotencyKey: newId(),
       purpose: "research",
       lawfulBases: ["consent"],
@@ -440,6 +440,13 @@ liveDescribe("research API", () => {
     const definitionId = required(
       definition.body?.data?.createFactDefinition.factDefinition?.id,
     );
+    await governance.setFieldPolicy({
+      idempotencyKey: newId(),
+      purposePolicyId: policy.id,
+      fieldDefinitionId: definitionId,
+      permittedScopes: ["read", "write"],
+      sensitivityCeiling: "restricted",
+    });
     const createdFact = await fixture.execute<{
       createFact: { fact: { id: string } | null };
     }>({

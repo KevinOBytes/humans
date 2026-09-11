@@ -2750,12 +2750,19 @@ liveDescribe("research authorization", () => {
     const governance = createGovernanceService(
       await caseContext(fixture, owner),
     );
-    await governance.createPurposePolicy({
+    const policy = await governance.createPurposePolicy({
       idempotencyKey: newId(),
       purpose: "research",
       lawfulBases: ["consent"],
       effectiveFrom: new Date(Date.now() - 60_000),
       state: "active",
+    });
+    await governance.setFieldPolicy({
+      idempotencyKey: newId(),
+      purposePolicyId: policy.id,
+      fieldDefinitionId: definitionId,
+      permittedScopes: ["read", "write"],
+      sensitivityCeiling: "confidential",
     });
     await governance.recordConsent({
       idempotencyKey: newId(),
