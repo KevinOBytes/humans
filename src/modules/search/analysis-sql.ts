@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { caseMembers, caseResourceLinks, cases } from "@/db/schema/cases";
 import { evidenceItems, sources } from "@/db/schema/evidence";
 import { facts } from "@/db/schema/facts";
-import { relationships } from "@/db/schema/relationships";
+import { relationships, relationshipTypes } from "@/db/schema/relationships";
 import {
   resourceVisibilitySql,
   type ResearchServiceContext,
@@ -65,7 +65,10 @@ export function researchAnalysisMetadataSql(
         'value', CASE WHEN ${facts.encryptedValue} IS NULL THEN
           COALESCE(to_jsonb(${facts.valueText}), to_jsonb(${facts.valueDecimal}),
             to_jsonb(${facts.valueBoolean}), to_jsonb(${facts.valueTimestamp}),
-            to_jsonb(${facts.valueDateStart}), ${facts.valueJson})
+            CASE WHEN ${facts.valueDateEnd} IS NOT NULL
+              THEN jsonb_build_object('start', ${facts.valueDateStart}, 'end', ${facts.valueDateEnd})
+              ELSE to_jsonb(${facts.valueDateStart}) END,
+            ${facts.valueJson})
           ELSE NULL END
       ) FROM ${facts}
       WHERE ${facts.workspaceId} = winning.workspace_id
@@ -77,12 +80,16 @@ export function researchAnalysisMetadataSql(
       SELECT jsonb_build_object(
         'sourcePersonId', ${relationships.sourcePersonId},
         'targetPersonId', ${relationships.targetPersonId},
+        'directed', ${relationshipTypes.directed},
         'relationshipState', ${relationships.state},
         'reviewState', ${relationships.reviewState},
         'observedAt', ${relationships.observedAt},
         'validFrom', ${relationships.validFrom},
         'validUntil', ${relationships.validUntil}
       ) FROM ${relationships}
+      INNER JOIN ${relationshipTypes}
+        ON ${relationshipTypes.workspaceId} = ${relationships.workspaceId}
+       AND ${relationshipTypes.id} = ${relationships.relationshipTypeId}
       WHERE ${relationships.workspaceId} = winning.workspace_id
         AND ${relationships.id} = winning.result_id
         AND ${relationships.deletedAt} IS NULL

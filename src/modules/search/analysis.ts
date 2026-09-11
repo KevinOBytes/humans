@@ -36,6 +36,7 @@ export type ResearchAnalysisRow = Readonly<{
   subjectPersonId?: string | null;
   sourcePersonId?: string | null;
   targetPersonId?: string | null;
+  directed?: boolean | null;
   caseId?: string | null;
   sensitivity?: string | null;
   consentStatus?: string | null;
@@ -209,7 +210,12 @@ export function filterResearchRows(
     )
     .filter((row) => {
       const start = timestamp(row.validFrom ?? row.observedAt);
-      const end = timestamp(row.validUntil ?? row.observedAt) ?? start;
+      const end =
+        row.validUntil != null
+          ? timestamp(row.validUntil)
+          : row.validFrom != null
+            ? Number.POSITIVE_INFINITY
+            : (timestamp(row.observedAt) ?? start);
       return (
         (from == null || (end != null && end >= from)) &&
         (until == null || (start != null && start <= until))
@@ -250,6 +256,7 @@ function projectRow(
     "consentStatus",
     "reviewState",
     "relationshipState",
+    "directed",
     "sourceId",
     "sourceTitle",
     "sourceUrl",
@@ -428,7 +435,10 @@ export function analyzeResearch(input: {
       "Contradictions are reported when the same subject and field have different asserted values; no adverse inference is made.",
     );
   }
-  const degree = new Map<string, { inDegree: number; outDegree: number }>();
+  const degree = new Map<
+    string,
+    { degree: number; inDegree: number; outDegree: number }
+  >();
   const seen = new Set<string>();
   for (const row of filtered) {
     if (
@@ -440,16 +450,20 @@ export function analyzeResearch(input: {
       continue;
     seen.add(row.id);
     const source = degree.get(row.sourcePersonId) ?? {
+      degree: 0,
       inDegree: 0,
       outDegree: 0,
     };
-    source.outDegree += 1;
+    source.degree += 1;
+    if (row.directed !== false) source.outDegree += 1;
     degree.set(row.sourcePersonId, source);
     const target = degree.get(row.targetPersonId) ?? {
+      degree: 0,
       inDegree: 0,
       outDegree: 0,
     };
-    target.inDegree += 1;
+    target.degree += 1;
+    if (row.directed !== false) target.inDegree += 1;
     degree.set(row.targetPersonId, target);
   }
   const metrics = [...degree.entries()]
@@ -457,9 +471,8 @@ export function analyzeResearch(input: {
     .map(([personId, value]) => ({
       personId,
       ...value,
-      degree: value.inDegree + value.outDegree,
       explanation:
-        "unique visible relationship IDs incident to this person; a self-loop contributes one incoming and one outgoing edge",
+        "unique visible relationship IDs incident to this person; directed edges contribute incoming/outgoing arcs, while undirected edges contribute incident degree only",
     }));
   return result(
     input.kind,
@@ -470,7 +483,7 @@ export function analyzeResearch(input: {
     metrics,
     projected.reduce((sum, item) => sum + item.redacted, 0),
     omitted,
-    "Directed degree counts unique visible, filtered relationship IDs in this bounded search sample, not the complete workspace graph. Facts and evidence do not add edges. It is not a threat, risk, or adverse score.",
+    "Degree counts unique visible, filtered relationship IDs in this bounded search sample, with directional arcs retained when the relationship type is directed. Facts and evidence do not add edges. It is not a threat, risk, or adverse score.",
   );
 }
 

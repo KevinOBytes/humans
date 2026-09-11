@@ -143,6 +143,59 @@ describe("governed research analysis", () => {
     ]);
   });
 
+  it("keeps undirected relationships out of incoming and outgoing counts", () => {
+    const result = analyzeResearch({
+      kind: "GRAPH_METRICS",
+      rows: [
+        {
+          id: "undirected",
+          workspaceId,
+          kind: "RELATIONSHIP",
+          sourcePersonId: "p1",
+          targetPersonId: "p2",
+          directed: false,
+        },
+      ],
+      context: { workspaceId, purpose: "review" },
+    });
+    expect(result.rows).toEqual([
+      expect.objectContaining({
+        personId: "p1",
+        degree: 1,
+        inDegree: 0,
+        outDegree: 0,
+      }),
+      expect.objectContaining({
+        personId: "p2",
+        degree: 1,
+        inDegree: 0,
+        outDegree: 0,
+      }),
+    ]);
+  });
+
+  it("retains open-ended validity intervals when filtering later dates", () => {
+    expect(
+      filterResearchRows(
+        [
+          {
+            id: "open",
+            workspaceId,
+            validFrom: "2020-01-01T00:00:00Z",
+            observedAt: "2020-01-01T00:00:00Z",
+          },
+          {
+            id: "observation",
+            workspaceId,
+            observedAt: "2020-01-01T00:00:00Z",
+          },
+        ],
+        { workspaceId, purpose: "review" },
+        { temporalRange: { from: "2025-01-01T00:00:00Z" } },
+      ).map((row) => row.id),
+    ).toEqual(["open"]);
+  });
+
   it("never compares unrelated subjects or treats missing values as contradictions", () => {
     const result = analyzeResearch({
       kind: "CONTRADICTIONS",
