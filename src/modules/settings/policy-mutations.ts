@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { normalizeConsentRecordInput } from "@/modules/governance/validation";
 
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 
@@ -1193,8 +1194,14 @@ export function createPolicyMutationService(input: {
         "stop_processing" | "restrict_processing" | "retain_under_hold" | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const purpose = inputValue.purpose.trim().slice(0, 512);
-        const source = inputValue.source.trim().slice(0, 512);
+        const normalized = normalizeConsentRecordInput(inputValue);
+        if (!normalized.value)
+          throw createGraphQLError(
+            "VALIDATION_FAILED",
+            "The consent record is invalid.",
+          );
+        const consent = normalized.value;
+        const { purpose, source } = consent;
         return idempotentMutation({
           actor,
           key: inputValue.idempotencyKey,
@@ -1206,10 +1213,10 @@ export function createPolicyMutationService(input: {
             purpose,
             source,
             status: inputValue.status,
-            lawfulBasis: inputValue.lawfulBasis ?? null,
-            scopes: inputValue.scopes ?? [],
-            noticeVersion: inputValue.noticeVersion ?? null,
-            collectionMethod: inputValue.collectionMethod ?? null,
+            lawfulBasis: consent.lawfulBasis,
+            scopes: consent.scopes,
+            noticeVersion: consent.noticeVersion,
+            collectionMethod: consent.collectionMethod,
             withdrawalEffect: inputValue.withdrawalEffect ?? null,
           },
           operation: "consent.create",
@@ -1231,17 +1238,17 @@ export function createPolicyMutationService(input: {
               effectiveFrom: inputValue.effectiveFrom,
               effectiveUntil: inputValue.effectiveUntil ?? null,
               evidenceId: inputValue.evidenceId ?? null,
-              lawfulBasis: inputValue.lawfulBasis ?? null,
+              lawfulBasis: consent.lawfulBasis,
               lawfulBasisMetadata: {},
-              noticeVersion: inputValue.noticeVersion?.trim() || null,
-              collectionMethod: inputValue.collectionMethod?.trim() || null,
+              noticeVersion: consent.noticeVersion,
+              collectionMethod: consent.collectionMethod,
               withdrawalEffect: inputValue.withdrawalEffect ?? null,
               createdBy: actor.id,
               updatedBy: actor.id,
             });
-            if (inputValue.scopes?.length) {
+            if (consent.scopes.length) {
               await transaction.insert(consentScopes).values(
-                inputValue.scopes.map((scope) => ({
+                consent.scopes.map((scope) => ({
                   id: newId(),
                   workspaceId: input.workspaceId,
                   consentRecordId: id,

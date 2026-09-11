@@ -1,13 +1,17 @@
 // @vitest-environment node
 
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { newId } from "@/db/id";
 
 import { GraphQLFixture } from "../support/graphql";
 
-describe("governance GraphQL API", () => {
-  const fixture = new GraphQLFixture();
+const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+liveDescribe("governance GraphQL API", () => {
+  let fixture: GraphQLFixture;
+  beforeAll(() => {
+    fixture = new GraphQLFixture();
+  });
 
   beforeEach(async () => {
     await fixture.reset();

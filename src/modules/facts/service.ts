@@ -1,4 +1,5 @@
 import { createGraphQLError } from "@/graphql/errors";
+import { and } from "drizzle-orm";
 import { decodeResearchCursor, normalizePagination } from "@/graphql/limits";
 import { newId } from "@/db/id";
 import { facts } from "@/db/schema/facts";
@@ -21,6 +22,14 @@ import {
 } from "@/modules/audit/transactions";
 import type { Connection, MutationOutcome } from "@/modules/people/service";
 import { checkPurposeCoverage } from "@/modules/governance/coverage";
+import {
+  effectiveGovernanceSensitivity,
+  normalizeGovernanceContext,
+} from "@/modules/governance/validation";
+import {
+  authorizeRestrictedFactRead,
+  restrictedFactApprovalSql,
+} from "@/modules/governance/restricted-read";
 
 import {
   createFactsRepository,
@@ -122,6 +131,7 @@ function factCreateRequestMaterial(
         ? value
         : null;
   return {
+    ...normalizeGovernanceContext(input),
     confidence: input.confidence ?? null,
     confidenceExplanation: input.confidenceExplanation ?? null,
     confidenceMethod: input.confidenceMethod ?? null,
@@ -162,6 +172,8 @@ function factReviseRequestMaterial(input: {
   reviewState?: string | null;
   sensitivity?: string | null;
   changeReason?: string | null;
+  governancePurpose?: string | null;
+  governanceCaseReference?: string | null;
 }): Readonly<Record<string, CanonicalRequestMaterial>> {
   const date = (value: unknown): string | null =>
     value instanceof Date
@@ -171,6 +183,7 @@ function factReviseRequestMaterial(input: {
         : null;
   const value = input.value;
   return {
+    ...normalizeGovernanceContext(input),
     changeReason: fieldMaterial(input.changeReason),
     confidence: fieldMaterial(input.confidence),
     expectedVersion: input.expectedVersion,
@@ -390,11 +403,14 @@ export function createFactsService(
   const repository = createFactsRepository(context.database);
   const peopleRepository = createPeopleRepository(context.database);
   const audit = createAuditService(context);
-  const factVisibility = resourceVisibilitySql(context, {
-    resourceKind: "fact",
-    id: facts.id,
-    sensitivity: facts.sensitivity,
-  });
+  const factVisibility = and(
+    resourceVisibilitySql(context, {
+      resourceKind: "fact",
+      id: facts.id,
+      sensitivity: facts.sensitivity,
+    }),
+    restrictedFactApprovalSql(context, facts),
+  )!;
   const personVisibility = resourceVisibilitySql(context, {
     resourceKind: "person",
     id: people.id,
@@ -425,6 +441,23 @@ export function createFactsService(
 
   async function visibleFact(row: FactRow): Promise<boolean> {
     return (await visibleFactIds([row])).has(row.id);
+  }
+
+  async function readableFacts<T extends FactRow>(
+    rows: readonly T[],
+  ): Promise<T[]> {
+    const allowed = await Promise.all(
+      rows.map(
+        async (row) =>
+          row.sensitivity !== "restricted" ||
+          (await authorizeRestrictedFactRead(context, {
+            factId: row.id,
+            personId: row.personId,
+            fieldDefinitionId: row.factDefinitionId,
+          })),
+      ),
+    );
+    return rows.filter((_row, index) => allowed[index]);
   }
 
   async function requireVisiblePerson(id: string): Promise<void> {
@@ -559,6 +592,21 @@ export function createFactsService(
           ? (structuredClone(snapshot) as Record<string, unknown>)
           : null,
       );
+      for (let index = 0; index < redacted.length; index++) {
+        const snapshot = redacted[index];
+        if (snapshot?.sensitivity !== "restricted") continue;
+        if (
+          typeof snapshot.id !== "string" ||
+          typeof snapshot.personId !== "string" ||
+          typeof snapshot.factDefinitionId !== "string" ||
+          !(await authorizeRestrictedFactRead(context, {
+            factId: snapshot.id,
+            personId: snapshot.personId,
+            fieldDefinitionId: snapshot.factDefinitionId,
+          }))
+        )
+          redacted[index] = null;
+      }
       const collect = (keys: readonly string[]) => [
         ...new Set(
           redacted.flatMap((snapshot) =>
@@ -610,7 +658,7 @@ export function createFactsService(
           })
         : [];
       const visibleSupersedesIds = new Set(
-        visibleSupersedes.map((row) => row.id),
+        (await readableFacts(visibleSupersedes)).map((row) => row.id),
       );
       return redacted.map((snapshot) => {
         if (!snapshot) return null;
@@ -1026,7 +1074,7 @@ export function createFactsService(
         id,
         visibility: factVisibility,
       });
-      return row;
+      return row ? ((await readableFacts([row]))[0] ?? null) : null;
     },
     async getByIds(ids: readonly string[]) {
       const rows = await repository.getFactsByIds({
@@ -1034,7 +1082,9 @@ export function createFactsService(
         ids,
         visibility: factVisibility,
       });
-      const byId = new Map(rows.map((row) => [row.id, row]));
+      const byId = new Map(
+        (await readableFacts(rows)).map((row) => [row.id, row]),
+      );
       return ids.map((id) => byId.get(id) ?? null);
     },
     async listForPeople(
@@ -1069,13 +1119,17 @@ export function createFactsService(
         visibility: factVisibility,
         personVisibility,
       });
+      const readableIds = new Set(
+        (await readableFacts(rows)).map((row) => row.id),
+      );
       const grouped = new Map<number, FactRow[]>();
       for (const row of rows)
         grouped.set(row.pageKey, [...(grouped.get(row.pageKey) ?? []), row]);
       return keys.map((key, pageKey) => {
         const values = grouped.get(pageKey) ?? [];
-        const nodes = values.slice(0, key.first);
-        const last = nodes.at(-1);
+        const pageRows = values.slice(0, key.first);
+        const nodes = pageRows.filter((row) => readableIds.has(row.id));
+        const last = pageRows.at(-1);
         return {
           nodes,
           pageInfo: {
@@ -1125,14 +1179,23 @@ export function createFactsService(
         factVisibility,
         personVisibility,
       });
+      const selectedFacts = await repository.getFactsByIds({
+        workspaceId: context.workspaceId,
+        ids: rows.map((row) => row.factId),
+        visibility: factVisibility,
+      });
+      const readableIds = new Set(
+        (await readableFacts(selectedFacts)).map((row) => row.id),
+      );
       const grouped = new Map<number, PersonFieldSelectionRow[]>();
       for (const row of rows) {
         grouped.set(row.pageKey, [...(grouped.get(row.pageKey) ?? []), row]);
       }
       return keys.map((key, pageKey) => {
         const values = grouped.get(pageKey) ?? [];
-        const nodes = values.slice(0, key.first);
-        const last = nodes.at(-1);
+        const pageRows = values.slice(0, key.first);
+        const nodes = pageRows.filter((row) => readableIds.has(row.factId));
+        const last = pageRows.at(-1);
         return {
           nodes,
           pageInfo: {
@@ -1176,7 +1239,9 @@ export function createFactsService(
         ids: factIds,
         visibility: factVisibility,
       });
-      const visibleIds = new Set(visibleFacts.map((row) => row.id));
+      const visibleIds = new Set(
+        (await readableFacts(visibleFacts)).map((row) => row.id),
+      );
       const limit = Math.min(
         101,
         Math.max(...keys.map((key) => key.first)) + 1,
@@ -1254,8 +1319,9 @@ export function createFactsService(
           FactRow["sensitivity"] | null | undefined,
         visibility: factVisibility,
       });
-      const nodes = rows.slice(0, page.first);
-      const last = nodes.at(-1);
+      const pageRows = rows.slice(0, page.first);
+      const nodes = await readableFacts(pageRows);
+      const last = pageRows.at(-1);
       return {
         nodes,
         pageInfo: {
@@ -1271,6 +1337,7 @@ export function createFactsService(
       };
     },
     async create(input: FactCreateInput): Promise<FactOutcome> {
+      input = { ...input, ...normalizeGovernanceContext(input) };
       await requireVisiblePerson(input.personId);
       const definition = await repository.getDefinitionForUpdate({
         workspaceId: context.workspaceId,
@@ -1281,8 +1348,11 @@ export function createFactsService(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
-      const governed = ["confidential", "restricted"].includes(
+      const effectiveSensitivity = effectiveGovernanceSensitivity(
         input.sensitivity ?? definition.defaultSensitivity,
+      );
+      const governed = ["confidential", "restricted"].includes(
+        effectiveSensitivity,
       );
       if (governed || input.governancePurpose) {
         if (!input.governancePurpose)
@@ -1296,6 +1366,7 @@ export function createFactsService(
           purpose: input.governancePurpose,
           caseReference: input.governanceCaseReference,
           scope: "write",
+          effectiveSensitivity,
         });
         if (!coverage.allowed)
           throw createGraphQLError(
@@ -1576,6 +1647,7 @@ export function createFactsService(
       governancePurpose?: string | null;
       governanceCaseReference?: string | null;
     }): Promise<FactOutcome> {
+      input = { ...input, ...normalizeGovernanceContext(input) };
       const current = await repository.getFact({
         workspaceId: context.workspaceId,
         id: input.id,
@@ -1585,10 +1657,12 @@ export function createFactsService(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
+      const effectiveSensitivity = effectiveGovernanceSensitivity(
+        current.sensitivity,
+        input.sensitivity,
+      );
       if (
-        ["confidential", "restricted"].includes(
-          input.sensitivity ?? current.sensitivity,
-        ) ||
+        ["confidential", "restricted"].includes(effectiveSensitivity) ||
         input.governancePurpose
       ) {
         if (!input.governancePurpose)
@@ -1599,6 +1673,7 @@ export function createFactsService(
         const coverage = await checkPurposeCoverage(context, {
           personId: current.personId,
           fieldDefinitionId: current.factDefinitionId,
+          effectiveSensitivity,
           purpose: input.governancePurpose,
           caseReference: input.governanceCaseReference,
           scope: "write",
@@ -1850,6 +1925,8 @@ export function createFactsService(
         reviewState?: string | null;
         sensitivity?: string | null;
         changeReason?: string | null;
+        governancePurpose?: string | null;
+        governanceCaseReference?: string | null;
       } & { idempotencyKey: string },
     ): Promise<FactOutcome> {
       if (!runtime?.idempotencyHmacKey) {
@@ -1859,6 +1936,7 @@ export function createFactsService(
         );
       }
       const reviseInput = {
+        ...normalizeGovernanceContext(input),
         id: input.id,
         expectedVersion: input.expectedVersion,
         value: input.value,
@@ -1925,7 +2003,7 @@ export function createFactsService(
         id: input.factId,
         visibility: factVisibility,
       });
-      if (!fact)
+      if (!fact || !(await readableFacts([fact])).length)
         throw createGraphQLError(
           "NOT_FOUND",
           "The requested resource was not found.",

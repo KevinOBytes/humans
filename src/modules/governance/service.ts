@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import {
@@ -8,16 +8,23 @@ import {
   purposePolicies,
 } from "@/db/schema/governance";
 import { consentRecords } from "@/db/schema/privacy";
+import { people } from "@/db/schema/people";
 import { createGraphQLError } from "@/graphql/errors";
 import { normalizePagination } from "@/graphql/limits";
 import {
   createAuditService,
+  resourceVisibilitySql,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
 
 import { checkPurposeCoverage } from "./coverage";
 import type { GovernanceScope, LawfulBasis } from "./types";
-import { normalizeGovernanceInput, validateApprovalReason } from "./validation";
+import {
+  approvalTransitionSource,
+  normalizeGovernanceContext,
+  normalizeGovernanceInput,
+  validateApprovalReason,
+} from "./validation";
 
 function cursor(row: { createdAt: Date; id: string }) {
   return Buffer.from(
@@ -294,6 +301,31 @@ export function createGovernanceService(context: ResearchServiceContext) {
         );
       }
       const reason = validateApprovalReason(input.reason);
+      const governance = normalizeGovernanceContext({
+        governancePurpose: input.purpose,
+        governanceCaseReference: input.caseReference,
+      });
+      const [visiblePerson] = await context.database
+        .select({ id: people.id })
+        .from(people)
+        .where(
+          and(
+            eq(people.workspaceId, context.workspaceId),
+            eq(people.id, input.personId),
+            isNull(people.deletedAt),
+            resourceVisibilitySql(context, {
+              resourceKind: "person",
+              id: people.id,
+              sensitivity: people.sensitivity,
+            }),
+          ),
+        )
+        .limit(1);
+      if (!visiblePerson)
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
       if (!reason.value)
         throw createGraphQLError(
           "VALIDATION_FAILED",
@@ -308,11 +340,12 @@ export function createGovernanceService(context: ResearchServiceContext) {
             principalId: actor,
             personId: input.personId,
             fieldDefinitionId: input.fieldDefinitionId,
-            purpose: input.purpose.trim().toLowerCase(),
+            purpose: governance.governancePurpose!,
             scope: "restricted_read",
-            caseReference: input.caseReference ?? null,
+            caseReference: governance.governanceCaseReference,
             reason: reason.value!,
-            expiresAt: input.expiresAt ?? null,
+            expiresAt:
+              input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000),
             createdBy: actor,
             updatedBy: actor,
           })
@@ -335,6 +368,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
       reason: unknown;
     }) {
       administrative();
+      const fromState = approvalTransitionSource(input.state);
       const reason = validateApprovalReason(input.reason);
       if (!reason.value)
         throw createGraphQLError(
@@ -358,6 +392,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
               eq(accessApprovals.workspaceId, context.workspaceId),
               eq(accessApprovals.id, input.id),
               eq(accessApprovals.version, input.expectedVersion),
+              eq(accessApprovals.state, fromState),
               isNull(accessApprovals.deletedAt),
             ),
           )
@@ -382,19 +417,50 @@ export function createGovernanceService(context: ResearchServiceContext) {
     ) {
       const page = normalizePagination(input);
       const after = parseCursor(page.after);
+      if (page.after && !after)
+        throw createGraphQLError("VALIDATION_FAILED", "The cursor is invalid.");
+      if (!context.permissions.has("person:read"))
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "This operation is not permitted.",
+        );
       const rows = await context.database
-        .select()
+        .select({ approval: accessApprovals })
         .from(accessApprovals)
+        .innerJoin(
+          people,
+          and(
+            eq(people.workspaceId, accessApprovals.workspaceId),
+            eq(people.id, accessApprovals.personId),
+          ),
+        )
         .where(
           and(
             eq(accessApprovals.workspaceId, context.workspaceId),
             isNull(accessApprovals.deletedAt),
-            after ? lt(accessApprovals.id, after.id) : undefined,
+            isNull(people.deletedAt),
+            context.permissions.has("workspace:update")
+              ? undefined
+              : eq(accessApprovals.principalId, actor),
+            resourceVisibilitySql(context, {
+              resourceKind: "person",
+              id: people.id,
+              sensitivity: people.sensitivity,
+            }),
+            after
+              ? or(
+                  lt(accessApprovals.createdAt, after.createdAt),
+                  and(
+                    eq(accessApprovals.createdAt, after.createdAt),
+                    lt(accessApprovals.id, after.id),
+                  ),
+                )
+              : undefined,
           ),
         )
         .orderBy(desc(accessApprovals.createdAt), desc(accessApprovals.id))
         .limit(page.first + 1);
-      const nodes = rows.slice(0, page.first);
+      const nodes = rows.slice(0, page.first).map((row) => row.approval);
       return {
         nodes,
         pageInfo: {

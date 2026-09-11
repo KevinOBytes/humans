@@ -40,6 +40,7 @@ export type PurposeCoverageInput = {
   fieldDefinitionId?: string | null;
   caseReference?: string | null;
   at?: Date;
+  effectiveSensitivity?: "public" | "internal" | "confidential" | "restricted";
 };
 
 export type GovernanceValidationIssue = {

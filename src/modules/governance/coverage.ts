@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
 
 import {
   consentScopes,
@@ -186,6 +186,12 @@ export async function checkPurposeCoverage(
         ),
       ),
     )
+    // Newest effective policy supersedes older policy rows, including ties.
+    .orderBy(
+      desc(purposePolicies.effectiveFrom),
+      desc(purposePolicies.createdAt),
+      desc(purposePolicies.id),
+    )
     .limit(1);
   if (!policy) return result("missing_consent", null, null);
   if (
@@ -207,6 +213,7 @@ export async function checkPurposeCoverage(
           isNull(fieldPolicies.deletedAt),
         ),
       )
+      .orderBy(desc(fieldPolicies.createdAt), desc(fieldPolicies.id))
       .limit(1);
     if (!fieldPolicy || !fieldPolicy.permittedScopes.includes(input.scope)) {
       return result("field_not_permitted", null, policy.id);
@@ -225,7 +232,7 @@ export async function checkPurposeCoverage(
     if (
       !definition ||
       sensitivityRank[fieldPolicy.sensitivityCeiling] <
-        sensitivityRank[definition.sensitivity]
+        sensitivityRank[input.effectiveSensitivity ?? definition.sensitivity]
     ) {
       return result("field_not_permitted", null, policy.id);
     }
@@ -248,7 +255,11 @@ export async function checkPurposeCoverage(
         isNull(consentRecords.deletedAt),
       ),
     )
-    .orderBy(consentRecords.effectiveFrom);
+    .orderBy(
+      consentRecords.effectiveFrom,
+      consentRecords.createdAt,
+      consentRecords.id,
+    );
   if (!consents.length) return result("missing_consent", null, policy.id);
   const consent = consents.at(-1)!;
   const scopes = await context.database

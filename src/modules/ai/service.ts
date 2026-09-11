@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 
-import { evidenceItems } from "@/db/schema/evidence";
+import { evidenceItems, factEvidence } from "@/db/schema/evidence";
+import { facts } from "@/db/schema/facts";
 import { apiKeys } from "@/db/schema/auth";
 import { people } from "@/db/schema/people";
 import { createGraphQLError } from "@/graphql/errors";
@@ -9,6 +10,7 @@ import {
   type ResearchServiceContext,
 } from "@/modules/audit/service";
 import { checkPurposeCoverage } from "@/modules/governance/coverage";
+import { normalizeGovernanceContext } from "@/modules/governance/validation";
 import {
   derivePrincipalResearchIdempotency,
   runPrincipalIdempotentResearchWrite,
@@ -128,14 +130,7 @@ function normalizeStartInput(input: StartAiAnalysisInput): {
     idempotencyKey: input.idempotencyKey,
     question,
     scope,
-    governancePurpose:
-      typeof input.governancePurpose === "string"
-        ? input.governancePurpose.trim() || null
-        : null,
-    governanceCaseReference:
-      typeof input.governanceCaseReference === "string"
-        ? input.governanceCaseReference.trim() || null
-        : null,
+    ...normalizeGovernanceContext(input),
   };
 }
 
@@ -204,6 +199,49 @@ async function requireAuthorizedScope(
     containsRestrictedScope ||= visible.some(
       (row) => row.sensitivity === "restricted",
     );
+    const restrictedEvidence = visible.filter(
+      (row) => row.sensitivity === "restricted",
+    );
+    if (restrictedEvidence.length) {
+      if (!scope.personIds.length)
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Restricted evidence requires a covered subject.",
+        );
+      // A caller-supplied unrelated person does not establish evidence context.
+      const links = await context.database
+        .select({ evidenceId: factEvidence.evidenceItemId })
+        .from(factEvidence)
+        .innerJoin(
+          facts,
+          and(
+            eq(facts.workspaceId, factEvidence.workspaceId),
+            eq(facts.id, factEvidence.factId),
+          ),
+        )
+        .where(
+          and(
+            eq(factEvidence.workspaceId, context.workspaceId),
+            inArray(
+              factEvidence.evidenceItemId,
+              restrictedEvidence.map((row) => row.id),
+            ),
+            inArray(facts.personId, [...scope.personIds]),
+            isNull(facts.deletedAt),
+            resourceVisibilitySql(context, {
+              resourceKind: "fact",
+              id: facts.id,
+              sensitivity: facts.sensitivity,
+            }),
+          ),
+        );
+      const bound = new Set(links.map((row) => row.evidenceId));
+      if (restrictedEvidence.some((row) => !bound.has(row.id)))
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Restricted evidence requires a covered subject.",
+        );
+    }
   }
   return containsRestrictedScope;
 }
@@ -391,6 +429,8 @@ export function createAiAnalysisService(
         idempotencyKey: normalized.idempotencyKey,
         operation: "ai.analysis.start",
         requestMaterial: {
+          governancePurpose: normalized.governancePurpose,
+          governanceCaseReference: normalized.governanceCaseReference,
           question: normalized.question,
           scope: {
             evidenceIds: normalized.scope.evidenceIds,
@@ -408,7 +448,11 @@ export function createAiAnalysisService(
             scopedContext,
             normalized.scope,
           );
-          if (normalized.governancePurpose || containsRestrictedScope) {
+          if (
+            normalized.governancePurpose ||
+            containsRestrictedScope ||
+            normalized.scope.personIds.length
+          ) {
             if (!normalized.governancePurpose)
               throw createGraphQLError(
                 "FORBIDDEN",
