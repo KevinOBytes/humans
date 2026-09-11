@@ -12,8 +12,7 @@ import {
   type LawfulBasis,
 } from "./types";
 
-const utcRfc3339 =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u;
+const utcRfc3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u;
 
 function issue(
   path: string[],
@@ -44,7 +43,11 @@ function normalizedUtc(
   if (typeof value !== "string" || !utcRfc3339.test(value)) {
     return {
       issues: [
-        issue(path, "INVALID_TIMESTAMP", "A UTC RFC 3339 timestamp is required."),
+        issue(
+          path,
+          "INVALID_TIMESTAMP",
+          "A UTC RFC 3339 timestamp is required.",
+        ),
       ],
     };
   }
@@ -52,7 +55,11 @@ function normalizedUtc(
   return Number.isNaN(parsed.getTime())
     ? {
         issues: [
-          issue(path, "INVALID_TIMESTAMP", "A UTC RFC 3339 timestamp is required."),
+          issue(
+            path,
+            "INVALID_TIMESTAMP",
+            "A UTC RFC 3339 timestamp is required.",
+          ),
         ],
       }
     : { value: parsed, issues: [] };
@@ -93,29 +100,35 @@ export function normalizeGovernanceInput(input: {
     min: 1,
     max: 200,
   });
-  const lawfulBasis = normalizedEnum(
-    input.lawfulBasis,
-    lawfulBases,
-    ["lawfulBasis"],
-  );
+  const lawfulBasis = normalizedEnum(input.lawfulBasis, lawfulBases, [
+    "lawfulBasis",
+  ]);
   const effectiveFrom = normalizedUtc(input.effectiveFrom, ["effectiveFrom"]);
-  const effectiveUntil = normalizedUtc(
-    input.effectiveUntil,
-    ["effectiveUntil"],
-  );
+  const effectiveUntil = normalizedUtc(input.effectiveUntil, [
+    "effectiveUntil",
+  ]);
   const metadata = validateBoundedJson(input.metadata ?? {}, {
     objectOnly: true,
     path: ["metadata"],
   });
   if (!Array.isArray(input.scopes) || input.scopes.length === 0) {
-    issues.push(issue(["scopes"], "INVALID_SCOPE", "At least one scope is required."));
+    issues.push(
+      issue(["scopes"], "INVALID_SCOPE", "At least one scope is required."),
+    );
   }
   const scopes = Array.isArray(input.scopes)
     ? input.scopes.map((value, index) =>
         normalizedEnum(value, governanceScopes, ["scopes", String(index)]),
       )
     : [];
-  for (const result of [purpose, lawfulBasis, effectiveFrom, effectiveUntil, metadata, ...scopes]) {
+  for (const result of [
+    purpose,
+    lawfulBasis,
+    effectiveFrom,
+    effectiveUntil,
+    metadata,
+    ...scopes,
+  ]) {
     if (result.issues.length) issues.push(...result.issues);
   }
   if (

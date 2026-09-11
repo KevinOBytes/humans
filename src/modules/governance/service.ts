@@ -212,19 +212,17 @@ export function createGovernanceService(context: ResearchServiceContext) {
           })
           .returning();
         if (!created) throw new Error("Consent insert failed");
-        await tx
-          .insert(consentScopes)
-          .values(
-            normalized.value!.scopes.map((scope) => ({
-              id: newId(),
-              workspaceId: context.workspaceId,
-              consentRecordId: created.id,
-              purpose: created.purpose,
-              scope,
-              createdBy: actor,
-              updatedBy: actor,
-            })),
-          );
+        await tx.insert(consentScopes).values(
+          normalized.value!.scopes.map((scope) => ({
+            id: newId(),
+            workspaceId: context.workspaceId,
+            consentRecordId: created.id,
+            purpose: created.purpose,
+            scope,
+            createdBy: actor,
+            updatedBy: actor,
+          })),
+        );
         await audit.write(tx, {
           action: "governance.consent.record",
           changedFields: ["purpose", "scope", "lawfulBasis"],
