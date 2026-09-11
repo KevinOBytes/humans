@@ -98,9 +98,7 @@ test.beforeAll(async () => {
   const alphaId = alpha.body?.data?.createPerson?.person?.id;
   const betaId = beta.body?.data?.createPerson?.person?.id;
   if (!alphaId || !betaId) throw new Error("Graph E2E people were not created");
-  const governance = createGovernanceService(
-    await caseContext(fixture, actor),
-  );
+  const governance = createGovernanceService(await caseContext(fixture, actor));
   await governance.createPurposePolicy({
     idempotencyKey: newId(),
     purpose: "research",

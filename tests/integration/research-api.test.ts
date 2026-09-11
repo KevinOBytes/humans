@@ -44,9 +44,7 @@ async function grantResearchCoverage(
   actor: Awaited<ReturnType<ResearchFixture["createActor"]>>,
   personIds: readonly string[],
 ) {
-  const governance = createGovernanceService(
-    await caseContext(fixture, actor),
-  );
+  const governance = createGovernanceService(await caseContext(fixture, actor));
   await governance.createPurposePolicy({
     idempotencyKey: newId(),
     purpose: "research",
