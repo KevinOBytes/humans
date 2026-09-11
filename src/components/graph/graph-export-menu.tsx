@@ -44,6 +44,7 @@ export function GraphExportMenu({
       `${baseName(result)}.${extension}`,
     );
     onStatus?.(`${extension.toUpperCase()} export prepared.`);
+    setOpen(false);
   };
   const csv = () => serializeGraphCsv(result);
 
@@ -79,6 +80,7 @@ export function GraphExportMenu({
       });
       downloadBlob(blob, `${baseName(result)}.png`);
       onStatus?.("PNG export prepared.");
+      setOpen(false);
     } catch {
       onStatus?.("PNG export could not be prepared in this browser.");
     } finally {

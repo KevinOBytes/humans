@@ -44,9 +44,11 @@ test("consent panel checks explicit purpose without granting access for missing 
   ).toBeDisabled();
   await page.getByLabel("Research purpose").fill("fictional_archive_review");
   await page.getByRole("button", { name: "Check coverage" }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "No consent covers this request",
-  );
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "No consent covers this request" }),
+  ).toContainText("No consent covers this request");
   await expect(
     page.getByText("Covered for this request", { exact: false }),
   ).toHaveCount(0);
