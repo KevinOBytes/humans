@@ -684,7 +684,11 @@ export function createGovernanceService(context: ResearchServiceContext) {
         operation: "governance.approval.request",
         requestMaterial: {
           caseReference: governance.governanceCaseReference,
-          expiresAt: expiresAt.toISOString(),
+          // The default expiry is server-generated and must not make a retry
+          // with the same caller key conflict merely because the wall clock
+          // advanced. An explicitly supplied expiry remains part of the
+          // caller's request material and is therefore conflict-bound.
+          expiresAt: input.expiresAt?.toISOString() ?? null,
           fieldDefinitionId: input.fieldDefinitionId,
           personId: input.personId,
           purpose: governance.governancePurpose!,
@@ -724,8 +728,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
             scope: "restricted_read",
             caseReference: governance.governanceCaseReference,
             reason: reason.value!,
-            expiresAt:
-              input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000),
+            expiresAt,
             createdBy: actor,
             updatedBy: actor,
           })
