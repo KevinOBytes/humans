@@ -13,6 +13,7 @@ const doubles = vi.hoisted(() => ({
   approval: null as Record<string, unknown> | null,
   auditWrites: 0,
   caseRole: null as string | null,
+  caseState: "active",
   claims: new Map<
     string,
     {
@@ -79,7 +80,7 @@ vi.mock("@/modules/cases/repository", () => ({
   createCasesRepository: () => ({
     get: async () =>
       doubles.caseRole
-        ? { case: { state: "active" }, role: doubles.caseRole }
+        ? { case: { state: doubles.caseState }, role: doubles.caseRole }
         : null,
   }),
 }));
@@ -119,6 +120,7 @@ function database() {
       const chain = {
         from: () => chain,
         where: () => chain,
+        orderBy: () => chain,
         limit: async () => (doubles.approval ? [doubles.approval] : []),
       };
       return chain;
@@ -199,6 +201,7 @@ beforeEach(() => {
   doubles.approval = null;
   doubles.auditWrites = 0;
   doubles.caseRole = null;
+  doubles.caseState = "active";
   doubles.claims.clear();
   doubles.inserts = 0;
   doubles.updates = 0;
@@ -269,6 +272,7 @@ describe("reviewed governed export approvals", () => {
       requester.review({
         id: approval.id,
         expectedVersion: 1,
+        expectedPreviewHash: previewHash,
         decision: "approved",
         reason: "Self review is not independent.",
         idempotencyKey: "self-review",
@@ -281,9 +285,27 @@ describe("reviewed governed export approvals", () => {
       ).review({
         id: approval.id,
         expectedVersion: 2,
+        expectedPreviewHash: previewHash,
         decision: "approved",
         reason: "The preview is appropriately minimized.",
         idempotencyKey: "stale-review",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+  });
+
+  it("rejects review when the displayed preview fingerprint changed", async () => {
+    const approval =
+      await createExportApprovalService(context()).request(requestInput);
+    await expect(
+      createExportApprovalService(
+        context({ principalId: reviewerId, role: "admin" }),
+      ).review({
+        id: approval.id,
+        expectedVersion: 1,
+        expectedPreviewHash: "b2".repeat(32),
+        decision: "approved",
+        reason: "Only the displayed fingerprint may be approved.",
+        idempotencyKey: "changed-review-fingerprint",
       }),
     ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
   });
@@ -306,6 +328,7 @@ describe("reviewed governed export approvals", () => {
       reviewer.review({
         id: approval.id,
         expectedVersion: 1,
+        expectedPreviewHash: previewHash,
         decision: "approved",
         reason: "Member authority must not imply review authority.",
         idempotencyKey: "member-review",
@@ -316,6 +339,7 @@ describe("reviewed governed export approvals", () => {
     const reviewed = await reviewer.review({
       id: approval.id,
       expectedVersion: 1,
+      expectedPreviewHash: previewHash,
       decision: "approved",
       reason: "Case scope and redaction are appropriate.",
       idempotencyKey: "case-review",
@@ -327,6 +351,35 @@ describe("reviewed governed export approvals", () => {
     });
   });
 
+  it("lists only pending approvals within the reviewer's current workspace/case scope", async () => {
+    const approval = await createExportApprovalService(context()).request({
+      ...requestInput,
+      caseId,
+    });
+    const reviewer = createExportApprovalService(
+      context({
+        principalId: reviewerId,
+        role: "analyst",
+        permissions: ["workspace:read"],
+      }),
+    );
+
+    doubles.caseRole = "member";
+    await expect(reviewer.listPending({ caseId, first: 25 })).resolves.toEqual(
+      [],
+    );
+
+    doubles.caseRole = "reviewer";
+    await expect(reviewer.listPending({ caseId, first: 25 })).resolves.toEqual([
+      expect.objectContaining({ id: approval.id }),
+    ]);
+
+    doubles.caseState = "closed";
+    await expect(reviewer.listPending({ caseId, first: 25 })).resolves.toEqual(
+      [],
+    );
+  });
+
   it("replays an identical review without duplicate transitions or audits", async () => {
     const approval =
       await createExportApprovalService(context()).request(requestInput);
@@ -336,6 +389,7 @@ describe("reviewed governed export approvals", () => {
     const input = {
       id: approval.id,
       expectedVersion: 1,
+      expectedPreviewHash: previewHash,
       decision: "approved" as const,
       reason: "The preview is appropriately minimized.",
       idempotencyKey: "review-replay",
@@ -348,6 +402,110 @@ describe("reviewed governed export approvals", () => {
     expect(doubles.inserts).toBe(1);
     expect(doubles.auditWrites).toBe(2);
     expect(first.version).toBe(2);
+  });
+
+  it("rechecks removed and inactive case-review authority before replay disclosure", async () => {
+    const approval = await createExportApprovalService(context()).request({
+      ...requestInput,
+      caseId,
+    });
+    const reviewInput = {
+      id: approval.id,
+      expectedVersion: 1,
+      expectedPreviewHash: previewHash,
+      decision: "approved" as const,
+      reason: "The case export was independently reviewed.",
+      idempotencyKey: "case-review-replay",
+    };
+    doubles.caseRole = "reviewer";
+    await createExportApprovalService(
+      context({
+        principalId: reviewerId,
+        role: "analyst",
+        permissions: ["workspace:read"],
+      }),
+    ).review(reviewInput);
+
+    doubles.caseRole = null;
+    await expect(
+      createExportApprovalService(
+        context({
+          principalId: reviewerId,
+          role: "analyst",
+          permissions: ["workspace:read"],
+        }),
+      ).review(reviewInput),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+
+    doubles.caseRole = "reviewer";
+    doubles.caseState = "closed";
+    await expect(
+      createExportApprovalService(
+        context({
+          principalId: reviewerId,
+          role: "analyst",
+          permissions: ["workspace:read"],
+        }),
+      ).review(reviewInput),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+  });
+
+  it("rechecks a demoted workspace reviewer's authority before replay disclosure", async () => {
+    const approval =
+      await createExportApprovalService(context()).request(requestInput);
+    const reviewInput = {
+      id: approval.id,
+      expectedVersion: 1,
+      expectedPreviewHash: previewHash,
+      decision: "approved" as const,
+      reason: "The workspace export was independently reviewed.",
+      idempotencyKey: "workspace-review-replay",
+    };
+    await createExportApprovalService(
+      context({ principalId: reviewerId, role: "admin" }),
+    ).review(reviewInput);
+
+    await expect(
+      createExportApprovalService(
+        context({
+          principalId: reviewerId,
+          role: "member",
+          permissions: ["workspace:read"],
+        }),
+      ).review(reviewInput),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+  });
+
+  it("returns neutral forbidden before exposing approval state or version", async () => {
+    const approval =
+      await createExportApprovalService(context()).request(requestInput);
+    const unauthorized = createExportApprovalService(
+      context({
+        principalId: reviewerId,
+        role: "member",
+        permissions: ["workspace:read"],
+      }),
+    );
+    const attempt = (expectedVersion: number) =>
+      unauthorized.review({
+        id: approval.id,
+        expectedVersion,
+        expectedPreviewHash: previewHash,
+        decision: "approved",
+        reason: "An unauthorized reader must receive a neutral denial.",
+        idempotencyKey: `unauthorized-${expectedVersion}-${String(doubles.approval?.state)}`,
+      });
+
+    await expect(attempt(1)).rejects.toMatchObject({
+      extensions: { code: "FORBIDDEN" },
+    });
+    await expect(attempt(99)).rejects.toMatchObject({
+      extensions: { code: "FORBIDDEN" },
+    });
+    if (doubles.approval) doubles.approval.state = "approved";
+    await expect(attempt(1)).rejects.toMatchObject({
+      extensions: { code: "FORBIDDEN" },
+    });
   });
 
   it.each([
@@ -365,6 +523,7 @@ describe("reviewed governed export approvals", () => {
     ).review({
       id: approval.id,
       expectedVersion: 1,
+      expectedPreviewHash: previewHash,
       decision: "approved",
       reason: "The preview is appropriately minimized.",
       idempotencyKey: "binding-review",
@@ -392,6 +551,7 @@ describe("reviewed governed export approvals", () => {
     ).review({
       id: approval.id,
       expectedVersion: 1,
+      expectedPreviewHash: previewHash,
       decision: "approved",
       reason: "The preview is appropriately minimized.",
       idempotencyKey: "expiry-review",

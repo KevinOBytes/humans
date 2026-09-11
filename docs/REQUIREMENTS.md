@@ -4,15 +4,22 @@ Production-completion Task 1 local checkpoint (2026-09-11): governed export
 previews now expose their non-secret deterministic hash and can create a durable,
 workspace/actor/purpose/case/redaction/expiry-bound approval request. Review is
 optimistically versioned, replay-safe, and limited to an independent workspace
-owner/administrator or assigned active-case owner/reviewer. Export commit verifies
-the signed preview token and then requires the exact non-expired approved binding;
-it cannot silently downgrade an approval-required export. Approval request/review
-audits retain metadata only and never exported values. Focused unit/schema tests
-cover authorization, self-review, case role scope, stale versions, binding changes,
-expiry, and idempotent replay; the PostgreSQL/GraphQL lifecycle suite remains gated
-because `TEST_DATABASE_URL` is absent. This does not close an acceptance row: live
-migration, object-store, browser, retention/reconciliation, bulk-alert, and hosted
-provider evidence remain open.
+owner/administrator or assigned active-case owner/reviewer. Current reviewer
+authority is rechecked before state/version/expiry disclosure and after an
+idempotent replay. The evidence workspace now provides a generated-operation-backed
+preview/request/commit flow and a workspace/case-authorized pending review queue;
+the displayed deterministic fingerprint is bound into both request and review.
+Export commit verifies the signed preview token and then requires the exact
+non-expired approved binding; it cannot silently downgrade an approval-required
+export. Approval request/review audits and the review queue retain metadata only and
+never exported values. Focused unit/component/schema tests cover authorization,
+self-review, removed/inactive/demoted reviewer scope, stale versions, binding
+changes, expiry, idempotent replay, generated browser-operation mapping,
+metadata-only rendering, and fail-closed commit. The expanded PostgreSQL/GraphQL
+lifecycle suite, including durable review replay and injected rollback assertions,
+remains gated because `TEST_DATABASE_URL` is absent. This does not close an
+acceptance row: live migration, object-store, browser, retention/reconciliation,
+bulk-alert, and hosted provider evidence remain open.
 
 Task 4 local checkpoint (2026-09-11): the generalized privacy lifecycle covers six request types with workspace/resource/case checks, verification-file evidence, independent reviewer approval, deadlines, optimistic transitions, idempotent creation replay, and completion evidence. Retention evaluation is deterministic and non-destructive; legal holds take precedence, and hard-delete/anonymization policies require review. New deletion fulfillment queues the existing worker instead of deleting synchronously. Processor results remain visible and retryable, with unconfigured external adapters explicitly failed rather than assumed complete. Historical deletion rows are preserved and represented explicitly without manufacturing verification evidence. Unit tests and gated lifecycle tests cover the new boundary. Live PostgreSQL migration/lifecycle proof, external search/cache/email/AI propagation adapters, complete retention enforcement, legacy-settings-path convergence, and browser acceptance remain open; HUM-FR-005 is not closed.
 
