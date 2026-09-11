@@ -14,8 +14,11 @@ import {
   provisionOrganizationApiKey,
   provisionWorkspace,
 } from "@/modules/auth/workspaces";
+import { createGovernanceService } from "@/modules/governance/service";
 
 import { CookieJar, TestEmailSender } from "../support/auth";
+import { caseContext } from "../support/cases";
+import type { SessionActor } from "../support/graphql";
 
 const password = ["Task12", "Compose", "Smoke!", "2026"].join("");
 const searchNeedle = "Compose Search Needle";
@@ -237,6 +240,34 @@ async function main() {
     const firstPersonId = await createPerson(searchNeedle);
     const secondPersonId = await createPerson("Compose Graph Peer");
     await createPerson(confidentialNeedle, "CONFIDENTIAL");
+    const smokeActor: SessionActor = {
+      jar,
+      memberId: workspace.memberId,
+      organizationId: workspace.organizationId,
+      principalId: workspace.principalId,
+      userId: user.id,
+      workspaceId: workspace.workspaceId,
+    };
+    const governance = createGovernanceService(
+      await caseContext({ database: db }, smokeActor),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    for (const personId of [firstPersonId, secondPersonId]) {
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId,
+        purpose: "research",
+        scopes: ["read", "write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+    }
 
     const task18Contact = await execute<{
       createPersonContact: {
