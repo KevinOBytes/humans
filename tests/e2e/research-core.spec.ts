@@ -148,6 +148,7 @@ test("person research loads governed proposals and applies only the reviewed fie
 }) => {
   const expectNoBrowserFailures = captureBrowserFailures(page);
   const actor = await fixture.createActor();
+  const reviewer = await fixture.createWorkspaceMember(actor, "admin");
   const created = await fixture.createPerson(actor, {
     displayName: "Research Subject",
     biography: "Original biography",
@@ -221,7 +222,7 @@ test("person research loads governed proposals and applies only the reviewed fie
       runKind: "web",
       promptPolicyVersion: "synthetic-v1",
     });
-  await authenticate(context, actor.jar);
+  await authenticate(context, reviewer.jar);
   await page.goto("/people/" + personId);
   await expect(
     page.getByRole("button", { name: "Research this person" }),
@@ -330,7 +331,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
         label: "Date of birth",
         allowedValueType: "DATE",
         cardinality: "MANY",
-        defaultSensitivity: "INTERNAL",
+        defaultSensitivity: "PUBLIC",
       },
     },
   });
@@ -451,6 +452,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await expect(page.getByLabel("Field", { exact: true })).toHaveValue(
     factDefinitionId!,
   );
+  await page.getByLabel("Sensitivity").selectOption("PUBLIC");
   await page.getByLabel("Value").fill("1815-12-10");
   await page.getByLabel("Claim state").selectOption("ASSERTED");
   await page.getByRole("button", { name: "Add fact" }).click();

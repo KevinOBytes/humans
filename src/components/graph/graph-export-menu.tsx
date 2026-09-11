@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, Download } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -38,13 +38,21 @@ export function GraphExportMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [pngPending, setPngPending] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
   const downloadText = (content: string, extension: string, mime: string) => {
     downloadBlob(
       new Blob([content], { type: `${mime};charset=utf-8` }),
       `${baseName(result)}.${extension}`,
     );
     onStatus?.(`${extension.toUpperCase()} export prepared.`);
-    setOpen(false);
   };
   const csv = () => serializeGraphCsv(result);
 
@@ -80,7 +88,6 @@ export function GraphExportMenu({
       });
       downloadBlob(blob, `${baseName(result)}.png`);
       onStatus?.("PNG export prepared.");
-      setOpen(false);
     } catch {
       onStatus?.("PNG export could not be prepared in this browser.");
     } finally {
@@ -90,7 +97,7 @@ export function GraphExportMenu({
   }
 
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <Button
         type="button"
         variant="outline"

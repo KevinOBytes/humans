@@ -336,6 +336,7 @@ test("authenticated graph keeps table parity, saves views, and exports safe file
     page.getByRole("status", { name: "Graph explorer status" }),
   ).toContainText("no longer reproducible");
 
+  await page.getByRole("button", { name: "Export", exact: true }).click();
   const pngDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download PNG" }).click();
   const png = await downloadBytes(await pngDownload);
