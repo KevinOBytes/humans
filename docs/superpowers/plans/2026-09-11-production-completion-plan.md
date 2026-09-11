@@ -102,3 +102,21 @@
 - [ ] **Step 5: Update requirement rows only where current evidence meets the row’s scope; retain explicit unchecked rows for missing external evidence.**
 - [ ] **Step 6: Request a whole-branch code review, resolve findings, squash-merge the release branch, prune stale branches/worktrees, and verify `main` parity.**
 
+### Task 5: Fictional rich demo dataset
+
+**Files:**
+- Modify: `src/db/seed.ts`
+- Modify: `tests/integration/full-schema.test.ts`
+- Create: `tests/unit/synthetic-seed-contract.test.ts`
+- Modify: `docs/operations/docker.md`, `docs/REQUIREMENTS.md`, `TODO.md`
+
+**Interfaces:**
+- `seedDatabase` remains explicit, idempotent, and guarded by `ALLOW_DATABASE_SEED=true`.
+- The seed creates a bounded fictional `Northstar Atlas` workspace containing at least four fictional people, aliases, pronouns, biographies, employment, education, language, organization, public-contact, temporal-address, custom facts, two typed directional relationships with dates/strength/confidence, source/evidence/assertion records, one contradiction, one case with reviewer membership, one consent withdrawal, one AI suggestion awaiting review, and one legal hold.
+- All fixture identifiers use the existing deterministic UUID namespace; names, domains, phone numbers, URLs, and organizations use reserved/example values and must not match known real-person names or routable contact data.
+
+- [ ] **Step 1: Add failing source-contract tests** asserting the seed contains only fictional reserved values, at least four people, rich facts, relationships, provenance, consent/legal-hold/AI-review records, and no historical real-person fixture names.
+- [ ] **Step 2: Replace the two minimal Ada records with idempotent SQL inserts for the rich fictional workspace and its related rows.** Preserve the two-workspace tenant-isolation fixtures under distinct fictional names.
+- [ ] **Step 3: Run the seed against disposable Compose PostgreSQL and verify GraphQL/profile/graph/search/AI-review/privacy projections.**
+- [ ] **Step 4: Update the self-hosting documentation and requirement matrix with the exact synthetic-data evidence.**
+- [ ] **Step 5: Commit as `feat: ship fictional rich research demo dataset`.**
