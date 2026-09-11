@@ -16,6 +16,7 @@ import {
   createCasesService,
   requireCaseResource,
 } from "@/modules/cases/service";
+import { createCasesRepository } from "@/modules/cases/repository";
 import { checkPurposeCoverage } from "@/modules/governance/coverage";
 import { createPeopleService } from "@/modules/people/service";
 import { createFactsService } from "@/modules/facts/service";
@@ -94,6 +95,7 @@ export async function authorizeAiReviewScope(
 async function verifyProvenance(
   context: ResearchServiceContext,
   input: AiSuggestionInput,
+  options: { allowDifferentCreator?: boolean } = {},
 ) {
   if (input.runKind === "analysis") {
     const [run] = await context.database
@@ -109,7 +111,8 @@ async function verifyProvenance(
     if (
       !run ||
       run.state !== "completed" ||
-      run.createdBy !== context.actor.principalId ||
+      (!options.allowDifferentCreator &&
+        run.createdBy !== context.actor.principalId) ||
       run.provider !== input.provider ||
       run.model !== input.model ||
       run.governancePurpose !== input.purpose ||
@@ -150,7 +153,8 @@ async function verifyProvenance(
     if (
       !run ||
       run.personId !== input.personId ||
-      run.createdBy !== context.actor.principalId ||
+      (!options.allowDifferentCreator &&
+        run.createdBy !== context.actor.principalId) ||
       run.provider !== input.provider ||
       run.model !== input.model ||
       run.governancePurpose !== input.purpose ||
@@ -266,6 +270,51 @@ async function project(context: ResearchServiceContext, row: Row) {
 }
 export type AiReviewSuggestion = Awaited<ReturnType<typeof project>>;
 
+/**
+ * A suggestion author may inspect their own pending work, but may not make a
+ * review decision on it. Cross-user review is limited to workspace owners and
+ * administrators, or to an explicitly assigned case owner/reviewer. The
+ * latter keeps case-linked suggestions inside the case's sharing boundary.
+ */
+async function isIndependentReviewer(
+  context: ResearchServiceContext,
+  row: Row,
+) {
+  if (
+    context.actor.type !== "user" ||
+    row.createdBy === context.actor.principalId
+  )
+    return false;
+
+  if (row.caseId) {
+    const membership = await createCasesRepository(context.database).get(
+      context.workspaceId,
+      row.caseId,
+      context.actor.principalId,
+    );
+    return (
+      membership?.case.state === "active" &&
+      ["owner", "reviewer"].includes(membership.role)
+    );
+  }
+
+  return (
+    context.permissions.has("workspace:update") &&
+    (context.actor.role === "owner" || context.actor.role === "admin")
+  );
+}
+
+async function requireIndependentReviewer(
+  context: ResearchServiceContext,
+  row: Row,
+) {
+  if (!(await isIndependentReviewer(context, row)))
+    throw createGraphQLError(
+      "FORBIDDEN",
+      "An independent workspace or case reviewer is required.",
+    );
+}
+
 /** Internal producer entry point: never exposed as arbitrary client-supplied provenance. */
 export async function recordAiSuggestion(
   context: ResearchServiceContext,
@@ -314,9 +363,14 @@ export function createAiReviewService(context: ResearchServiceContext) {
       )
       .for(write ? "update" : "share")
       .limit(1);
-    if (!row || row.createdBy !== context.actor.principalId) fail();
+    if (!row) fail();
+    const independentReviewer = await isIndependentReviewer(scoped, row);
+    if (row.createdBy !== scoped.actor.principalId && !independentReviewer)
+      fail();
     await authorizeAiReviewScope(scoped, proposal(row), write);
-    await verifyProvenance(scoped, proposal(row));
+    await verifyProvenance(scoped, proposal(row), {
+      allowDifferentCreator: independentReviewer,
+    });
     return row;
   }
   async function decide(scoped: ResearchServiceContext, raw: unknown) {
@@ -324,6 +378,7 @@ export function createAiReviewService(context: ResearchServiceContext) {
       throw createGraphQLError("FORBIDDEN", "A human reviewer is required.");
     const input = normalizeAiReviewDecision(raw);
     const row = await get(scoped, input.id, true);
+    await requireIndependentReviewer(scoped, row);
     if (
       row.version !== input.expectedVersion ||
       !["pending", "deferred"].includes(row.status)
@@ -476,7 +531,6 @@ export function createAiReviewService(context: ResearchServiceContext) {
                 input.caseId
                   ? eq(aiReviewSuggestions.caseId, input.caseId)
                   : isNull(aiReviewSuggestions.caseId),
-                eq(aiReviewSuggestions.createdBy, context.actor.principalId),
                 inArray(aiReviewSuggestions.status, ["pending", "deferred"]),
               ),
             )
@@ -485,8 +539,19 @@ export function createAiReviewService(context: ResearchServiceContext) {
           const result: AiReviewSuggestion[] = [];
           for (const row of rows) {
             try {
+              const independentReviewer = await isIndependentReviewer(
+                scoped,
+                row,
+              );
+              if (
+                row.createdBy !== scoped.actor.principalId &&
+                !independentReviewer
+              )
+                continue;
               await authorizeAiReviewScope(scoped, proposal(row));
-              await verifyProvenance(scoped, proposal(row));
+              await verifyProvenance(scoped, proposal(row), {
+                allowDifferentCreator: independentReviewer,
+              });
               result.push(await project(scoped, row));
             } catch (error) {
               if (

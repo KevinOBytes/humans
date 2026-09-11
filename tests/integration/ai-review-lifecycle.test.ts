@@ -11,6 +11,7 @@ import {
   recordAiSuggestion,
 } from "@/modules/ai/review-service";
 import { createGovernanceService } from "@/modules/governance/service";
+import { rolePermissionKeys } from "@/modules/auth/permissions";
 import type { ResearchServiceContext } from "@/modules/audit/service";
 import { ResearchFixture } from "../support/research-fixture";
 import { caseContext, coveredPerson } from "../support/cases";
@@ -18,12 +19,22 @@ const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 liveDescribe("AI suggestion lifecycle and provenance", () => {
   let fixture: ResearchFixture;
   let context: ResearchServiceContext;
+  let reviewerContext: ResearchServiceContext;
   beforeAll(() => {
     fixture = new ResearchFixture();
   });
   beforeEach(async () => {
     await fixture.reset();
-    context = await caseContext(fixture, await fixture.createActor());
+    const owner = await fixture.createActor();
+    context = await caseContext(fixture, owner);
+    const reviewer = await fixture.createWorkspaceMember(owner, "admin");
+    const baseReviewer = await caseContext(fixture, reviewer);
+    if (baseReviewer.actor.type !== "user") throw new Error("user expected");
+    reviewerContext = {
+      ...baseReviewer,
+      actor: { ...baseReviewer.actor, role: "admin" },
+      permissions: new Set(rolePermissionKeys("admin")),
+    };
   });
   afterAll(async () => fixture.close());
   async function draft(field = "biography") {
@@ -90,7 +101,7 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
   }
   it("accepts one field and retains the immutable original provenance with a redacted audit", async () => {
     const row = await draft();
-    const service = createAiReviewService(context);
+    const service = createAiReviewService(reviewerContext);
     const accepted = await service.acceptSuggestion({
       id: row.id,
       expectedVersion: 1,
@@ -100,7 +111,7 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       status: "accepted",
       acceptedResourceId: row.personId,
       acceptedResourceKind: "person",
-      reviewedBy: context.actor.principalId,
+      reviewedBy: reviewerContext.actor.principalId,
       researchRunId: row.researchRunId,
       proposedValue: row.proposedValue,
       evidenceReferences: row.evidenceReferences,
@@ -137,7 +148,7 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
   });
   it("defers then rejects with a reason without changing the target", async () => {
     const row = await draft();
-    const service = createAiReviewService(context);
+    const service = createAiReviewService(reviewerContext);
     expect(
       (await service.deferSuggestion({ id: row.id, expectedVersion: 1 }))
         .status,
@@ -178,11 +189,21 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       }),
     ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
   });
+  it("does not allow the suggestion author to approve their own work", async () => {
+    const row = await draft();
+    await expect(
+      createAiReviewService(context).acceptSuggestion({
+        id: row.id,
+        expectedVersion: 1,
+        explicitConfirmed: true,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+  });
   it("rolls back the whole explicitly approved batch on a stale suggestion", async () => {
     const first = await draft();
     const second = await draft("displayName");
     await expect(
-      createAiReviewService(context).reviewBatch({
+      createAiReviewService(reviewerContext).reviewBatch({
         approved: true,
         suggestions: [
           { id: first.id, expectedVersion: 1 },
