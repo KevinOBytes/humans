@@ -57,10 +57,14 @@ The implementation should add missing governance and case semantics without movi
 Keep `people` as the stable workspace-scoped subject identifier. Expand the profile through typed records rather than adding a large unbounded column set:
 
 - names, aliases, transliterations, and name validity intervals;
+- pronouns and self-described identity labels, with subject-provided provenance and consent-aware visibility;
+- biographies and notes as separately classified rich-text assertions rather than an unreviewed free-form dossier;
+- employment, education, languages, organization memberships, and public contact points as repeatable temporal facts;
 - identifiers with namespace, issuer, verification state, encrypted value, and blind index;
 - facts for birth/death information, sex/gender fields where appropriate and consented, languages, education, employment, organization membership, public web identifiers, and other workspace-defined properties;
 - addresses and contact points as temporal records with type, valid interval, verification state, sensitivity, and source;
 - files and media as references with malware/scanning status and provenance;
+- public identifiers and custom fields through versioned `factDefinitions`, with workspace-defined validation and export policy;
 - person status, merge history, confidence, sensitivity, and deletion state.
 
 Sensitive fields must be classified individually. A person’s general profile visibility must never imply visibility of protected identifiers, precise addresses, phone numbers, or other restricted facts.
@@ -86,6 +90,7 @@ Relationships remain explicit, typed, directional where appropriate, and workspa
 - relationship type and inverse label;
 - source and target people;
 - state: asserted, corroborated, disputed, disproven, inferred, or inactive;
+- explicit assertion kind: `documented` when supported by a cited source or subject-provided record, or `analyst_hypothesis` when it is an interpretation awaiting corroboration;
 - valid-from/valid-until and observation interval;
 - confidence and confidence explanation;
 - relationship sensitivity and field classification;
@@ -105,7 +110,8 @@ Evidence should support source-level and field-level citation:
 - content hash, capture metadata, parser/extractor version, and chain-of-custody events for uploaded material;
 - assertion-to-evidence links with quoted/extracted location, page/line/region, and redaction state;
 - contradictions, duplicates, supersession, and corroboration links;
-- whether a source was supplied by the subject, workspace member, public source, import, or AI retrieval provider.
+- whether a source was supplied by the subject, workspace member, public source, import, or AI retrieval provider;
+- field-level citations preserve the exact source locator and extraction context used to support each value.
 
 The existing person web-research provenance ledger should become the durable parent for AI retrieval references. An accepted AI suggestion must link to a research run, provider/model, prompt policy version, source references, reviewer identity, review timestamp, and the exact accepted/rejected field delta.
 
@@ -133,6 +139,8 @@ Add a case layer above people, facts, relationships, and evidence:
 - case membership with role and expiration;
 - explicit links between a case and people, facts, relationships, evidence, saved searches, AI runs, and exports;
 - case-level consent/purpose scope, data minimization policy, and sharing policy;
+- assignment queues for review, verification, consent follow-up, source reconciliation, and privacy requests, with assignee, priority, due date, status, and escalation history;
+- explicit information-sharing boundaries for teams, roles, external collaborators, and export destinations;
 - an activity timeline assembled from audit and evidence events without copying sensitive payloads into a denormalized feed.
 
 People may exist in a workspace without belonging to a case. Case visibility must narrow access, never broaden it.
@@ -147,6 +155,7 @@ Generalize deletion requests into a privacy request workflow supporting access, 
 - generated export reference with redaction and provenance metadata;
 - legal hold conflicts and documented exceptions;
 - processor propagation status for files, email, search indexes, caches, and AI provider records;
+- field-level redaction preview and encryption status for every generated export;
 - completion evidence and audit event references.
 
 Retention policies should be evaluated by scheduled jobs and at read/export time. Expired records are quarantined before deletion when review is required. Legal holds prevent destructive actions and are themselves auditable.
@@ -164,6 +173,8 @@ Authorization must evaluate, in order:
 7. operation-specific approval requirements.
 
 All reads of restricted data, bulk searches, exports, AI retrievals, consent changes, privacy-request actions, and break-glass actions produce audit events. Audit records include actor attribution, request ID, resource/case, purpose, outcome, redacted parameters, and rate/bulk indicators. Raw secrets and protected field values never appear in audit payloads.
+
+Bulk-query and bulk-export thresholds are configurable per workspace and emit reviewable alerts before or during execution. Administrator activity is visible in the same audit surface as member activity. Break-glass access requires a reason, an expiration, a reviewer or post-hoc reviewer assignment, and an explicit list of resources; it is never a hidden bypass.
 
 Introduce explicit approval records for:
 
@@ -188,6 +199,8 @@ All operations remain GraphQL-backed and generated. Add bounded operations such 
 - `accessApprovals`, `requestRestrictedAccess`, and `reviewAccessApproval`;
 - `retentionPolicies`, `legalHolds`, and administrative policy mutations;
 - export mutations that require purpose, scope, approval, redaction profile, and an expiring download reference.
+- faceted people/fact/source search with bounded filters for case, sensitivity, consent coverage, source reliability, temporal range, review state, and relationship state;
+- timeline queries, source-comparison queries, duplicate/identity-candidate review, contradiction reports, and explainable graph-metric queries with bounded limits.
 
 Mutations use the existing idempotency, optimistic-version, audit, and GraphQL error conventions. List operations use bounded pagination and never permit an unbounded “all people” query through a browser or API key.
 
@@ -209,9 +222,17 @@ AI suggestions appear as proposed field cards with checkboxes, evidence snippets
 
 Workspace administrators can view purpose coverage, expiring consents, withdrawal impact, pending privacy requests, legal holds, retention warnings, and provider propagation status. Subjects or authorized representatives receive only the access, export, correction, or withdrawal flows permitted by workspace policy.
 
+### Search, imports, and exports
+
+Search results disclose which facets and fields were considered and omit fields outside the actor's purpose and sensitivity ceiling. Source comparison and contradiction views show competing assertions side by side with their citations rather than collapsing them into a single value. CSV, JSON, and document imports require a schema-mapping preview, validation report, provenance defaults, duplicate handling policy, and an explicit commit step. Exports show a redaction preview, scope, purpose, approval, expiration, and provenance manifest before the download reference is issued.
+
 ## AI and external search safety
 
 External research is an explicit, user-started operation tied to a person, case, purpose, and approved source policy. The system records provider, query, time, returned references, and redaction rules. It must not scrape private accounts, evade access controls, or silently collect location/biometric data. Ollama and OpenAI-compatible providers use the same provenance and human-review contract. If no source can be cited, the result remains an unaccepted hypothesis and cannot be written as a fact.
+
+## Security and identity controls
+
+API keys have explicit scopes, expiration, revocation, last-used metadata, workspace binding, rate limits, and mandatory audit attribution. They cannot use browser-only session capabilities, bypass case/purpose checks, or retrieve secrets. User sessions retain the existing 2FA, backup-code, session-revocation, password-attempt, and CSRF protections; new governance operations must use the same request boundary. Secrets are encrypted at rest or held by the configured provider, and tenant isolation is tested at the database, service, GraphQL, search, import, export, and object-storage layers.
 
 ## Implementation sequencing
 
@@ -221,7 +242,8 @@ The implementation will be split into independently testable tranches:
 2. **Case and evidence links:** cases, memberships, resource links, provenance assertions, temporal relationship metadata, and case-scoped GraphQL operations.
 3. **AI review hardening:** suggestion records, accept/reject/revise mutations, provider provenance, batch-approval safeguards, and review queue UI.
 4. **Retention and privacy operations:** retention evaluation, legal holds, export/redaction workflow, provider propagation, and scheduled jobs.
-5. **Research UI and analysis:** person governance panels, graph evidence states, consent-aware search filters, explainable metrics, and synthetic fixtures.
+5. **Research UI and analysis:** rich profile panels, graph evidence states, consent-aware faceted search, timeline/source comparison, contradiction/duplicate review, explainable metrics, and synthetic fixtures.
+6. **Controlled data movement and security:** import schema mapping/validation, provenance-preserving CSV/JSON/document ingestion, export previews, API-key scope/revocation/rate-limit evidence, session/2FA regression coverage, bulk-query alerts, and administrator/break-glass review.
 
 Each tranche must include schema metadata/migrations, generated GraphQL artifacts, focused unit/integration tests, authorization tests, audit assertions, and documentation updates. Tranches should be merged only after the full existing quality, build, database, Compose, browser, security, and generated-drift gates pass.
 
@@ -239,7 +261,11 @@ The release is not complete until the repository proves:
 - retention and legal holds prevent unauthorized destructive actions;
 - privacy requests are idempotent, versioned, auditable, and tested through completion;
 - GraphQL pagination, complexity, rate, and export limits remain enforced;
-- synthetic fixtures cover multiple names, addresses, phones, facts, relationships, disputes, consent withdrawal, AI suggestions, and legal holds;
+- faceted search, timeline analysis, source comparison, duplicate detection, contradiction detection, and explainable graph metrics are backed by bounded GraphQL operations and authorization tests;
+- CSV/JSON/document import previews preserve mapping, validation, provenance, and redaction decisions; exports are scoped and provenance-preserving;
+- API keys enforce scopes, revocation, rate limits, tenant isolation, encrypted secret handling, and mandatory audit logging; session, 2FA, backup-code, and revocation behavior remains covered;
+- bulk-query/export alerts and break-glass access create approval/audit records visible to administrators;
+- synthetic fixtures cover rich profiles with names, aliases, pronouns, biographies, employment, education, public contacts, temporal addresses, languages, organizations, public identifiers, notes, custom fields, phones, competing facts, relationships, disputes, consent withdrawal, AI suggestions, and legal holds;
 - no test or fixture contains real personal data or secrets.
 
 ## Operational and migration constraints
