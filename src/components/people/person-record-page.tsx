@@ -9,6 +9,7 @@ import { NotesSection } from "@/components/notes/notes-section";
 import { ContactsPlacesSection } from "@/components/locations/contacts-places-section";
 import { PersonEditForm } from "@/components/people/person-edit-form";
 import { PersonGovernancePanels } from "@/components/people/person-governance-panels";
+import { PersonPrivacyPanel } from "@/components/people/person-privacy-panel";
 import { PersonResearchPanel } from "@/components/people/person-research-panel";
 import { NamesTimelineSection } from "@/components/people/names-timeline-section";
 import { PersonFilesSection } from "@/components/people/person-files-section";
@@ -35,6 +36,7 @@ const views = [
   "files",
   "activity",
   "governance",
+  "privacy",
 ] as const;
 type View = (typeof views)[number];
 
@@ -137,17 +139,19 @@ export async function PersonRecordPage({
                 aria-current={view === candidate ? "page" : undefined}
                 className="text-muted-foreground hover:text-foreground aria-[current=page]:border-primary aria-[current=page]:text-primary block min-h-11 rounded-t-lg border-b-2 border-transparent px-4 py-3 text-sm font-semibold capitalize"
               >
-                {candidate === "governance"
-                  ? "Consent & Purpose"
-                  : candidate === "notes"
-                    ? "Notes & tags"
-                    : candidate === "evidence"
-                      ? "Sources & citations"
-                      : candidate === "names"
-                        ? "Names & timeline"
-                        : candidate === "contacts"
-                          ? "Contacts & places"
-                          : candidate}
+                {candidate === "privacy"
+                  ? "Privacy Requests"
+                  : candidate === "governance"
+                    ? "Consent & Purpose"
+                    : candidate === "notes"
+                      ? "Notes & tags"
+                      : candidate === "evidence"
+                        ? "Sources & citations"
+                        : candidate === "names"
+                          ? "Names & timeline"
+                          : candidate === "contacts"
+                            ? "Contacts & places"
+                            : candidate}
               </Link>
             </li>
           ))}
@@ -155,6 +159,9 @@ export async function PersonRecordPage({
       </nav>
       {view === "governance" ? (
         <PersonGovernancePanels key={personId} personId={personId} />
+      ) : null}
+      {view === "privacy" ? (
+        <PersonPrivacyPanel key={personId} personId={personId} />
       ) : null}
       {view === "facts" ? (
         <FactsSection

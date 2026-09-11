@@ -6,7 +6,17 @@ import { personWithContradictoryFacts } from "../fixtures/person";
 
 describe("PersonProfile", () => {
   it("keeps contradictory facts independently visible and marks selection separately", () => {
-    render(<PersonProfile person={personWithContradictoryFacts} />);
+    render(
+      <PersonProfile
+        person={{
+          ...personWithContradictoryFacts,
+          facts: personWithContradictoryFacts.facts.map((fact) => ({
+            ...fact,
+            sensitivity: "PUBLIC",
+          })),
+        }}
+      />,
+    );
 
     expect(
       screen.getAllByRole("article", { name: /date of birth/i }),
@@ -21,7 +31,13 @@ describe("PersonProfile", () => {
     const unsafe = {
       ...personWithContradictoryFacts,
       facts: personWithContradictoryFacts.facts.map((fact, index) =>
-        index === 0 ? { ...fact, value: "<img src=x onerror=alert(1)>" } : fact,
+        index === 0
+          ? {
+              ...fact,
+              sensitivity: "PUBLIC",
+              value: "<img src=x onerror=alert(1)>",
+            }
+          : fact,
       ),
     };
     const { container } = render(<PersonProfile person={unsafe} />);

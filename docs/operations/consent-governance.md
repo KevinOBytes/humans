@@ -16,9 +16,15 @@ promotion control. AI proposals continue to use the existing human review queue.
 
 ## Limits
 
-- Field displays do not automatically resolve consent coverage. Their notices link
-  to the explicit purpose/operation checker.
+- Non-public fact values, provenance, temporal context and selection actions are
+  now withheld from server-built profile projections and contradictory-claim
+  summaries. Public fact projections remain visible under existing server access
+  checks. A request-bound field disclosure flow is still required to reveal
+  non-public values; a previous client coverage check never unlocks them.
 - Workspace policy settings are not a complete consent/privacy administration UI.
+  The new **Privacy Requests** tab provides person-scoped retention/hold metadata
+  and authorized request-ID/processor-status lookup. The API has no person-filtered
+  request listing, so lookup never claims an association with the current person.
   Full consent, request, hold and case CRUD surfaces remain pending.
 - Graph source counts/case memberships are absent from the generated projection.
 - Existing graph downloads serialize loaded data. The new scope notice is not an
@@ -52,3 +58,9 @@ with 72 files / 598 tests skipped; skipped service-backed tests are not acceptan
 evidence. The standalone production server started on loopback and
 `GET /api/health/live` returned HTTP 200 with `status: ok`. This is a process-health
 smoke only, not authenticated application, database readiness or hosted proof.
+
+The follow-up fail-closed fact projection and read-only Privacy Requests panel
+have 14 passing focused tests across six files. This is bounded UI/server-projection
+evidence: it does not close governance coverage for every contact, attachment,
+overview, graph or other person-record surface. Those require a complete field/
+resource coverage audit and authenticated request-bound disclosure verification.

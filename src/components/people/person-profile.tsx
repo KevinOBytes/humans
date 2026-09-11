@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import type { PersonProfileView } from "@/components/research/types";
 import { Badge } from "@/components/ui/badge";
+import { redactUngovernedFact } from "@/components/facts/person-fact-disclosure";
 
 const stateLabels: Record<string, string> = {
   ASSERTED: "Asserted",
@@ -83,7 +84,7 @@ export function PersonProfile({
           </div>
         ) : (
           <div className="grid gap-4 xl:grid-cols-2">
-            {person.facts.map((fact, index) => (
+            {person.facts.map(redactUngovernedFact).map((fact, index) => (
               <article
                 key={fact.id}
                 aria-label={`${fact.label} claim`}
@@ -150,7 +151,9 @@ export function PersonProfile({
                 >
                   Check consent & purpose
                 </Link>
-                {actions?.[fact.id]}
+                {fact.sensitivity.toUpperCase() === "PUBLIC"
+                  ? actions?.[fact.id]
+                  : null}
 
                 {fact.revisions.length > 0 ? (
                   <section

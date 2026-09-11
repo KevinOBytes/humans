@@ -490,6 +490,14 @@ full privacy/hold/case administration UI, per-field coverage, graph source/case
 metadata, export previews, legacy backfill and hosted migration remain open.
 See `docs/operations/consent-governance.md` for verification limits.
 
+Task 5 follow-up: non-public fact values/provenance/temporal context are withheld in
+server-built profile and contradiction projections until request-bound field
+disclosure exists. Sensitive fact detail queries and selection controls are also
+withheld. A read-only Privacy Requests panel exposes person retention/hold metadata
+and authorized request lookup without asserting person association or processor
+completion. Fourteen focused tests pass; complete person-surface governance remains
+open, including overview/contacts/files and authenticated field-disclosure proof.
+
 ### Consent-governed research Task 2 backend checkpoint
 
 The branch adds case membership and resource links, shared visibility narrowing,
