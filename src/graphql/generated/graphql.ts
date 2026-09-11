@@ -139,18 +139,32 @@ export type ConsentCoverageReason =
   | "MISSING_CONSENT"
   | "WITHDRAWN";
 
+export type ConsentScope =
+  "AI_OPERATION" | "EXPORT" | "READ" | "RESTRICTED_READ" | "WRITE";
+
+export type ConsentScopeInput = {
+  caseReference?: string | null | undefined;
+  fieldDefinitionId?: string | null | undefined;
+  scope: ConsentScope;
+};
+
 export type ConsentStatus =
   "DENIED" | "EXPIRED" | "GRANTED" | "UNKNOWN" | "WITHDRAWN";
 
 export type CreateConsentInput = {
+  collectionMethod?: string | null | undefined;
   effectiveFrom: string;
   effectiveUntil?: string | null | undefined;
   evidenceId?: string | null | undefined;
   idempotencyKey?: string | null | undefined;
+  lawfulBasis?: LawfulBasis | null | undefined;
+  noticeVersion?: string | null | undefined;
   personId: string;
   purpose: string;
+  scopes?: Array<ConsentScopeInput> | null | undefined;
   source: string;
   status: ConsentStatus;
+  withdrawalEffect?: WithdrawalEffect | null | undefined;
 };
 
 export type CreateDeletionRequestInput = {
@@ -538,6 +552,9 @@ export type GenerateIdentityCandidatesInput = {
 export type GovernanceScope =
   "AI_OPERATION" | "EXPORT" | "READ" | "RESTRICTED_READ" | "WRITE";
 
+export type GovernanceWithdrawalEffect =
+  "RESTRICT_PROCESSING" | "RETAIN_UNDER_HOLD" | "STOP_PROCESSING";
+
 export type GraphAnalysisAlgorithm =
   "DEGREE" | "LOUVAIN_COMMUNITY" | "PAGERANK";
 
@@ -620,6 +637,14 @@ export type IssueWorkspaceInvitationInput = {
   idempotencyKey: string;
   role: WorkspaceAdministrationRole;
 };
+
+export type LawfulBasis =
+  | "CONSENT"
+  | "CONTRACT"
+  | "LEGAL_OBLIGATION"
+  | "LEGITIMATE_INTERESTS"
+  | "PUBLIC_TASK"
+  | "VITAL_INTERESTS";
 
 export type LifecycleState = "ACTIVE" | "ARCHIVED" | "INACTIVE";
 
@@ -1167,6 +1192,9 @@ export type UpsertRetentionPolicyInput = {
 export type WebhookIdInput = {
   id: string;
 };
+
+export type WithdrawalEffect =
+  "RESTRICT_PROCESSING" | "RETAIN_UNDER_HOLD" | "STOP_PROCESSING";
 
 export type WorkspaceAdministrationRole =
   "ADMIN" | "ANALYST" | "CONTRIBUTOR" | "VIEWER";
@@ -1801,15 +1829,16 @@ export type GovernanceCreateConsentRecordMutation = {
 export type WithdrawConsentMutationVariables = Exact<{
   id: string;
   expectedVersion: number;
+  withdrawalEffect?: GovernanceWithdrawalEffect | null | undefined;
 }>;
 
 export type WithdrawConsentMutation = {
   withdrawConsent: {
     id: string | null;
-    state: string | null;
-    reason: string | null;
+    status: string | null;
+    withdrawalEffect: string | null;
     version: number | null;
-    createdAt: string | null;
+    withdrawnAt: string | null;
   } | null;
 };
 
@@ -6186,18 +6215,22 @@ export const GovernanceCreateConsentRecordDocument = new TypedDocumentString(
 >;
 export const WithdrawConsentDocument = new TypedDocumentString(
   `
-    mutation WithdrawConsent($id: UUID!, $expectedVersion: Int!) {
-  withdrawConsent(id: $id, expectedVersion: $expectedVersion) {
+    mutation WithdrawConsent($id: UUID!, $expectedVersion: Int!, $withdrawalEffect: GovernanceWithdrawalEffect) {
+  withdrawConsent(
+    id: $id
+    expectedVersion: $expectedVersion
+    withdrawalEffect: $withdrawalEffect
+  ) {
     id
-    state
-    reason
+    status
+    withdrawalEffect
     version
-    createdAt
+    withdrawnAt
   }
 }
     `,
   {
-    hash: "sha256:ec577013b01977afd31cf8ed962438c260b0b7aacd692b92fb7150965ceccc65",
+    hash: "sha256:a8467ef6995cc18e16d52659d1eb8038d8bd932690c2021426d6b0ef1a91c99a",
   },
 ) as unknown as TypedDocumentString<
   WithdrawConsentMutation,

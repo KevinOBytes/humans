@@ -59,6 +59,34 @@ const Approval = builder
       }),
     }),
   });
+const WithdrawalEffect = builder.enumType("GovernanceWithdrawalEffect", {
+  values: {
+    STOP_PROCESSING: { value: "stop_processing" },
+    RESTRICT_PROCESSING: { value: "restrict_processing" },
+    RETAIN_UNDER_HOLD: { value: "retain_under_hold" },
+  } as const,
+});
+const ConsentWithdrawal = builder
+  .objectRef<{
+    id: string;
+    status: string;
+    withdrawalEffect: string | null;
+    version: number;
+    withdrawnAt: Date | null;
+  }>("ConsentWithdrawal")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      status: t.exposeString("status"),
+      withdrawalEffect: t.exposeString("withdrawalEffect", { nullable: true }),
+      version: t.exposeInt("version"),
+      withdrawnAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.withdrawnAt?.toISOString() ?? null,
+      }),
+    }),
+  });
 const GovernancePageInfo = builder
   .objectRef<{ hasNextPage: boolean; endCursor: string | null }>(
     "GovernancePageInfo",
@@ -121,13 +149,17 @@ export function registerGovernanceGraphQL() {
   }));
   builder.mutationFields((t) => ({
     withdrawConsent: t.field({
-      type: Approval,
+      type: ConsentWithdrawal,
       args: {
         id: t.arg({ type: "UUID", required: true }),
         expectedVersion: t.arg.int({ required: true }),
+        withdrawalEffect: t.arg({ type: WithdrawalEffect }),
       },
       resolve: async (_root, args, context) =>
-        context.services.governance.withdrawConsent(args) as never,
+        context.services.governance.withdrawConsent({
+          ...args,
+          withdrawalEffect: args.withdrawalEffect ?? undefined,
+        }) as never,
     }),
     requestAccessApproval: t.field({
       type: Approval,

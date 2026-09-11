@@ -44,13 +44,21 @@ mutation GovernanceCreateConsentRecord($input: CreateConsentInput!) {
   }
 }
 
-mutation WithdrawConsent($id: UUID!, $expectedVersion: Int!) {
-  withdrawConsent(id: $id, expectedVersion: $expectedVersion) {
+mutation WithdrawConsent(
+  $id: UUID!
+  $expectedVersion: Int!
+  $withdrawalEffect: GovernanceWithdrawalEffect
+) {
+  withdrawConsent(
+    id: $id
+    expectedVersion: $expectedVersion
+    withdrawalEffect: $withdrawalEffect
+  ) {
     id
-    state
-    reason
+    status
+    withdrawalEffect
     version
-    createdAt
+    withdrawnAt
   }
 }
 
