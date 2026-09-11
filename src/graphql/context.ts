@@ -63,6 +63,7 @@ import { createCasesService } from "@/modules/cases/service";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
 import { createRetentionService } from "@/modules/privacy/retention-service";
 import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
+import { createExportApprovalService } from "@/modules/exports/approval-service";
 import {
   createAiReviewService,
   authorizeAiReviewScope,
@@ -419,6 +420,7 @@ function createServices(input: {
       {
         ...input.context,
         database: input.database,
+        idempotencyHmacKey: input.searchRuntime.protectedLookupHmacKey,
         operationLimiter: input.operationLimiter,
         searchIndexMaintenance: input.searchIndexMaintenance,
       },
@@ -435,6 +437,15 @@ function createServices(input: {
           : {}),
       },
     ),
+    exportApprovals: createExportApprovalService({
+      actor: input.context.actor,
+      database: input.database,
+      idempotencyHmacKey: input.searchRuntime.protectedLookupHmacKey,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
     settings: createSettingsService({
       actor: input.context.actor,
       auth: input.auth,

@@ -1,5 +1,17 @@
 # MVP closure and production hardening backlog
 
+Production-completion Task 1 local checkpoint (2026-09-11): durable export
+approval records bind one requester to the exact workspace, purpose, optional case,
+redaction profile, deterministic preview hash, and expiry. Independent owner/admin
+or assigned case review is versioned and replay-safe, and governed commit now
+requires the matching non-expired approved record after validating its signed
+preview token. Generated request/review operations return approval metadata without
+exported values. Focused unit/schema tests pass; the PostgreSQL/GraphQL lifecycle
+suite is present but skipped because `TEST_DATABASE_URL` is absent. No requirement
+row is closed. Live migration/object-store/browser/provider proof, stale-artifact
+reconciliation, retention cleanup, bulk alerts, and the remaining whole-product
+matrix remain open.
+
 Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
 source-comparison, duplicate, contradiction and descriptive graph analysis now
 apply workspace, sensitivity, temporal, reliability, review and relationship
@@ -25,13 +37,14 @@ exports, and retain subject coverage metadata with the generated artifact. Expor
 downloads re-check artifact state/expiry, case membership, legal holds and current
 purpose coverage; governed files are excluded from ordinary file listings. Search
 withholds non-public typed fact values when no purpose-bound approval is available,
-and high-sensitivity export commits fail closed until a reviewed approval workflow
-is wired. Governed export artifacts now retain a durable writing/failed state and
+and high-sensitivity export commits now fail closed against an independent,
+non-expired approval for the exact deterministic preview. Governed export artifacts
+retain a durable writing/failed state and
 the same idempotency-bound commit can safely replay the deterministic
 object-store write after a process crash or provider timeout; concurrent retries
 reconcile to the single ready artifact. These are hardening changes, not closed
-requirement rows: approval records, automated stale-artifact reconciliation,
-retention cleanup, live PostgreSQL/object-store/browser proof and the remaining
+requirement rows: automated stale-artifact reconciliation, retention cleanup, live
+PostgreSQL/object-store/browser proof and the remaining
 whole-product matrix remain open.
 
 Task 5 follow-up: non-public fact values/provenance/temporal context and selection
