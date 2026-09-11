@@ -250,6 +250,19 @@ function normalizedUtc(
   path: string[],
 ): GovernanceValidationResult<Date | null> {
   if (value == null) return { value: null, issues: [] };
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? {
+          issues: [
+            issue(
+              path,
+              "INVALID_TIMESTAMP",
+              "A UTC RFC 3339 timestamp is required.",
+            ),
+          ],
+        }
+      : { value, issues: [] };
+  }
   if (typeof value !== "string" || !utcRfc3339.test(value)) {
     return {
       issues: [

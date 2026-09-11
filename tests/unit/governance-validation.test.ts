@@ -57,6 +57,14 @@ describe("governance validation", () => {
         effectiveFrom: "2026-09-11T00:00:00.000+01:00",
       }).issues,
     ).not.toEqual([]);
+    expect(
+      normalizeGovernanceInput({
+        purpose: "research",
+        scopes: ["write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date("2026-09-11T00:00:00.000Z"),
+      }).issues,
+    ).toEqual([]);
   });
 
   it("accepts only bounded metadata and a non-empty approval reason", () => {

@@ -28,7 +28,9 @@ import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 
 import { expectGraphQLError } from "../support/graphql";
+import { caseContext } from "../support/cases";
 import { PEOPLE_QUERY, ResearchFixture } from "../support/research-fixture";
+import { createGovernanceService } from "@/modules/governance/service";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -402,6 +404,24 @@ liveDescribe("research API", () => {
         scanState: "clean",
       }),
     );
+    const governance = createGovernanceService(
+      await caseContext(fixture, owner),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    await governance.recordConsent({
+      idempotencyKey: newId(),
+      personId: subjectId,
+      purpose: "research",
+      scopes: ["read", "write"],
+      lawfulBasis: "consent",
+      effectiveFrom: new Date(Date.now() - 60_000),
+    });
     const definition = await fixture.execute<{
       createFactDefinition: { factDefinition: { id: string } | null };
     }>({
@@ -431,6 +451,7 @@ liveDescribe("research API", () => {
           definitionId,
           personId: subjectId,
           sensitivity: "RESTRICTED",
+          governancePurpose: "research",
           value: { fileId: restrictedFileId },
         },
       },
@@ -2313,7 +2334,6 @@ liveDescribe("research API", () => {
     ).toEqual([]);
     const validRelationship = await updateRelationship({
       metadata: { approved: true },
-      state: "CORROBORATED",
     });
     expect(validRelationship.body?.errors).toBeUndefined();
     expect(validRelationship.body?.data?.updateRelationship).toMatchObject({

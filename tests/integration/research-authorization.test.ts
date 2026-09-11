@@ -30,8 +30,10 @@ import { workspacePrincipals } from "@/db/schema/principals";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 import { newId } from "@/db/id";
+import { createGovernanceService } from "@/modules/governance/service";
 
 import { expectGraphQLError } from "../support/graphql";
+import { caseContext } from "../support/cases";
 import {
   CREATE_PERSON_MUTATION,
   ResearchFixture,
@@ -2745,6 +2747,24 @@ liveDescribe("research authorization", () => {
       createdBy: owner.principalId,
       updatedBy: owner.principalId,
     });
+    const governance = createGovernanceService(
+      await caseContext(fixture, owner),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    await governance.recordConsent({
+      idempotencyKey: newId(),
+      personId: personAId,
+      purpose: "research",
+      scopes: ["read", "write"],
+      lawfulBasis: "consent",
+      effectiveFrom: new Date(Date.now() - 60_000),
+    });
     await fixture.database.insert(sources).values({
       id: sourceId,
       workspaceId: owner.workspaceId,
@@ -3066,6 +3086,7 @@ liveDescribe("research authorization", () => {
             id: "${hiddenFactId}"
             expectedVersion: 1
             confidence: 0.8
+            governancePurpose: "research"
           }) {
             fact {
               version
@@ -3080,6 +3101,7 @@ liveDescribe("research authorization", () => {
             id: "${hiddenFactId}"
             expectedVersion: 2
             sensitivity: CONFIDENTIAL
+            governancePurpose: "research"
           }) {
             fact {
               version sensitivity
