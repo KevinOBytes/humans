@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   CircleDot,
@@ -165,6 +166,7 @@ export function GraphExplorer({
   savedViewAdapter,
   workspaceIdentity,
 }: GraphExplorerProps) {
+  const router = useRouter();
   const generationRef = useRef(0);
   const effectiveSavedViewAdapter = useMemo(
     () =>
@@ -229,7 +231,12 @@ export function GraphExplorer({
     });
     setResult(initialResult);
     setFilter("");
-    setSelected(null);
+    setSelected((current) =>
+      current?.kind === "node" &&
+      initialResult.nodes.some((node) => node.id === current.id)
+        ? current
+        : null,
+    );
     setPathMode(false);
     setPath(null);
     setPathEndpoints([]);
@@ -796,7 +803,7 @@ export function GraphExplorer({
           onClose={() => setEditorOpen(false)}
           onMutationComplete={() => {
             setEditorOpen(false);
-            window.location.reload();
+            router.refresh();
           }}
         />
       ) : null}
