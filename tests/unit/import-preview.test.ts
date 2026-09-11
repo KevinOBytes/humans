@@ -61,6 +61,21 @@ describe("governed import previews", () => {
         hmacKey: key,
       }),
     ).toBeDefined();
+    const encodedPayload = preview.commitToken.split(".")[0];
+    expect(encodedPayload).toBeDefined();
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload!, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("hmacKey");
+    expect(Object.keys(payload).sort()).toEqual([
+      "actorPrincipalId",
+      "caseId",
+      "expiresAt",
+      "mappingHash",
+      "purpose",
+      "version",
+      "workspaceId",
+    ]);
     expect(() =>
       verifyImportCommitToken({
         token: preview.commitToken,

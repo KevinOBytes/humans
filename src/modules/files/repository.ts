@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm";
 
 import { fileVariants, files, uploadSessions } from "@/db/schema/files";
+import { exportArtifacts } from "@/db/schema/search";
 import { newId } from "@/db/id";
 import { workspaceSettings, workspaceUsage } from "@/db/schema/workspaces";
 import type { Database } from "@/modules/auth/bootstrap-admin";
@@ -405,6 +406,11 @@ export function createFilesRepository(database: Database) {
           and(
             eq(files.workspaceId, input.workspaceId),
             isNull(files.deletedAt),
+            sql`NOT EXISTS (
+              SELECT 1 FROM ${exportArtifacts}
+              WHERE ${exportArtifacts.workspaceId} = ${files.workspaceId}
+                AND ${exportArtifacts.fileId} = ${files.id}
+            )`,
             input.visibility,
             input.availability
               ? eq(files.quarantineState, input.availability)

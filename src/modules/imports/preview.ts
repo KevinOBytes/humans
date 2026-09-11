@@ -96,7 +96,11 @@ export function issueImportCommitToken(input: {
   hmacKey: string;
 }): string {
   const payload = tokenPayload({
-    ...input,
+    workspaceId: input.workspaceId,
+    actorPrincipalId: input.actorPrincipalId,
+    purpose: input.purpose,
+    caseId: input.caseId,
+    mappingHash: input.mappingHash,
     expiresAt: input.expiresAt.toISOString(),
   });
   return `${Buffer.from(payload, "utf8").toString("base64url")}.${sign(payload, input.hmacKey)}`;
@@ -130,6 +134,18 @@ export function verifyImportCommitToken(input: {
   )
     invalid("The import commit token is invalid.");
   if (
+    Object.keys(payload).some(
+      (key) =>
+        ![
+          "actorPrincipalId",
+          "caseId",
+          "expiresAt",
+          "mappingHash",
+          "purpose",
+          "version",
+          "workspaceId",
+        ].includes(key),
+    ) ||
     payload.version !== TOKEN_VERSION ||
     payload.workspaceId !== input.workspaceId ||
     payload.actorPrincipalId !== input.actorPrincipalId ||

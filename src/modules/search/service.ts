@@ -2,10 +2,13 @@ import "server-only";
 
 import { createHash, createHmac } from "node:crypto";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
+import { caseResourceLinks } from "@/db/schema/cases";
+import { facts } from "@/db/schema/facts";
 import { exportArtifacts } from "@/db/schema/search";
 import { files } from "@/db/schema/files";
+import { relationships } from "@/db/schema/relationships";
 import { createGraphQLError, publicErrorMessage } from "@/graphql/errors";
 import type { RequestOperationLimiter } from "@/graphql/operation-limiter";
 import type { ProtectedExactInput } from "@/lib/security/protected-exact";
@@ -14,7 +17,10 @@ import {
   type ResearchServiceContext,
 } from "@/modules/audit/service";
 import { runResearchTransaction } from "@/modules/audit/transactions";
-import { createCasesService } from "@/modules/cases/service";
+import {
+  createCasesService,
+  requireCaseResource,
+} from "@/modules/cases/service";
 import { checkPurposeCoverage } from "@/modules/governance/coverage";
 import type { ObjectStore } from "@/lib/storage/types";
 import type { Database } from "@/modules/auth/bootstrap-admin";
@@ -79,6 +85,12 @@ export type SearchServiceContext = ResearchServiceContext & {
   metrics: Task12Metrics;
   operationLimiter: RequestOperationLimiter;
 };
+
+type ExportGovernanceSubject = Readonly<{
+  personId: string;
+  fieldDefinitionId: string | null;
+  sensitivity: "public" | "internal" | "confidential" | "restricted";
+}>;
 
 function permissionForKind(
   kind: NormalizedSearchInput["kinds"][number],
@@ -396,6 +408,7 @@ export function createSearchService(
           snippet: buildSearchSnippet(row.displayText, textQuery!),
           subjectPersonId: row.subjectPersonId,
           title: row.title,
+          sensitivity: row.sensitivity,
           updatedAt: iso(row.updatedAt),
         }));
         const last = returned.at(-1);
@@ -550,28 +563,116 @@ export function createSearchService(
         filters: {},
         first: Math.min(Math.max(input.first ?? 100, 1), 100),
       });
-      const personIds = [
-        ...new Set(
-          connection.nodes.flatMap((node) => {
-            const personId =
-              node.subjectPersonId ?? (node.kind === "PERSON" ? node.id : null);
-            return personId ? [personId] : [];
-          }),
-        ),
-      ];
-      // A hit without an attributable subject must not be exported under a
-      // person-governance purpose. This intentionally fails closed rather than
-      // treating a source/evidence title as safe to disclose.
-      if (personIds.length !== connection.nodes.length) {
-        throw createGraphQLError("FORBIDDEN", publicErrorMessage("FORBIDDEN"));
+      const governanceSubjects: ExportGovernanceSubject[] = [];
+      for (const node of connection.nodes) {
+        const sensitivity = node.sensitivity ?? ("internal" as const);
+        let resourceKind: "person" | "fact" | "relationship" = "person";
+        let resourceId = node.subjectPersonId;
+        let fieldDefinitionId: string | null = null;
+        if (node.kind === "PERSON") resourceId = node.id;
+        if (node.kind === "ADDRESS") resourceKind = "person";
+        if (node.kind === "FACT") {
+          resourceKind = "fact";
+          const [fact] = await context.database
+            .select({
+              factDefinitionId: facts.factDefinitionId,
+              personId: facts.personId,
+            })
+            .from(facts)
+            .where(
+              and(
+                eq(facts.workspaceId, context.workspaceId),
+                eq(facts.id, node.id),
+                isNull(facts.deletedAt),
+              ),
+            )
+            .limit(1);
+          resourceId = fact?.personId ?? resourceId;
+          fieldDefinitionId = fact?.factDefinitionId ?? null;
+        }
+        if (node.kind === "RELATIONSHIP") {
+          resourceKind = "relationship";
+          const [relationship] = await context.database
+            .select({
+              sourcePersonId: relationships.sourcePersonId,
+              targetPersonId: relationships.targetPersonId,
+            })
+            .from(relationships)
+            .where(
+              and(
+                eq(relationships.workspaceId, context.workspaceId),
+                eq(relationships.id, node.id),
+                isNull(relationships.deletedAt),
+              ),
+            )
+            .limit(1);
+          if (!relationship) resourceId = null;
+          else {
+            resourceId = relationship.sourcePersonId;
+            governanceSubjects.push({
+              personId: relationship.targetPersonId,
+              fieldDefinitionId: null,
+              sensitivity,
+            });
+          }
+        }
+        // Evidence and source-only hits do not have a complete person subject
+        // contract. Refuse them rather than exporting an ungoverned title.
+        if (!resourceId || node.kind === "EVIDENCE")
+          throw createGraphQLError(
+            "FORBIDDEN",
+            publicErrorMessage("FORBIDDEN"),
+          );
+        if (input.caseId) {
+          await requireCaseResource(
+            context,
+            resourceKind,
+            node.kind === "ADDRESS" ? resourceId : node.id,
+          );
+          const [link] = await context.database
+            .select({ id: caseResourceLinks.id })
+            .from(caseResourceLinks)
+            .where(
+              and(
+                eq(caseResourceLinks.workspaceId, context.workspaceId),
+                eq(caseResourceLinks.caseId, input.caseId),
+                eq(caseResourceLinks.resourceKind, resourceKind),
+                eq(
+                  caseResourceLinks.resourceId,
+                  node.kind === "ADDRESS" ? resourceId : node.id,
+                ),
+                isNull(caseResourceLinks.deletedAt),
+              ),
+            )
+            .limit(1);
+          if (!link)
+            throw createGraphQLError(
+              "FORBIDDEN",
+              publicErrorMessage("FORBIDDEN"),
+            );
+        }
+        governanceSubjects.push({
+          personId: resourceId,
+          fieldDefinitionId,
+          sensitivity,
+        });
       }
-      for (const personId of personIds) {
+      const uniqueSubjects = [
+        ...new Map(
+          governanceSubjects.map((subject) => [
+            `${subject.personId}:${subject.fieldDefinitionId ?? "*"}`,
+            subject,
+          ]),
+        ).values(),
+      ];
+      for (const subject of uniqueSubjects) {
         const coverage = await checkPurposeCoverage(context, {
-          personId,
+          personId: subject.personId,
           purpose: input.purpose.normalize("NFKC").trim(),
           caseReference: input.caseId ?? null,
           scope: "export",
-          effectiveSensitivity: "internal",
+          effectiveSensitivity: subject.sensitivity,
+          fieldDefinitionId: subject.fieldDefinitionId,
         });
         if (!coverage.allowed) {
           throw createGraphQLError(
@@ -588,7 +689,7 @@ export function createSearchService(
         redactionProfile: input.redactionProfile,
         rows: connection.nodes.map((node) => ({
           id: node.id,
-          sensitivity: "internal",
+          sensitivity: node.sensitivity ?? "internal",
           values: {
             title: node.title,
             kind: node.kind,
@@ -596,12 +697,19 @@ export function createSearchService(
             updatedAt: node.updatedAt,
           },
           fieldSensitivity: {
-            title: "public",
-            kind: "public",
-            subjectPersonId: "internal",
-            updatedAt: "internal",
+            title: node.sensitivity ?? "internal",
+            kind: node.sensitivity ?? "internal",
+            subjectPersonId: node.sensitivity ?? "internal",
+            updatedAt: node.sensitivity ?? "internal",
           },
+          sourceIds: [],
         })),
+        governanceSubjects: uniqueSubjects.map(
+          ({ personId, fieldDefinitionId }) => ({
+            personId,
+            fieldDefinitionId,
+          }),
+        ),
         hmacKey: runtime.encryptionKey ?? runtime.cursorHmacKey,
       });
     },
@@ -631,6 +739,12 @@ export function createSearchService(
         redactionProfile: input.redactionProfile,
         first: input.first,
       });
+      if (preview.approvalRequired) {
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "A reviewed export approval is required before committing this artifact.",
+        );
+      }
       verifyExportCommitToken({
         token: input.commitToken,
         workspaceId: context.workspaceId,
@@ -725,6 +839,7 @@ export function createSearchService(
               encryptionMetadata: {
                 generated: "governed_export",
                 redactionProfile: preview.redactionProfile,
+                governanceSubjects: preview.governanceSubjects,
               },
               quarantineState: "quarantined",
               scanState: "not_required",

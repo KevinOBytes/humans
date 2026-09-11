@@ -23,10 +23,16 @@ describe("governed export previews", () => {
           sourceIds: ["s1"],
         },
       ],
+      governanceSubjects: [
+        { personId: "person-1", fieldDefinitionId: "field-1" },
+      ],
       hmacKey: key,
     });
     expect(preview.rows[0].values).toEqual({ name: "Alice", phone: null });
     expect(preview.approvalRequired).toBe(true);
+    expect(preview.governanceSubjects).toEqual([
+      { personId: "person-1", fieldDefinitionId: "field-1" },
+    ]);
     expect(serializeRedactedExport(preview, "JSON")).not.toContain("+1");
   });
   it("binds export references to scope and expires them", () => {

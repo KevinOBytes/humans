@@ -17,6 +17,19 @@ import/export execution, database-backed facet aggregation, bulk/break-glass aud
 records, key last-used/rotation/session integration, and live provider/database/
 object-storage/browser evidence remain open.
 
+Task 6 security/export hardening checkpoint (2026-09-11): import commit tokens now
+use an explicit non-secret payload allow-list and reject unexpected claims. Export
+previews preserve effective search-row sensitivity, evaluate every relationship
+endpoint and fact field definition, require case resource links for case-scoped
+exports, and retain subject coverage metadata with the generated artifact. Export
+downloads re-check artifact state/expiry, case membership, legal holds and current
+purpose coverage; governed files are excluded from ordinary file listings. Search
+withholds non-public typed fact values when no purpose-bound approval is available,
+and high-sensitivity export commits fail closed until a reviewed approval workflow
+is wired. These are hardening changes, not closed requirement rows: approval
+records, interrupted-write reconciliation, retention cleanup, live PostgreSQL/
+object-store/browser proof and the remaining whole-product matrix remain open.
+
 Task 5 follow-up: non-public fact values/provenance/temporal context and selection
 actions are withheld until request-bound field disclosure is implemented. The new
 read-only Privacy Requests panel shows person retention/hold metadata and authorized

@@ -51,6 +51,7 @@ describe("research analysis SQL projection", () => {
     expect(query.sql).toContain('"sources"."reliability"');
     expect(query.sql).toContain('"case_members"."deleted_at" IS NULL');
     expect(query.sql).toContain('"case_resource_links"."deleted_at" IS NULL');
+    expect(query.sql).toContain("d.sensitivity IN ('public', 'internal')");
     expect(query.params).toContain(principalId);
     expect(query.params).toContain(caseId);
     await repository.searchText({

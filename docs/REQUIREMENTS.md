@@ -524,6 +524,17 @@ execution, database-backed facet aggregation, persisted bulk/break-glass audit
 controls, key/session integration, and live database/provider/object-storage/browser
 evidence remain open.
 
+The follow-up security review hardened this boundary without marking an acceptance
+row complete: import commit tokens no longer serialize signing/encryption material;
+export rows preserve their authorized sensitivity and field provenance; relationship
+source and target subjects plus fact field definitions are checked for purpose
+coverage; case exports require a linked case resource; and generated artifact
+downloads re-check state, expiry, case membership, legal holds and current coverage.
+Unapproved high-sensitivity commits fail closed, and non-public typed fact values are
+not exposed through unscoped full-text search. Durable recovery/reconciliation,
+reviewed approval records, retention cleanup, and live database/provider/browser
+acceptance remain required.
+
 ### Consent-governed research Task 2 backend checkpoint
 
 The branch adds case membership and resource links, shared visibility narrowing,

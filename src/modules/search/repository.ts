@@ -97,6 +97,7 @@ export type TextSearchRow = {
   id: string;
   kind: NormalizedSearchInput["kinds"][number];
   rank: number;
+  sensitivity: "public" | "internal" | "confidential" | "restricted";
   subjectPersonId: string | null;
   title: string;
   updatedAt: Date | string;
@@ -379,6 +380,10 @@ export function createSearchRepository(
             AND ${factVisibility}
             AND ${factContributionVisibility}
             AND ${factPersonVisibility}
+            -- Full-text search has no purpose/field approval input. Keep
+            -- confidential and restricted typed values out of this channel;
+            -- governed direct reads remain the disclosure path.
+            AND d.sensitivity IN ('public', 'internal')
             AND d.search_vector @@ websearch_to_tsquery('simple'::regconfig, ${input.search.match.query})
 
           UNION ALL
@@ -583,7 +588,8 @@ export function createSearchRepository(
         )
         SELECT result_kind AS kind, result_id AS id, title_text AS title,
                subject_person_id AS "subjectPersonId",
-               display_text AS "displayText", updated_at AS "updatedAt", rank
+               display_text AS "displayText", updated_at AS "updatedAt", rank,
+               sensitivity
                ${input.analysis ? sql`, ${researchAnalysisMetadataSql(context, input.analysis.caseId)} AS "analysis"` : sql``}
         FROM winning
         WHERE ${

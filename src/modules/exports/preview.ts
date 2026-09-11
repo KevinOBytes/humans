@@ -29,6 +29,10 @@ export type ExportPreview = Readonly<{
     rowId: string;
     sourceIds: readonly string[];
   }>[];
+  governanceSubjects: readonly Readonly<{
+    personId: string;
+    fieldDefinitionId: string | null;
+  }>[];
 }>;
 
 const ORDER = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] as const;
@@ -146,6 +150,10 @@ export function previewExport(input: {
     sourceIds?: readonly string[];
   }>[];
   hmacKey: string;
+  governanceSubjects?: readonly Readonly<{
+    personId: string;
+    fieldDefinitionId: string | null;
+  }>[];
   expiresInMs?: number;
 }): ExportPreview {
   if (!input.workspaceId || !input.actorPrincipalId || !input.purpose.trim())
@@ -196,6 +204,7 @@ export function previewExport(input: {
         })),
         redactionProfile: input.redactionProfile,
         rows,
+        governanceSubjects: input.governanceSubjects ?? [],
         workspaceId: input.workspaceId,
       }),
     )
@@ -227,6 +236,7 @@ export function previewExport(input: {
       rowId: row.id,
       sourceIds: [...new Set(row.sourceIds ?? [])],
     })),
+    governanceSubjects: input.governanceSubjects ?? [],
   };
 }
 
