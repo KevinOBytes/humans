@@ -885,6 +885,8 @@ export type ResearchAnalysisInput = {
   relationshipState?: Array<string> | null | undefined;
   reviewState?: Array<string> | null | undefined;
   sensitivities?: Array<Sensitivity> | null | undefined;
+  sourceReliabilityMax?: number | null | undefined;
+  sourceReliabilityMin?: number | null | undefined;
   until?: string | null | undefined;
 };
 
