@@ -8,6 +8,7 @@ import { calculateSearchWorkCost, searchLexemes } from "./normalization";
 import type { SearchConnection, SearchHit, SearchSnippetPart } from "./types";
 import type { AnalysisResult } from "./analysis";
 import type { ExportPreview } from "@/modules/exports/preview";
+import type { exportArtifacts } from "@/db/schema/search";
 
 function dateTimeInput(value: unknown): string | undefined {
   if (value instanceof Date) return value.toISOString();
@@ -181,6 +182,50 @@ const ExportPreviewType = builder
       }),
     }),
   });
+type ExportArtifactRow = typeof exportArtifacts.$inferSelect;
+const ExportArtifactType = builder
+  .objectRef<ExportArtifactRow>("ExportArtifact")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      fileId: t.expose("fileId", { type: "UUID" }),
+      caseId: t.expose("caseId", { type: "UUID", nullable: true }),
+      purpose: t.exposeString("purpose"),
+      redactionProfile: t.field({
+        type: ExportRedactionProfile,
+        resolve: (value) =>
+          value.redactionProfile as
+            "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED",
+      }),
+      format: t.exposeString("format"),
+      state: t.exposeString("state"),
+      rowCount: t.exposeInt("rowCount"),
+      fieldCounts: t.field({
+        type: "JSON",
+        resolve: (value) => value.fieldCounts,
+      }),
+      expiresAt: t.field({
+        type: "DateTime",
+        resolve: (value) => value.expiresAt.toISOString(),
+      }),
+      createdAt: t.field({
+        type: "DateTime",
+        resolve: (value) => value.createdAt.toISOString(),
+      }),
+    }),
+  });
+const CommitExportInput = builder.inputType("CommitExportInput", {
+  fields: (t) => ({
+    query: t.string({ required: true }),
+    purpose: t.string({ required: true }),
+    caseId: t.field({ type: "UUID" }),
+    redactionProfile: t.field({ type: ExportRedactionProfile, required: true }),
+    first: t.int(),
+    format: t.string({ required: true }),
+    commitToken: t.string({ required: true }),
+    idempotencyKey: t.string({ required: true }),
+  }),
+});
 
 const SearchMatchInput = builder.inputType("SearchMatchInput", {
   fields: (t) => ({
@@ -425,6 +470,27 @@ export function registerSearchGraphQL(): void {
         requirePermission(context, "search", "read");
         return context.services.search.previewExport({
           ...args.input,
+          first: args.input.first ?? undefined,
+        });
+      },
+    }),
+    commitExport: t.field({
+      type: ExportArtifactType,
+      args: { input: t.arg({ type: CommitExportInput, required: true }) },
+      complexity: { field: 250, multiplier: 1 },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "update");
+        requirePermission(context, "file", "create");
+        requirePermission(context, "search", "read");
+        if (args.input.format !== "JSON" && args.input.format !== "CSV") {
+          throw createGraphQLError(
+            "VALIDATION_FAILED",
+            "The export format is invalid.",
+          );
+        }
+        return context.services.search.commitExport({
+          ...args.input,
+          format: args.input.format,
           first: args.input.first ?? undefined,
         });
       },

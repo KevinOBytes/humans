@@ -1,6 +1,11 @@
 import "server-only";
 
-import { sql } from "drizzle-orm";
+import { createHash, createHmac } from "node:crypto";
+
+import { and, eq, sql } from "drizzle-orm";
+import { newId } from "@/db/id";
+import { exportArtifacts } from "@/db/schema/search";
+import { files } from "@/db/schema/files";
 import { createGraphQLError, publicErrorMessage } from "@/graphql/errors";
 import type { RequestOperationLimiter } from "@/graphql/operation-limiter";
 import type { ProtectedExactInput } from "@/lib/security/protected-exact";
@@ -8,6 +13,10 @@ import {
   createAuditService,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
+import { runResearchTransaction } from "@/modules/audit/transactions";
+import { createCasesService } from "@/modules/cases/service";
+import { checkPurposeCoverage } from "@/modules/governance/coverage";
+import type { ObjectStore } from "@/lib/storage/types";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { createProtectedExactLookupService } from "@/modules/people/protected-exact-service";
 
@@ -35,6 +44,8 @@ import {
 } from "./analysis";
 import {
   previewExport as buildExportPreview,
+  serializeRedactedExport,
+  verifyExportCommitToken,
   type ExportRedactionProfile,
 } from "@/modules/exports/preview";
 
@@ -55,6 +66,11 @@ export type SearchRuntime = Readonly<{
   cursorHmacKey: string;
   encryptionKey?: string;
   protectedLookupHmacKey: string;
+  exportArtifacts?: Readonly<{
+    objectStore: ObjectStore;
+    storageBucket: string;
+    storageProvider: "minio" | "r2" | "s3";
+  }>;
 }>;
 
 export type SearchServiceContext = ResearchServiceContext & {
@@ -210,6 +226,41 @@ export function createSearchService(
   runtime: SearchRuntime,
 ) {
   const audit = createAuditService(context);
+
+  function requireExportActor(): Extract<
+    SearchServiceContext["actor"],
+    { type: "user" }
+  > {
+    if (
+      context.actor.type !== "user" ||
+      !context.permissions.has("workspace:update") ||
+      !context.permissions.has("file:create")
+    ) {
+      throw createGraphQLError("FORBIDDEN", publicErrorMessage("FORBIDDEN"));
+    }
+    return context.actor;
+  }
+
+  function hmac(secret: string, purpose: string, material: string): string {
+    if (!/^[0-9a-f]{64}$/iu.test(secret))
+      throw new TypeError("Invalid export protection key");
+    return createHmac("sha256", Buffer.from(secret, "hex"))
+      .update(`humans:${purpose}:v1\\0`, "utf8")
+      .update(material, "utf8")
+      .digest("hex");
+  }
+
+  function normalizedIdempotencyKey(value: string): string {
+    const normalized =
+      typeof value === "string" ? value.normalize("NFKC").trim() : "";
+    if (!normalized || Buffer.byteLength(normalized, "utf8") > 128) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The idempotency key is invalid.",
+      );
+    }
+    return normalized;
+  }
 
   const search = async (raw: unknown): Promise<SearchConnection> => {
     const started = performance.now();
@@ -462,6 +513,13 @@ export function createSearchService(
     }) {
       if (!context.permissions.has("search:read"))
         throw createGraphQLError("FORBIDDEN", publicErrorMessage("FORBIDDEN"));
+      if (!input.purpose.normalize("NFKC").trim()) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "An export purpose is required.",
+        );
+      }
+      if (input.caseId) await createCasesService(context).getCase(input.caseId);
       const connection = await search({
         version: 1,
         match: { type: "text", query: input.query },
@@ -469,6 +527,36 @@ export function createSearchService(
         filters: {},
         first: Math.min(Math.max(input.first ?? 100, 1), 100),
       });
+      const personIds = [
+        ...new Set(
+          connection.nodes.flatMap((node) => {
+            const personId =
+              node.subjectPersonId ?? (node.kind === "PERSON" ? node.id : null);
+            return personId ? [personId] : [];
+          }),
+        ),
+      ];
+      // A hit without an attributable subject must not be exported under a
+      // person-governance purpose. This intentionally fails closed rather than
+      // treating a source/evidence title as safe to disclose.
+      if (personIds.length !== connection.nodes.length) {
+        throw createGraphQLError("FORBIDDEN", publicErrorMessage("FORBIDDEN"));
+      }
+      for (const personId of personIds) {
+        const coverage = await checkPurposeCoverage(context, {
+          personId,
+          purpose: input.purpose.normalize("NFKC").trim(),
+          caseReference: input.caseId ?? null,
+          scope: "export",
+          effectiveSensitivity: "internal",
+        });
+        if (!coverage.allowed) {
+          throw createGraphQLError(
+            "FORBIDDEN",
+            "Current export-purpose coverage is required.",
+          );
+        }
+      }
       return buildExportPreview({
         workspaceId: context.workspaceId,
         actorPrincipalId: context.actor.principalId,
@@ -493,6 +581,302 @@ export function createSearchService(
         })),
         hmacKey: runtime.encryptionKey ?? runtime.cursorHmacKey,
       });
+    },
+    async commitExport(input: {
+      query: string;
+      purpose: string;
+      caseId?: string | null;
+      redactionProfile: ExportRedactionProfile;
+      first?: number;
+      format: "JSON" | "CSV";
+      commitToken: string;
+      idempotencyKey: string;
+    }) {
+      const actor = requireExportActor();
+      const artifactRuntime = runtime.exportArtifacts;
+      const protectionKey = runtime.encryptionKey ?? runtime.cursorHmacKey;
+      if (!artifactRuntime?.objectStore.putInternal) {
+        throw createGraphQLError(
+          "PROVIDER_UNAVAILABLE",
+          publicErrorMessage("PROVIDER_UNAVAILABLE"),
+        );
+      }
+      const preview = await this.previewExport({
+        query: input.query,
+        purpose: input.purpose,
+        caseId: input.caseId,
+        redactionProfile: input.redactionProfile,
+        first: input.first,
+      });
+      verifyExportCommitToken({
+        token: input.commitToken,
+        workspaceId: context.workspaceId,
+        actorPrincipalId: actor.principalId,
+        purpose: preview.purpose,
+        caseId: preview.caseId,
+        redactionProfile: preview.redactionProfile,
+        previewHash: preview.previewHash,
+        hmacKey: protectionKey,
+      });
+      const idempotencyHash = hmac(
+        protectionKey,
+        "export-artifact-idempotency",
+        `${context.workspaceId}\\0${actor.principalId}\\0${normalizedIdempotencyKey(input.idempotencyKey)}`,
+      );
+      const queryHash = createHash("sha256")
+        .update(input.query.normalize("NFKC"), "utf8")
+        .digest("hex");
+      const requestHash = hmac(
+        protectionKey,
+        "export-artifact-request",
+        JSON.stringify({
+          caseId: preview.caseId,
+          format: input.format,
+          previewHash: preview.previewHash,
+          purpose: preview.purpose,
+          queryHash,
+          redactionProfile: preview.redactionProfile,
+        }),
+      );
+      const content = Buffer.from(
+        serializeRedactedExport(preview, input.format),
+        "utf8",
+      );
+      const checksum = createHash("sha256").update(content).digest("hex");
+      const now = new Date();
+      const artifactId = newId();
+      const fileId = newId();
+      const extension = input.format === "JSON" ? "json" : "csv";
+      const storageKey = `exports/${artifactId}/governed-export.${extension}`;
+      const originalName = `humans-export-${artifactId}.${extension}`;
+      const sensitivity = preview.redactionProfile.toLowerCase() as
+        "public" | "internal" | "confidential" | "restricted";
+      const claimed = await runResearchTransaction(
+        context,
+        {
+          requiredPermissions: [
+            "workspace:update",
+            "file:create",
+            "search:read",
+          ],
+        },
+        async (scoped) => {
+          await scoped.database.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${`humans:export:${context.workspaceId}:${idempotencyHash}`}, 0))`,
+          );
+          const [existing] = await scoped.database
+            .select()
+            .from(exportArtifacts)
+            .where(
+              and(
+                eq(exportArtifacts.workspaceId, scoped.workspaceId),
+                eq(exportArtifacts.idempotencyHash, idempotencyHash),
+              ),
+            )
+            .limit(1)
+            .for("update");
+          if (existing) {
+            if (existing.requestHash !== requestHash) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The idempotency key is bound to another export.",
+              );
+            }
+            return { artifact: existing, created: false };
+          }
+          const [file] = await scoped.database
+            .insert(files)
+            .values({
+              id: fileId,
+              workspaceId: scoped.workspaceId,
+              storageProvider: artifactRuntime.storageProvider,
+              storageBucket: artifactRuntime.storageBucket,
+              storageKey,
+              originalName,
+              mediaType:
+                input.format === "JSON" ? "application/json" : "text/csv",
+              detectedType:
+                input.format === "JSON" ? "application/json" : "text/csv",
+              byteSize: content.byteLength,
+              checksum,
+              encryptionMetadata: {
+                generated: "governed_export",
+                redactionProfile: preview.redactionProfile,
+              },
+              quarantineState: "quarantined",
+              scanState: "not_required",
+              ocrState: "not_requested",
+              extractionState: "not_requested",
+              sensitivity,
+              uploadedBy: scoped.actor.id,
+              createdBy: scoped.actor.id,
+              updatedBy: scoped.actor.id,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          if (!file) throw new Error("Export file creation failed");
+          const [artifact] = await scoped.database
+            .insert(exportArtifacts)
+            .values({
+              id: artifactId,
+              workspaceId: scoped.workspaceId,
+              fileId: file.id,
+              caseId: preview.caseId,
+              purpose: preview.purpose,
+              queryHash,
+              previewHash: preview.previewHash,
+              redactionProfile: preview.redactionProfile,
+              format: input.format,
+              state: "writing",
+              expiresAt: new Date(preview.expiresAt),
+              rowCount: preview.rows.length,
+              fieldCounts: preview.fieldCounts,
+              legalHoldCheckedAt: now,
+              idempotencyHash,
+              requestHash,
+              createdBy: scoped.actor.principalId,
+              updatedBy: scoped.actor.principalId,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          if (!artifact) throw new Error("Export artifact creation failed");
+          await createAuditService(scoped).write(scoped.database, {
+            action: "export.artifact_writing",
+            resourceKind: "export_artifact",
+            resourceId: artifact.id,
+            changedFields: ["state", "format", "redactionProfile", "rowCount"],
+            metadata: { caseId: preview.caseId, purpose: preview.purpose },
+          });
+          return { artifact, created: true };
+        },
+      );
+      if (!claimed.created) {
+        if (claimed.artifact.state !== "ready") {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The export is still being prepared or requires remediation.",
+          );
+        }
+        return claimed.artifact;
+      }
+      try {
+        await artifactRuntime.objectStore.putInternal({
+          workspaceId: context.workspaceId,
+          key: storageKey,
+          content,
+          contentType:
+            input.format === "JSON" ? "application/json" : "text/csv",
+          checksumSha256: checksum,
+        });
+      } catch (error) {
+        await runResearchTransaction(
+          context,
+          {
+            requiredPermissions: [
+              "workspace:update",
+              "file:create",
+              "search:read",
+            ],
+          },
+          async (scoped) => {
+            await scoped.database
+              .update(exportArtifacts)
+              .set({
+                state: "failed",
+                updatedAt: new Date(),
+                updatedBy: scoped.actor.principalId,
+              })
+              .where(
+                and(
+                  eq(exportArtifacts.workspaceId, scoped.workspaceId),
+                  eq(exportArtifacts.id, artifactId),
+                  eq(exportArtifacts.state, "writing"),
+                ),
+              );
+            await createAuditService(scoped).write(scoped.database, {
+              action: "export.artifact_failed",
+              resourceKind: "export_artifact",
+              resourceId: artifactId,
+              changedFields: ["state"],
+            });
+          },
+        );
+        throw error;
+      }
+      return runResearchTransaction(
+        context,
+        {
+          requiredPermissions: [
+            "workspace:update",
+            "file:create",
+            "search:read",
+          ],
+        },
+        async (scoped) => {
+          const [artifact] = await scoped.database
+            .update(exportArtifacts)
+            .set({
+              state: "ready",
+              updatedAt: new Date(),
+              updatedBy: scoped.actor.principalId,
+              version: sql`${exportArtifacts.version} + 1`,
+            })
+            .where(
+              and(
+                eq(exportArtifacts.workspaceId, scoped.workspaceId),
+                eq(exportArtifacts.id, artifactId),
+                eq(exportArtifacts.state, "writing"),
+              ),
+            )
+            .returning();
+          if (!artifact)
+            throw createGraphQLError(
+              "CONFLICT",
+              publicErrorMessage("CONFLICT"),
+            );
+          await scoped.database
+            .update(files)
+            .set({
+              quarantineState: "available",
+              updatedAt: new Date(),
+              updatedBy: scoped.actor.id,
+            })
+            .where(
+              and(
+                eq(files.workspaceId, scoped.workspaceId),
+                eq(files.id, fileId),
+                eq(files.quarantineState, "quarantined"),
+              ),
+            );
+          const auditReference = await createAuditService(scoped).write(
+            scoped.database,
+            {
+              action: "export.artifact_ready",
+              resourceKind: "export_artifact",
+              resourceId: artifact.id,
+              changedFields: ["state", "fileId", "expiresAt"],
+              metadata: { rowCount: artifact.rowCount },
+            },
+          );
+          const [audited] = await scoped.database
+            .update(exportArtifacts)
+            .set({
+              auditReference,
+              updatedAt: new Date(),
+              updatedBy: scoped.actor.principalId,
+            })
+            .where(
+              and(
+                eq(exportArtifacts.workspaceId, scoped.workspaceId),
+                eq(exportArtifacts.id, artifact.id),
+              ),
+            )
+            .returning();
+          return audited ?? artifact;
+        },
+      );
     },
     ...createSavedQueryService(context, runtime, search),
   };

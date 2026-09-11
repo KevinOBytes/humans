@@ -2162,6 +2162,7 @@ export type GovernanceCreateConsentRecordMutation = {
 export type WithdrawConsentMutationVariables = Exact<{
   id: string;
   expectedVersion: number;
+  idempotencyKey: string;
   withdrawalEffect?: GovernanceWithdrawalEffect | null | undefined;
 }>;
 
@@ -2181,6 +2182,7 @@ export type RequestAccessApprovalMutationVariables = Exact<{
   purpose: string;
   reason: string;
   caseReference?: string | null | undefined;
+  idempotencyKey: string;
 }>;
 
 export type RequestAccessApprovalMutation = {
@@ -2198,6 +2200,7 @@ export type ReviewAccessApprovalMutationVariables = Exact<{
   expectedVersion: number;
   state: string;
   reason: string;
+  idempotencyKey: string;
 }>;
 
 export type ReviewAccessApprovalMutation = {
@@ -7187,10 +7190,11 @@ export const GovernanceCreateConsentRecordDocument = new TypedDocumentString(
 >;
 export const WithdrawConsentDocument = new TypedDocumentString(
   `
-    mutation WithdrawConsent($id: UUID!, $expectedVersion: Int!, $withdrawalEffect: GovernanceWithdrawalEffect) {
+    mutation WithdrawConsent($id: UUID!, $expectedVersion: Int!, $idempotencyKey: String!, $withdrawalEffect: GovernanceWithdrawalEffect) {
   withdrawConsent(
     id: $id
     expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
     withdrawalEffect: $withdrawalEffect
   ) {
     id
@@ -7202,7 +7206,7 @@ export const WithdrawConsentDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:a8467ef6995cc18e16d52659d1eb8038d8bd932690c2021426d6b0ef1a91c99a",
+    hash: "sha256:260da4c4cb4a41458d837ef29fab7292f2e971f9aa09eec969a7dc76cad3e451",
   },
 ) as unknown as TypedDocumentString<
   WithdrawConsentMutation,
@@ -7210,13 +7214,14 @@ export const WithdrawConsentDocument = new TypedDocumentString(
 >;
 export const RequestAccessApprovalDocument = new TypedDocumentString(
   `
-    mutation RequestAccessApproval($personId: UUID!, $fieldDefinitionId: UUID!, $purpose: String!, $reason: String!, $caseReference: String) {
+    mutation RequestAccessApproval($personId: UUID!, $fieldDefinitionId: UUID!, $purpose: String!, $reason: String!, $caseReference: String, $idempotencyKey: String!) {
   requestAccessApproval(
     personId: $personId
     fieldDefinitionId: $fieldDefinitionId
     purpose: $purpose
     reason: $reason
     caseReference: $caseReference
+    idempotencyKey: $idempotencyKey
   ) {
     id
     state
@@ -7227,7 +7232,7 @@ export const RequestAccessApprovalDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:5e2275ff5c78d0f30985d55d4d4f42efae99da0e83a4d9202861880a93c5a992",
+    hash: "sha256:e64eb1be0789547ee751bb488bbeb1e9c35453f4daaafff07a7a174e0e759f82",
   },
 ) as unknown as TypedDocumentString<
   RequestAccessApprovalMutation,
@@ -7235,12 +7240,13 @@ export const RequestAccessApprovalDocument = new TypedDocumentString(
 >;
 export const ReviewAccessApprovalDocument = new TypedDocumentString(
   `
-    mutation ReviewAccessApproval($id: UUID!, $expectedVersion: Int!, $state: String!, $reason: String!) {
+    mutation ReviewAccessApproval($id: UUID!, $expectedVersion: Int!, $state: String!, $reason: String!, $idempotencyKey: String!) {
   reviewAccessApproval(
     id: $id
     expectedVersion: $expectedVersion
     state: $state
     reason: $reason
+    idempotencyKey: $idempotencyKey
   ) {
     id
     state
@@ -7251,7 +7257,7 @@ export const ReviewAccessApprovalDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:db22b3abe88366da845e8b2d59bf1ea495d2f5d6fca126cdea8ea7971c2e47ff",
+    hash: "sha256:85598ea5bab03b54ea4d30c10dd7c5f31feb4d5a83f5babb8a3b86825550c1d1",
   },
 ) as unknown as TypedDocumentString<
   ReviewAccessApprovalMutation,

@@ -422,7 +422,18 @@ function createServices(input: {
         operationLimiter: input.operationLimiter,
         searchIndexMaintenance: input.searchIndexMaintenance,
       },
-      input.searchRuntime,
+      {
+        ...input.searchRuntime,
+        ...(input.fileRuntime?.objectStore
+          ? {
+              exportArtifacts: {
+                objectStore: input.fileRuntime.objectStore,
+                storageBucket: input.fileRuntime.storageBucket,
+                storageProvider: input.fileRuntime.storageProvider,
+              },
+            }
+          : {}),
+      },
     ),
     settings: createSettingsService({
       actor: input.context.actor,
