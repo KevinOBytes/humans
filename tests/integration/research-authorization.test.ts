@@ -1357,6 +1357,26 @@ liveDescribe("research authorization", () => {
       referenced.body?.data?.createPerson?.person?.id,
     );
     const targetId = required(target.body?.data?.createPerson?.person?.id);
+    const governance = createGovernanceService(
+      await caseContext(fixture, owner),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    for (const governedPersonId of [subjectId, referencedPersonId, targetId]) {
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId: governedPersonId,
+        purpose: "research",
+        scopes: ["read", "write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+    }
     const placeId = newId();
     const fileId = newId();
     await fixture.database.insert(places).values({
@@ -2243,6 +2263,27 @@ liveDescribe("research authorization", () => {
     const evidenceItemId = newId();
     const tagId = newId();
 
+    const governance = createGovernanceService(
+      await caseContext(fixture, owner),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    for (const governedPersonId of [personId, targetPersonId]) {
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId: governedPersonId,
+        purpose: "research",
+        scopes: ["read", "write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+    }
+
     await fixture.database.insert(factDefinitions).values({
       id: definitionId,
       workspaceId: owner.workspaceId,
@@ -2530,7 +2571,7 @@ liveDescribe("research authorization", () => {
       jar: owner.jar,
       query: /* GraphQL */ `
         mutation {
-          prime: updateRelationship(input: { id: "${relationshipId}", expectedVersion: 1, strength: 0.1 }) {
+          prime: updateRelationship(input: { id: "${relationshipId}", expectedVersion: 1, strength: 0.1, governancePurpose: "research", explicitConfirmed: true }) {
             relationship {
               version
               evidence(first: 1) { nodes { id } }
@@ -2544,7 +2585,7 @@ liveDescribe("research authorization", () => {
           tag: tagRelationship(input: { relationshipId: "${relationshipId}", tagId: "${tagId}" }) {
             relationshipTag { id }
           }
-          added: updateRelationship(input: { id: "${relationshipId}", expectedVersion: 2, strength: 0.2 }) {
+          added: updateRelationship(input: { id: "${relationshipId}", expectedVersion: 2, strength: 0.2, governancePurpose: "research", explicitConfirmed: true }) {
             relationship {
               version
               evidence(first: 1) { nodes { id } }
@@ -2558,7 +2599,7 @@ liveDescribe("research authorization", () => {
           untag: untagRelationship(input: { relationshipId: "${relationshipId}", tagId: "${tagId}" }) {
             relationshipTag { id }
           }
-          final: updateRelationship(input: { id: "${relationshipId}", expectedVersion: 3, strength: 0.3 }) {
+          final: updateRelationship(input: { id: "${relationshipId}", expectedVersion: 3, strength: 0.3, governancePurpose: "research", explicitConfirmed: true }) {
             relationship {
               version
               evidence(first: 1) { nodes { id } }
@@ -2766,14 +2807,16 @@ liveDescribe("research authorization", () => {
       permittedScopes: ["read", "write"],
       sensitivityCeiling: "confidential",
     });
-    await governance.recordConsent({
-      idempotencyKey: newId(),
-      personId: personAId,
-      purpose: "research",
-      scopes: ["read", "write"],
-      lawfulBasis: "consent",
-      effectiveFrom: new Date(Date.now() - 60_000),
-    });
+    for (const governedPersonId of [archivedPersonId, personAId, personBId]) {
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId: governedPersonId,
+        purpose: "research",
+        scopes: ["read", "write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+    }
     await fixture.database.insert(sources).values({
       id: sourceId,
       workspaceId: owner.workspaceId,
@@ -2997,6 +3040,8 @@ liveDescribe("research authorization", () => {
             id: "${hiddenRelationshipId}"
             expectedVersion: 1
             strength: 0.4
+            governancePurpose: "research"
+            explicitConfirmed: true
           }) {
             relationship {
               version
@@ -3009,6 +3054,8 @@ liveDescribe("research authorization", () => {
             id: "${hiddenRelationshipId}"
             expectedVersion: 2
             sensitivity: CONFIDENTIAL
+            governancePurpose: "research"
+            explicitConfirmed: true
           }) {
             relationship {
               version sensitivity
@@ -3047,6 +3094,8 @@ liveDescribe("research authorization", () => {
             id: "${archivedRelationshipId}"
             expectedVersion: 1
             strength: 0.5
+            governancePurpose: "research"
+            explicitConfirmed: true
           }) {
             relationship {
               version

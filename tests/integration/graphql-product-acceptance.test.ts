@@ -674,6 +674,26 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       }),
       "createPerson",
     );
+    const governance = createGovernanceService(
+      await caseContext(fixture, owner),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    for (const personId of [firstPerson.person.id, secondPerson.person.id]) {
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId,
+        purpose: "research",
+        scopes: ["read", "write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+    }
     const people = dataField<{ nodes: Array<{ id: string }> }>(
       await run({
         name: "PeopleList",
