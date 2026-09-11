@@ -235,7 +235,32 @@ liveDescribe(
         reason: "Documented need",
       });
       expect(await service.get(fact.id)).toBeNull();
-      await governance.reviewApproval({
+      await expect(
+        governance.reviewApproval({
+          id: approval.id,
+          expectedVersion: 1,
+          state: "approved",
+          reason: "Self approval must be rejected",
+        }),
+      ).rejects.toThrow("could not be reviewed");
+      const reviewer = await fixture.createWorkspaceMember(actor, "admin");
+      const [reviewerSession] = await fixture.database
+        .select()
+        .from(sessions)
+        .where(eq(sessions.userId, reviewer.userId))
+        .limit(1);
+      const reviewerContext: ResearchServiceContext = {
+        ...context,
+        actor: {
+          type: "user",
+          id: reviewer.userId,
+          principalId: reviewer.principalId,
+          memberId: reviewer.memberId,
+          sessionId: reviewerSession!.id,
+          role: "admin",
+        },
+      };
+      await createGovernanceService(reviewerContext).reviewApproval({
         id: approval.id,
         expectedVersion: 1,
         state: "approved",
@@ -263,6 +288,57 @@ liveDescribe(
           })
         ).reason,
       ).toBe("withdrawn");
+    });
+
+    it("does not disclose consent coverage for a restricted or cross-workspace person", async () => {
+      const governance = createGovernanceService(context);
+      await fixture.database
+        .update(people)
+        .set({ sensitivity: "restricted" })
+        .where(eq(people.id, personId));
+
+      expect(
+        await governance.getCoverage({
+          personId,
+          purpose: "research",
+          scope: "write",
+        }),
+      ).toEqual({
+        allowed: false,
+        reason: "missing_consent",
+        consentRecordId: null,
+        policyId: null,
+      });
+
+      const foreign = await fixture.createActor();
+      const [foreignSession] = await fixture.database
+        .select()
+        .from(sessions)
+        .where(eq(sessions.userId, foreign.userId))
+        .limit(1);
+      expect(
+        await createGovernanceService({
+          ...context,
+          workspaceId: foreign.workspaceId,
+          actor: {
+            type: "user",
+            id: foreign.userId,
+            principalId: foreign.principalId,
+            memberId: foreign.memberId,
+            sessionId: foreignSession!.id,
+            role: "owner",
+          },
+        }).getCoverage({
+          personId,
+          purpose: "research",
+          scope: "write",
+        }),
+      ).toEqual({
+        allowed: false,
+        reason: "missing_consent",
+        consentRecordId: null,
+        policyId: null,
+      });
     });
 
     it("does not expand API-key base visibility, and rejects expired or cross-workspace approvals", async () => {

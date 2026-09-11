@@ -9,7 +9,10 @@ import { factDefinitions } from "@/db/schema/facts";
 import { people } from "@/db/schema/people";
 import { consentRecords } from "@/db/schema/privacy";
 import { legalHolds } from "@/db/schema/workspaces";
-import type { ResearchServiceContext } from "@/modules/audit/service";
+import {
+  resourceVisibilitySql,
+  type ResearchServiceContext,
+} from "@/modules/audit/service";
 
 import type {
   CoverageResult,
@@ -120,10 +123,12 @@ export function evaluateCoverage(input: {
  * it never returns a protected value or an existence distinction to callers.
  */
 export async function checkPurposeCoverage(
-  context: Pick<ResearchServiceContext, "database" | "workspaceId">,
+  context: Pick<ResearchServiceContext, "database" | "workspaceId"> &
+    Partial<Pick<ResearchServiceContext, "actor">>,
   input: PurposeCoverageInput,
 ): Promise<CoverageResult> {
   const at = input.at ?? new Date();
+  const actor = context.actor;
   const [person] = await context.database
     .select({ id: people.id })
     .from(people)
@@ -132,6 +137,16 @@ export async function checkPurposeCoverage(
         eq(people.workspaceId, context.workspaceId),
         eq(people.id, input.personId),
         isNull(people.deletedAt),
+        actor
+          ? resourceVisibilitySql(
+              { workspaceId: context.workspaceId, actor },
+              {
+                resourceKind: "person",
+                id: people.id,
+                sensitivity: people.sensitivity,
+              },
+            )
+          : undefined,
       ),
     )
     .limit(1);

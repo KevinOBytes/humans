@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import {
@@ -248,6 +248,40 @@ export function createGovernanceService(context: ResearchServiceContext) {
     }) {
       administrative();
       const [row] = await context.database.transaction(async (tx) => {
+        // Consent records are themselves sensitive subject data.  Keep this
+        // mutation subject-scoped so a workspace administrator cannot use an
+        // opaque consent UUID to mutate a person outside their record-level
+        // visibility grants.  The conflict response intentionally does not
+        // distinguish an unknown, deleted, cross-workspace, or hidden row.
+        const [visibleConsent] = await tx
+          .select({ id: consentRecords.id })
+          .from(consentRecords)
+          .innerJoin(
+            people,
+            and(
+              eq(people.workspaceId, consentRecords.workspaceId),
+              eq(people.id, consentRecords.personId),
+            ),
+          )
+          .where(
+            and(
+              eq(consentRecords.workspaceId, context.workspaceId),
+              eq(consentRecords.id, input.id),
+              isNull(consentRecords.deletedAt),
+              isNull(people.deletedAt),
+              resourceVisibilitySql(context, {
+                resourceKind: "person",
+                id: people.id,
+                sensitivity: people.sensitivity,
+              }),
+            ),
+          )
+          .limit(1);
+        if (!visibleConsent)
+          throw createGraphQLError(
+            "CONFLICT",
+            "The consent record could not be withdrawn.",
+          );
         const [updated] = await tx
           .update(consentRecords)
           .set({
@@ -376,6 +410,42 @@ export function createGovernanceService(context: ResearchServiceContext) {
           "An approval reason is required.",
         );
       const [row] = await context.database.transaction(async (tx) => {
+        // Approval review is an independent control.  Require visibility of
+        // the subject as well as a reviewer other than the requesting
+        // principal before permitting any state transition.  A single
+        // conflict response prevents callers from probing either condition.
+        const [visibleApproval] = await tx
+          .select({
+            id: accessApprovals.id,
+            createdBy: accessApprovals.createdBy,
+          })
+          .from(accessApprovals)
+          .innerJoin(
+            people,
+            and(
+              eq(people.workspaceId, accessApprovals.workspaceId),
+              eq(people.id, accessApprovals.personId),
+            ),
+          )
+          .where(
+            and(
+              eq(accessApprovals.workspaceId, context.workspaceId),
+              eq(accessApprovals.id, input.id),
+              isNull(accessApprovals.deletedAt),
+              isNull(people.deletedAt),
+              resourceVisibilitySql(context, {
+                resourceKind: "person",
+                id: people.id,
+                sensitivity: people.sensitivity,
+              }),
+            ),
+          )
+          .limit(1);
+        if (!visibleApproval || visibleApproval.createdBy === actor)
+          throw createGraphQLError(
+            "CONFLICT",
+            "The approval could not be reviewed.",
+          );
         const [updated] = await tx
           .update(accessApprovals)
           .set({
@@ -393,6 +463,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
               eq(accessApprovals.id, input.id),
               eq(accessApprovals.version, input.expectedVersion),
               eq(accessApprovals.state, fromState),
+              ne(accessApprovals.createdBy, actor),
               isNull(accessApprovals.deletedAt),
             ),
           )
