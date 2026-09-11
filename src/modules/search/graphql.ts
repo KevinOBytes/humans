@@ -6,6 +6,8 @@ import { PageInfo, Sensitivity } from "@/modules/people/graphql";
 import type { SavedQueryConnection, SavedQueryRow } from "./saved-query";
 import { calculateSearchWorkCost, searchLexemes } from "./normalization";
 import type { SearchConnection, SearchHit, SearchSnippetPart } from "./types";
+import type { AnalysisResult } from "./analysis";
+import type { ExportPreview } from "@/modules/exports/preview";
 
 function dateTimeInput(value: unknown): string | undefined {
   if (value instanceof Date) return value.toISOString();
@@ -79,6 +81,106 @@ const ProtectedSearchKind = builder.enumType("ProtectedSearchKind", {
 const SavedQuerySharing = builder.enumType("SavedQuerySharing", {
   values: ["PRIVATE", "WORKSPACE"] as const,
 });
+const ResearchAnalysisKind = builder.enumType("ResearchAnalysisKind", {
+  values: [
+    "TIMELINE",
+    "SOURCE_COMPARISON",
+    "DUPLICATE_CANDIDATES",
+    "CONTRADICTIONS",
+    "GRAPH_METRICS",
+  ] as const,
+});
+const ResearchAnalysisInput = builder.inputType("ResearchAnalysisInput", {
+  fields: (t) => ({
+    kind: t.field({ type: ResearchAnalysisKind, required: true }),
+    query: t.string({ required: true }),
+    caseId: t.field({ type: "UUID" }),
+    sensitivities: t.field({ type: [Sensitivity] }),
+    from: t.field({ type: "DateTime" }),
+    until: t.field({ type: "DateTime" }),
+    reviewState: t.stringList(),
+    relationshipState: t.stringList(),
+    first: t.int(),
+  }),
+});
+const ResearchAnalysisExplanation = builder
+  .objectRef<AnalysisResult["explanation"]>("ResearchAnalysisExplanation")
+  .implement({
+    fields: (t) => ({
+      sourceRows: t.exposeInt("sourceRows"),
+      returnedRows: t.exposeInt("returnedRows"),
+      timeWindow: t.field({
+        type: "JSON",
+        resolve: (value) => value.timeWindow,
+      }),
+      filters: t.field({ type: "JSON", resolve: (value) => value.filters }),
+      omittedFields: t.stringList({
+        resolve: (value) => [...value.omittedFields],
+      }),
+      methodology: t.exposeString("methodology"),
+    }),
+  });
+const ResearchAnalysisResult = builder
+  .objectRef<AnalysisResult>("ResearchAnalysisResult")
+  .implement({
+    fields: (t) => ({
+      kind: t.field({
+        type: ResearchAnalysisKind,
+        resolve: (value) => value.kind,
+      }),
+      rows: t.field({ type: "JSON", resolve: (value) => value.rows }),
+      appliedFilters: t.field({
+        type: "JSON",
+        resolve: (value) => value.appliedFilters,
+      }),
+      limit: t.exposeInt("limit"),
+      redactedFieldCount: t.exposeInt("redactedFieldCount"),
+      explanation: t.field({
+        type: ResearchAnalysisExplanation,
+        resolve: (value) => value.explanation,
+      }),
+    }),
+  });
+const ExportRedactionProfile = builder.enumType("ExportRedactionProfile", {
+  values: ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] as const,
+});
+const PreviewExportInput = builder.inputType("PreviewExportInput", {
+  fields: (t) => ({
+    query: t.string({ required: true }),
+    purpose: t.string({ required: true }),
+    caseId: t.field({ type: "UUID" }),
+    redactionProfile: t.field({ type: ExportRedactionProfile, required: true }),
+    first: t.int(),
+  }),
+});
+const ExportPreviewType = builder
+  .objectRef<ExportPreview>("ExportPreview")
+  .implement({
+    fields: (t) => ({
+      workspaceId: t.exposeString("workspaceId"),
+      purpose: t.exposeString("purpose"),
+      caseId: t.expose("caseId", { type: "UUID", nullable: true }),
+      redactionProfile: t.field({
+        type: ExportRedactionProfile,
+        resolve: (value) => value.redactionProfile,
+      }),
+      rows: t.field({ type: "JSON", resolve: (value) => value.rows }),
+      fieldCounts: t.field({
+        type: "JSON",
+        resolve: (value) => value.fieldCounts,
+      }),
+      approvalRequired: t.exposeBoolean("approvalRequired"),
+      expiresAt: t.field({
+        type: "DateTime",
+        resolve: (value) => value.expiresAt,
+      }),
+      commitToken: t.exposeString("commitToken"),
+      provenanceManifest: t.field({
+        type: "JSON",
+        resolve: (value) => value.provenanceManifest,
+      }),
+    }),
+  });
 
 const SearchMatchInput = builder.inputType("SearchMatchInput", {
   fields: (t) => ({
@@ -216,6 +318,39 @@ const UpdateSavedQueryInput = builder.inputType("UpdateSavedQueryInput", {
 
 export function registerSearchGraphQL(): void {
   builder.queryFields((t) => ({
+    researchAnalysis: t.field({
+      type: ResearchAnalysisResult,
+      args: { input: t.arg({ type: ResearchAnalysisInput, required: true }) },
+      complexity: { field: 250, multiplier: 1 },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "search", "read");
+        return context.services.search.analyze({
+          kind: args.input.kind,
+          query: args.input.query,
+          facets: {
+            ...(args.input.caseId ? { caseId: args.input.caseId } : {}),
+            ...(args.input.sensitivities?.length
+              ? { sensitivity: args.input.sensitivities }
+              : {}),
+            ...(args.input.from || args.input.until
+              ? {
+                  temporalRange: {
+                    from: dateTimeInput(args.input.from),
+                    until: dateTimeInput(args.input.until),
+                  },
+                }
+              : {}),
+            ...(args.input.reviewState?.length
+              ? { reviewState: args.input.reviewState }
+              : {}),
+            ...(args.input.relationshipState?.length
+              ? { relationshipState: args.input.relationshipState }
+              : {}),
+          },
+          first: args.input.first ?? undefined,
+        });
+      },
+    }),
     search: t.field({
       type: SearchConnectionType,
       nullable: false,
@@ -282,6 +417,18 @@ export function registerSearchGraphQL(): void {
   }));
 
   builder.mutationFields((t) => ({
+    previewExport: t.field({
+      type: ExportPreviewType,
+      args: { input: t.arg({ type: PreviewExportInput, required: true }) },
+      complexity: { field: 150, multiplier: 1 },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "search", "read");
+        return context.services.search.previewExport({
+          ...args.input,
+          first: args.input.first ?? undefined,
+        });
+      },
+    }),
     createSavedQuery: t.field({
       type: SavedQueryType,
       args: { input: t.arg({ type: CreateSavedQueryInput, required: true }) },

@@ -519,6 +519,9 @@ export type DeletionRequestState =
   | "REJECTED"
   | "REVIEWING";
 
+export type ExportRedactionProfile =
+  "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
+
 export type ExtractionRunState =
   "CANCELLED" | "COMPLETED" | "ERROR" | "PENDING" | "PROCESSING";
 
@@ -662,6 +665,8 @@ export type ImportFormat = "CSV" | "JSON";
 
 export type ImportMode = "COMMIT" | "DRY_RUN";
 
+export type ImportPreviewFormat = "CSV" | "DOCUMENT" | "JSON";
+
 export type ImportState =
   | "COMPLETED"
   | "COMPLETED_WITH_ERRORS"
@@ -796,6 +801,22 @@ export type PrepareImportInput = {
   mode?: ImportMode | null | undefined;
 };
 
+export type PreviewExportInput = {
+  caseId?: string | null | undefined;
+  first?: number | null | undefined;
+  purpose: string;
+  query: string;
+  redactionProfile: ExportRedactionProfile;
+};
+
+export type PreviewImportInput = {
+  caseId?: string | null | undefined;
+  content: string;
+  format: ImportPreviewFormat;
+  mapping?: unknown;
+  purpose: string;
+};
+
 export type PrivacyRequestType =
   | "ACCESS"
   | "CONSENT_WITHDRAWAL"
@@ -854,6 +875,25 @@ export type RerunGraphAnalysisInput = {
   algorithm: GraphAnalysisAlgorithm;
   snapshotId: string;
 };
+
+export type ResearchAnalysisInput = {
+  caseId?: string | null | undefined;
+  first?: number | null | undefined;
+  from?: string | null | undefined;
+  kind: ResearchAnalysisKind;
+  query: string;
+  relationshipState?: Array<string> | null | undefined;
+  reviewState?: Array<string> | null | undefined;
+  sensitivities?: Array<Sensitivity> | null | undefined;
+  until?: string | null | undefined;
+};
+
+export type ResearchAnalysisKind =
+  | "CONTRADICTIONS"
+  | "DUPLICATE_CANDIDATES"
+  | "GRAPH_METRICS"
+  | "SOURCE_COMPARISON"
+  | "TIMELINE";
 
 export type ReviewDeletionRequestInput = {
   expectedVersion: number;
@@ -3299,6 +3339,83 @@ export type ReviewDeletionRequestMutation = {
     code: string | null;
     requestId: string | null;
   };
+};
+
+export type ResearchAnalysisQueryVariables = Exact<{
+  input: ResearchAnalysisInput;
+}>;
+
+export type ResearchAnalysisQuery = {
+  researchAnalysis: {
+    kind: ResearchAnalysisKind | null;
+    rows: unknown;
+    appliedFilters: unknown;
+    limit: number | null;
+    redactedFieldCount: number | null;
+    explanation: {
+      sourceRows: number | null;
+      returnedRows: number | null;
+      timeWindow: unknown;
+      filters: unknown;
+      omittedFields: Array<string> | null;
+      methodology: string | null;
+    } | null;
+  } | null;
+};
+
+export type PreviewImportMutationVariables = Exact<{
+  input: PreviewImportInput;
+}>;
+
+export type PreviewImportMutation = {
+  previewImport: {
+    format: string | null;
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    schemaColumns: Array<string> | null;
+    provenanceDefaults: unknown;
+    commitToken: string | null;
+    expiresAt: string | null;
+    duplicateStrategy: string | null;
+    rows: Array<{
+      rowNumber: number | null;
+      externalKey: string | null;
+      projected: unknown;
+      duplicateCandidateIds: Array<string> | null;
+      issues: Array<{
+        code: string | null;
+        message: string | null;
+        rowNumber: number | null;
+        path: Array<string> | null;
+      }> | null;
+    }> | null;
+    issues: Array<{
+      code: string | null;
+      message: string | null;
+      rowNumber: number | null;
+      path: Array<string> | null;
+    }> | null;
+  } | null;
+};
+
+export type PreviewExportMutationVariables = Exact<{
+  input: PreviewExportInput;
+}>;
+
+export type PreviewExportMutation = {
+  previewExport: {
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    rows: unknown;
+    fieldCounts: unknown;
+    approvalRequired: boolean | null;
+    expiresAt: string | null;
+    commitToken: string | null;
+    provenanceManifest: unknown;
+  } | null;
 };
 
 export type PersonSummaryFragment = {
@@ -8721,6 +8838,98 @@ export const ReviewDeletionRequestDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ReviewDeletionRequestMutation,
   ReviewDeletionRequestMutationVariables
+>;
+export const ResearchAnalysisDocument = new TypedDocumentString(
+  `
+    query ResearchAnalysis($input: ResearchAnalysisInput!) {
+  researchAnalysis(input: $input) {
+    kind
+    rows
+    appliedFilters
+    limit
+    redactedFieldCount
+    explanation {
+      sourceRows
+      returnedRows
+      timeWindow
+      filters
+      omittedFields
+      methodology
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:b372690245350102b852615dccf1c8dfc85553b741335304ff4433d4ef2f7722",
+  },
+) as unknown as TypedDocumentString<
+  ResearchAnalysisQuery,
+  ResearchAnalysisQueryVariables
+>;
+export const PreviewImportDocument = new TypedDocumentString(
+  `
+    mutation PreviewImport($input: PreviewImportInput!) {
+  previewImport(input: $input) {
+    format
+    workspaceId
+    purpose
+    caseId
+    rows {
+      rowNumber
+      externalKey
+      projected
+      issues {
+        code
+        message
+        rowNumber
+        path
+      }
+      duplicateCandidateIds
+    }
+    schemaColumns
+    provenanceDefaults
+    commitToken
+    expiresAt
+    duplicateStrategy
+    issues {
+      code
+      message
+      rowNumber
+      path
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:5df2434ed7607d92cad70cafcbfbe6e4d5184af07162fd84271b203ad7ac84b5",
+  },
+) as unknown as TypedDocumentString<
+  PreviewImportMutation,
+  PreviewImportMutationVariables
+>;
+export const PreviewExportDocument = new TypedDocumentString(
+  `
+    mutation PreviewExport($input: PreviewExportInput!) {
+  previewExport(input: $input) {
+    workspaceId
+    purpose
+    caseId
+    redactionProfile
+    rows
+    fieldCounts
+    approvalRequired
+    expiresAt
+    commitToken
+    provenanceManifest
+  }
+}
+    `,
+  {
+    hash: "sha256:dcffb7283a793499f0835280a9dfa9fdbd071945a770d08520360cc422c19a6c",
+  },
+) as unknown as TypedDocumentString<
+  PreviewExportMutation,
+  PreviewExportMutationVariables
 >;
 export const ResearchViewerDocument = new TypedDocumentString(
   `

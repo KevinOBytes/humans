@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  analyzeResearch,
+  filterResearchRows,
+  normalizeResearchFacets,
+} from "@/modules/search/analysis";
+
+const workspaceId = "018f5c90-7b9a-7c1f-8e2a-3c4d5e6f7002";
+const rows = [
+  {
+    id: "a",
+    workspaceId,
+    subjectPersonId: "p1",
+    fieldKey: "role",
+    value: "Engineer",
+    title: "Alice",
+    sensitivity: "public",
+    sourceReliability: 0.9,
+    observedAt: "2025-01-01T00:00:00Z",
+    reviewState: "approved",
+  },
+  {
+    id: "b",
+    workspaceId,
+    subjectPersonId: "p1",
+    fieldKey: "role",
+    value: "Researcher",
+    title: "Alice",
+    sensitivity: "internal",
+    sourceReliability: 0.5,
+    observedAt: "2025-02-01T00:00:00Z",
+    reviewState: "unreviewed",
+  },
+  {
+    id: "c",
+    workspaceId: "other",
+    subjectPersonId: "p2",
+    fieldKey: "role",
+    value: "Engineer",
+    title: "Bob",
+    sensitivity: "public",
+    sourceReliability: 1,
+    observedAt: "2025-01-01T00:00:00Z",
+    reviewState: "approved",
+  },
+];
+
+describe("governed research analysis", () => {
+  it("normalizes bounded facets and preserves temporal filters", () => {
+    expect(
+      normalizeResearchFacets({
+        sensitivity: ["public", "public"],
+        temporalRange: { from: "2025-01-01", until: "2025-01-31" },
+      }),
+    ).toEqual({
+      sensitivity: ["public"],
+      temporalRange: { from: "2025-01-01", until: "2025-01-31" },
+    });
+  });
+  it("always applies workspace and sensitivity ceilings before aggregation", () => {
+    expect(
+      filterResearchRows(rows, {
+        workspaceId,
+        purpose: "case-review",
+        allowedSensitivity: "public",
+      }),
+    ).toHaveLength(1);
+  });
+  it("reports contradictions without producing an adverse score", () => {
+    const result = analyzeResearch({
+      kind: "CONTRADICTIONS",
+      rows,
+      context: {
+        workspaceId,
+        purpose: "case-review",
+        allowedSensitivity: "restricted",
+      },
+    });
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({ key: `${"p1"}:role` });
+    expect(result.explanation.methodology).toContain("no adverse inference");
+  });
+});
