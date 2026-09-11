@@ -45,6 +45,7 @@ describe("governed export previews", () => {
         actorPrincipalId: "p",
         purpose: "review",
         redactionProfile: "PUBLIC",
+        previewHash: preview.previewHash,
         hmacKey: key,
       }),
     ).toBeInstanceOf(Date);
@@ -55,8 +56,51 @@ describe("governed export previews", () => {
         actorPrincipalId: "other",
         purpose: "review",
         redactionProfile: "PUBLIC",
+        previewHash: preview.previewHash,
         hmacKey: key,
       }),
     ).toThrow();
+  });
+
+  it("binds an export commit token to the exact redacted preview", () => {
+    const preview = previewExport({
+      workspaceId: "w",
+      actorPrincipalId: "p",
+      purpose: "review",
+      redactionProfile: "PUBLIC",
+      rows: [{ id: "1", values: { name: "Alice" } }],
+      hmacKey: key,
+    });
+
+    expect(() =>
+      verifyExportCommitToken({
+        token: preview.commitToken,
+        workspaceId: "w",
+        actorPrincipalId: "p",
+        purpose: "review",
+        redactionProfile: "PUBLIC",
+        previewHash: "0".repeat(64),
+        hmacKey: key,
+      }),
+    ).toThrow("scope does not match");
+  });
+
+  it("serializes spreadsheet-looking values as inert CSV cells", () => {
+    const preview = previewExport({
+      workspaceId: "w",
+      actorPrincipalId: "p",
+      purpose: "review",
+      redactionProfile: "PUBLIC",
+      rows: [
+        {
+          id: "1",
+          values: { note: '=HYPERLINK("https://bad")' },
+          fieldSensitivity: { note: "public" },
+        },
+      ],
+      hmacKey: key,
+    });
+
+    expect(serializeRedactedExport(preview, "CSV")).toContain("'=HYPERLINK");
   });
 });

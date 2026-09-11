@@ -7,6 +7,7 @@ import {
   S3Client,
   type S3ClientConfig,
 } from "@aws-sdk/client-s3";
+import { createHash } from "node:crypto";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 
@@ -20,6 +21,7 @@ import {
 import {
   ObjectReadLimitError,
   type DownloadRequest,
+  type InternalObjectWrite,
   type ObjectMetadata,
   type ObjectRead,
   type ObjectReference,
@@ -165,6 +167,36 @@ export class S3ObjectStore implements ObjectStore {
       expiresAt,
       headers: {},
     };
+  }
+
+  async putInternal(input: InternalObjectWrite): Promise<void> {
+    if (
+      !(input.content instanceof Uint8Array) ||
+      input.content.byteLength > 50 * 1024 * 1024 ||
+      input.content.byteLength < 1 ||
+      !/^[a-f0-9]{64}$/u.test(input.checksumSha256) ||
+      !input.contentType ||
+      input.contentType.length > 255 ||
+      /[\u0000-\u001f\u007f]/u.test(input.contentType)
+    ) {
+      throw new TypeError("Invalid internal object write");
+    }
+    const actual = createHash("sha256").update(input.content).digest("hex");
+    if (actual !== input.checksumSha256)
+      throw new TypeError("Internal object checksum mismatch");
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: storageObjectKey(input.workspaceId, input.key),
+        Body: input.content,
+        ContentLength: input.content.byteLength,
+        ContentType: input.contentType,
+        ChecksumSHA256: Buffer.from(input.checksumSha256, "hex").toString(
+          "base64",
+        ),
+        Metadata: { "workspace-id": input.workspaceId },
+      }),
+    );
   }
 
   async getMetadata(input: ObjectReference): Promise<ObjectMetadata | null> {

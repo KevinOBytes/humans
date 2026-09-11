@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { createGraphQLError } from "@/graphql/errors";
 
@@ -23,6 +23,8 @@ export type ExportPreview = Readonly<{
   approvalRequired: boolean;
   expiresAt: string;
   commitToken: string;
+  /** SHA-256 of the redacted preview. This is not a secret and binds commit. */
+  previewHash: string;
   provenanceManifest: readonly Readonly<{
     rowId: string;
     sourceIds: readonly string[];
@@ -30,7 +32,7 @@ export type ExportPreview = Readonly<{
 }>;
 
 const ORDER = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] as const;
-const VERSION = "humans.export-preview.v1";
+const VERSION = "humans.export-preview.v2";
 function invalid(message: string): never {
   throw createGraphQLError("VALIDATION_FAILED", message);
 }
@@ -66,6 +68,7 @@ export function issueExportCommitToken(input: {
   purpose: string;
   caseId?: string | null;
   redactionProfile: ExportRedactionProfile;
+  previewHash?: string;
   expiresAt: Date;
   hmacKey: string;
 }): string {
@@ -76,6 +79,7 @@ export function issueExportCommitToken(input: {
     purpose: input.purpose,
     caseId: input.caseId ?? null,
     redactionProfile: input.redactionProfile,
+    previewHash: input.previewHash ?? null,
     expiresAt: input.expiresAt.toISOString(),
   });
   return `${Buffer.from(payload).toString("base64url")}.${signature(payload, input.hmacKey)}`;
@@ -88,6 +92,7 @@ export function verifyExportCommitToken(input: {
   purpose: string;
   caseId?: string | null;
   redactionProfile: ExportRedactionProfile;
+  previewHash?: string;
   hmacKey: string;
   now?: Date;
 }): Date {
@@ -114,7 +119,8 @@ export function verifyExportCommitToken(input: {
     payload.actorPrincipalId !== input.actorPrincipalId ||
     payload.purpose !== input.purpose ||
     (payload.caseId ?? null) !== (input.caseId ?? null) ||
-    payload.redactionProfile !== input.redactionProfile
+    payload.redactionProfile !== input.redactionProfile ||
+    (payload.previewHash ?? null) !== (input.previewHash ?? null)
   )
     invalid("The export commit token scope does not match.");
   const expiresAt = new Date(String(payload.expiresAt ?? ""));
@@ -178,6 +184,22 @@ export function previewExport(input: {
     Date.now() +
       Math.min(Math.max(input.expiresInMs ?? 15 * 60_000, 60_000), 60 * 60_000),
   );
+  const previewHash = createHash("sha256")
+    .update(
+      canonical({
+        caseId: input.caseId ?? null,
+        fieldCounts: { requested, visible, redacted },
+        purpose: input.purpose.trim(),
+        provenanceManifest: input.rows.slice(0, 500).map((row) => ({
+          rowId: row.id,
+          sourceIds: [...new Set(row.sourceIds ?? [])],
+        })),
+        redactionProfile: input.redactionProfile,
+        rows,
+        workspaceId: input.workspaceId,
+      }),
+    )
+    .digest("hex");
   return {
     workspaceId: input.workspaceId,
     purpose: input.purpose.trim(),
@@ -196,9 +218,11 @@ export function previewExport(input: {
       purpose: input.purpose.trim(),
       caseId: input.caseId,
       redactionProfile: input.redactionProfile,
+      previewHash,
       expiresAt,
       hmacKey: input.hmacKey,
     }),
+    previewHash,
     provenanceManifest: input.rows.slice(0, 500).map((row) => ({
       rowId: row.id,
       sourceIds: [...new Set(row.sourceIds ?? [])],
@@ -223,7 +247,8 @@ export function serializeRedactedExport(
     ...new Set(preview.rows.flatMap((row) => Object.keys(row.values))),
   ].sort();
   const escape = (value: unknown) => {
-    const text = value == null ? "" : String(value);
+    const raw = value == null ? "" : String(value);
+    const text = /^[=+\-@]/u.test(raw) ? `'${raw}` : raw;
     return /[",\n\r]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
   return [
