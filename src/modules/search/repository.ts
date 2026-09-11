@@ -23,6 +23,8 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 
 import type { SearchCursorPayload } from "./cursor";
 import type { NormalizedSearchInput } from "./normalization";
+import type { ResearchAnalysisRow } from "./analysis";
+import { researchAnalysisMetadataSql } from "./analysis-sql";
 
 const resultPeople = alias(people, "search_result_people");
 const sourcePersonNames = alias(personNames, "search_source_person_names");
@@ -90,6 +92,7 @@ function temporal(
 }
 
 export type TextSearchRow = {
+  analysis?: ResearchAnalysisRow;
   displayText: string;
   id: string;
   kind: NormalizedSearchInput["kinds"][number];
@@ -217,6 +220,7 @@ export function createSearchRepository(
         );
     },
     async searchText(input: {
+      analysis?: { caseId?: string };
       cursor: Extract<SearchCursorPayload, { branch: "text" }> | null;
       search: NormalizedSearchInput & {
         match: { type: "text"; query: string };
@@ -580,6 +584,7 @@ export function createSearchRepository(
         SELECT result_kind AS kind, result_id AS id, title_text AS title,
                subject_person_id AS "subjectPersonId",
                display_text AS "displayText", updated_at AS "updatedAt", rank
+               ${input.analysis ? sql`, ${researchAnalysisMetadataSql(context, input.analysis.caseId)} AS "analysis"` : sql``}
         FROM winning
         WHERE ${
           cursor

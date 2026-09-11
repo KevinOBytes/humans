@@ -38,7 +38,9 @@ import { createSavedQueryService } from "./saved-query";
 import type { SearchConnection, SearchSnippetPart } from "./types";
 import {
   analyzeResearch,
+  normalizeResearchFacets,
   type AnalysisResult,
+  type ResearchAnalysisRow,
   type ResearchAnalysisKind,
   type ResearchFacetInput,
 } from "./analysis";
@@ -262,7 +264,12 @@ export function createSearchService(
     return normalized;
   }
 
-  const search = async (raw: unknown): Promise<SearchConnection> => {
+  const search = async (
+    raw: unknown,
+    analysis?: { caseId?: string },
+  ): Promise<
+    SearchConnection & { analysisRows?: readonly ResearchAnalysisRow[] }
+  > => {
     const started = performance.now();
     let mode: "TEXT" | "PROTECTED_EXACT" = "TEXT";
     try {
@@ -374,6 +381,7 @@ export function createSearchService(
           };
         }
         const textRows = await repository.searchText({
+          analysis,
           cursor: cursor?.branch === "text" ? cursor : null,
           search: input as NormalizedSearchInput & {
             match: { type: "text"; query: string };
@@ -403,6 +411,13 @@ export function createSearchService(
         });
         return {
           nodes,
+          ...(analysis
+            ? {
+                analysisRows: returned.flatMap((row) =>
+                  row.analysis ? [row.analysis] : [],
+                ),
+              }
+            : {}),
           pageInfo: {
             hasNextPage,
             endCursor:
@@ -465,24 +480,35 @@ export function createSearchService(
     }): Promise<AnalysisResult> {
       if (!context.permissions.has("search:read"))
         throw createGraphQLError("FORBIDDEN", publicErrorMessage("FORBIDDEN"));
-      const connection = await search({
-        version: 1,
-        match: { type: "text", query: input.query },
-        kinds: ["PERSON", "FACT", "ADDRESS", "RELATIONSHIP", "EVIDENCE"],
-        filters: {
-          ...(input.facets?.sensitivity
-            ? { sensitivities: input.facets.sensitivity }
-            : {}),
-          ...(input.facets?.temporalRange?.from
-            ? { from: input.facets.temporalRange.from }
-            : {}),
-          ...(input.facets?.temporalRange?.until
-            ? { until: input.facets.temporalRange.until }
-            : {}),
+      const facets = normalizeResearchFacets(input.facets);
+      if (facets.consentStatus?.length)
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "Consent-status analysis requires purpose-scoped coverage and is not available on this endpoint.",
+        );
+      if (facets.caseId)
+        await createCasesService(context).getCase(facets.caseId);
+      const connection = await search(
+        {
+          version: 1,
+          match: { type: "text", query: input.query },
+          kinds: ["PERSON", "FACT", "ADDRESS", "RELATIONSHIP", "EVIDENCE"],
+          filters: {
+            ...(input.facets?.sensitivity
+              ? { sensitivities: input.facets.sensitivity }
+              : {}),
+            ...(input.facets?.temporalRange?.from
+              ? { from: input.facets.temporalRange.from }
+              : {}),
+            ...(input.facets?.temporalRange?.until
+              ? { until: input.facets.temporalRange.until }
+              : {}),
+          },
+          first: Math.min(Math.max(input.first ?? 100, 1), 100),
         },
-        first: Math.min(Math.max(input.first ?? 100, 1), 100),
-      });
-      return analyzeResearch({
+        { caseId: facets.caseId },
+      );
+      const result = analyzeResearch({
         kind: input.kind,
         context: {
           workspaceId: context.workspaceId,
@@ -490,19 +516,16 @@ export function createSearchService(
           allowedSensitivity: "restricted",
           maxRows: input.first ?? 100,
         },
-        facets: input.facets,
-        rows: connection.nodes.map((node) => ({
-          id: node.id,
-          workspaceId: context.workspaceId,
-          kind: node.kind,
-          title: node.title,
-          value: node.title,
-          subjectPersonId: node.subjectPersonId,
-          sensitivity: input.facets?.sensitivity?.[0] ?? "internal",
-          observedAt: node.updatedAt,
-          duplicateKey: node.title,
-        })),
+        facets,
+        rows: connection.analysisRows ?? [],
       });
+      return {
+        ...result,
+        explanation: {
+          ...result.explanation,
+          methodology: `${result.explanation.methodology} Facets apply to the first ${Math.min(Math.max(input.first ?? 100, 1), 100)} authorized search hits, not a workspace-wide aggregation. Missing dates, values and provenance remain unknown; non-public fact values and context are withheld.`,
+        },
+      };
     },
     async previewExport(input: {
       query: string;

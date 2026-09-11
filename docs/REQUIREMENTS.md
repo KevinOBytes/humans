@@ -500,6 +500,18 @@ open, including overview/contacts/files and authenticated field-disclosure proof
 
 ### Consent-governed research Task 6 bounded analysis/import/export checkpoint
 
+The analysis fidelity follow-up replaces synthetic title-as-value and requested
+sensitivity metadata with a projection of the same authorized SQL search winners.
+It reads real relationship endpoints/state/review/dates, public fact context,
+visible source reliability, and active membership-scoped case links. Directed
+degree counts distinct relationship IDs; source comparisons separate subjects and
+count distinct cited sources, and missing values are not contradictions. Focused
+unit tests prove zero reliability bounds and these analysis rules, and compile the
+emitted SQL membership/provenance contract. Runtime PostgreSQL proof remains open.
+Facets apply to a maximum 100-hit sample, not workspace-wide aggregation; consent
+status is explicitly unsupported pending purpose-specific coverage semantics, and
+fact-to-source comparison joins and non-public fact disclosure remain open.
+
 Generated `researchAnalysis`, `previewImport`, and `previewExport` operations now
 provide bounded, workspace- and purpose-scoped analysis, CSV/JSON/document import
 previews, redaction-preserving export previews, provenance manifests, and expiring

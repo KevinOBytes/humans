@@ -2,8 +2,13 @@
 
 Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
 source-comparison, duplicate, contradiction and descriptive graph analysis now
-apply workspace, purpose, sensitivity, consent, temporal, reliability, review and
-relationship facets with redaction explanations. CSV/JSON/document import previews
+apply workspace, sensitivity, temporal, reliability, review and relationship
+facets with redaction explanations. The GraphQL analysis projection now reads real
+authorized metadata, membership-scoped case links and source reliability; directed
+degree counts unique relationship edges. Facets operate on a bounded search sample,
+not workspace-wide totals. Purpose-specific consent-status facets, fact-to-source
+comparison joins and live PostgreSQL proof remain open. Non-public fact values and
+context remain withheld. CSV/JSON/document import previews
 validate mappings, flag duplicates without merging, preserve provenance defaults and
 issue expiring scope-bound commit tokens. Export previews redact by sensitivity and
 preserve provenance manifests. API-key scope, tenant, expiry, revocation and rate

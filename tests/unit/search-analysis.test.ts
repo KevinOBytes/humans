@@ -81,4 +81,136 @@ describe("governed research analysis", () => {
     expect(result.rows[0]).toMatchObject({ key: `${"p1"}:role` });
     expect(result.explanation.methodology).toContain("no adverse inference");
   });
+
+  it("applies zero reliability bounds and excludes missing reliability", () => {
+    const values = [
+      { id: "zero", workspaceId, sourceReliability: 0 },
+      { id: "positive", workspaceId, sourceReliability: 0.5 },
+      { id: "unknown", workspaceId },
+    ];
+    expect(
+      filterResearchRows(
+        values,
+        { workspaceId, purpose: "review" },
+        {
+          sourceReliability: { max: 0 },
+        },
+      ).map((row) => row.id),
+    ).toEqual(["zero"]);
+    expect(
+      filterResearchRows(
+        values,
+        { workspaceId, purpose: "review" },
+        {
+          sourceReliability: { min: 0 },
+        },
+      ).map((row) => row.id),
+    ).toEqual(["zero", "positive"]);
+  });
+
+  it("counts unique directed relationship edges, not fact rows or provenance copies", () => {
+    const edge = {
+      id: "r1",
+      workspaceId,
+      kind: "RELATIONSHIP",
+      sourcePersonId: "p1",
+      targetPersonId: "p2",
+    };
+    const result = analyzeResearch({
+      kind: "GRAPH_METRICS",
+      rows: [
+        edge,
+        edge,
+        { ...edge, id: "r2", sourcePersonId: "p2", targetPersonId: "p1" },
+        { id: "f1", workspaceId, kind: "FACT", subjectPersonId: "p1" },
+        { ...edge, id: "hidden", workspaceId: "other" },
+      ],
+      context: { workspaceId, purpose: "review" },
+    });
+    expect(result.rows).toEqual([
+      expect.objectContaining({
+        personId: "p1",
+        degree: 2,
+        inDegree: 1,
+        outDegree: 1,
+      }),
+      expect.objectContaining({
+        personId: "p2",
+        degree: 2,
+        inDegree: 1,
+        outDegree: 1,
+      }),
+    ]);
+  });
+
+  it("never compares unrelated subjects or treats missing values as contradictions", () => {
+    const result = analyzeResearch({
+      kind: "CONTRADICTIONS",
+      rows: [
+        { id: "1", workspaceId, value: "a" },
+        { id: "2", workspaceId, value: "b" },
+        {
+          id: "3",
+          workspaceId,
+          subjectPersonId: "p",
+          fieldKey: "role",
+          value: null,
+        },
+        {
+          id: "4",
+          workspaceId,
+          subjectPersonId: "p",
+          fieldKey: "role",
+          value: "Engineer",
+        },
+      ],
+      context: { workspaceId, purpose: "review" },
+    });
+    expect(result.rows).toEqual([]);
+  });
+
+  it("compares sources by subject and field with distinct cited-source counts", () => {
+    const result = analyzeResearch({
+      kind: "SOURCE_COMPARISON",
+      rows: [
+        {
+          id: "1",
+          workspaceId,
+          subjectPersonId: "a",
+          fieldKey: "role",
+          sourceId: "s1",
+          value: "Engineer",
+        },
+        {
+          id: "2",
+          workspaceId,
+          subjectPersonId: "a",
+          fieldKey: "role",
+          sourceId: "s1",
+          value: "Engineer",
+        },
+        {
+          id: "3",
+          workspaceId,
+          subjectPersonId: "b",
+          fieldKey: "role",
+          sourceId: "s2",
+          value: "Writer",
+        },
+        {
+          id: "4",
+          workspaceId,
+          subjectPersonId: "a",
+          fieldKey: "role",
+          value: "unknown source",
+        },
+      ],
+      context: { workspaceId, purpose: "review" },
+    });
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows.map((row) => [row.key, row.sourceCount])).toEqual([
+      ["a:role", 1],
+      ["b:role", 1],
+    ]);
+  });
 });

@@ -101,6 +101,8 @@ const ResearchAnalysisInput = builder.inputType("ResearchAnalysisInput", {
     until: t.field({ type: "DateTime" }),
     reviewState: t.stringList(),
     relationshipState: t.stringList(),
+    sourceReliabilityMin: t.float(),
+    sourceReliabilityMax: t.float(),
     first: t.int(),
   }),
 });
@@ -390,6 +392,15 @@ export function registerSearchGraphQL(): void {
               : {}),
             ...(args.input.relationshipState?.length
               ? { relationshipState: args.input.relationshipState }
+              : {}),
+            ...(args.input.sourceReliabilityMin != null ||
+            args.input.sourceReliabilityMax != null
+              ? {
+                  sourceReliability: {
+                    min: args.input.sourceReliabilityMin ?? undefined,
+                    max: args.input.sourceReliabilityMax ?? undefined,
+                  },
+                }
               : {}),
           },
           first: args.input.first ?? undefined,

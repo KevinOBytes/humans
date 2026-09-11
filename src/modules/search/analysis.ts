@@ -34,6 +34,8 @@ export type ResearchAnalysisRow = Readonly<{
   title?: string | null;
   value?: unknown;
   subjectPersonId?: string | null;
+  sourcePersonId?: string | null;
+  targetPersonId?: string | null;
   caseId?: string | null;
   sensitivity?: string | null;
   consentStatus?: string | null;
@@ -189,9 +191,9 @@ export function filterResearchRows(
       const value =
         row.sourceReliability == null ? null : Number(row.sourceReliability);
       return (
-        (!normalized.sourceReliability?.min ||
+        (normalized.sourceReliability?.min == null ||
           (value != null && value >= normalized.sourceReliability.min)) &&
-        (!normalized.sourceReliability?.max ||
+        (normalized.sourceReliability?.max == null ||
           (value != null && value <= normalized.sourceReliability.max))
       );
     })
@@ -256,6 +258,7 @@ function projectRow(
     "observedAt",
     "sourceReliability",
     "fieldKey",
+    "duplicateKey",
   ] as const) {
     if (
       row[field] !== undefined &&
@@ -327,7 +330,10 @@ export function analyzeResearch(input: {
   if (input.kind === "SOURCE_COMPARISON") {
     const groups = new Map<string, Record<string, unknown>[]>();
     for (const row of visible) {
-      const key = String(row.fieldKey ?? row.subjectPersonId ?? row.id);
+      const key =
+        row.subjectPersonId && row.fieldKey
+          ? `${row.subjectPersonId}:${row.fieldKey}`
+          : String(row.id);
       const values = groups.get(key) ?? [];
       values.push(row);
       groups.set(key, values);
@@ -341,7 +347,9 @@ export function analyzeResearch(input: {
         value: value.value ?? null,
         reliability: value.sourceReliability ?? null,
       })),
-      sourceCount: values.length,
+      sourceCount: new Set(
+        values.flatMap((value) => (value.sourceId ? [value.sourceId] : [])),
+      ).size,
     }));
     return result(
       input.kind,
@@ -387,6 +395,7 @@ export function analyzeResearch(input: {
   if (input.kind === "CONTRADICTIONS") {
     const groups = new Map<string, Record<string, unknown>[]>();
     for (const row of visible) {
+      if (!row.subjectPersonId || !row.fieldKey || row.value == null) continue;
       const key = `${row.subjectPersonId ?? ""}:${row.fieldKey ?? ""}`;
       const values = groups.get(key) ?? [];
       values.push(row);
@@ -419,19 +428,39 @@ export function analyzeResearch(input: {
       "Contradictions are reported when the same subject and field have different asserted values; no adverse inference is made.",
     );
   }
-  const degree = new Map<string, number>();
+  const degree = new Map<string, { inDegree: number; outDegree: number }>();
+  const seen = new Set<string>();
   for (const row of filtered) {
-    if (row.subjectPersonId)
-      degree.set(
-        row.subjectPersonId,
-        (degree.get(row.subjectPersonId) ?? 0) + 1,
-      );
+    if (
+      row.kind !== "RELATIONSHIP" ||
+      !row.sourcePersonId ||
+      !row.targetPersonId ||
+      seen.has(row.id)
+    )
+      continue;
+    seen.add(row.id);
+    const source = degree.get(row.sourcePersonId) ?? {
+      inDegree: 0,
+      outDegree: 0,
+    };
+    source.outDegree += 1;
+    degree.set(row.sourcePersonId, source);
+    const target = degree.get(row.targetPersonId) ?? {
+      inDegree: 0,
+      outDegree: 0,
+    };
+    target.inDegree += 1;
+    degree.set(row.targetPersonId, target);
   }
-  const metrics = [...degree.entries()].map(([personId, value]) => ({
-    personId,
-    degree: value,
-    explanation: "count of visible, filtered rows connected to this subject",
-  }));
+  const metrics = [...degree.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([personId, value]) => ({
+      personId,
+      ...value,
+      degree: value.inDegree + value.outDegree,
+      explanation:
+        "unique visible relationship IDs incident to this person; a self-loop contributes one incoming and one outgoing edge",
+    }));
   return result(
     input.kind,
     input.rows,
@@ -441,7 +470,7 @@ export function analyzeResearch(input: {
     metrics,
     projected.reduce((sum, item) => sum + item.redacted, 0),
     omitted,
-    "Degree is a descriptive count over visible filtered rows; it is not a threat, risk, or adverse score.",
+    "Directed degree counts unique visible, filtered relationship IDs in this bounded search sample, not the complete workspace graph. Facts and evidence do not add edges. It is not a threat, risk, or adverse score.",
   );
 }
 
