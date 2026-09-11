@@ -564,6 +564,14 @@ remain required.
 
 ### Consent-governed research Task 2 backend checkpoint
 
+The local seed is now a guarded, deterministic synthetic fixture: Northstar
+Atlas and Northstar Sandbox use reserved `.invalid` values and fictional names,
+and cover rich profiles, temporal graph edges, evidence/provenance,
+contradiction, case review, consent withdrawal, pending AI review, and legal
+hold. The source contract is covered by
+`tests/unit/synthetic-seed-contract.test.ts`; no hosted or live-Compose
+acceptance is claimed by this fixture alone.
+
 The branch adds case membership and resource links, shared visibility narrowing,
 versioned evidence assertions with redacted audits, independent relationship
 assertion reviews, and confirmation-gated inferred-to-documented promotion.

@@ -238,3 +238,10 @@ recovery.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage.
 - [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. The current tree now has a fully green Node 24 repository gate (`34298190513`, commit `f1ada49`), 216 test files with 1,349 tests passed and 572 intentional skips locally, lint, typecheck, formatting, generated drift, focused graph/performance checks, and an isolated PostgreSQL/Redis/MinIO Compose smoke with administrator recovery; the full current matrix, hosted authenticated/provider/runtime proof, and all remaining TODO rows are still outstanding.
 - [ ] `HUM-NFR-020` Meet and continuously verify the production latency, concurrency, graph-frame-rate, Web Vitals, and bundle budgets beyond Task 12 bounds and indexed-plan evidence. The disposable Node 24 performance harness now passes the representative 10,000-person/25,000-edge GraphQL read, graph render/FPS/WebGL recovery, and public/dashboard/entities/editor bundle checks; mutation, upload, hosted Web Vitals, and hosted-performance evidence remain open.
+- Bounded synthetic demo dataset evidence (2026-09-11): the guarded seed now
+  creates the fictional Northstar Atlas/Sandbox tenants with four fictional
+  people, rich profile/name/fact records, temporal documented/hypothesis edges,
+  source/evidence contradiction, case reviewer, withdrawn consent, pending AI
+  suggestion, and legal hold. `tests/unit/synthetic-seed-contract.test.ts`
+  proves the source contract and rejects the prior real-person fixture; live
+  Compose seed/GraphQL verification remains required.
