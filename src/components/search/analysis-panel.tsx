@@ -1,6 +1,16 @@
 "use client";
 
-import type { AnalysisResult } from "@/modules/search/analysis";
+type AnalysisResult = Readonly<{
+  kind: string;
+  rows: readonly Record<string, unknown>[];
+  redactedFieldCount: number;
+  explanation: Readonly<{
+    sourceRows: number;
+    returnedRows: number;
+    omittedFields: readonly string[];
+    methodology: string;
+  }>;
+}>;
 
 export function AnalysisPanel({ result }: { result: AnalysisResult | null }) {
   if (!result)
