@@ -12,6 +12,7 @@ import {
   type AiToolSummary,
 } from "./repository-domain";
 import { normalizeAiRunHistoryPage } from "./service";
+import { registerAiReviewGraphQL } from "./review-graphql";
 
 const AiProvider = builder.enumType("AiProvider", {
   values: ["OPENAI", "OLLAMA", "COMPATIBLE"] as const,
@@ -258,6 +259,7 @@ function notFound(): never {
 }
 
 export function registerAiGraphQL(): void {
+  registerAiReviewGraphQL();
   builder.queryFields((t) => ({
     aiRun: t.field({
       type: AiRunType,

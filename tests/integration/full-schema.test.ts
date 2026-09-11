@@ -54,6 +54,7 @@ const requiredTables = [
   "webhooks",
   "webhookDeliveries",
   "personWebResearchRuns",
+  "aiReviewSuggestions",
   "accessApprovals",
   "consentScopes",
   "fieldPolicies",

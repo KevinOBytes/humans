@@ -8,6 +8,12 @@ export type Incremental<T> =
       [P in keyof T]?: P extends " $fragmentName" | "__typename" ? T[P] : never;
     };
 import type { DocumentTypeDecoration } from "@graphql-typed-document-node/core";
+export type AcceptAiSuggestionInput = {
+  expectedVersion: number;
+  explicitConfirmed: boolean;
+  id: string;
+};
+
 export type AccessPolicyInput = {
   idempotencyKey?: string | null | undefined;
   name: string;
@@ -38,6 +44,16 @@ export type AiFailureCode =
 export type AiProvider = "COMPATIBLE" | "OLLAMA" | "OPENAI";
 
 export type AiResourceKind = "EVIDENCE" | "PERSON";
+
+export type AiReviewBatchInput = {
+  approved: boolean;
+  suggestions: Array<AiReviewBatchItem>;
+};
+
+export type AiReviewBatchItem = {
+  expectedVersion: number;
+  id: string;
+};
 
 export type AiRunState =
   "CANCELLED" | "COMPLETED" | "FAILED" | "PENDING" | "RUNNING";
@@ -475,6 +491,11 @@ export type CreateWebhookInput = {
   url: string;
 };
 
+export type DeferAiSuggestionInput = {
+  expectedVersion: number;
+  id: string;
+};
+
 export type DeletionBehavior =
   "ANONYMIZE" | "HARD_DELETE" | "REVIEW" | "SOFT_DELETE";
 
@@ -765,6 +786,12 @@ export type PrepareImportInput = {
 };
 
 export type ProtectedSearchKind = "PERSON_IDENTIFIER" | "PHONE";
+
+export type RejectAiSuggestionInput = {
+  expectedVersion: number;
+  id: string;
+  reason: string;
+};
 
 export type RelationshipMultiplicity =
   "MANY_TO_MANY" | "MANY_TO_ONE" | "ONE_TO_MANY" | "ONE_TO_ONE";
@@ -1234,6 +1261,82 @@ export type WorkspaceAdministrationRole =
 export type WorkspaceInvitationActionInput = {
   actionId: string;
   idempotencyKey: string;
+};
+
+export type AiReviewFieldsFragment = {
+  id: string;
+  personId: string;
+  caseId: string | null;
+  purpose: string;
+  fieldKey: string;
+  proposedValue: unknown;
+  currentValue: string | null;
+  evidenceReferences: unknown;
+  confidence: number;
+  uncertainty: string;
+  provider: string;
+  model: string;
+  researchRunId: string;
+  promptPolicyVersion: string;
+  status: string;
+  version: number;
+  acceptedResourceId: string | null;
+  acceptedResourceKind: string | null;
+  decisionReason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+} & { " $fragmentName"?: "AiReviewFieldsFragment" };
+
+export type PendingAiSuggestionsQueryVariables = Exact<{
+  personId: string;
+  purpose: string;
+  caseId?: string | null | undefined;
+}>;
+
+export type PendingAiSuggestionsQuery = {
+  pendingAiSuggestions: Array<{
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  }>;
+};
+
+export type AcceptAiSuggestionMutationVariables = Exact<{
+  input: AcceptAiSuggestionInput;
+}>;
+
+export type AcceptAiSuggestionMutation = {
+  acceptAiSuggestion: {
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  };
+};
+
+export type RejectAiSuggestionMutationVariables = Exact<{
+  input: RejectAiSuggestionInput;
+}>;
+
+export type RejectAiSuggestionMutation = {
+  rejectAiSuggestion: {
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  };
+};
+
+export type DeferAiSuggestionMutationVariables = Exact<{
+  input: DeferAiSuggestionInput;
+}>;
+
+export type DeferAiSuggestionMutation = {
+  deferAiSuggestion: {
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  };
+};
+
+export type ReviewAiBatchMutationVariables = Exact<{
+  input: AiReviewBatchInput;
+}>;
+
+export type ReviewAiBatchMutation = {
+  reviewAiBatch: Array<{
+    " $fragmentRefs"?: { AiReviewFieldsFragment: AiReviewFieldsFragment };
+  }>;
 };
 
 export type AnalystPublicRunFragment = {
@@ -3886,6 +3989,8 @@ export type UpdatePersonMutation = {
 export type PersonWebResearchMutationVariables = Exact<{
   personId: string;
   consent: boolean;
+  purpose: string;
+  caseId?: string | null | undefined;
 }>;
 
 export type PersonWebResearchMutation = {
@@ -5107,6 +5212,34 @@ export class TypedDocumentString<TResult, TVariables>
     return this.value;
   }
 }
+export const AiReviewFieldsFragmentDoc = new TypedDocumentString(
+  `
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}
+    `,
+  { fragmentName: "AiReviewFields" },
+) as unknown as TypedDocumentString<AiReviewFieldsFragment, unknown>;
 export const AnalystPublicRunFragmentDoc = new TypedDocumentString(
   `
     fragment AnalystPublicRun on AiRun {
@@ -5459,6 +5592,191 @@ export const SearchWorkbenchSavedQueryFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "SearchWorkbenchSavedQuery" },
 ) as unknown as TypedDocumentString<SearchWorkbenchSavedQueryFragment, unknown>;
+export const PendingAiSuggestionsDocument = new TypedDocumentString(
+  `
+    query PendingAiSuggestions($personId: UUID!, $purpose: String!, $caseId: UUID) {
+  pendingAiSuggestions(personId: $personId, purpose: $purpose, caseId: $caseId) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:e4e36ac98f6ddb6458e479e3b110580da947ad959a4942bb4830af64ec5b6c3d",
+  },
+) as unknown as TypedDocumentString<
+  PendingAiSuggestionsQuery,
+  PendingAiSuggestionsQueryVariables
+>;
+export const AcceptAiSuggestionDocument = new TypedDocumentString(
+  `
+    mutation AcceptAiSuggestion($input: AcceptAiSuggestionInput!) {
+  acceptAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:b4e049d257028a85bea19302b73abb714efb80d34891722d055e3d76675f414b",
+  },
+) as unknown as TypedDocumentString<
+  AcceptAiSuggestionMutation,
+  AcceptAiSuggestionMutationVariables
+>;
+export const RejectAiSuggestionDocument = new TypedDocumentString(
+  `
+    mutation RejectAiSuggestion($input: RejectAiSuggestionInput!) {
+  rejectAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:0e7b09e72322863ac287f935dc846be17db6fbecd085bb4dc5b695b3d13fd9aa",
+  },
+) as unknown as TypedDocumentString<
+  RejectAiSuggestionMutation,
+  RejectAiSuggestionMutationVariables
+>;
+export const DeferAiSuggestionDocument = new TypedDocumentString(
+  `
+    mutation DeferAiSuggestion($input: DeferAiSuggestionInput!) {
+  deferAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:6a39281a6df2092047f4a87abec388307843ccd3701ecf132d64153c1f5e3bb4",
+  },
+) as unknown as TypedDocumentString<
+  DeferAiSuggestionMutation,
+  DeferAiSuggestionMutationVariables
+>;
+export const ReviewAiBatchDocument = new TypedDocumentString(
+  `
+    mutation ReviewAiBatch($input: AiReviewBatchInput!) {
+  reviewAiBatch(input: $input) {
+    ...AiReviewFields
+  }
+}
+    fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}`,
+  {
+    hash: "sha256:b896e82c2e8260a9821016acad5676b828d3af0c546396d8760cc9d178a5aa91",
+  },
+) as unknown as TypedDocumentString<
+  ReviewAiBatchMutation,
+  ReviewAiBatchMutationVariables
+>;
 export const StartAiAnalysisDocument = new TypedDocumentString(
   `
     mutation StartAiAnalysis($input: StartAiAnalysisInput!) {
@@ -9283,8 +9601,13 @@ fragment MutationIssue on ValidationIssue {
 >;
 export const PersonWebResearchDocument = new TypedDocumentString(
   `
-    mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) {
-  personWebResearch(personId: $personId, consent: $consent) {
+    mutation PersonWebResearch($personId: UUID!, $consent: Boolean!, $purpose: String!, $caseId: UUID) {
+  personWebResearch(
+    personId: $personId
+    consent: $consent
+    purpose: $purpose
+    caseId: $caseId
+  ) {
     personId
     runId
     provider
@@ -9303,7 +9626,7 @@ export const PersonWebResearchDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:57c69cba2a9ff468e9be6d7a79eaf302c8cf55284f7a96c47162b69953ca8861",
+    hash: "sha256:b0c6d93b6899847c65e4cf9cee015916b81403c15531941aa424d3ab028aa7e9",
   },
 ) as unknown as TypedDocumentString<
   PersonWebResearchMutation,

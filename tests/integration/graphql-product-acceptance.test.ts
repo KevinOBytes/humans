@@ -1,3 +1,5 @@
+import { createGovernanceService } from "@/modules/governance/service";
+import { caseContext } from "../support/cases";
 // @vitest-environment node
 
 import { readFile } from "node:fs/promises";
@@ -110,12 +112,12 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     const research = (actor: typeof owner) =>
       fixture.execute({
         jar: actor.jar,
-        query: `mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) { personWebResearch(personId: $personId, consent: $consent) { personId suggestions { field value sourceUrls } sources { url title snippet } provider model } }`,
-        variables: { personId, consent: true },
+        query: `mutation PersonWebResearch($personId: UUID!, $consent: Boolean!, $purpose: String!) { personWebResearch(personId: $personId, consent: $consent, purpose: $purpose) { personId suggestions { field value sourceUrls } sources { url title snippet } provider model } }`,
+        variables: { personId, consent: true, purpose: "research" },
       });
     expectGraphQLError(await research(viewer), "FORBIDDEN");
     expectGraphQLError(await research(foreign), "NOT_FOUND");
-    expectGraphQLError(await research(owner), "PROVIDER_UNAVAILABLE");
+    expectGraphQLError(await research(owner), "FORBIDDEN");
   });
 
   it("persists validated person research provenance in the active workspace", async () => {
@@ -159,6 +161,23 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       });
       const personId = created.body?.data?.createPerson?.person?.id;
       expect(personId).toBeTruthy();
+
+      const governance = createGovernanceService(
+        await caseContext(persisted, owner),
+      );
+      await governance.createPurposePolicy({
+        purpose: "research",
+        lawfulBases: ["consent"],
+        effectiveFrom: new Date(Date.now() - 60_000),
+        state: "active",
+      });
+      await governance.recordConsent({
+        personId: personId!,
+        purpose: "research",
+        scopes: ["read", "write", "ai_operation"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
       const result = await persisted.execute<{
         personWebResearch: {
           personId: string;
@@ -172,8 +191,8 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       }>({
         jar: owner.jar,
         query:
-          "mutation PersonWebResearch($personId: UUID!, $consent: Boolean!) { personWebResearch(personId: $personId, consent: $consent) { personId runId suggestions { field value sourceUrls } } }",
-        variables: { personId, consent: true },
+          "mutation PersonWebResearch($personId: UUID!, $consent: Boolean!, $purpose: String!) { personWebResearch(personId: $personId, consent: $consent, purpose: $purpose) { personId runId suggestions { field value sourceUrls } } }",
+        variables: { personId, consent: true, purpose: "research" },
       });
       expect(result.body?.errors).toBeUndefined();
       const runId = result.body?.data?.personWebResearch.runId;

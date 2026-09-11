@@ -1,235 +1,147 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const executeBrowser = vi.hoisted(() => vi.fn());
+const execute = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn());
-
 vi.mock("@/graphql/client", () => ({
-  executeBrowserGraphQL: (...args: unknown[]) => executeBrowser(...args),
+  executeBrowserGraphQL: (...args: unknown[]) => execute(...args),
 }));
 vi.mock("@/graphql/generated/fragment-masking", () => ({
   useFragment: (_document: unknown, value: unknown) => value,
 }));
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh }),
-}));
-
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 import { PersonResearchPanel } from "@/components/people/person-research-panel";
 import {
   PersonWebResearchDocument,
-  UpdatePersonDocument,
+  AcceptAiSuggestionDocument,
+  PendingAiSuggestionsDocument,
 } from "@/graphql/generated/graphql";
-
 const person = {
   id: "8aca7f8d-4c04-4777-94fd-bb12592b2494",
   displayName: "Ada Researcher",
-  preferredName: "Ada",
-  sortName: "Researcher, Ada",
   biography: "Original biography",
   version: 3,
 };
-
-const researchResult = {
+const runId = "019fe224-a0cd-76e4-92ac-9d27a5c62cf5";
+const suggestion = {
+  id: runId,
   personId: person.id,
-  runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
-  provider: "openai-compatible",
-  model: "research-model",
-  sources: [
+  caseId: null,
+  purpose: "research",
+  fieldKey: "biography",
+  proposedValue: { version: 1, kind: "profile", value: "Public researcher" },
+  currentValue: person.biography,
+  evidenceReferences: [
     {
-      title: "Ada profile",
+      kind: "web",
       url: "https://example.com/ada",
-      snippet: "A public profile.",
+      locator: "Profile",
+      quote: "Public profile excerpt",
     },
   ],
-  suggestions: [
-    {
-      field: "displayName",
-      value: "Ada Lovelace",
-      sourceUrls: ["https://example.com/ada"],
-    },
-    {
-      field: "biography",
-      value: "Mathematician and writer.",
-      sourceUrls: ["https://example.com/ada"],
-    },
-  ],
+  confidence: 0,
+  uncertainty: "Verify identity",
+  provider: "COMPATIBLE",
+  model: "synthetic",
+  researchRunId: runId,
+  promptPolicyVersion: "human-review-v1",
+  status: "pending",
+  version: 1,
+  acceptedResourceId: null,
+  acceptedResourceKind: null,
+  decisionReason: null,
 };
-
-async function runResearch(user: ReturnType<typeof userEvent.setup>) {
-  executeBrowser.mockResolvedValueOnce({
-    ok: true,
-    data: { personWebResearch: researchResult },
-    requestId: "request-research",
-  });
-  await user.click(
-    screen.getByRole("checkbox", {
-      name: /I understand and want to search public web sources/i,
-    }),
-  );
+async function research(user: ReturnType<typeof userEvent.setup>) {
+  execute
+    .mockResolvedValueOnce({ ok: true, data: { personWebResearch: { runId } } })
+    .mockResolvedValueOnce({
+      ok: true,
+      data: { pendingAiSuggestions: [suggestion] },
+    });
+  await user.type(screen.getByLabelText("Governed purpose"), "research");
+  await user.click(screen.getByRole("checkbox", { name: /I understand/ }));
   await user.click(
     screen.getByRole("button", { name: "Research this person" }),
   );
-  await screen.findByDisplayValue("Ada Lovelace");
+  await screen.findByText("Public researcher");
 }
-
-describe("PersonResearchPanel", () => {
+describe("PersonResearchPanel governed review", () => {
   beforeEach(() => {
-    executeBrowser.mockReset();
+    execute.mockReset();
     refresh.mockReset();
   });
-
-  it("discloses external processing and keeps every suggestion unchecked", async () => {
+  it("requires consent and purpose and displays persisted suggestions without applying them", async () => {
     const user = userEvent.setup();
     render(<PersonResearchPanel person={person} canUpdate />);
-
-    expect(screen.getByText(/never sends contacts, addresses/i)).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Research this person" }),
     ).toBeDisabled();
-
-    await runResearch(user);
-
-    expect(
-      screen.getByText(/Provenance recorded as research run/),
-    ).toHaveTextContent(researchResult.runId);
-
-    expect(executeBrowser).toHaveBeenCalledWith(PersonWebResearchDocument, {
+    await research(user);
+    expect(execute).toHaveBeenCalledWith(PersonWebResearchDocument, {
       personId: person.id,
       consent: true,
+      purpose: "research",
+      caseId: null,
     });
+    expect(execute).toHaveBeenCalledWith(PendingAiSuggestionsDocument, {
+      personId: person.id,
+      purpose: "research",
+      caseId: null,
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(runId);
+    expect(screen.getByText("Original biography")).toBeVisible();
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+  it("applies a single immutable proposal through its versioned review operation", async () => {
+    const user = userEvent.setup();
+    render(<PersonResearchPanel person={person} canUpdate />);
+    await research(user);
+    execute
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { acceptAiSuggestion: { ...suggestion, status: "accepted" } },
+      })
+      .mockResolvedValueOnce({ ok: true, data: { pendingAiSuggestions: [] } });
+    await user.click(screen.getByRole("button", { name: "Accept biography" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+    expect(execute).toHaveBeenCalledWith(AcceptAiSuggestionDocument, {
+      input: { id: runId, expectedVersion: 1, explicitConfirmed: true },
+    });
+  });
+  it("keeps read-only reviewers from accepting a field", async () => {
+    const user = userEvent.setup();
+    render(<PersonResearchPanel person={person} canUpdate={false} />);
+    await research(user);
     expect(
-      screen.getByRole("checkbox", { name: "Apply Display name" }),
-    ).not.toBeChecked();
-    expect(
-      screen.getByRole("checkbox", { name: "Apply Biography" }),
-    ).not.toBeChecked();
-    expect(screen.getByRole("link", { name: "Ada profile" })).toHaveAttribute(
-      "href",
-      "https://example.com/ada",
-    );
-    expect(
-      screen.getByRole("button", { name: "Apply selected fields" }),
+      screen.getByRole("button", { name: "Accept biography" }),
     ).toBeDisabled();
   });
-
-  it("applies only checked, edited fields with the current version", async () => {
+  it("retains the original proposal after a failed decision", async () => {
     const user = userEvent.setup();
     render(<PersonResearchPanel person={person} canUpdate />);
-    await runResearch(user);
-
-    const displayName = screen.getByLabelText("Display name suggestion");
-    await user.clear(displayName);
-    await user.type(displayName, "Augusta Ada King");
-    await user.click(
-      screen.getByRole("checkbox", { name: "Apply Display name" }),
-    );
-    executeBrowser.mockResolvedValueOnce({
-      ok: true,
-      data: {
-        updatePerson: {
-          person: { ...person, displayName: "Augusta Ada King", version: 4 },
-          code: null,
-          currentVersion: null,
-          issues: [],
-        },
-      },
-      requestId: "request-update",
+    await research(user);
+    execute.mockResolvedValueOnce({
+      ok: false,
+      errors: [{ message: "Conflict" }],
     });
-
-    await user.click(
-      screen.getByRole("button", { name: "Apply selected fields" }),
+    await user.click(screen.getByRole("button", { name: "Accept biography" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "could not be saved",
     );
-
-    await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
-    expect(executeBrowser).toHaveBeenLastCalledWith(UpdatePersonDocument, {
-      input: {
-        id: person.id,
-        expectedVersion: 3,
-        displayName: "Augusta Ada King",
-      },
-    });
-  });
-
-  it("lets the reviewer accept all auto-filled fields in one check", async () => {
-    const user = userEvent.setup();
-    render(<PersonResearchPanel person={person} canUpdate />);
-    await runResearch(user);
-
-    const acceptAll = screen.getByRole("checkbox", {
-      name: "Accept all suggested fields",
-    });
-    expect(acceptAll).not.toBeChecked();
-    await user.click(acceptAll);
-
-    expect(
-      screen.getByRole("checkbox", { name: "Apply Display name" }),
-    ).toBeChecked();
-    expect(
-      screen.getByRole("checkbox", { name: "Apply Biography" }),
-    ).toBeChecked();
-    expect(
-      screen.getByRole("button", { name: "Apply selected fields" }),
-    ).toBeEnabled();
-
-    await user.click(acceptAll);
-    expect(
-      screen.getByRole("checkbox", { name: "Apply Display name" }),
-    ).not.toBeChecked();
-  });
-
-  it("preserves edited selections and reports a version conflict", async () => {
-    const user = userEvent.setup();
-    render(<PersonResearchPanel person={person} canUpdate />);
-    await runResearch(user);
-
-    const biography = screen.getByLabelText("Biography suggestion");
-    await user.clear(biography);
-    await user.type(biography, "Edited research draft");
-    await user.click(screen.getByRole("checkbox", { name: "Apply Biography" }));
-    executeBrowser.mockResolvedValueOnce({
-      ok: true,
-      data: {
-        updatePerson: {
-          person: null,
-          code: "CONFLICT",
-          currentVersion: 4,
-          issues: [],
-        },
-      },
-      requestId: "request-conflict",
-    });
-
-    await user.click(
-      screen.getByRole("button", { name: "Apply selected fields" }),
-    );
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("CONFLICT");
-    expect(screen.getByLabelText("Biography suggestion")).toHaveValue(
-      "Edited research draft",
-    );
-    expect(
-      screen.getByRole("checkbox", { name: "Apply Biography" }),
-    ).toBeChecked();
+    expect(screen.getByText("Public researcher")).toBeVisible();
     expect(refresh).not.toHaveBeenCalled();
   });
-
-  it("keeps the panel usable when a provider request throws", async () => {
+  it("recovers from a thrown provider request", async () => {
     const user = userEvent.setup();
     render(<PersonResearchPanel person={person} canUpdate />);
-    executeBrowser.mockRejectedValueOnce(new Error("network unavailable"));
-
-    await user.click(
-      screen.getByRole("checkbox", {
-        name: /I understand and want to search public web sources/i,
-      }),
-    );
+    execute.mockRejectedValueOnce(new Error("unavailable"));
+    await user.type(screen.getByLabelText("Governed purpose"), "research");
+    await user.click(screen.getByRole("checkbox", { name: /I understand/ }));
     await user.click(
       screen.getByRole("button", { name: "Research this person" }),
     );
-
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Web research could not be completed.",
+      "could not be completed",
     );
     expect(
       screen.getByRole("button", { name: "Research this person" }),

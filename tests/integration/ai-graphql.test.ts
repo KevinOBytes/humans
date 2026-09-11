@@ -15,6 +15,8 @@ import type { AiAnalysisRuntime } from "@/modules/ai/service";
 import { createResearchTools } from "@/modules/ai/tools";
 import { createJobsRepository } from "@/modules/jobs/repository";
 import { createAiAnalysisHandler } from "@/worker/handlers/ai-analysis";
+import { createGovernanceService } from "@/modules/governance/service";
+import { caseContext } from "../support/cases";
 
 import {
   GraphQLFixture,
@@ -169,6 +171,7 @@ liveDescribe("canonical AI analyst GraphQL API", () => {
     input: {
       idempotencyKey: string;
       question: string;
+      governancePurpose?: string;
       scope?: { evidenceIds?: string[]; personIds?: string[] };
     },
   ) {
@@ -386,7 +389,7 @@ liveDescribe("canonical AI analyst GraphQL API", () => {
   });
 
   it("returns only validated citations and count-only tool summaries", async () => {
-    const actor = await fixture.createSessionActor({ role: "analyst" });
+    const actor = await fixture.createSessionActor({ role: "owner" });
     const personId = newId();
     await fixture.database.insert(people).values({
       id: personId,
@@ -396,10 +399,27 @@ liveDescribe("canonical AI analyst GraphQL API", () => {
       createdBy: actor.principalId,
       updatedBy: actor.principalId,
     });
+    const governance = createGovernanceService(
+      await caseContext(fixture, actor),
+    );
+    await governance.createPurposePolicy({
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    await governance.recordConsent({
+      personId,
+      purpose: "research",
+      scopes: ["read", "ai_operation"],
+      lawfulBasis: "consent",
+      effectiveFrom: new Date(Date.now() - 60_000),
+    });
     const started = await start(
       { jar: actor.jar },
       {
         idempotencyKey: `graphql-citation-${newId()}`,
+        governancePurpose: "research",
         question: "Who is in the requested scope?",
         scope: { personIds: [personId] },
       },

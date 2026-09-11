@@ -10,7 +10,7 @@ import type { SessionActor } from "./graphql";
 import type { ResearchFixture } from "./research-fixture";
 
 export async function caseContext(
-  fixture: ResearchFixture,
+  fixture: Pick<ResearchFixture, "database">,
   actor: SessionActor,
 ): Promise<ResearchServiceContext> {
   const [session] = await fixture.database

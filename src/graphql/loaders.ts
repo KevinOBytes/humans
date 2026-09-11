@@ -51,6 +51,9 @@ export type SafeWorkspace = {
 };
 
 export type GraphQLServices = {
+  aiReview: ReturnType<
+    typeof import("@/modules/ai/review-service").createAiReviewService
+  >;
   loadWorkspaces(
     ids: readonly string[],
   ): Promise<readonly (SafeWorkspace | null)[]>;

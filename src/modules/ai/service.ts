@@ -476,6 +476,8 @@ export function createAiAnalysisService(
             scopedContext.database,
             repositoryRuntime,
           ).insertStartedAnalysis({
+            governancePurpose: normalized.governancePurpose,
+            governanceCaseReference: normalized.governanceCaseReference,
             context: scopedContext,
             provider: runtime.provider.disclosure,
             baseUrlFingerprint: runtime.provider.baseUrlFingerprint,

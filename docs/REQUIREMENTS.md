@@ -1,5 +1,7 @@
 # MVP requirements
 
+Task 3 local checkpoint (2026-09-11): AI proposals are retained in `ai_review_suggestions` with versioned typed values, source/evidence references, confidence, uncertainty, provider/model, originating run, and prompt-policy version. Explicit human accept/reject/defer and approved batch decisions retain the original proposal and link accepted resources back to that record. Current workspace, case, source visibility and purpose coverage for AI/write are checked before acceptance; fact/relationship writes and Task 2 evidence assertions share the decision transaction. AI-created relationships remain inferred; acceptance is not independent evidence approval or an adverse decision. This supersedes the older web-research description below: the browser no longer sends AI suggestions directly to `UpdatePerson`, and original proposals are not editable in the review queue. Focused validation/queue tests, updated panel tests, and gated `ai-review-lifecycle.test.ts` cover this boundary. Live PostgreSQL/browser/provider verification, retention deletion/expiry for retained provenance, and HUM-FR-023 closure remain open.
+
 Current release-candidate evidence (2026-09-07): GitHub Actions run
 `34175736114` for commit `6986c6e` passed the complete repository gate,
 including quality, generated artifacts, production build, PostgreSQL/Redis/
