@@ -131,6 +131,8 @@ export type AiRepositoryRuntime = Readonly<{
 }>;
 
 export type StartAiRowsInput = Readonly<{
+  governancePurpose?: string | null;
+  governanceCaseReference?: string | null;
   context: ResearchServiceContext;
   provider: AiProviderDisclosure;
   baseUrlFingerprint: string;

@@ -15,6 +15,8 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { sensitivityEnum } from "./enums";
+import { cases } from "./cases";
+import { files } from "./files";
 import { people } from "./people";
 import { workspacePrincipals } from "./principals";
 import { workspaces } from "./workspaces";
@@ -286,6 +288,93 @@ export const queryRuns = pgTable(
     check(
       "query_runs_metrics_check",
       sql`(${table.durationMs} IS NULL OR ${table.durationMs} >= 0) AND (${table.resultCount} IS NULL OR ${table.resultCount} >= 0) AND (${table.completedAt} IS NULL OR ${table.completedAt} >= ${table.startedAt})`,
+    ),
+  ],
+);
+
+/**
+ * A durable, workspace-scoped reference to a redacted research export. The
+ * bytes themselves live in the configured private object store through the
+ * linked file record; this table intentionally stores only operational and
+ * provenance metadata, never exported values.
+ */
+export const exportArtifacts = pgTable(
+  "export_artifacts",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id").notNull(),
+    caseId: uuid("case_id"),
+    purpose: text("purpose").notNull(),
+    queryHash: text("query_hash").notNull(),
+    previewHash: text("preview_hash").notNull(),
+    redactionProfile: text("redaction_profile").notNull(),
+    format: text("format").notNull(),
+    state: text("state").default("writing").notNull(),
+    expiresAt: domainTimestamp("expires_at").notNull(),
+    rowCount: integer("row_count").notNull(),
+    fieldCounts: jsonb("field_counts").notNull(),
+    legalHoldCheckedAt: domainTimestamp("legal_hold_checked_at").notNull(),
+    idempotencyHash: text("idempotency_hash").notNull(),
+    requestHash: text("request_hash").notNull(),
+    auditReference: uuid("audit_reference"),
+    version: integer("version").default(1).notNull(),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+    createdBy: uuid("created_by").notNull(),
+    updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
+    updatedBy: uuid("updated_by").notNull(),
+  },
+  (table) => [
+    unique("export_artifacts_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    unique("export_artifacts_workspace_file_unique").on(
+      table.workspaceId,
+      table.fileId,
+    ),
+    unique("export_artifacts_workspace_idempotency_unique").on(
+      table.workspaceId,
+      table.idempotencyHash,
+    ),
+    index("export_artifacts_workspace_list_idx").on(
+      table.workspaceId,
+      table.createdAt,
+      table.id,
+    ),
+    foreignKey({
+      name: "export_artifacts_workspace_file_fk",
+      columns: [table.workspaceId, table.fileId],
+      foreignColumns: [files.workspaceId, files.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "export_artifacts_workspace_case_fk",
+      columns: [table.workspaceId, table.caseId],
+      foreignColumns: [cases.workspaceId, cases.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "export_artifacts_workspace_creator_fk",
+      columns: [table.workspaceId, table.createdBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "export_artifacts_workspace_updater_fk",
+      columns: [table.workspaceId, table.updatedBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    check(
+      "export_artifacts_hashes_check",
+      sql`${table.queryHash} ~ '^[0-9a-f]{64}$' AND ${table.previewHash} ~ '^[0-9a-f]{64}$' AND ${table.idempotencyHash} ~ '^[0-9a-f]{64}$' AND ${table.requestHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "export_artifacts_profile_format_state_check",
+      sql`${table.redactionProfile} IN ('PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED') AND ${table.format} IN ('JSON', 'CSV') AND ${table.state} IN ('writing', 'ready', 'failed', 'expired')`,
+    ),
+    check(
+      "export_artifacts_counts_check",
+      sql`${table.rowCount} >= 0 AND jsonb_typeof(${table.fieldCounts}) = 'object' AND ${table.version} > 0`,
     ),
   ],
 );

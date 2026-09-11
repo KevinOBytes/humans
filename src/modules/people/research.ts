@@ -63,6 +63,8 @@ const outputSchema = z
 export type PersonResearchSource = z.infer<typeof sourceSchema>;
 export type PersonResearchSuggestion = z.infer<typeof suggestionSchema>;
 export type PersonResearchPersistenceInput = {
+  purpose?: string | null;
+  caseId?: string | null;
   personId: string;
   queryHash: string;
   provider: string;
@@ -176,6 +178,11 @@ export function createPersonResearchService(input: {
   loadPerson: (id: string) => Promise<ResearchPerson | null>;
   operationLimiter: RequestOperationLimiter;
   runtime?: PersonResearchRuntime;
+  authorizeResearch?: (request: {
+    personId: string;
+    purpose?: string | null;
+    caseId?: string | null;
+  }) => Promise<void>;
   persistResearch?: (
     input: PersonResearchPersistenceInput,
   ) => Promise<{ runId: string }>;
@@ -184,6 +191,8 @@ export function createPersonResearchService(input: {
     async run(request: {
       personId: string;
       consent: boolean;
+      purpose?: string | null;
+      caseId?: string | null;
     }): Promise<PersonResearchResult> {
       for (const permission of [
         "person:read",
@@ -216,6 +225,7 @@ export function createPersonResearchService(input: {
           "FORBIDDEN",
           "Web research is unavailable for this sensitivity level.",
         );
+      await input.authorizeResearch?.(request);
       if (!input.runtime)
         throw createGraphQLError(
           "PROVIDER_UNAVAILABLE",
@@ -292,6 +302,8 @@ export function createPersonResearchService(input: {
           try {
             runId = (
               await input.persistResearch({
+                purpose: request.purpose,
+                caseId: request.caseId,
                 personId: person.id,
                 queryHash: createHash("sha256")
                   .update(query, "utf8")

@@ -2,6 +2,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
+import { newId } from "@/db/id";
 
 import {
   ArchiveTagDocument,
@@ -21,8 +22,10 @@ import {
 import { auditEvents } from "@/db/schema/operations";
 import { factTags, personTags, relationshipTags } from "@/db/schema/evidence";
 import { locationMutationIdempotency } from "@/db/schema/locations";
+import { createGovernanceService } from "@/modules/governance/service";
 
 import { expectGraphQLError, type SessionActor } from "../support/graphql";
+import { caseContext } from "../support/cases";
 import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -54,6 +57,26 @@ liveDescribe("remaining tag mutation idempotency", () => {
       targetResult.body?.data?.createPerson?.person?.id,
       "target person",
     );
+    const governance = createGovernanceService(
+      await caseContext(fixture, actor),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    for (const personId of [sourceId, targetId]) {
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId,
+        purpose: "research",
+        scopes: ["read", "write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+    }
     const definition = await fixture.execute<{
       createFactDefinition: { factDefinition: { id: string } | null };
     }>({
@@ -117,6 +140,8 @@ liveDescribe("remaining tag mutation idempotency", () => {
       query: CreateRelationshipDocument,
       variables: {
         input: {
+          governancePurpose: "research",
+          explicitConfirmed: true,
           sourcePersonId: sourceId,
           targetPersonId: targetId,
           relationshipTypeId,

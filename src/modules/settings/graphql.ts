@@ -46,6 +46,39 @@ const DeletionBehavior = builder.enumType("DeletionBehavior", {
 const ConsentStatus = builder.enumType("ConsentStatus", {
   values: ["GRANTED", "DENIED", "WITHDRAWN", "EXPIRED", "UNKNOWN"] as const,
 });
+const ConsentScope = builder.enumType("ConsentScope", {
+  values: [
+    "READ",
+    "RESTRICTED_READ",
+    "WRITE",
+    "EXPORT",
+    "AI_OPERATION",
+  ] as const,
+});
+const LawfulBasis = builder.enumType("LawfulBasis", {
+  values: [
+    "CONSENT",
+    "CONTRACT",
+    "LEGAL_OBLIGATION",
+    "VITAL_INTERESTS",
+    "PUBLIC_TASK",
+    "LEGITIMATE_INTERESTS",
+  ] as const,
+});
+const WithdrawalEffect = builder.enumType("WithdrawalEffect", {
+  values: [
+    "STOP_PROCESSING",
+    "RESTRICT_PROCESSING",
+    "RETAIN_UNDER_HOLD",
+  ] as const,
+});
+const ConsentScopeInput = builder.inputType("ConsentScopeInput", {
+  fields: (t) => ({
+    scope: t.field({ type: ConsentScope, required: true }),
+    fieldDefinitionId: t.field({ type: "UUID" }),
+    caseReference: t.string(),
+  }),
+});
 const DeletionRequestState = builder.enumType("DeletionRequestState", {
   values: [
     "REVIEWING",
@@ -301,6 +334,11 @@ const CreateConsentInput = builder.inputType("CreateConsentInput", {
     effectiveFrom: t.field({ type: "DateTime", required: true }),
     effectiveUntil: t.field({ type: "DateTime" }),
     evidenceId: t.field({ type: "UUID" }),
+    lawfulBasis: t.field({ type: LawfulBasis }),
+    scopes: t.field({ type: [ConsentScopeInput] }),
+    noticeVersion: t.string(),
+    collectionMethod: t.string(),
+    withdrawalEffect: t.field({ type: WithdrawalEffect }),
   }),
 });
 const CreateDeletionRequestInput = builder.inputType(
@@ -880,6 +918,15 @@ export function registerSettingsGraphQL(): void {
           effectiveUntil: args.input.effectiveUntil
             ? new Date(args.input.effectiveUntil)
             : undefined,
+          lawfulBasis: args.input.lawfulBasis?.toLowerCase() as never,
+          scopes: args.input.scopes?.map((scope) => ({
+            scope: scope.scope.toLowerCase() as never,
+            fieldDefinitionId: scope.fieldDefinitionId,
+            caseReference: scope.caseReference,
+          })),
+          noticeVersion: args.input.noticeVersion,
+          collectionMethod: args.input.collectionMethod,
+          withdrawalEffect: args.input.withdrawalEffect?.toLowerCase() as never,
         });
       },
     }),

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { S3Client } from "@aws-sdk/client-s3";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { S3ObjectStore } from "@/lib/storage/s3";
 
@@ -61,5 +61,39 @@ describe("direct S3 upload presigning", () => {
     expect(result.expiresAt.getTime()).toBeLessThanOrEqual(
       Date.now() + 300_000,
     );
+  });
+
+  it("writes generated server artifacts only after verifying their checksum", async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const store = new S3ObjectStore(
+      { send } as unknown as S3Client,
+      "humans-private",
+    );
+    const body = Buffer.from('{"schema":"humans.governed-export.v1"}', "utf8");
+    const checksumSha256 = createHash("sha256").update(body).digest("hex");
+
+    await store.putInternal!({
+      workspaceId: "workspace-a",
+      key: "exports/019cc7c4-6ed2-7e0a-aed8-e5d451c97005/export.json",
+      content: body,
+      contentType: "application/json",
+      checksumSha256,
+    });
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]?.[0].input).toMatchObject({
+      Bucket: "humans-private",
+      Key: "workspaces/workspace-a/exports/019cc7c4-6ed2-7e0a-aed8-e5d451c97005/export.json",
+      ChecksumSHA256: Buffer.from(checksumSha256, "hex").toString("base64"),
+    });
+    await expect(
+      store.putInternal!({
+        workspaceId: "workspace-a",
+        key: "exports/019cc7c4-6ed2-7e0a-aed8-e5d451c97005/export.json",
+        content: body,
+        contentType: "application/json",
+        checksumSha256: "0".repeat(64),
+      }),
+    ).rejects.toThrow("checksum mismatch");
   });
 });

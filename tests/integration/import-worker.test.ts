@@ -506,6 +506,7 @@ liveDescribe("durable import worker", () => {
     expect(fact).toMatchObject({
       factDefinitionId: definitionId,
       valueText: "mathematician",
+      confidenceMethod: "import",
       createdBy: actor.principalId,
     });
     expect(
@@ -717,6 +718,9 @@ liveDescribe("durable import worker", () => {
       targetPersonId,
       relationshipTypeId,
       labelOverride: "worked with",
+      creationMethod: "import",
+      reviewState: "unreviewed",
+      state: "inferred",
       createdBy: actor.principalId,
     });
     const [row] = await fixture.database

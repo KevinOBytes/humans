@@ -35,6 +35,8 @@ export const personWebResearchRuns = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     personId: uuid("person_id").notNull(),
+    governancePurpose: text("governance_purpose"),
+    governanceCaseReference: text("governance_case_reference"),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     queryHash: text("query_hash").notNull(),

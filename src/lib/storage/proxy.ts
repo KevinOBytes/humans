@@ -13,6 +13,7 @@ import {
 } from "@/lib/security/sealed-envelope";
 import type {
   DownloadRequest,
+  InternalObjectWrite,
   ObjectMetadata,
   ObjectRead,
   ObjectReference,
@@ -600,5 +601,11 @@ export class ApplicationProxyObjectStore implements ObjectStore {
   }
   delete(input: ObjectReference): Promise<void> {
     return this.delegate.delete(input);
+  }
+  putInternal(input: InternalObjectWrite): Promise<void> {
+    if (!this.delegate.putInternal) {
+      throw new TypeError("Internal object writes are unavailable");
+    }
+    return this.delegate.putInternal(input);
   }
 }

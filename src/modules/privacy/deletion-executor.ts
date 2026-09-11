@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { files } from "@/db/schema/files";
 import { auditEvents } from "@/db/schema/operations";
-import { deletionRequests } from "@/db/schema/privacy";
+import { deletionRequests, privacyRequests } from "@/db/schema/privacy";
 import { legalHolds } from "@/db/schema/workspaces";
 import { people } from "@/db/schema/people";
 import { newId } from "@/db/id";
@@ -135,6 +135,29 @@ export async function executeApprovedDeletionRequests(input: {
         .limit(1)
         .for("update", { skipLocked: true });
       if (!request) return;
+
+      // New governed requests may only execute after verified approval and
+      // their schedule. Historical deletion requests retain their old path.
+      const [governed] = await transaction
+        .select()
+        .from(privacyRequests)
+        .where(
+          and(
+            eq(privacyRequests.workspaceId, request.workspaceId),
+            eq(privacyRequests.legacyDeletionRequestId, request.id),
+          ),
+        )
+        .limit(1);
+      if (
+        governed &&
+        !governed.idempotencyHash.startsWith("legacy:") &&
+        (governed.state !== "fulfilling" ||
+          !governed.verifiedAt ||
+          !governed.reviewedBy ||
+          governed.executeAfter > now ||
+          governed.deletedAt)
+      )
+        return;
 
       const scope = parseScope(request.scope);
       const requestId = `worker:deletion:${request.id}`;

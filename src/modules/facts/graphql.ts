@@ -584,6 +584,8 @@ const CreateFactInput = builder.inputType("CreateFactInput", {
     observedAt: t.field({ type: "DateTime" }),
     supersedesFactId: t.field({ type: "UUID" }),
     language: t.string(),
+    governancePurpose: t.string(),
+    governanceCaseReference: t.string(),
   }),
 });
 const ReviseFactInput = builder.inputType("ReviseFactInput", {
@@ -598,6 +600,8 @@ const ReviseFactInput = builder.inputType("ReviseFactInput", {
     reviewState: t.field({ type: FactReviewState }),
     sensitivity: t.field({ type: Sensitivity }),
     changeReason: t.string(),
+    governancePurpose: t.string(),
+    governanceCaseReference: t.string(),
   }),
 });
 const SelectPersonFieldInput = builder.inputType("SelectPersonFieldInput", {

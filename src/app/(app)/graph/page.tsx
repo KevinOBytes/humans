@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { getAppContext } from "@/app/(app)/app-session";
-import { GraphExplorer } from "@/components/graph/graph-explorer";
+import { GraphExplorerShell } from "@/components/graph/graph-explorer-shell";
 import type { GraphSavedViewSummary } from "@/components/graph/graph-saved-views";
 import {
   graphPageResult,
@@ -129,7 +129,7 @@ export default async function GraphPage({
   const result = graphPageResult(data.graph);
   const permissions = context.viewer.permissions;
   return (
-    <GraphExplorer
+    <GraphExplorerShell
       workspaceIdentity={context.viewer.workspace.id}
       result={result}
       initialLayoutAlgorithm={layoutAlgorithm}

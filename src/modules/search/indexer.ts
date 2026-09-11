@@ -67,7 +67,12 @@ function safeTypedFactValue(input: {
   valueDecimal: string | null;
   valueTimestamp: Date | null;
   valueType: string;
+  sensitivity: Sensitivity;
 }): string {
+  // Search has no purpose/field approval context. Only public typed values
+  // may enter the full-text index; governed direct reads handle all other
+  // sensitivity classes.
+  if (input.sensitivity !== "public") return "";
   switch (input.valueType) {
     case "boolean":
       return input.valueBoolean == null ? "" : String(input.valueBoolean);

@@ -36,6 +36,7 @@ import {
   type ImportStagedRow,
 } from "./repository";
 import type { ImportFormat, ImportMapping, StoredImportMapping } from "./types";
+import { previewImport as buildImportPreview } from "./preview";
 
 const STAGE_BATCH_SIZE = 250;
 const PREVIEW_LIMIT = 100;
@@ -645,6 +646,26 @@ export function createImportsService(
   }
 
   return {
+    previewImport(input: {
+      format: ImportFormat | "DOCUMENT";
+      content: string;
+      purpose: string;
+      caseId?: string | null;
+      mapping?: unknown;
+    }) {
+      requireSession(context);
+      requirePermission(context, "import:create");
+      return buildImportPreview({
+        workspaceId: context.workspaceId,
+        actorPrincipalId: context.actor.principalId,
+        purpose: input.purpose,
+        caseId: input.caseId,
+        format: input.format,
+        content: input.content,
+        mapping: input.mapping,
+        hmacKey: runtime.encryptionKey,
+      });
+    },
     async saveMapping(input: {
       id?: string | null;
       expectedVersion?: number | null;

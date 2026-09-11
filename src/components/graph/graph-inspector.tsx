@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import type { GraphResult } from "@/modules/graph/types";
 
 import type { GraphSelection } from "./graph-table";
+import { relationshipStateStyle } from "./relationship-state-style";
 
 export function GraphInspector({
   closeFocusRef,
@@ -120,7 +121,14 @@ export function GraphInspector({
               State and sensitivity
             </dt>
             <dd className="mt-1 flex flex-wrap gap-2">
-              <Badge variant="neutral">{edge.state}</Badge>
+              <Badge
+                variant="neutral"
+                style={{
+                  borderColor: relationshipStateStyle[edge.state].stroke,
+                }}
+              >
+                {edge.state}
+              </Badge>
               <Badge variant="neutral">{edge.sensitivity}</Badge>
             </dd>
           </div>
@@ -134,6 +142,36 @@ export function GraphInspector({
               {edge.relationshipId}
             </dd>
           </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">Temporal interval</dt>
+            <dd>
+              {edge.validFrom ?? "Unknown start"} —{" "}
+              {edge.validUntil ?? "Unknown end"} ({edge.temporalPrecision})
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">
+              Evidence and case scope
+            </dt>
+            <dd>
+              Source count is not available in this graph projection. Case
+              membership is not established by this view.
+            </dd>
+          </div>
+          {edge.state === "inferred" || edge.state === "disputed" ? (
+            <div>
+              <dd>
+                Promotion requires evidence review; confidence alone does not
+                establish a fact.
+              </dd>
+              <Link
+                href={`/people/${edge.source}?view=relationships`}
+                className="text-primary underline"
+              >
+                Open relationship evidence
+              </Link>
+            </div>
+          ) : null}
         </dl>
       ) : null}
     </aside>

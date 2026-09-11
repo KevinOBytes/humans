@@ -12,12 +12,15 @@ import IORedis from "ioredis";
 
 import { sessions } from "@/db/schema/auth";
 import { relationshipTypes } from "@/db/schema/relationships";
+import { newId } from "@/db/id";
+import { createGovernanceService } from "@/modules/governance/service";
 import {
   provisionWorkspace,
   type WorkspaceIdentity,
 } from "@/modules/auth/workspaces";
 
 import type { CookieJar } from "../support/auth";
+import { caseContext } from "../support/cases";
 import { ResearchFixture } from "../support/research-fixture";
 
 const fixture = new ResearchFixture();
@@ -95,6 +98,24 @@ test.beforeAll(async () => {
   const alphaId = alpha.body?.data?.createPerson?.person?.id;
   const betaId = beta.body?.data?.createPerson?.person?.id;
   if (!alphaId || !betaId) throw new Error("Graph E2E people were not created");
+  const governance = createGovernanceService(await caseContext(fixture, actor));
+  await governance.createPurposePolicy({
+    idempotencyKey: newId(),
+    purpose: "research",
+    lawfulBases: ["consent"],
+    effectiveFrom: new Date(Date.now() - 60_000),
+    state: "active",
+  });
+  for (const personId of [alphaId, betaId]) {
+    await governance.recordConsent({
+      idempotencyKey: newId(),
+      personId,
+      purpose: "research",
+      scopes: ["read", "write"],
+      lawfulBasis: "consent",
+      effectiveFrom: new Date(Date.now() - 60_000),
+    });
+  }
   const type = await fixture.execute<{
     createRelationshipType: { relationshipType: { id: string } | null };
   }>({
@@ -117,6 +138,8 @@ test.beforeAll(async () => {
     query: `mutation($input: CreateRelationshipInput!) { createRelationship(input: $input) { relationship { id } code } }`,
     variables: {
       input: {
+        governancePurpose: "research",
+        explicitConfirmed: true,
         sourcePersonId: alphaId,
         targetPersonId: betaId,
         relationshipTypeId: typeId,
@@ -146,6 +169,33 @@ test.beforeAll(async () => {
   if (!betaOneId || !betaTwoId) {
     throw new Error("Secondary graph E2E people were not created");
   }
+  const secondaryActor = {
+    ...actor,
+    organizationId: secondaryWorkspace.organizationId,
+    workspaceId: secondaryWorkspace.workspaceId,
+    memberId: secondaryWorkspace.memberId,
+    principalId: secondaryWorkspace.principalId,
+  };
+  const secondaryGovernance = createGovernanceService(
+    await caseContext(fixture, secondaryActor),
+  );
+  await secondaryGovernance.createPurposePolicy({
+    idempotencyKey: newId(),
+    purpose: "research",
+    lawfulBases: ["consent"],
+    effectiveFrom: new Date(Date.now() - 60_000),
+    state: "active",
+  });
+  for (const personId of [betaOneId, betaTwoId]) {
+    await secondaryGovernance.recordConsent({
+      idempotencyKey: newId(),
+      personId,
+      purpose: "research",
+      scopes: ["read", "write"],
+      lawfulBasis: "consent",
+      effectiveFrom: new Date(Date.now() - 60_000),
+    });
+  }
   const betaType = await fixture.execute<{
     createRelationshipType: { relationshipType: { id: string } | null };
   }>({
@@ -170,6 +220,8 @@ test.beforeAll(async () => {
     query: `mutation($input: CreateRelationshipInput!) { createRelationship(input: $input) { relationship { id } code } }`,
     variables: {
       input: {
+        governancePurpose: "research",
+        explicitConfirmed: true,
         sourcePersonId: betaOneId,
         targetPersonId: betaTwoId,
         relationshipTypeId: betaTypeId,
@@ -336,6 +388,7 @@ test("authenticated graph keeps table parity, saves views, and exports safe file
     page.getByRole("status", { name: "Graph explorer status" }),
   ).toContainText("no longer reproducible");
 
+  await page.getByRole("button", { name: "Export", exact: true }).click();
   const pngDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download PNG" }).click();
   const png = await downloadBytes(await pngDownload);

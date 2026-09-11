@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toRelationshipEditorGraph } from "@/modules/graph/transform";
 import type { GraphResult } from "@/modules/graph/types";
+import { relationshipStateStyle } from "./relationship-state-style";
 
 type EditorNode = Node<{ label: string }, "person">;
 type EditorEdge = Edge<{ relationshipId: string; version: number }>;
@@ -37,6 +38,8 @@ export type RelationshipEditorMutationAdapter = {
     relationshipId: string;
   }) => Promise<boolean>;
   create?: (input: {
+    explicitConfirmed: boolean;
+    governancePurpose: string;
     relationshipTypeId: string;
     sensitivity: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
     sourcePersonId: string;
@@ -44,6 +47,8 @@ export type RelationshipEditorMutationAdapter = {
   }) => Promise<boolean>;
   update?: (input: {
     expectedVersion: number;
+    explicitConfirmed: boolean;
+    governancePurpose: string;
     relationshipId: string;
     sensitivity: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
   }) => Promise<boolean>;
@@ -135,8 +140,9 @@ export function RelationshipEditor({
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        label: edge.label,
-        ariaLabel: `${edge.label} relationship from ${people.get(edge.source)} to ${people.get(edge.target)}, version ${relationship.version}`,
+        label: `${edge.label} · ${relationship.state}`,
+        style: relationshipStateStyle[relationship.state],
+        ariaLabel: `${edge.label} relationship from ${people.get(edge.source)} to ${people.get(edge.target)}, ${relationship.state}, version ${relationship.version}`,
         data: {
           relationshipId: relationship.relationshipId,
           version: relationship.version,
@@ -240,6 +246,8 @@ export function RelationshipEditor({
     let saved: boolean | undefined;
     if (pendingChange.kind === "create") {
       saved = await mutationAdapter.create?.({
+        explicitConfirmed: true,
+        governancePurpose: "research",
         relationshipTypeId: pendingChange.relationshipTypeId,
         sensitivity: pendingChange.sensitivity,
         sourcePersonId: pendingChange.sourcePersonId,
@@ -263,6 +271,8 @@ export function RelationshipEditor({
             })
           : await mutationAdapter.update?.({
               expectedVersion,
+              explicitConfirmed: true,
+              governancePurpose: "research",
               relationshipId,
               sensitivity: pendingChange.sensitivity,
             });
@@ -309,7 +319,9 @@ export function RelationshipEditor({
             <DialogDescription>
               One hop around {people.get(focusId) ?? "the selected person"}.
               Dragging changes only saved-view positions. Dropping a connection
-              opens a form and never writes automatically.
+              opens a form and never writes automatically. Evidence-state
+              promotion requires the evidence review flow; this editor never
+              promotes inferred or disputed claims.
             </DialogDescription>
           </div>
           <Button

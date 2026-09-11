@@ -22,9 +22,121 @@ import { people } from "./people";
 import { relationships } from "./relationships";
 import { sensitivityEnum, temporalPrecisionEnum } from "./enums";
 import { workspaces } from "./workspaces";
+import { cases } from "./cases";
 
 const domainTimestamp = (name: string) =>
   timestamp(name, { mode: "date", precision: 3, withTimezone: true });
+
+export const evidenceAssertions = pgTable(
+  "evidence_assertions",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    evidenceId: uuid("evidence_id").notNull(),
+    resourceKind: text("resource_kind").notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    caseId: uuid("case_id"),
+    purpose: text("purpose").notNull(),
+    locator: text("locator").notNull(),
+    quote: text("quote").notNull(),
+    role: text("role").notNull(),
+    confidence: numeric("confidence", { precision: 4, scale: 3 }).notNull(),
+    reviewState: text("review_state").default("unreviewed").notNull(),
+    version: integer("version").default(1).notNull(),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+    createdBy: text("created_by").notNull(),
+    updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
+    updatedBy: text("updated_by").notNull(),
+    deletedAt: domainTimestamp("deleted_at"),
+    deletedBy: text("deleted_by"),
+  },
+  (t) => [
+    unique("evidence_assertions_workspace_id_unique").on(t.workspaceId, t.id),
+    index("evidence_assertions_resource_idx").on(
+      t.workspaceId,
+      t.resourceKind,
+      t.resourceId,
+    ),
+    foreignKey({
+      name: "evidence_assertions_workspace_evidence_fk",
+      columns: [t.workspaceId, t.evidenceId],
+      foreignColumns: [evidenceItems.workspaceId, evidenceItems.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "evidence_assertions_workspace_case_fk",
+      columns: [t.workspaceId, t.caseId],
+      foreignColumns: [cases.workspaceId, cases.id],
+    }).onDelete("restrict"),
+    check(
+      "evidence_assertions_kind_check",
+      sql`${t.resourceKind} IN ('person', 'fact', 'relationship')`,
+    ),
+    check(
+      "evidence_assertions_role_check",
+      sql`${t.role} IN ('supports', 'contradicts', 'context')`,
+    ),
+    check(
+      "evidence_assertions_review_check",
+      sql`${t.reviewState} IN ('unreviewed', 'approved', 'rejected')`,
+    ),
+    check(
+      "evidence_assertions_confidence_check",
+      sql`${t.confidence} BETWEEN 0 AND 1`,
+    ),
+    check(
+      "evidence_assertions_text_check",
+      sql`length(${t.locator}) BETWEEN 1 AND 2048 AND length(${t.quote}) BETWEEN 1 AND 8000 AND length(${t.purpose}) BETWEEN 1 AND 200`,
+    ),
+    check("evidence_assertions_version_check", sql`${t.version} > 0`),
+  ],
+);
+
+export const evidenceAssertionReviews = pgTable(
+  "evidence_assertion_reviews",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    assertionId: uuid("assertion_id").notNull(),
+    assertionVersion: integer("assertion_version").notNull(),
+    resourceVersion: integer("resource_version").notNull(),
+    state: text("state").notNull(),
+    reason: text("reason").notNull(),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+    createdBy: text("created_by").notNull(),
+  },
+  (t) => [
+    unique("evidence_assertion_reviews_workspace_id_unique").on(
+      t.workspaceId,
+      t.id,
+    ),
+    unique("evidence_assertion_reviews_version_unique").on(
+      t.workspaceId,
+      t.assertionId,
+      t.assertionVersion,
+    ),
+    foreignKey({
+      name: "evidence_assertion_reviews_workspace_assertion_fk",
+      columns: [t.workspaceId, t.assertionId],
+      foreignColumns: [evidenceAssertions.workspaceId, evidenceAssertions.id],
+    }).onDelete("restrict"),
+    check(
+      "evidence_assertion_reviews_state_check",
+      sql`${t.state} IN ('approved', 'rejected')`,
+    ),
+    check(
+      "evidence_assertion_reviews_version_check",
+      sql`${t.assertionVersion} > 0 AND ${t.resourceVersion} > 0`,
+    ),
+    check(
+      "evidence_assertion_reviews_reason_check",
+      sql`length(${t.reason}) BETWEEN 1 AND 2000`,
+    ),
+  ],
+);
 
 export const sources = pgTable(
   "sources",

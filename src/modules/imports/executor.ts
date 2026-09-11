@@ -270,6 +270,9 @@ export function createImportExecuteService(input: {
                       definition.allowedValueType,
                       factInput.value,
                     ),
+                    confidenceMethod: "import",
+                    confidenceExplanation:
+                      "Imported from a user-supplied source file; review the source provenance before relying on this assertion.",
                     sensitivity: parsed.data.defaults.sensitivity,
                   });
                 } catch (error) {
@@ -312,7 +315,13 @@ export function createImportExecuteService(input: {
                 targetPersonId,
                 labelOverride: parsed.data.relationship.labelOverride,
                 sensitivity: parsed.data.defaults.sensitivity,
-                state: parsed.data.defaults.state,
+                // Imported claims must remain distinguishable from human-
+                // documented assertions.  They require review before they
+                // can be promoted to an asserted relationship.
+                creationMethod: "import",
+                reviewState: "unreviewed",
+                state: "inferred",
+                explicitConfirmed: true,
               });
             } catch (error) {
               if (!expectedDomainFailure(error)) throw error;

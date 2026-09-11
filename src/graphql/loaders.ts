@@ -40,6 +40,9 @@ import type { SettingsService } from "@/modules/settings/service";
 import type { LocationsService } from "@/modules/locations/service";
 import type { createAiAnalysisService } from "@/modules/ai/service";
 import type { createWebhooksService } from "@/modules/webhooks/service";
+import type { GovernanceService } from "@/modules/governance/service";
+import type { CasesService } from "@/modules/cases/service";
+import type { EvidenceAssertionsService } from "@/modules/evidence/assertions";
 
 export type SafeWorkspace = {
   id: string;
@@ -48,6 +51,9 @@ export type SafeWorkspace = {
 };
 
 export type GraphQLServices = {
+  aiReview: ReturnType<
+    typeof import("@/modules/ai/review-service").createAiReviewService
+  >;
   loadWorkspaces(
     ids: readonly string[],
   ): Promise<readonly (SafeWorkspace | null)[]>;
@@ -66,6 +72,15 @@ export type GraphQLServices = {
   locations: LocationsService;
   ai: ReturnType<typeof createAiAnalysisService>;
   webhooks: ReturnType<typeof createWebhooksService>;
+  governance: GovernanceService;
+  cases: CasesService;
+  privacy: ReturnType<
+    typeof import("@/modules/privacy/request-service").createPrivacyRequestService
+  >;
+  retention: ReturnType<
+    typeof import("@/modules/privacy/retention-service").createRetentionService
+  >;
+  evidenceAssertions: EvidenceAssertionsService;
 };
 
 export type GraphQLLoaders = {

@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { normalizeConsentRecordInput } from "@/modules/governance/validation";
 
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 
@@ -11,6 +12,7 @@ import {
   workspaceSettings,
 } from "@/db/schema/workspaces";
 import { consentRecords, deletionRequests } from "@/db/schema/privacy";
+import { consentScopes } from "@/db/schema/governance";
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
 import { newId } from "@/db/id";
 import type { GraphQLActor } from "@/graphql/context";
@@ -1173,10 +1175,33 @@ export function createPolicyMutationService(input: {
       effectiveFrom: Date;
       effectiveUntil?: Date | null;
       evidenceId?: string | null;
+      lawfulBasis?:
+        | "consent"
+        | "contract"
+        | "legal_obligation"
+        | "vital_interests"
+        | "public_task"
+        | "legitimate_interests"
+        | null;
+      scopes?: Array<{
+        scope: "read" | "restricted_read" | "write" | "export" | "ai_operation";
+        fieldDefinitionId?: string | null;
+        caseReference?: string | null;
+      }>;
+      noticeVersion?: string | null;
+      collectionMethod?: string | null;
+      withdrawalEffect?:
+        "stop_processing" | "restrict_processing" | "retain_under_hold" | null;
     }): Promise<PolicyMutationResult> {
       return mutation(async (transaction, actor) => {
-        const purpose = inputValue.purpose.trim().slice(0, 512);
-        const source = inputValue.source.trim().slice(0, 512);
+        const normalized = normalizeConsentRecordInput(inputValue);
+        if (!normalized.value)
+          throw createGraphQLError(
+            "VALIDATION_FAILED",
+            "The consent record is invalid.",
+          );
+        const consent = normalized.value;
+        const { purpose, source } = consent;
         return idempotentMutation({
           actor,
           key: inputValue.idempotencyKey,
@@ -1188,6 +1213,11 @@ export function createPolicyMutationService(input: {
             purpose,
             source,
             status: inputValue.status,
+            lawfulBasis: consent.lawfulBasis,
+            scopes: consent.scopes,
+            noticeVersion: consent.noticeVersion,
+            collectionMethod: consent.collectionMethod,
+            withdrawalEffect: inputValue.withdrawalEffect ?? null,
           },
           operation: "consent.create",
           transaction,
@@ -1208,9 +1238,29 @@ export function createPolicyMutationService(input: {
               effectiveFrom: inputValue.effectiveFrom,
               effectiveUntil: inputValue.effectiveUntil ?? null,
               evidenceId: inputValue.evidenceId ?? null,
+              lawfulBasis: consent.lawfulBasis,
+              lawfulBasisMetadata: {},
+              noticeVersion: consent.noticeVersion,
+              collectionMethod: consent.collectionMethod,
+              withdrawalEffect: inputValue.withdrawalEffect ?? null,
               createdBy: actor.id,
               updatedBy: actor.id,
             });
+            if (consent.scopes.length) {
+              await transaction.insert(consentScopes).values(
+                consent.scopes.map((scope) => ({
+                  id: newId(),
+                  workspaceId: input.workspaceId,
+                  consentRecordId: id,
+                  purpose,
+                  scope: scope.scope,
+                  fieldDefinitionId: scope.fieldDefinitionId ?? null,
+                  caseReference: scope.caseReference?.trim() || null,
+                  createdBy: actor.id,
+                  updatedBy: actor.id,
+                })),
+              );
+            }
             await audit(transaction, {
               actor,
               action: "consent.create",

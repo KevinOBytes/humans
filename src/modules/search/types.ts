@@ -9,6 +9,7 @@ export type SearchHit = Readonly<{
   id: string;
   kind: SearchResultKind;
   rank: number | null;
+  sensitivity?: "public" | "internal" | "confidential" | "restricted";
   snippet: readonly SearchSnippetPart[];
   subjectPersonId: string | null;
   title: string;

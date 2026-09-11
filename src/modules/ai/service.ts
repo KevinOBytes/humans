@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 
-import { evidenceItems } from "@/db/schema/evidence";
+import { evidenceItems, factEvidence } from "@/db/schema/evidence";
+import { facts } from "@/db/schema/facts";
 import { apiKeys } from "@/db/schema/auth";
 import { people } from "@/db/schema/people";
 import { createGraphQLError } from "@/graphql/errors";
@@ -8,6 +9,8 @@ import {
   resourceVisibilitySql,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
+import { checkPurposeCoverage } from "@/modules/governance/coverage";
+import { normalizeGovernanceContext } from "@/modules/governance/validation";
 import {
   derivePrincipalResearchIdempotency,
   runPrincipalIdempotentResearchWrite,
@@ -43,6 +46,8 @@ export type StartAiAnalysisInput = Readonly<{
     evidenceIds?: readonly string[];
     personIds?: readonly string[];
   }>;
+  governancePurpose?: string | null;
+  governanceCaseReference?: string | null;
 }>;
 
 export type AiAnalysisRuntime = AiRepositoryRuntime &
@@ -73,6 +78,8 @@ function normalizeStartInput(input: StartAiAnalysisInput): {
   idempotencyKey: string;
   question: string;
   scope: AiScope;
+  governancePurpose: string | null;
+  governanceCaseReference: string | null;
 } {
   if (
     !input ||
@@ -81,7 +88,11 @@ function normalizeStartInput(input: StartAiAnalysisInput): {
     Object.getPrototypeOf(input) !== Object.prototype ||
     Object.keys(input).some(
       (key) =>
-        key !== "idempotencyKey" && key !== "question" && key !== "scope",
+        key !== "idempotencyKey" &&
+        key !== "question" &&
+        key !== "scope" &&
+        key !== "governancePurpose" &&
+        key !== "governanceCaseReference",
     ) ||
     typeof input.question !== "string" ||
     typeof input.idempotencyKey !== "string"
@@ -115,7 +126,12 @@ function normalizeStartInput(input: StartAiAnalysisInput): {
     evidenceIds: normalizeIds(scopeValue?.evidenceIds),
     personIds: normalizeIds(scopeValue?.personIds),
   });
-  return { idempotencyKey: input.idempotencyKey, question, scope };
+  return {
+    idempotencyKey: input.idempotencyKey,
+    question,
+    scope,
+    ...normalizeGovernanceContext(input),
+  };
 }
 
 function validateRuntime(runtime: AiAnalysisRuntime): void {
@@ -183,6 +199,49 @@ async function requireAuthorizedScope(
     containsRestrictedScope ||= visible.some(
       (row) => row.sensitivity === "restricted",
     );
+    const restrictedEvidence = visible.filter(
+      (row) => row.sensitivity === "restricted",
+    );
+    if (restrictedEvidence.length) {
+      if (!scope.personIds.length)
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Restricted evidence requires a covered subject.",
+        );
+      // A caller-supplied unrelated person does not establish evidence context.
+      const links = await context.database
+        .select({ evidenceId: factEvidence.evidenceItemId })
+        .from(factEvidence)
+        .innerJoin(
+          facts,
+          and(
+            eq(facts.workspaceId, factEvidence.workspaceId),
+            eq(facts.id, factEvidence.factId),
+          ),
+        )
+        .where(
+          and(
+            eq(factEvidence.workspaceId, context.workspaceId),
+            inArray(
+              factEvidence.evidenceItemId,
+              restrictedEvidence.map((row) => row.id),
+            ),
+            inArray(facts.personId, [...scope.personIds]),
+            isNull(facts.deletedAt),
+            resourceVisibilitySql(context, {
+              resourceKind: "fact",
+              id: facts.id,
+              sensitivity: facts.sensitivity,
+            }),
+          ),
+        );
+      const bound = new Set(links.map((row) => row.evidenceId));
+      if (restrictedEvidence.some((row) => !bound.has(row.id)))
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Restricted evidence requires a covered subject.",
+        );
+    }
   }
   return containsRestrictedScope;
 }
@@ -370,6 +429,8 @@ export function createAiAnalysisService(
         idempotencyKey: normalized.idempotencyKey,
         operation: "ai.analysis.start",
         requestMaterial: {
+          governancePurpose: normalized.governancePurpose,
+          governanceCaseReference: normalized.governanceCaseReference,
           question: normalized.question,
           scope: {
             evidenceIds: normalized.scope.evidenceIds,
@@ -387,10 +448,36 @@ export function createAiAnalysisService(
             scopedContext,
             normalized.scope,
           );
+          if (
+            normalized.governancePurpose ||
+            containsRestrictedScope ||
+            normalized.scope.personIds.length
+          ) {
+            if (!normalized.governancePurpose)
+              throw createGraphQLError(
+                "FORBIDDEN",
+                "A governed purpose is required for this analysis.",
+              );
+            for (const personId of normalized.scope.personIds) {
+              const coverage = await checkPurposeCoverage(scopedContext, {
+                personId,
+                purpose: normalized.governancePurpose,
+                caseReference: normalized.governanceCaseReference,
+                scope: "ai_operation",
+              });
+              if (!coverage.allowed)
+                throw createGraphQLError(
+                  "FORBIDDEN",
+                  "Consent coverage is required.",
+                );
+            }
+          }
           return createAiRepository(
             scopedContext.database,
             repositoryRuntime,
           ).insertStartedAnalysis({
+            governancePurpose: normalized.governancePurpose,
+            governanceCaseReference: normalized.governanceCaseReference,
             context: scopedContext,
             provider: runtime.provider.disclosure,
             baseUrlFingerprint: runtime.provider.baseUrlFingerprint,

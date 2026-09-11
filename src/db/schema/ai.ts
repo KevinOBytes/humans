@@ -16,9 +16,128 @@ import {
 import { evidenceItems } from "./evidence";
 import { workspacePrincipals } from "./principals";
 import { workspaces } from "./workspaces";
+import { people } from "./people";
+import { cases } from "./cases";
+import { personWebResearchRuns } from "./person-research";
+import type {
+  AiProposedValue,
+  AiEvidenceReference,
+} from "@/modules/ai/review-types";
 
 const domainTimestamp = (name: string) =>
   timestamp(name, { mode: "date", precision: 3, withTimezone: true });
+
+export const aiReviewSuggestions = pgTable(
+  "ai_review_suggestions",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    personId: uuid("person_id").notNull(),
+    caseId: uuid("case_id"),
+    purpose: text("purpose").notNull(),
+    fieldKey: text("field_key").notNull(),
+    proposedValue: jsonb("proposed_value").$type<AiProposedValue>().notNull(),
+    evidenceReferences: jsonb("evidence_references")
+      .$type<AiEvidenceReference[]>()
+      .notNull(),
+    confidence: numeric("confidence", { mode: "number" }).notNull(),
+    uncertainty: text("uncertainty").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    promptPolicyVersion: text("prompt_policy_version").notNull(),
+    aiRunId: uuid("ai_run_id"),
+    webRunId: uuid("web_run_id"),
+    status: text("status").notNull().default("pending"),
+    version: integer("version").notNull().default(1),
+    reviewedBy: uuid("reviewed_by"),
+    reviewedAt: domainTimestamp("reviewed_at"),
+    decisionReason: text("decision_reason"),
+    acceptedResourceId: uuid("accepted_resource_id"),
+    acceptedResourceKind: text("accepted_resource_kind"),
+    createdAt: domainTimestamp("created_at").notNull().defaultNow(),
+    createdBy: uuid("created_by").notNull(),
+    updatedAt: domainTimestamp("updated_at").notNull().defaultNow(),
+    updatedBy: uuid("updated_by").notNull(),
+  },
+  (t) => [
+    unique("ai_review_workspace_id_unique").on(t.workspaceId, t.id),
+    index("ai_review_queue_idx").on(
+      t.workspaceId,
+      t.personId,
+      t.status,
+      t.createdAt,
+    ),
+    foreignKey({
+      name: "ai_review_person_fk",
+      columns: [t.workspaceId, t.personId],
+      foreignColumns: [people.workspaceId, people.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_review_case_fk",
+      columns: [t.workspaceId, t.caseId],
+      foreignColumns: [cases.workspaceId, cases.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_review_run_fk",
+      columns: [t.workspaceId, t.aiRunId],
+      foreignColumns: [aiRuns.workspaceId, aiRuns.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_review_web_run_fk",
+      columns: [t.workspaceId, t.webRunId],
+      foreignColumns: [
+        personWebResearchRuns.workspaceId,
+        personWebResearchRuns.id,
+      ],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_review_creator_fk",
+      columns: [t.workspaceId, t.createdBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_review_updater_fk",
+      columns: [t.workspaceId, t.updatedBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "ai_review_reviewer_fk",
+      columns: [t.workspaceId, t.reviewedBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    check(
+      "ai_review_run_check",
+      sql`num_nonnulls(${t.aiRunId}, ${t.webRunId}) = 1`,
+    ),
+    check("ai_review_confidence_check", sql`${t.confidence} BETWEEN 0 AND 1`),
+    check(
+      "ai_review_evidence_check",
+      sql`jsonb_typeof(${t.evidenceReferences}) = 'array' AND jsonb_array_length(${t.evidenceReferences}) BETWEEN 1 AND 5`,
+    ),
+    check(
+      "ai_review_value_check",
+      sql`${t.proposedValue}->>'version' = '1' AND ${t.proposedValue}->>'kind' IN ('profile', 'fact', 'relationship')`,
+    ),
+    check(
+      "ai_review_status_check",
+      sql`${t.status} IN ('pending', 'accepted', 'rejected', 'deferred') AND ${t.version} > 0`,
+    ),
+    check(
+      "ai_review_decision_check",
+      sql`(${t.status} = 'pending' AND ${t.reviewedBy} IS NULL AND ${t.reviewedAt} IS NULL) OR (${t.status} <> 'pending' AND ${t.reviewedBy} IS NOT NULL AND ${t.reviewedAt} IS NOT NULL)`,
+    ),
+    check(
+      "ai_review_acceptance_check",
+      sql`(${t.status} = 'accepted' AND ${t.acceptedResourceId} IS NOT NULL AND ${t.acceptedResourceKind} IN ('person','fact','relationship')) OR (${t.status} <> 'accepted' AND ${t.acceptedResourceId} IS NULL AND ${t.acceptedResourceKind} IS NULL)`,
+    ),
+    check(
+      "ai_review_rejection_check",
+      sql`${t.status} <> 'rejected' OR length(trim(${t.decisionReason})) > 0`,
+    ),
+  ],
+);
 
 export const aiThreads = pgTable(
   "ai_threads",
@@ -134,6 +253,12 @@ export const aiRuns = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id").notNull(),
+    governancePurpose: text("governance_purpose"),
+    governanceCaseReference: text("governance_case_reference"),
+    reviewPersonIds: jsonb("review_person_ids")
+      .$type<string[]>()
+      .default([])
+      .notNull(),
     messageId: uuid("message_id"),
     provider: text("provider").notNull(),
     baseUrlFingerprint: text("base_url_fingerprint").notNull(),

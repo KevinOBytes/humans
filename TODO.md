@@ -1,5 +1,61 @@
 # MVP closure and production hardening backlog
 
+Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
+source-comparison, duplicate, contradiction and descriptive graph analysis now
+apply workspace, sensitivity, temporal, reliability, review and relationship
+facets with redaction explanations. The GraphQL analysis projection now reads real
+authorized metadata, membership-scoped case links and source reliability; directed
+degree counts unique relationship edges. Facets operate on a bounded search sample,
+not workspace-wide totals. Purpose-specific consent-status facets, fact-to-source
+comparison joins and live PostgreSQL proof remain open. Non-public fact values and
+context remain withheld. CSV/JSON/document import previews
+validate mappings, flag duplicates without merging, preserve provenance defaults and
+issue expiring scope-bound commit tokens. Export previews redact by sensitivity and
+preserve provenance manifests. API-key scope, tenant, expiry, revocation and rate
+decisions are covered by focused tests. No requirement row is closed: durable
+import/export execution, database-backed facet aggregation, bulk/break-glass audit
+records, key last-used/rotation/session integration, and live provider/database/
+object-storage/browser evidence remain open.
+
+Task 6 security/export hardening checkpoint (2026-09-11): import commit tokens now
+use an explicit non-secret payload allow-list and reject unexpected claims. Export
+previews preserve effective search-row sensitivity, evaluate every relationship
+endpoint and fact field definition, require case resource links for case-scoped
+exports, and retain subject coverage metadata with the generated artifact. Export
+downloads re-check artifact state/expiry, case membership, legal holds and current
+purpose coverage; governed files are excluded from ordinary file listings. Search
+withholds non-public typed fact values when no purpose-bound approval is available,
+and high-sensitivity export commits fail closed until a reviewed approval workflow
+is wired. Governed export artifacts now retain a durable writing/failed state and
+the same idempotency-bound commit can safely replay the deterministic
+object-store write after a process crash or provider timeout; concurrent retries
+reconcile to the single ready artifact. These are hardening changes, not closed
+requirement rows: approval records, automated stale-artifact reconciliation,
+retention cleanup, live PostgreSQL/object-store/browser proof and the remaining
+whole-product matrix remain open.
+
+Task 5 follow-up: non-public fact values/provenance/temporal context and selection
+actions are withheld until request-bound field disclosure is implemented. The new
+read-only Privacy Requests panel shows person retention/hold metadata and authorized
+request-ID lookup; full CRUD and a person-filtered request API remain pending.
+The remaining HUM-FR-005/HUM-NFR-011/HUM-NFR-012 work still requires a complete audit
+of overview/contact/file/graph and other surfaces, field-scoped disclosure tests,
+and authenticated backend/hosted evidence. No acceptance row is closed.
+
+Task 5 bounded UI checkpoint (2026-09-11): explicit-purpose person consent checks,
+authorized case timelines, fact sensitivity/review context and graph evidence-state
+presentation have focused component tests. No existing requirement row is closed.
+Remaining HUM-FR-005/HUM-NFR-011/HUM-NFR-012 work includes full consent/privacy/hold
+and case CRUD UI, per-field coverage, graph source/case metadata, export previews,
+legacy backfill, target-environment migrations and hosted authenticated acceptance.
+The targeted consent/AI browser run could not collect tests because
+`TEST_DATABASE_URL` was absent; this is not browser acceptance evidence.
+See `docs/operations/consent-governance.md`.
+
+Task 4 local checkpoint (2026-09-11): generalized access/correction/export/restriction/consent-withdrawal/deletion requests have bounded scope, deadlines, material-bound creation replay, independent approval with verification evidence, optimistic transitions, and evidence-required completion. Generated GraphQL operations expose requests, processor outcomes, deterministic retention evaluation, and governed legal holds. Existing deletion records remain readable; new deletion fulfillment only queues the legal-hold-fenced worker. A bounded propagation worker records retryable failures when provider adapters are unavailable and checks actual file-cleanup completion. Live database lifecycle/migration execution, external search/cache/email/AI-provider propagation adapters, the complete retention-policy worker matrix, legacy-settings-path convergence, and browser acceptance remain open. No overall privacy requirement is newly checked.
+
+Task 3 local checkpoint (2026-09-11): the AI review ledger preserves typed proposals, evidence or validated web-source snapshots, confidence/uncertainty, run/provider/model/prompt-policy attribution, and explicit accept/reject/defer decisions. The person research panel uses generated review mutations instead of direct AI-driven profile updates. Acceptance requires current AI/write purpose coverage, case/resource visibility, human confirmation, and an owned completed source run; fact/relationship acceptance uses domain services and evidence assertions in one transaction. Batch acceptance is explicitly approved and atomic; AI-created relationships remain inferred until the existing independent assertion review permits promotion. Local unit/build/schema gates are required before commit. Live PostgreSQL lifecycle, browser and provider verification remain pending when the test database/provider is unavailable; this does not close HUM-FR-023 or the overall MVP.
+
 The usable self-hosted alpha and MVP release-candidate boundary is documented in
 `docs/releases/SELF_HOSTED_ALPHA.md`. Every incomplete requirement is listed
 exactly once below. Full MVP completion still requires the full current matrix
@@ -161,7 +217,7 @@ recovery.
   - Bounded HUM-NFR-008 graph-view evidence: generated `createGraphView`, `updateGraphView`, and `archiveGraphView` now accept optional principal-bound durable idempotency keys. Focused live PostgreSQL coverage proves concurrent replay, one audit effect and claim per operation, changed-material conflicts, and archived-response replay; the remaining retryable mutation matrix remains open.
 
 - [ ] `HUM-NFR-009` Complete responsive and whole-product accessibility acceptance beyond the tested Task 12 search and graph-analysis controls/results. Profile semantic sections, keyboard tab activation, and RTL/200% zoom no-overflow/axe evidence are bounded additions; full responsive primary-journey coverage remains open.
-- [ ] `HUM-NFR-011` Complete the remaining whole-product PostgreSQL, Redis, storage, GraphQL, browser, and CI matrix beyond the Task 12 foundation and Task 18 live upgrade/concurrency/browser/Compose suite.
+- [ ] `HUM-NFR-011` Complete the remaining whole-product PostgreSQL, Redis, storage, GraphQL, browser, and CI matrix beyond the Task 12 foundation and Task 18 live upgrade/concurrency/browser/Compose suite. Consent-governed research Task 2 adds case/assertion/relationship-review backend tests and migration 0033; its live PostgreSQL cases/provenance/GraphQL tests remain unverified without disposable `TEST_DATABASE_URL`, and browser/runtime acceptance remains open.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage.
 - [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. The current tree now has a fully green Node 24 repository gate (`34298190513`, commit `f1ada49`), 216 test files with 1,349 tests passed and 572 intentional skips locally, lint, typecheck, formatting, generated drift, focused graph/performance checks, and an isolated PostgreSQL/Redis/MinIO Compose smoke with administrator recovery; the full current matrix, hosted authenticated/provider/runtime proof, and all remaining TODO rows are still outstanding.
 - [ ] `HUM-NFR-020` Meet and continuously verify the production latency, concurrency, graph-frame-rate, Web Vitals, and bundle budgets beyond Task 12 bounds and indexed-plan evidence. The disposable Node 24 performance harness now passes the representative 10,000-person/25,000-edge GraphQL read, graph render/FPS/WebGL recovery, and public/dashboard/entities/editor bundle checks; mutation, upload, hosted Web Vitals, and hosted-performance evidence remain open.

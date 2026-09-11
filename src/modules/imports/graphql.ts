@@ -9,12 +9,81 @@ import type {
   ImportRow,
   ImportStagedRow,
 } from "./repository";
+import type { ImportPreview } from "./preview";
 
 const ImportFormat = builder.enumType("ImportFormat", {
   values: ["CSV", "JSON"] as const,
 });
 const ImportMode = builder.enumType("ImportMode", {
   values: ["COMMIT", "DRY_RUN"] as const,
+});
+const ImportPreviewFormat = builder.enumType("ImportPreviewFormat", {
+  values: ["CSV", "JSON", "DOCUMENT"] as const,
+});
+const ImportPreviewIssueType = builder
+  .objectRef<ImportPreview["issues"][number]>("ImportPreviewIssueDetail")
+  .implement({
+    fields: (t) => ({
+      code: t.exposeString("code"),
+      message: t.exposeString("message"),
+      rowNumber: t.exposeInt("rowNumber", { nullable: true }),
+      path: t.stringList({
+        nullable: true,
+        resolve: (value) => (value.path ? [...value.path] : null),
+      }),
+    }),
+  });
+const ImportPreviewRowType = builder
+  .objectRef<ImportPreview["rows"][number]>("ImportPreviewRowDetail")
+  .implement({
+    fields: (t) => ({
+      rowNumber: t.exposeInt("rowNumber"),
+      externalKey: t.exposeString("externalKey", { nullable: true }),
+      projected: t.field({ type: "JSON", resolve: (value) => value.projected }),
+      issues: t.field({
+        type: [ImportPreviewIssueType],
+        resolve: (value) => [...value.issues],
+      }),
+      duplicateCandidateIds: t.exposeStringList("duplicateCandidateIds"),
+    }),
+  });
+const ImportPreviewType = builder
+  .objectRef<ImportPreview>("ImportPreview")
+  .implement({
+    fields: (t) => ({
+      format: t.exposeString("format"),
+      workspaceId: t.exposeString("workspaceId"),
+      purpose: t.exposeString("purpose"),
+      caseId: t.expose("caseId", { type: "UUID", nullable: true }),
+      rows: t.field({
+        type: [ImportPreviewRowType],
+        resolve: (value) => [...value.rows],
+      }),
+      schemaColumns: t.exposeStringList("schemaColumns"),
+      provenanceDefaults: t.field({
+        type: "JSON",
+        resolve: (value) => value.provenanceDefaults,
+      }),
+      commitToken: t.exposeString("commitToken"),
+      expiresAt: t.field({
+        type: "DateTime",
+        resolve: (value) => value.expiresAt,
+      }),
+      duplicateStrategy: t.exposeString("duplicateStrategy"),
+      issues: t.field({
+        type: [ImportPreviewIssueType],
+        resolve: (value) => [...value.issues],
+      }),
+    }),
+  });
+const PreviewImportInput = builder.inputType("PreviewImportInput", {
+  fields: (t) => ({
+    format: t.field({ type: ImportPreviewFormat, required: true }),
+    content: t.string({ required: true }),
+    purpose: t.string({ required: true }),
+    caseId: t.field({ type: "UUID" }),
+    mapping: t.field({ type: "JSON" }),
+  }),
 });
 const ImportState = builder.enumType("ImportState", {
   values: {
@@ -355,6 +424,15 @@ export function registerImportsGraphQL(): void {
   }));
 
   builder.mutationFields((t) => ({
+    previewImport: t.field({
+      type: ImportPreviewType,
+      args: { input: t.arg({ type: PreviewImportInput, required: true }) },
+      complexity: { field: 100, multiplier: 1 },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "import", "create");
+        return context.services.imports.previewImport(args.input);
+      },
+    }),
     saveImportMapping: t.field({
       type: ImportMappingPayload,
       args: { input: t.arg({ type: SaveImportMappingInput, required: true }) },

@@ -993,6 +993,8 @@ export function registerPeopleGraphQL(): void {
       args: {
         personId: t.arg({ type: "UUID", required: true }),
         consent: t.arg.boolean({ required: true }),
+        purpose: t.arg.string({ required: true }),
+        caseId: t.arg({ type: "UUID" }),
       },
       complexity: 100,
       resolve: (_root, args, context) => {

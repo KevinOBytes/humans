@@ -1,6 +1,10 @@
 import { notFound } from "next/navigation";
 
 import { factDisplayValue } from "@/components/facts/fact-display-value";
+import {
+  redactUngovernedFact,
+  WITHHELD_FACT_VALUE,
+} from "@/components/facts/person-fact-disclosure";
 import { FactForm, FactSelectionButton } from "@/components/facts/fact-form";
 import { PersonProfile } from "@/components/people/person-profile";
 import { PageControls } from "@/components/research/paginated-research-list";
@@ -89,15 +93,17 @@ export async function FactsSection({
         endCursor: pageInfo?.endCursor,
       };
     }),
-    ...facts.map((fact) =>
-      executeServerGraphQL(FactDetailDocument, {
-        id: fact.id!,
-        revisionFirst: 3,
-        evidenceFirst: 3,
-        revisionAfter: fact.id === detailAnchor ? revisionAfter : undefined,
-        evidenceAfter: fact.id === detailAnchor ? evidenceAfter : undefined,
-      }),
-    ),
+    ...facts
+      .filter((fact) => fact.sensitivity === "PUBLIC")
+      .map((fact) =>
+        executeServerGraphQL(FactDetailDocument, {
+          id: fact.id!,
+          revisionFirst: 3,
+          evidenceFirst: 3,
+          revisionAfter: fact.id === detailAnchor ? revisionAfter : undefined,
+          evidenceAfter: fact.id === detailAnchor ? evidenceAfter : undefined,
+        }),
+      ),
   ]);
   const detailsById = new Map(
     details.flatMap((detail) =>
@@ -109,7 +115,7 @@ export async function FactsSection({
         facts.flatMap((fact) => {
           const key = `${fact.namespace}:${fact.fieldKey}`;
           const selected = selectionState.byField.get(key);
-          return fact.id && canSelect
+          return fact.id && canSelect && fact.sensitivity === "PUBLIC"
             ? [
                 [
                   fact.id,
@@ -231,7 +237,11 @@ export async function FactsSection({
               >
                 <span className="font-medium">{fact.label}</span>
                 <span className="text-muted-foreground"> — </span>
-                <span>{factDisplayValue(fact.value)}</span>
+                <span>
+                  {fact.sensitivity === "PUBLIC"
+                    ? factDisplayValue(fact.value)
+                    : WITHHELD_FACT_VALUE}
+                </span>
               </li>
             ))}
           </ul>
@@ -287,7 +297,7 @@ export async function FactsSection({
               catalogAfter,
               factDetail: fact.id!,
             };
-            return {
+            return redactUngovernedFact({
               id: fact.id!,
               namespace: fact.namespace!,
               fieldKey: fact.fieldKey!,
@@ -360,7 +370,7 @@ export async function FactsSection({
                       factEvidenceAfter: linkedEvidencePage.endCursor,
                     })
                   : null,
-            };
+            });
           }),
         }}
       />

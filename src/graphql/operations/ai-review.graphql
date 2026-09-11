@@ -1,0 +1,52 @@
+fragment AiReviewFields on AiReviewSuggestion {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  proposedValue
+  currentValue
+  evidenceReferences
+  confidence
+  uncertainty
+  provider
+  model
+  researchRunId
+  promptPolicyVersion
+  status
+  version
+  acceptedResourceId
+  acceptedResourceKind
+  decisionReason
+  reviewedBy
+  reviewedAt
+}
+query PendingAiSuggestions($personId: UUID!, $purpose: String!, $caseId: UUID) {
+  pendingAiSuggestions(
+    personId: $personId
+    purpose: $purpose
+    caseId: $caseId
+  ) {
+    ...AiReviewFields
+  }
+}
+mutation AcceptAiSuggestion($input: AcceptAiSuggestionInput!) {
+  acceptAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+mutation RejectAiSuggestion($input: RejectAiSuggestionInput!) {
+  rejectAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+mutation DeferAiSuggestion($input: DeferAiSuggestionInput!) {
+  deferAiSuggestion(input: $input) {
+    ...AiReviewFields
+  }
+}
+mutation ReviewAiBatch($input: AiReviewBatchInput!) {
+  reviewAiBatch(input: $input) {
+    ...AiReviewFields
+  }
+}

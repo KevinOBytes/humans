@@ -1,0 +1,326 @@
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
+import { newId } from "@/db/id";
+import { people } from "@/db/schema/people";
+import { files } from "@/db/schema/files";
+import { legalHolds, retentionPolicies } from "@/db/schema/workspaces";
+import { createGraphQLError } from "@/graphql/errors";
+import {
+  canAccessResource,
+  createAuditService,
+  type ResearchServiceContext,
+} from "@/modules/audit/service";
+import { runResearchTransaction } from "@/modules/audit/transactions";
+
+export type PrivacyResource = {
+  resourceKind: "person" | "file";
+  resourceId: string;
+};
+export function privacyPermission(
+  context: ResearchServiceContext,
+  manage = false,
+) {
+  if (
+    context.actor.type !== "user" ||
+    !context.permissions.has(manage ? "workspace:update" : "workspace:read")
+  )
+    throw createGraphQLError("FORBIDDEN", "This operation is not permitted.");
+}
+export async function privacyPolicyLock(context: ResearchServiceContext) {
+  await context.database.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 0))`,
+  );
+}
+export async function requirePrivacyResource(
+  context: ResearchServiceContext,
+  input: PrivacyResource,
+  includeDeleted = false,
+) {
+  if (
+    !z.uuid().safeParse(input.resourceId).success ||
+    !["person", "file"].includes(input.resourceKind)
+  )
+    throw createGraphQLError("VALIDATION_FAILED", "The resource is invalid.");
+  if (!context.permissions.has(`${input.resourceKind}:read`))
+    throw createGraphQLError("FORBIDDEN", "This operation is not permitted.");
+  const table = input.resourceKind === "person" ? people : files;
+  const [row] = await context.database
+    .select({
+      id: table.id,
+      sensitivity: table.sensitivity,
+      createdAt: table.createdAt,
+    })
+    .from(table)
+    .where(
+      and(
+        eq(table.workspaceId, context.workspaceId),
+        eq(table.id, input.resourceId),
+        includeDeleted ? undefined : isNull(table.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (
+    !row ||
+    !(await canAccessResource(context.database, context, {
+      id: row.id,
+      resourceKind: input.resourceKind,
+      sensitivity: row.sensitivity,
+    }))
+  )
+    throw createGraphQLError(
+      "NOT_FOUND",
+      "The requested resource was not found.",
+    );
+  return row;
+}
+export async function hasLegalHold(
+  context: Pick<ResearchServiceContext, "database" | "workspaceId">,
+  resource: PrivacyResource,
+) {
+  const [hold] = await context.database
+    .select({ id: legalHolds.id })
+    .from(legalHolds)
+    .where(
+      and(
+        eq(legalHolds.workspaceId, context.workspaceId),
+        eq(legalHolds.resourceKind, resource.resourceKind),
+        eq(legalHolds.resourceId, resource.resourceId),
+        eq(legalHolds.state, "active"),
+        isNull(legalHolds.deletedAt),
+      ),
+    )
+    .limit(1);
+  return Boolean(hold);
+}
+export function retentionDecision(input: {
+  now: Date;
+  createdAt: Date;
+  held: boolean;
+  policy: {
+    id: string;
+    retentionDays: number;
+    deletionBehavior: string;
+  } | null;
+}): {
+  state:
+    | "retained"
+    | "review_required"
+    | "eligible_for_deletion"
+    | "blocked_by_legal_hold";
+  policyId: string | null;
+  reason: string;
+} {
+  const { policy } = input;
+  if (
+    ![input.now.getTime(), input.createdAt.getTime()].every(Number.isFinite) ||
+    (policy &&
+      (!Number.isSafeInteger(policy.retentionDays) || policy.retentionDays < 0))
+  )
+    throw new TypeError("Invalid retention inputs");
+  const policyId = policy?.id ?? null;
+  if (input.held)
+    return {
+      state: "blocked_by_legal_hold",
+      policyId,
+      reason: "active_legal_hold",
+    };
+  if (!policy)
+    return { state: "review_required", policyId, reason: "missing_policy" };
+  if (
+    input.now.getTime() <
+    input.createdAt.getTime() + policy.retentionDays * 86_400_000
+  )
+    return { state: "retained", policyId, reason: "retention_period_active" };
+  return policy.deletionBehavior === "soft_delete"
+    ? {
+        state: "eligible_for_deletion",
+        policyId,
+        reason: "retention_elapsed_soft_delete_requires_approval",
+      }
+    : {
+        state: "review_required",
+        policyId,
+        reason: "retention_elapsed_requires_review",
+      };
+}
+export async function evaluateRetention(
+  context: ResearchServiceContext,
+  resource: PrivacyResource,
+) {
+  privacyPermission(context);
+  const row = await requirePrivacyResource(context, resource);
+  const [policy] = await context.database
+    .select()
+    .from(retentionPolicies)
+    .where(
+      and(
+        eq(retentionPolicies.workspaceId, context.workspaceId),
+        eq(retentionPolicies.resourceKind, resource.resourceKind),
+        isNull(retentionPolicies.deletedAt),
+      ),
+    )
+    .limit(1);
+  return retentionDecision({
+    now: new Date(),
+    createdAt: row.createdAt,
+    held: await hasLegalHold(context, resource),
+    policy: policy ?? null,
+  });
+}
+export function createRetentionService(context: ResearchServiceContext) {
+  return {
+    evaluateRetention: (resource: PrivacyResource) =>
+      evaluateRetention(context, resource),
+    async createLegalHold(
+      input: PrivacyResource & { reason: string; authority: string },
+    ) {
+      privacyPermission(context, true);
+      const parsed = z
+        .object({
+          reason: z.string().trim().min(1).max(2048),
+          authority: z.string().trim().min(1).max(512),
+        })
+        .parse(input);
+      return runResearchTransaction(
+        context,
+        { requiredPermissions: ["workspace:update"] },
+        async (scoped) => {
+          await privacyPolicyLock(scoped);
+          await requirePrivacyResource(scoped, input);
+          const [row] = await scoped.database
+            .insert(legalHolds)
+            .values({
+              id: newId(),
+              workspaceId: scoped.workspaceId,
+              resourceKind: input.resourceKind,
+              resourceId: input.resourceId,
+              ...parsed,
+              createdBy: scoped.actor.principalId,
+              updatedBy: scoped.actor.principalId,
+            })
+            .returning();
+          const auditReference = await createAuditService(scoped).write(
+            scoped.database,
+            {
+              action: "privacy.legal_hold.approved",
+              resourceKind: "legal_hold",
+              resourceId: row!.id,
+              changedFields: ["state", "authority", "reason"],
+            },
+          );
+          return { ...row!, auditReference };
+        },
+      );
+    },
+    async releaseLegalHold(input: {
+      id: string;
+      expectedVersion: number;
+      reason: string;
+    }) {
+      privacyPermission(context, true);
+      const reason = z.string().trim().min(1).max(2048).parse(input.reason);
+      return runResearchTransaction(
+        context,
+        { requiredPermissions: ["workspace:update"] },
+        async (scoped) => {
+          await privacyPolicyLock(scoped);
+          const [row] = await scoped.database
+            .select()
+            .from(legalHolds)
+            .where(
+              and(
+                eq(legalHolds.workspaceId, scoped.workspaceId),
+                eq(legalHolds.id, input.id),
+                isNull(legalHolds.deletedAt),
+              ),
+            )
+            .for("update");
+          if (!row)
+            throw createGraphQLError(
+              "NOT_FOUND",
+              "The requested resource was not found.",
+            );
+          await requirePrivacyResource(
+            scoped,
+            {
+              resourceKind: row.resourceKind as PrivacyResource["resourceKind"],
+              resourceId: row.resourceId,
+            },
+            true,
+          );
+          if (
+            row.createdBy === scoped.actor.principalId ||
+            row.createdBy === scoped.actor.id ||
+            row.state !== "active" ||
+            row.version !== input.expectedVersion
+          )
+            throw createGraphQLError(
+              "PRECONDITION_FAILED",
+              "An independent reviewer and current hold version are required.",
+            );
+          const [released] = await scoped.database
+            .update(legalHolds)
+            .set({
+              state: "released",
+              releasedAt: new Date(),
+              releasedBy: scoped.actor.principalId,
+              releaseReason: reason,
+              updatedAt: new Date(),
+              updatedBy: scoped.actor.principalId,
+              version: row.version + 1,
+            })
+            .where(eq(legalHolds.id, row.id))
+            .returning();
+          const auditReference = await createAuditService(scoped).write(
+            scoped.database,
+            {
+              action: "privacy.legal_hold.released",
+              resourceKind: "legal_hold",
+              resourceId: row.id,
+              changedFields: ["state", "releaseReason"],
+            },
+          );
+          return { ...released!, auditReference };
+        },
+      );
+    },
+    async listLegalHolds(input: PrivacyResource & { first?: number | null }) {
+      privacyPermission(context);
+      await requirePrivacyResource(context, input, true);
+      const first = input.first ?? 25;
+      if (!Number.isSafeInteger(first) || first < 1 || first > 100)
+        throw createGraphQLError("VALIDATION_FAILED", "Invalid page size.");
+      return context.database
+        .select()
+        .from(legalHolds)
+        .where(
+          and(
+            eq(legalHolds.workspaceId, context.workspaceId),
+            eq(legalHolds.resourceKind, input.resourceKind),
+            eq(legalHolds.resourceId, input.resourceId),
+            isNull(legalHolds.deletedAt),
+          ),
+        )
+        .orderBy(asc(legalHolds.id))
+        .limit(first);
+    },
+  };
+}
+export const createLegalHold = (
+  context: ResearchServiceContext,
+  input: Parameters<
+    ReturnType<typeof createRetentionService>["createLegalHold"]
+  >[0],
+) => createRetentionService(context).createLegalHold(input);
+export const releaseLegalHold = (
+  context: ResearchServiceContext,
+  input: Parameters<
+    ReturnType<typeof createRetentionService>["releaseLegalHold"]
+  >[0],
+) => createRetentionService(context).releaseLegalHold(input);
+export const listLegalHolds = (
+  context: ResearchServiceContext,
+  input: Parameters<
+    ReturnType<typeof createRetentionService>["listLegalHolds"]
+  >[0],
+) => createRetentionService(context).listLegalHolds(input);

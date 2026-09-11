@@ -327,6 +327,9 @@ export function createAiRepository(
         canonicalMessage,
       );
       await database.insert(aiRuns).values({
+        governancePurpose: input.governancePurpose,
+        governanceCaseReference: input.governanceCaseReference,
+        reviewPersonIds: [...input.scope.personIds],
         id: runId,
         workspaceId,
         threadId,

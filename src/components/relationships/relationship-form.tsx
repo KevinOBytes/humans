@@ -47,6 +47,8 @@ export function RelationshipForm({
         sourcePersonId,
         targetPersonId: String(data.get("targetPersonId")),
         relationshipTypeId: String(data.get("relationshipTypeId")),
+        governancePurpose: "research",
+        explicitConfirmed: true,
         sensitivity: String(data.get("sensitivity")) as
           "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED",
       },
@@ -164,6 +166,18 @@ export function RelationshipForm({
           <option>CONFIDENTIAL</option>
           <option>RESTRICTED</option>
         </select>
+      </div>
+      <div className="sm:col-span-3">
+        <label className="text-muted-foreground flex items-center gap-2 text-sm">
+          <input
+            required
+            type="checkbox"
+            name="governanceConfirmation"
+            className="size-4"
+          />
+          I confirm this relationship is supported by a permitted research
+          purpose.
+        </label>
       </div>
       <div className="sm:col-span-3">
         <Button disabled={pending} type="submit">

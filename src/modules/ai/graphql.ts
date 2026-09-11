@@ -12,6 +12,7 @@ import {
   type AiToolSummary,
 } from "./repository-domain";
 import { normalizeAiRunHistoryPage } from "./service";
+import { registerAiReviewGraphQL } from "./review-graphql";
 
 const AiProvider = builder.enumType("AiProvider", {
   values: ["OPENAI", "OLLAMA", "COMPATIBLE"] as const,
@@ -235,6 +236,8 @@ const StartAiAnalysisInput = builder.inputType("StartAiAnalysisInput", {
     idempotencyKey: t.string({ required: true }),
     question: t.string({ required: true }),
     scope: t.field({ type: AiAnalysisScopeInput }),
+    governancePurpose: t.string(),
+    governanceCaseReference: t.string(),
   }),
 });
 
@@ -256,6 +259,7 @@ function notFound(): never {
 }
 
 export function registerAiGraphQL(): void {
+  registerAiReviewGraphQL();
   builder.queryFields((t) => ({
     aiRun: t.field({
       type: AiRunType,
@@ -322,6 +326,8 @@ export function registerAiGraphQL(): void {
         return context.services.ai.startAiAnalysis({
           idempotencyKey: args.input.idempotencyKey,
           question: args.input.question,
+          governancePurpose: args.input.governancePurpose,
+          governanceCaseReference: args.input.governanceCaseReference,
           ...(args.input.scope
             ? {
                 scope: {
