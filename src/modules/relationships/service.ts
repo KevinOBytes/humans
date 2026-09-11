@@ -28,6 +28,7 @@ import type { RelationshipProvenanceInput } from "@/modules/cases/types";
 import { normalizeRelationshipProvenance } from "@/modules/cases/validation";
 import { normalizeGovernanceContext } from "@/modules/governance/validation";
 import { requireRelationshipPromotion } from "@/modules/evidence/assertions";
+import { requiresRelationshipPromotionReview } from "@/modules/evidence/assertions-validation";
 import type { Connection, MutationOutcome } from "@/modules/people/service";
 import {
   canonicalizeRelationshipEndpoints,
@@ -1315,9 +1316,11 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             ? "restricted"
             : (input.sensitivity?.toLowerCase() ?? locked.sensitivity),
         );
-        const promotion =
-          locked.state === "inferred" &&
-          ["asserted", "corroborated"].includes(nextState);
+        const promotion = requiresRelationshipPromotionReview({
+          from: locked.state,
+          to: nextState,
+          reviewState: locked.reviewState,
+        });
         if (
           input.reviewState !== undefined &&
           input.reviewState !== locked.reviewState &&
@@ -1334,6 +1337,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             version: locked.version,
             state: locked.state,
             nextState,
+            reviewState: locked.reviewState,
             caseId: locked.caseId,
             purpose,
             evidenceAssertionId: input.evidenceAssertionId,

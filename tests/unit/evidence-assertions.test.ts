@@ -53,4 +53,56 @@ describe("evidence assertions", () => {
       }),
     ).toThrow();
   });
+  it("does not launder unreviewed inference through disputed status", () => {
+    const review = {
+      reviewState: "unreviewed",
+      reviewer: false,
+      assertionApproved: false,
+      approvalRecorded: false,
+    };
+    expect(() =>
+      requireReviewedPromotion({ ...review, from: "inferred", to: "disputed" }),
+    ).not.toThrow();
+    expect(() =>
+      requireReviewedPromotion({
+        ...review,
+        from: "disputed",
+        to: "corroborated",
+      }),
+    ).toThrow();
+    expect(() =>
+      requireReviewedPromotion({ ...review, from: "disputed", to: "asserted" }),
+    ).toThrow();
+  });
+  it("allows disputed claims to become documented only with the complete review bundle", () => {
+    const input = {
+      from: "disputed",
+      to: "corroborated",
+      reviewState: "unreviewed",
+      reviewer: true,
+      assertionApproved: true,
+      approvalRecorded: true,
+    };
+    expect(() => requireReviewedPromotion(input)).not.toThrow();
+    for (const key of [
+      "reviewer",
+      "assertionApproved",
+      "approvalRecorded",
+    ] as const)
+      expect(() =>
+        requireReviewedPromotion({ ...input, [key]: false }),
+      ).toThrow();
+  });
+  it("preserves ordinary edits to an unchanged documented state", () => {
+    expect(() =>
+      requireReviewedPromotion({
+        from: "asserted",
+        to: "asserted",
+        reviewState: "unreviewed",
+        reviewer: false,
+        assertionApproved: false,
+        approvalRecorded: false,
+      }),
+    ).not.toThrow();
+  });
 });

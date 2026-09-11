@@ -25,6 +25,7 @@ import { normalizeGovernanceContext } from "@/modules/governance/validation";
 import {
   normalizeEvidenceAssertion,
   requireReviewedPromotion,
+  requiresRelationshipPromotionReview,
 } from "./assertions-validation";
 
 type AssertionInput = {
@@ -307,6 +308,7 @@ export async function requireRelationshipPromotion(
     version: number;
     state: string;
     nextState: string;
+    reviewState: string;
     caseId: string | null;
     purpose: string | null | undefined;
     evidenceAssertionId?: string | null;
@@ -314,8 +316,11 @@ export async function requireRelationshipPromotion(
   },
 ) {
   if (
-    input.state !== "inferred" ||
-    !["asserted", "corroborated"].includes(input.nextState)
+    !requiresRelationshipPromotionReview({
+      from: input.state,
+      to: input.nextState,
+      reviewState: input.reviewState,
+    })
   )
     return;
   if (!input.evidenceAssertionId || !input.explicitConfirmed)
@@ -340,6 +345,7 @@ export async function requireRelationshipPromotion(
   requireReviewedPromotion({
     from: input.state,
     to: input.nextState,
+    reviewState: input.reviewState,
     reviewer:
       context.actor.type === "user" &&
       context.permissions.has("workspace:update"),

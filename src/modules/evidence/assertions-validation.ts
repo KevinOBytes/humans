@@ -28,16 +28,27 @@ export function normalizeEvidenceAssertion(input: {
     confidence: input.confidence.toFixed(3),
   };
 }
+export function requiresRelationshipPromotionReview(input: {
+  from: string;
+  to: string;
+  reviewState?: string;
+}) {
+  return (
+    ["asserted", "corroborated"].includes(input.to) &&
+    (input.from === "inferred" ||
+      (input.from !== input.to && input.reviewState !== "approved"))
+  );
+}
 export function requireReviewedPromotion(input: {
   from: string;
   to: string;
+  reviewState?: string;
   reviewer: boolean;
   assertionApproved: boolean;
   approvalRecorded: boolean;
 }) {
   if (
-    input.from === "inferred" &&
-    ["asserted", "corroborated"].includes(input.to) &&
+    requiresRelationshipPromotionReview(input) &&
     !(input.reviewer && input.assertionApproved && input.approvalRecorded)
   )
     throw createGraphQLError(

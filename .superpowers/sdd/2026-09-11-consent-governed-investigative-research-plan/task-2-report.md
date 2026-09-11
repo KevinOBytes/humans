@@ -31,6 +31,23 @@ Commands used `PATH=/Users/kevo/.nvm/versions/node/v24.19.0/bin:$PATH` and pnpm 
 
 ## Explicitly open evidence and scope
 
+### Review correction: disputed-state promotion bypass
+
+The initial implementation incorrectly gated review only when the current state
+was `inferred`, allowing `inferred -> disputed -> corroborated` to bypass review.
+The follow-up uses one shared predicate for both relationship update and approval
+verification: entry into a documented state from a different state requires the
+review bundle unless persisted review status is already approved; a direct
+inferred promotion always requires it. Unchanged documented-state edits remain
+compatible. Approval checks still bind assertion and resource versions.
+
+TDD evidence: the new unit regressions first failed (2 failures), then passed.
+The focused case/assertion invocation passed 9 unit tests; 5 PostgreSQL provenance
+tests, including the disputed-state denial and reviewed-success workflow, were
+skipped because `TEST_DATABASE_URL` remains absent. Fresh Node 24 lint, full
+formatting check, typecheck, and production build passed. New case/assertion
+mutation idempotency remains open and was not folded into this state-machine fix.
+
 `TEST_DATABASE_URL` is absent. No disposable PostgreSQL lifecycle, migration execution, GraphQL membership/provenance approval, or rollback behavior is claimed verified. The tests are gated and must run against a disposable migrated database before release. No production database, provider, or deployment was changed.
 
 This is a coherent backend checkpoint, not full Task 2 acceptance. The additional case/resource authorization joins need live query/graph/search regression and performance evidence. Timeline pages are bounded underlying link pages and may be sparse after current authorization. Assertion reviews currently support relationships only. Source/evidence/file/note case targets are not exposed because they do not yet have a safe covered-subject contract. Case member removal/archive UI, dedicated assertion read history, and new case/assertion mutation idempotency are follow-on work; no requirement checkbox is closed. Task 1's recorded outstanding governance limitations remain outstanding.

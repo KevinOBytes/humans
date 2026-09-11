@@ -176,4 +176,46 @@ liveDescribe("relationship evidence review and promotion", () => {
       }),
     ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
   });
+  it("keeps inference review requirements after an intervening dispute", async () => {
+    const disputed = await createRelationshipsService(context).update({
+      id,
+      expectedVersion: 1,
+      state: "disputed",
+      governancePurpose: "research",
+    });
+    expect(disputed.resource).toMatchObject({
+      state: "disputed",
+      reviewState: "unreviewed",
+      version: 2,
+    });
+    await expect(
+      createRelationshipsService(reviewer).update({
+        id,
+        expectedVersion: 2,
+        state: "corroborated",
+        governancePurpose: "research",
+        explicitConfirmed: true,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+    const row = await assertion();
+    await reviewEvidenceAssertion(reviewer, {
+      id: row.id,
+      expectedVersion: 1,
+      state: "approved",
+      reason: "Dispute resolved from the source",
+    });
+    const reviewed = await createRelationshipsService(reviewer).update({
+      id,
+      expectedVersion: 2,
+      state: "corroborated",
+      governancePurpose: "research",
+      explicitConfirmed: true,
+      evidenceAssertionId: row.id,
+    });
+    expect(reviewed.resource).toMatchObject({
+      state: "corroborated",
+      reviewState: "approved",
+      version: 3,
+    });
+  });
 });
