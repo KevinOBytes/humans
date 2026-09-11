@@ -16,7 +16,9 @@ const consent = {
   effectiveFrom: new Date("2026-09-01T00:00:00.000Z"),
   effectiveUntil: null,
   withdrawnAt: null,
-  scopes: [{ scope: "write" as const, fieldDefinitionId: null, caseReference: null }],
+  scopes: [
+    { scope: "write" as const, fieldDefinitionId: null, caseReference: null },
+  ],
 };
 
 describe("purpose coverage", () => {
@@ -35,7 +37,10 @@ describe("purpose coverage", () => {
     expect(
       evaluateCoverage({
         policy,
-        consent: { ...consent, effectiveUntil: new Date("2026-09-10T00:00:00.000Z") },
+        consent: {
+          ...consent,
+          effectiveUntil: new Date("2026-09-10T00:00:00.000Z"),
+        },
         scope: "write",
         at: current,
       }).reason,
@@ -49,7 +54,8 @@ describe("purpose coverage", () => {
       }).reason,
     ).toBe("withdrawn");
     expect(
-      evaluateCoverage({ policy, consent, scope: "export", at: current }).reason,
+      evaluateCoverage({ policy, consent, scope: "export", at: current })
+        .reason,
     ).toBe("field_not_permitted");
   });
 
@@ -81,6 +87,56 @@ describe("purpose coverage", () => {
         scope: "write",
         fieldDefinitionId: "field-1",
         caseReference: "case-b",
+        at: current,
+      }).reason,
+    ).toBe("case_not_permitted");
+  });
+
+  it("requires one scope row to match omitted and supplied field/case dimensions conjunctively", () => {
+    const narrow = {
+      ...consent,
+      scopes: [
+        {
+          scope: "write" as const,
+          fieldDefinitionId: "field-1",
+          caseReference: "case-a",
+        },
+      ],
+    };
+    expect(
+      evaluateCoverage({ policy, consent: narrow, scope: "write", at: current })
+        .reason,
+    ).toBe("field_not_permitted");
+    expect(
+      evaluateCoverage({
+        policy,
+        consent: narrow,
+        scope: "write",
+        fieldDefinitionId: "field-1",
+        at: current,
+      }).reason,
+    ).toBe("case_not_permitted");
+    expect(
+      evaluateCoverage({
+        policy,
+        consent: {
+          ...consent,
+          scopes: [
+            {
+              scope: "write",
+              fieldDefinitionId: "field-1",
+              caseReference: "case-b",
+            },
+            {
+              scope: "write",
+              fieldDefinitionId: "field-2",
+              caseReference: "case-a",
+            },
+          ],
+        },
+        scope: "write",
+        fieldDefinitionId: "field-1",
+        caseReference: "case-a",
         at: current,
       }).reason,
     ).toBe("case_not_permitted");

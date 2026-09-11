@@ -38,6 +38,13 @@ type CoverageConsent = {
   scopes: readonly CoverageScope[];
 };
 
+const sensitivityRank = {
+  public: 0,
+  internal: 1,
+  confidential: 2,
+  restricted: 3,
+} as const;
+
 function result(
   reason: CoverageResult["reason"],
   consentRecordId: string | null,
@@ -87,26 +94,24 @@ export function evaluateCoverage(input: {
     return result("case_not_permitted", consent.id, input.policy.id);
   }
   const scopes = consent.scopes.filter((scope) => scope.scope === input.scope);
-  if (!scopes.length) return result("field_not_permitted", consent.id, input.policy.id);
-  if (
-    input.fieldDefinitionId &&
-    !scopes.some(
-      (scope) =>
-        scope.fieldDefinitionId === null ||
-        scope.fieldDefinitionId === input.fieldDefinitionId,
-    )
-  ) {
+  if (!scopes.length)
     return result("field_not_permitted", consent.id, input.policy.id);
-  }
-  if (
-    input.caseReference &&
-    !scopes.some(
-      (scope) =>
-        scope.caseReference === null || scope.caseReference === input.caseReference,
-    )
-  ) {
+  const fieldMatches = scopes.filter(
+    (scope) =>
+      scope.fieldDefinitionId === null ||
+      scope.fieldDefinitionId === (input.fieldDefinitionId ?? null),
+  );
+  if (!fieldMatches.length)
+    return result("field_not_permitted", consent.id, input.policy.id);
+  // Field and case constraints must be satisfied by the same scope row.  A
+  // caller omitting either dimension can match only an explicit wildcard.
+  const matching = fieldMatches.find(
+    (scope) =>
+      scope.caseReference === null ||
+      scope.caseReference === (input.caseReference ?? null),
+  );
+  if (!matching)
     return result("case_not_permitted", consent.id, input.policy.id);
-  }
   return result("covered", consent.id, input.policy.id);
 }
 
@@ -134,7 +139,10 @@ export async function checkPurposeCoverage(
 
   if (input.fieldDefinitionId) {
     const [definition] = await context.database
-      .select({ id: factDefinitions.id })
+      .select({
+        id: factDefinitions.id,
+        sensitivity: factDefinitions.defaultSensitivity,
+      })
       .from(factDefinitions)
       .where(
         and(
@@ -172,7 +180,10 @@ export async function checkPurposeCoverage(
         eq(purposePolicies.state, "active"),
         isNull(purposePolicies.deletedAt),
         lte(purposePolicies.effectiveFrom, at),
-        or(isNull(purposePolicies.effectiveUntil), gte(purposePolicies.effectiveUntil, at)),
+        or(
+          isNull(purposePolicies.effectiveUntil),
+          gte(purposePolicies.effectiveUntil, at),
+        ),
       ),
     )
     .limit(1);
@@ -198,6 +209,24 @@ export async function checkPurposeCoverage(
       )
       .limit(1);
     if (!fieldPolicy || !fieldPolicy.permittedScopes.includes(input.scope)) {
+      return result("field_not_permitted", null, policy.id);
+    }
+    const [definition] = await context.database
+      .select({ sensitivity: factDefinitions.defaultSensitivity })
+      .from(factDefinitions)
+      .where(
+        and(
+          eq(factDefinitions.workspaceId, context.workspaceId),
+          eq(factDefinitions.id, input.fieldDefinitionId),
+          isNull(factDefinitions.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (
+      !definition ||
+      sensitivityRank[fieldPolicy.sensitivityCeiling] <
+        sensitivityRank[definition.sensitivity]
+    ) {
       return result("field_not_permitted", null, policy.id);
     }
     if (

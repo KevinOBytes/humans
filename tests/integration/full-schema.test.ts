@@ -49,6 +49,10 @@ const requiredTables = [
   "webhooks",
   "webhookDeliveries",
   "personWebResearchRuns",
+  "accessApprovals",
+  "consentScopes",
+  "fieldPolicies",
+  "purposePolicies",
 ] as const;
 
 describe("approved schema surface", () => {

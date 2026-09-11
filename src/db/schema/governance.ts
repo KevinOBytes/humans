@@ -55,7 +55,10 @@ export const purposePolicies = pgTable(
     ...auditColumns,
   },
   (table) => [
-    unique("purpose_policies_workspace_id_unique").on(table.workspaceId, table.id),
+    unique("purpose_policies_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
     index("purpose_policies_workspace_purpose_idx").on(
       table.workspaceId,
       table.purpose,
@@ -90,7 +93,10 @@ export const fieldPolicies = pgTable(
     ...auditColumns,
   },
   (table) => [
-    unique("field_policies_workspace_id_unique").on(table.workspaceId, table.id),
+    unique("field_policies_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
     index("field_policies_workspace_policy_idx").on(
       table.workspaceId,
       table.purposePolicyId,
@@ -128,7 +134,10 @@ export const consentScopes = pgTable(
     ...auditColumns,
   },
   (table) => [
-    unique("consent_scopes_workspace_id_unique").on(table.workspaceId, table.id),
+    unique("consent_scopes_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
     index("consent_scopes_workspace_consent_idx").on(
       table.workspaceId,
       table.consentRecordId,
@@ -170,7 +179,10 @@ export const accessApprovals = pgTable(
     ...auditColumns,
   },
   (table) => [
-    unique("access_approvals_workspace_id_unique").on(table.workspaceId, table.id),
+    unique("access_approvals_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
     index("access_approvals_workspace_principal_idx").on(
       table.workspaceId,
       table.principalId,

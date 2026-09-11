@@ -28,3 +28,11 @@ Pending commit at report creation. The required commit message is `feat(governan
 - `tests/integration/governance-api.test.ts` could not run in this environment because `TEST_DATABASE_URL` is absent; Vitest fails before tests begin in `tests/support/auth.ts`. It must be run with the repository's disposable PostgreSQL test database before release.
 - The existing Settings `createConsentRecord` mutation pre-dated this task and retains its legacy input shape. The governance service exposes the expanded consent-record method, while the generated governance operation calls the existing mutation to avoid a duplicate GraphQL field. A follow-on should consolidate that mutation through the governance service and add the requested cross-workspace/API-key live database scenarios.
 - The task brief calls for enforcement on consent-required writes/exports/AI operations. This task establishes the central fail-closed coverage service and API, but existing fact/export/AI call sites have not yet been rewired to invoke it; wiring each protected operation should be completed and live-tested before treating enforcement as production-complete.
+
+## Review round 1 follow-up
+
+- Corrected the pure scope evaluator so field and case constraints are matched conjunctively by one consent-scope row. A request omitting either dimension now matches only an explicit wildcard, preventing scoped rows from being broadened by omission or mixed across records.
+- Added regression coverage for omitted field/case dimensions and cross-row combinations.
+- Coverage now compares a field policy sensitivity ceiling against the field definition sensitivity before allowing a field-scoped decision.
+- Added governance tables to the exhaustive workspace/versioned schema-contract inventory and all four tables to the full-schema required-table inventory.
+- Follow-up focused verification passed: `pnpm vitest run tests/unit/governance-coverage.test.ts tests/unit/domain-conventions-contract.test.ts tests/integration/full-schema.test.ts` (3 files, 112 tests), Prettier on the touched governance/schema/test files, and `pnpm typecheck`.
