@@ -1,6 +1,7 @@
 export * from "./ai";
 export * from "./auth";
 export * from "./auth-email-outbox";
+export * from "./cases";
 export * from "./enums";
 export * from "./evidence";
 export * from "./facts";

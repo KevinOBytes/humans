@@ -15,6 +15,7 @@ import { registerLocationsGraphQL } from "@/modules/locations/graphql";
 import { registerAiGraphQL } from "@/modules/ai/graphql";
 import { registerWebhooksGraphQL } from "@/modules/webhooks/graphql";
 import { registerGovernanceGraphQL } from "@/modules/governance/graphql";
+import { registerCasesGraphQL } from "@/modules/cases/graphql";
 
 const Workspace = builder.objectRef<SafeWorkspace>("Workspace").implement({
   fields: (t) => ({
@@ -83,5 +84,6 @@ registerLocationsGraphQL();
 registerAiGraphQL();
 registerWebhooksGraphQL();
 registerGovernanceGraphQL();
+registerCasesGraphQL();
 
 export const schema = builder.toSchema();

@@ -20,6 +20,7 @@ import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 import { createGraphQLError } from "@/graphql/errors";
 import { decodeResearchCursor, normalizePagination } from "@/graphql/limits";
 import type { Database } from "@/modules/auth/bootstrap-admin";
+import { caseResourceVisibilitySql } from "@/modules/cases/repository";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 
 import { redactAuditDiff, type AuditSensitivity } from "./redaction";
@@ -103,6 +104,45 @@ const sensitivityRank: Record<AuditSensitivity, number> = {
 
 export function resourceVisibilitySql(
   context: Pick<ResearchServiceContext, "actor" | "workspaceId">,
+  input: { resourceKind: string; id: SQLWrapper; sensitivity: SQLWrapper },
+): SQL {
+  return sql`(${baselineResourceVisibilitySql(context, input)}) AND (${caseResourceVisibilitySql(context, input)})`;
+}
+
+export async function visibleResourceIds(
+  database: Database,
+  context: Pick<ResearchServiceContext, "actor" | "workspaceId">,
+  input: {
+    lockGrants?: boolean;
+    resourceKind: string;
+    resources: readonly { id: string; sensitivity: AuditSensitivity }[];
+  },
+): Promise<ReadonlySet<string>> {
+  const baseline = await baselineVisibleResourceIds(database, context, input);
+  if (
+    !baseline.size ||
+    !["person", "fact", "relationship"].includes(input.resourceKind)
+  )
+    return baseline;
+  const ids = sql`(values ${sql.join(
+    [...baseline].map((id) => sql`(${id}::uuid)`),
+    sql`, `,
+  )}) as "case_visible_resources"("id")`;
+  const id = sql<string>`"case_visible_resources"."id"`;
+  const rows = await database
+    .select({ id })
+    .from(ids)
+    .where(
+      caseResourceVisibilitySql(context, {
+        resourceKind: input.resourceKind,
+        id,
+      }),
+    );
+  return new Set(rows.map((row) => row.id));
+}
+
+function baselineResourceVisibilitySql(
+  context: Pick<ResearchServiceContext, "actor" | "workspaceId">,
   input: {
     resourceKind: string;
     id: SQLWrapper;
@@ -141,7 +181,7 @@ export function resourceVisibilitySql(
   )`;
 }
 
-export async function visibleResourceIds(
+async function baselineVisibleResourceIds(
   database: Database,
   context: Pick<ResearchServiceContext, "actor" | "workspaceId">,
   input: {

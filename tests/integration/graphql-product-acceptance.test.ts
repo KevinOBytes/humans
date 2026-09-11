@@ -22,6 +22,8 @@ import {
   CreateRelationshipDocument,
   CreateRelationshipTypeDocument,
   CreateSourceDocument,
+  CreateResearchCaseDocument,
+  ResearchCaseDocument,
   ArchivePersonDocument,
   EvidenceFilesDocument,
   FactEvidenceDocument,
@@ -69,6 +71,31 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
   });
   beforeEach(async () => fixture.reset());
   afterAll(async () => fixture.close());
+
+  it("creates and reads a case through generated operations", async () => {
+    const actor = await fixture.createActor();
+    const result = await fixture.execute<{
+      createResearchCase: { id: string };
+    }>({
+      jar: actor.jar,
+      query: CreateResearchCaseDocument,
+      variables: { title: "Generated case", purpose: "research" },
+    });
+    expect(result.body?.errors).toBeUndefined();
+    const id = result.body?.data?.createResearchCase.id;
+    expect(id).toBeTruthy();
+    const read = await fixture.execute({
+      jar: actor.jar,
+      query: ResearchCaseDocument,
+      variables: { id: id! },
+    });
+    expect(read.body?.data?.researchCase).toMatchObject({
+      id,
+      title: "Generated case",
+      purpose: "research",
+      version: 1,
+    });
+  });
 
   it("gates person web research by permission, workspace visibility, and optional configuration", async () => {
     const owner = await fixture.createActor();

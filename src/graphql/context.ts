@@ -59,6 +59,8 @@ import {
 } from "@/modules/ai/service";
 import { createWebhooksService } from "@/modules/webhooks/service";
 import { createGovernanceService } from "@/modules/governance/service";
+import { createCasesService } from "@/modules/cases/service";
+import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
 
 import { createGraphQLError } from "./errors";
 import {
@@ -390,6 +392,22 @@ function createServices(input: {
       actor: input.context.actor,
       database: input.database,
       idempotencyHmacKey: input.aiRuntime.hmacKey,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
+    cases: createCasesService({
+      actor: input.context.actor,
+      database: input.database,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
+    evidenceAssertions: createEvidenceAssertionsService({
+      actor: input.context.actor,
+      database: input.database,
       permissions: input.context.permissions,
       requestId: input.context.requestId,
       searchIndexMaintenance: input.searchIndexMaintenance,

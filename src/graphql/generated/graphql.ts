@@ -386,11 +386,17 @@ export type CreatePlaceInput = {
 };
 
 export type CreateRelationshipInput = {
+  caseId?: string | null | undefined;
   confidence?: number | null | undefined;
+  creationMethod?: string | null | undefined;
+  explicitConfirmed?: boolean | null | undefined;
+  governancePurpose?: string | null | undefined;
   idempotencyKey?: string | null | undefined;
   labelOverride?: string | null | undefined;
   metadata?: unknown;
+  observedAt?: string | null | undefined;
   relationshipTypeId: string;
+  reviewState?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   sourcePersonId: string;
   state?: string | null | undefined;
@@ -649,6 +655,19 @@ export type LawfulBasis =
   | "VITAL_INTERESTS";
 
 export type LifecycleState = "ACTIVE" | "ARCHIVED" | "INACTIVE";
+
+export type LinkEvidenceAssertionInput = {
+  caseId?: string | null | undefined;
+  confidence: number;
+  evidenceId: string;
+  explicitConfirmed: boolean;
+  locator: string;
+  purpose: string;
+  quote: string;
+  resourceId: string;
+  resourceKind: string;
+  role: string;
+};
 
 export type LinkFactEvidenceInput = {
   evidenceItemId: string;
@@ -1106,12 +1125,19 @@ export type UpdatePlaceInput = {
 };
 
 export type UpdateRelationshipInput = {
+  caseId?: string | null | undefined;
   confidence?: number | null | undefined;
+  creationMethod?: string | null | undefined;
+  evidenceAssertionId?: string | null | undefined;
   expectedVersion: number;
+  explicitConfirmed?: boolean | null | undefined;
+  governancePurpose?: string | null | undefined;
   id: string;
   idempotencyKey?: string | null | undefined;
   labelOverride?: string | null | undefined;
   metadata?: unknown;
+  observedAt?: string | null | undefined;
+  reviewState?: string | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
   state?: string | null | undefined;
   strength?: number | null | undefined;
@@ -1277,6 +1303,141 @@ export type CancelAiAnalysisMutationVariables = Exact<{
 export type CancelAiAnalysisMutation = {
   cancelAiAnalysis: {
     " $fragmentRefs"?: { AnalystPublicRunFragment: AnalystPublicRunFragment };
+  } | null;
+};
+
+export type ResearchCasesQueryVariables = Exact<{
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type ResearchCasesQuery = {
+  researchCases: {
+    nodes: Array<{
+      id: string | null;
+      title: string | null;
+      purpose: string | null;
+      state: string | null;
+      version: number | null;
+      createdAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type ResearchCaseQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type ResearchCaseQuery = {
+  researchCase: {
+    id: string | null;
+    title: string | null;
+    purpose: string | null;
+    state: string | null;
+    version: number | null;
+  } | null;
+};
+
+export type CaseTimelineQueryVariables = Exact<{
+  caseId: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type CaseTimelineQuery = {
+  caseTimeline: {
+    nodes: Array<{
+      id: string | null;
+      resourceKind: string | null;
+      resourceId: string | null;
+      observedAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type CreateResearchCaseMutationVariables = Exact<{
+  title: string;
+  purpose: string;
+}>;
+
+export type CreateResearchCaseMutation = {
+  createResearchCase: {
+    id: string | null;
+    title: string | null;
+    purpose: string | null;
+    state: string | null;
+    version: number | null;
+  } | null;
+};
+
+export type AddCaseMemberMutationVariables = Exact<{
+  caseId: string;
+  principalId: string;
+  role?: string | null | undefined;
+}>;
+
+export type AddCaseMemberMutation = {
+  addCaseMember: {
+    id: string | null;
+    principalId: string | null;
+    role: string | null;
+    version: number | null;
+  } | null;
+};
+
+export type LinkCaseResourceMutationVariables = Exact<{
+  caseId: string;
+  resourceId: string;
+  resourceKind: string;
+  explicitConfirmed: boolean;
+}>;
+
+export type LinkCaseResourceMutation = {
+  linkCaseResource: {
+    id: string | null;
+    resourceKind: string | null;
+    resourceId: string | null;
+    observedAt: string | null;
+  } | null;
+};
+
+export type LinkEvidenceAssertionMutationVariables = Exact<{
+  input: LinkEvidenceAssertionInput;
+}>;
+
+export type LinkEvidenceAssertionMutation = {
+  linkEvidenceAssertion: {
+    id: string | null;
+    evidenceId: string | null;
+    resourceKind: string | null;
+    resourceId: string | null;
+    locator: string | null;
+    quote: string | null;
+    role: string | null;
+    confidence: number | null;
+    informationCredibility: number | null;
+    sourceReliability: number | null;
+    reviewState: string | null;
+    version: number | null;
+    auditReference: string | null;
+  } | null;
+};
+
+export type ReviewEvidenceAssertionMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  state: string;
+  reason: string;
+}>;
+
+export type ReviewEvidenceAssertionMutation = {
+  reviewEvidenceAssertion: {
+    id: string | null;
+    reviewState: string | null;
+    version: number | null;
+    auditReference: string | null;
   } | null;
 };
 
@@ -5453,6 +5614,185 @@ export const CancelAiAnalysisDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   CancelAiAnalysisMutation,
   CancelAiAnalysisMutationVariables
+>;
+export const ResearchCasesDocument = new TypedDocumentString(
+  `
+    query ResearchCases($first: Int, $after: String) {
+  researchCases(first: $first, after: $after) {
+    nodes {
+      id
+      title
+      purpose
+      state
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:86f1c6933c9ffb7b247e4af02f5b2498ba7093ca0d5ee7a68d35ed3acad6952e",
+  },
+) as unknown as TypedDocumentString<
+  ResearchCasesQuery,
+  ResearchCasesQueryVariables
+>;
+export const ResearchCaseDocument = new TypedDocumentString(
+  `
+    query ResearchCase($id: UUID!) {
+  researchCase(id: $id) {
+    id
+    title
+    purpose
+    state
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:070bb6d47f959216b37e1832c6e63b116d51446b77de9627f92c83b9df4d95d0",
+  },
+) as unknown as TypedDocumentString<
+  ResearchCaseQuery,
+  ResearchCaseQueryVariables
+>;
+export const CaseTimelineDocument = new TypedDocumentString(
+  `
+    query CaseTimeline($caseId: UUID!, $first: Int, $after: String) {
+  caseTimeline(caseId: $caseId, first: $first, after: $after) {
+    nodes {
+      id
+      resourceKind
+      resourceId
+      observedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:2eea8b890f45a05497f3e7992959094cb6b4b1e812642682703e23e746c9d86c",
+  },
+) as unknown as TypedDocumentString<
+  CaseTimelineQuery,
+  CaseTimelineQueryVariables
+>;
+export const CreateResearchCaseDocument = new TypedDocumentString(
+  `
+    mutation CreateResearchCase($title: String!, $purpose: String!) {
+  createResearchCase(title: $title, purpose: $purpose) {
+    id
+    title
+    purpose
+    state
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:e553d66ef51cc990718f7c29e82e5627109b42ca89b1f12d5f8c8f7c82529462",
+  },
+) as unknown as TypedDocumentString<
+  CreateResearchCaseMutation,
+  CreateResearchCaseMutationVariables
+>;
+export const AddCaseMemberDocument = new TypedDocumentString(
+  `
+    mutation AddCaseMember($caseId: UUID!, $principalId: UUID!, $role: String) {
+  addCaseMember(caseId: $caseId, principalId: $principalId, role: $role) {
+    id
+    principalId
+    role
+    version
+  }
+}
+    `,
+  {
+    hash: "sha256:8f3eeff6e26ba3d230164bfecca9c895f487671bc9f92bf9fd465cc75672efca",
+  },
+) as unknown as TypedDocumentString<
+  AddCaseMemberMutation,
+  AddCaseMemberMutationVariables
+>;
+export const LinkCaseResourceDocument = new TypedDocumentString(
+  `
+    mutation LinkCaseResource($caseId: UUID!, $resourceId: UUID!, $resourceKind: String!, $explicitConfirmed: Boolean!) {
+  linkCaseResource(
+    caseId: $caseId
+    resourceId: $resourceId
+    resourceKind: $resourceKind
+    explicitConfirmed: $explicitConfirmed
+  ) {
+    id
+    resourceKind
+    resourceId
+    observedAt
+  }
+}
+    `,
+  {
+    hash: "sha256:e716b3dfe854691d7b582b2701a72a6a212eca6e54529f97afcd9df13dbe4916",
+  },
+) as unknown as TypedDocumentString<
+  LinkCaseResourceMutation,
+  LinkCaseResourceMutationVariables
+>;
+export const LinkEvidenceAssertionDocument = new TypedDocumentString(
+  `
+    mutation LinkEvidenceAssertion($input: LinkEvidenceAssertionInput!) {
+  linkEvidenceAssertion(input: $input) {
+    id
+    evidenceId
+    resourceKind
+    resourceId
+    locator
+    quote
+    role
+    confidence
+    informationCredibility
+    sourceReliability
+    reviewState
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:c8b50ed88ede001fa0f2eb0776029e1df1ab5a3e70487cdf09e601af44f12dbb",
+  },
+) as unknown as TypedDocumentString<
+  LinkEvidenceAssertionMutation,
+  LinkEvidenceAssertionMutationVariables
+>;
+export const ReviewEvidenceAssertionDocument = new TypedDocumentString(
+  `
+    mutation ReviewEvidenceAssertion($id: UUID!, $expectedVersion: Int!, $state: String!, $reason: String!) {
+  reviewEvidenceAssertion(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    reason: $reason
+  ) {
+    id
+    reviewState
+    version
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:f0155805446f3227931a0714db9ac360f0bb61edf8890bfcc727cb5dbd01b971",
+  },
+) as unknown as TypedDocumentString<
+  ReviewEvidenceAssertionMutation,
+  ReviewEvidenceAssertionMutationVariables
 >;
 export const DashboardOverviewDocument = new TypedDocumentString(
   `

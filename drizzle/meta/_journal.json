@@ -232,6 +232,13 @@
       "when": 1789101163699,
       "tag": "0032_governance_consent_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789105554849,
+      "tag": "0033_cases_and_evidence_assertions",
+      "breakpoints": true
     }
   ]
 }

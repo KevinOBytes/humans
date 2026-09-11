@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 import * as schema from "@/db/schema";
 
 const requiredTables = [
+  "cases",
+  "caseMembers",
+  "caseResourceLinks",
+  "evidenceAssertions",
+  "evidenceAssertionReviews",
   "contactPoints",
   "personContactPoints",
   "places",

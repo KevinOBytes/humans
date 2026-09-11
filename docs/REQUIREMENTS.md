@@ -472,6 +472,17 @@ production performance evidence.
 
 ## Traceability rules
 
+### Consent-governed research Task 2 backend checkpoint
+
+The branch adds case membership and resource links, shared visibility narrowing,
+versioned evidence assertions with redacted audits, independent relationship
+assertion reviews, and confirmation-gated inferred-to-documented promotion.
+Generated GraphQL operations and migration 0033 are included. Supported
+assertion/link targets are person, fact, and relationship; other resource kinds
+remain outside this backend checkpoint. No acceptance row is closed: disposable
+PostgreSQL lifecycle and whole-product browser/runtime evidence are still required.
+See the Task 2 SDD report for local commands and explicitly skipped live tests.
+
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.
 - Tests should name requirement IDs when practical so CI failures remain traceable.

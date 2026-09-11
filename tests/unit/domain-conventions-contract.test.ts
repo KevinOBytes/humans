@@ -12,6 +12,11 @@ type Column = {
 };
 
 const workspaceTableNames = [
+  "cases",
+  "caseMembers",
+  "caseResourceLinks",
+  "evidenceAssertions",
+  "evidenceAssertionReviews",
   "aiCitations",
   "aiEphemeralInputs",
   "aiMessages",
@@ -90,6 +95,10 @@ const workspaceTableNames = [
 ] as const satisfies readonly (keyof typeof schema)[];
 
 const versionedTableNames = [
+  "cases",
+  "caseMembers",
+  "caseResourceLinks",
+  "evidenceAssertions",
   "addresses",
   "accessApprovals",
   "accessPolicies",

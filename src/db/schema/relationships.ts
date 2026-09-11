@@ -21,6 +21,7 @@ import {
   temporalSemanticsEnum,
 } from "./enums";
 import { people } from "./people";
+import { cases } from "./cases";
 import { workspaces } from "./workspaces";
 
 const domainTimestamp = (name: string) =>
@@ -77,6 +78,10 @@ export const relationships = pgTable(
     targetPersonId: uuid("target_person_id").notNull(),
     relationshipTypeId: uuid("relationship_type_id").notNull(),
     labelOverride: text("label_override"),
+    caseId: uuid("case_id"),
+    observedAt: domainTimestamp("observed_at"),
+    creationMethod: text("creation_method").default("manual").notNull(),
+    reviewState: text("review_state").default("unreviewed").notNull(),
     strength: numeric("strength", { precision: 4, scale: 3 }),
     confidence: numeric("confidence", { precision: 4, scale: 3 })
       .default("1")
@@ -102,6 +107,24 @@ export const relationships = pgTable(
   },
   (table) => [
     unique("relationships_workspace_id_unique").on(table.workspaceId, table.id),
+    index("relationships_workspace_case_observed_idx").on(
+      table.workspaceId,
+      table.caseId,
+      table.observedAt,
+    ),
+    foreignKey({
+      name: "relationships_workspace_case_fk",
+      columns: [table.workspaceId, table.caseId],
+      foreignColumns: [cases.workspaceId, cases.id],
+    }).onDelete("restrict"),
+    check(
+      "relationships_creation_method_check",
+      sql`${table.creationMethod} IN ('manual', 'import', 'ai')`,
+    ),
+    check(
+      "relationships_review_state_check",
+      sql`${table.reviewState} IN ('unreviewed', 'approved', 'rejected')`,
+    ),
     index("relationships_workspace_source_idx").on(
       table.workspaceId,
       table.sourcePersonId,
