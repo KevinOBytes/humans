@@ -26,9 +26,13 @@ downloads re-check artifact state/expiry, case membership, legal holds and curre
 purpose coverage; governed files are excluded from ordinary file listings. Search
 withholds non-public typed fact values when no purpose-bound approval is available,
 and high-sensitivity export commits fail closed until a reviewed approval workflow
-is wired. These are hardening changes, not closed requirement rows: approval
-records, interrupted-write reconciliation, retention cleanup, live PostgreSQL/
-object-store/browser proof and the remaining whole-product matrix remain open.
+is wired. Governed export artifacts now retain a durable writing/failed state and
+the same idempotency-bound commit can safely replay the deterministic
+object-store write after a process crash or provider timeout; concurrent retries
+reconcile to the single ready artifact. These are hardening changes, not closed
+requirement rows: approval records, automated stale-artifact reconciliation,
+retention cleanup, live PostgreSQL/object-store/browser proof and the remaining
+whole-product matrix remain open.
 
 Task 5 follow-up: non-public fact values/provenance/temporal context and selection
 actions are withheld until request-bound field disclosure is implemented. The new

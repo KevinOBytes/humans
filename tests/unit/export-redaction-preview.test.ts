@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  exportArtifactStorageKey,
+  isExportArtifactRecoverable,
   previewExport,
   serializeRedactedExport,
   verifyExportCommitToken,
@@ -8,6 +10,16 @@ import {
 
 const key = "22".repeat(32);
 describe("governed export previews", () => {
+  it("allows deterministic retry only for interrupted artifact states", () => {
+    expect(isExportArtifactRecoverable("writing")).toBe(true);
+    expect(isExportArtifactRecoverable("failed")).toBe(true);
+    expect(isExportArtifactRecoverable("ready")).toBe(false);
+    expect(isExportArtifactRecoverable("expired")).toBe(false);
+    expect(
+      exportArtifactStorageKey("019cc7c4-6ed2-7e0a-aed8-e5d451c97005", "CSV"),
+    ).toBe("exports/019cc7c4-6ed2-7e0a-aed8-e5d451c97005/governed-export.csv");
+  });
+
   it("redacts fields above the requested sensitivity and requires approval", () => {
     const preview = previewExport({
       workspaceId: "w",

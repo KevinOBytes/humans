@@ -531,9 +531,12 @@ source and target subjects plus fact field definitions are checked for purpose
 coverage; case exports require a linked case resource; and generated artifact
 downloads re-check state, expiry, case membership, legal holds and current coverage.
 Unapproved high-sensitivity commits fail closed, and non-public typed fact values are
-not exposed through unscoped full-text search. Durable recovery/reconciliation,
-reviewed approval records, retention cleanup, and live database/provider/browser
-acceptance remain required.
+not exposed through unscoped full-text search. Governed export artifacts retain a
+durable writing/failed state, and the same idempotency-bound commit can replay the
+deterministic object-store write after a process crash or provider timeout;
+concurrent retries reconcile to one ready artifact. Automated stale-artifact
+reconciliation, reviewed approval records, retention cleanup, and live
+database/provider/browser acceptance remain required.
 
 ### Consent-governed research Task 2 backend checkpoint
 

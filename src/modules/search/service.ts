@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, createHmac } from "node:crypto";
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { caseResourceLinks } from "@/db/schema/cases";
 import { facts } from "@/db/schema/facts";
@@ -51,6 +51,8 @@ import {
   type ResearchFacetInput,
 } from "./analysis";
 import {
+  exportArtifactStorageKey,
+  isExportArtifactRecoverable,
   previewExport as buildExportPreview,
   serializeRedactedExport,
   verifyExportCommitToken,
@@ -781,10 +783,10 @@ export function createSearchService(
       );
       const checksum = createHash("sha256").update(content).digest("hex");
       const now = new Date();
-      const artifactId = newId();
-      const fileId = newId();
+      let artifactId = newId();
+      let fileId = newId();
       const extension = input.format === "JSON" ? "json" : "csv";
-      const storageKey = `exports/${artifactId}/governed-export.${extension}`;
+      let storageKey = exportArtifactStorageKey(artifactId, input.format);
       const originalName = `humans-export-${artifactId}.${extension}`;
       const sensitivity = preview.redactionProfile.toLowerCase() as
         "public" | "internal" | "confidential" | "restricted";
@@ -891,13 +893,21 @@ export function createSearchService(
         },
       );
       if (!claimed.created) {
-        if (claimed.artifact.state !== "ready") {
+        if (claimed.artifact.state === "ready") return claimed.artifact;
+        // A client may safely retry the exact same commit after a process
+        // crash or object-store timeout. The durable artifact row and its
+        // idempotency/request hashes are the recovery fence; the deterministic
+        // object key makes a repeated put idempotent at the provider boundary.
+        // Never revive an expired artifact or one in an unknown state.
+        if (!isExportArtifactRecoverable(claimed.artifact.state)) {
           throw createGraphQLError(
             "PRECONDITION_FAILED",
-            "The export is still being prepared or requires remediation.",
+            "The export is no longer eligible for recovery.",
           );
         }
-        return claimed.artifact;
+        artifactId = claimed.artifact.id;
+        fileId = claimed.artifact.fileId;
+        storageKey = exportArtifactStorageKey(artifactId, input.format);
       }
       try {
         await artifactRuntime.objectStore.putInternal({
@@ -919,7 +929,7 @@ export function createSearchService(
             ],
           },
           async (scoped) => {
-            await scoped.database
+            const [failed] = await scoped.database
               .update(exportArtifacts)
               .set({
                 state: "failed",
@@ -930,15 +940,18 @@ export function createSearchService(
                 and(
                   eq(exportArtifacts.workspaceId, scoped.workspaceId),
                   eq(exportArtifacts.id, artifactId),
-                  eq(exportArtifacts.state, "writing"),
+                  inArray(exportArtifacts.state, ["writing", "failed"]),
                 ),
-              );
-            await createAuditService(scoped).write(scoped.database, {
-              action: "export.artifact_failed",
-              resourceKind: "export_artifact",
-              resourceId: artifactId,
-              changedFields: ["state"],
-            });
+              )
+              .returning({ id: exportArtifacts.id });
+            if (failed) {
+              await createAuditService(scoped).write(scoped.database, {
+                action: "export.artifact_failed",
+                resourceKind: "export_artifact",
+                resourceId: artifactId,
+                changedFields: ["state"],
+              });
+            }
           },
         );
         throw error;
@@ -965,15 +978,31 @@ export function createSearchService(
               and(
                 eq(exportArtifacts.workspaceId, scoped.workspaceId),
                 eq(exportArtifacts.id, artifactId),
-                eq(exportArtifacts.state, "writing"),
+                inArray(exportArtifacts.state, ["writing", "failed"]),
               ),
             )
             .returning();
-          if (!artifact)
+          if (!artifact) {
+            // Another retry may have completed the same deterministic write
+            // while this request was uploading. Return that committed row
+            // instead of surfacing a false conflict to the caller.
+            const [alreadyReady] = await scoped.database
+              .select()
+              .from(exportArtifacts)
+              .where(
+                and(
+                  eq(exportArtifacts.workspaceId, scoped.workspaceId),
+                  eq(exportArtifacts.id, artifactId),
+                  eq(exportArtifacts.state, "ready"),
+                ),
+              )
+              .limit(1);
+            if (alreadyReady) return alreadyReady;
             throw createGraphQLError(
               "CONFLICT",
               publicErrorMessage("CONFLICT"),
             );
+          }
           await scoped.database
             .update(files)
             .set({

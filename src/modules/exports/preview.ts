@@ -35,6 +35,24 @@ export type ExportPreview = Readonly<{
   }>[];
 }>;
 
+/**
+ * An interrupted write can be safely replayed while the durable artifact has
+ * not been committed or retired. The retry remains bound to the original
+ * idempotency/request hashes by the service layer.
+ */
+export function isExportArtifactRecoverable(
+  state: string,
+): state is "writing" | "failed" {
+  return state === "writing" || state === "failed";
+}
+
+export function exportArtifactStorageKey(
+  artifactId: string,
+  format: "JSON" | "CSV",
+): string {
+  return `exports/${artifactId}/governed-export.${format === "JSON" ? "json" : "csv"}`;
+}
+
 const ORDER = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] as const;
 const VERSION = "humans.export-preview.v2";
 function invalid(message: string): never {
