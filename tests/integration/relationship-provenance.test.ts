@@ -161,6 +161,7 @@ liveDescribe("relationship evidence review and promotion", () => {
   it("withdrawal blocks assertions and review after creation", async () => {
     const row = await assertion();
     await createGovernanceService(context).withdrawConsent({
+      idempotencyKey: newId(),
       id: consentId,
       expectedVersion: 1,
     });

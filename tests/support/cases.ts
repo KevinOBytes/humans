@@ -51,12 +51,14 @@ export async function coveredPerson(
   const governance = createGovernanceService(context);
   if (options.policy !== false)
     await governance.createPurposePolicy({
+      idempotencyKey: newId(),
       purpose: "research",
       lawfulBases: ["consent"],
       effectiveFrom: new Date(Date.now() - 60_000),
       state: "active",
     });
   const consent = await governance.recordConsent({
+    idempotencyKey: newId(),
     personId: id,
     purpose: "research",
     scopes: ["read", "write"],

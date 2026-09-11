@@ -40,6 +40,7 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
   async function draft(field = "biography") {
     const person = await coveredPerson(context);
     await createGovernanceService(context).recordConsent({
+      idempotencyKey: newId(),
       personId: person.id,
       purpose: "research",
       scopes: ["read", "write", "ai_operation"],
@@ -175,6 +176,7 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       createAiReviewService(foreign).getSuggestion(row.id),
     ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
     await createGovernanceService(context).recordConsent({
+      idempotencyKey: newId(),
       personId: row.personId,
       purpose: "research",
       scopes: ["read", "write"],

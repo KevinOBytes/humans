@@ -171,7 +171,8 @@ export class S3ObjectStore implements ObjectStore {
 
   async putInternal(input: InternalObjectWrite): Promise<void> {
     if (
-      !(input.content instanceof Uint8Array) ||
+      !input.content ||
+      !Number.isSafeInteger(input.content.byteLength) ||
       input.content.byteLength > 50 * 1024 * 1024 ||
       input.content.byteLength < 1 ||
       !/^[a-f0-9]{64}$/u.test(input.checksumSha256) ||

@@ -166,12 +166,14 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
         await caseContext(persisted, owner),
       );
       await governance.createPurposePolicy({
+        idempotencyKey: newId(),
         purpose: "research",
         lawfulBases: ["consent"],
         effectiveFrom: new Date(Date.now() - 60_000),
         state: "active",
       });
       await governance.recordConsent({
+        idempotencyKey: newId(),
         personId: personId!,
         purpose: "research",
         scopes: ["read", "write", "ai_operation"],

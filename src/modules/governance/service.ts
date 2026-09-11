@@ -16,6 +16,12 @@ import {
   resourceVisibilitySql,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
+import {
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
+  type CanonicalRequestMaterial,
+  type ResearchResponseReference,
+} from "@/modules/audit/transactions";
 
 import { checkPurposeCoverage } from "./coverage";
 import type { GovernanceScope, LawfulBasis } from "./types";
@@ -25,6 +31,173 @@ import {
   normalizeGovernanceInput,
   validateApprovalReason,
 } from "./validation";
+
+const GOVERNANCE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const internalGovernanceIdempotencyKey = Symbol("governance-idempotency");
+type GovernanceIdempotencyKey =
+  string | typeof internalGovernanceIdempotencyKey;
+type PurposePolicyRow = typeof purposePolicies.$inferSelect;
+type FieldPolicyRow = typeof fieldPolicies.$inferSelect;
+type ConsentRecordRow = typeof consentRecords.$inferSelect;
+type AccessApprovalRow = typeof accessApprovals.$inferSelect;
+
+function governanceIdempotency(
+  context: ResearchServiceContext,
+  input: {
+    idempotencyKey: GovernanceIdempotencyKey;
+    operation: string;
+    requestMaterial: Readonly<Record<string, CanonicalRequestMaterial>>;
+  },
+) {
+  if (input.idempotencyKey === internalGovernanceIdempotencyKey) return null;
+  if (!context.idempotencyHmacKey)
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "Governance mutation idempotency is not configured.",
+    );
+  return derivePrincipalResearchIdempotency(context, {
+    expiresAt: new Date(Date.now() + GOVERNANCE_IDEMPOTENCY_TTL_MS),
+    idempotencyKey: input.idempotencyKey,
+    operation: input.operation,
+    requestMaterial: input.requestMaterial,
+    secret: context.idempotencyHmacKey,
+  });
+}
+
+function governanceMutationId(reference: ResearchResponseReference) {
+  const id = reference.governanceMutationId;
+  if (typeof id !== "string")
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "The stored governance mutation result is invalid.",
+    );
+  return id;
+}
+
+function unavailableGovernanceResult() {
+  throw createGraphQLError(
+    "NOT_FOUND",
+    "The requested resource was not found.",
+  );
+}
+
+async function replayPurposePolicy(
+  context: ResearchServiceContext,
+  id: string,
+) {
+  const [row] = await context.database
+    .select()
+    .from(purposePolicies)
+    .where(
+      and(
+        eq(purposePolicies.workspaceId, context.workspaceId),
+        eq(purposePolicies.id, id),
+        isNull(purposePolicies.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? unavailableGovernanceResult();
+}
+
+async function replayFieldPolicy(context: ResearchServiceContext, id: string) {
+  const [row] = await context.database
+    .select()
+    .from(fieldPolicies)
+    .where(
+      and(
+        eq(fieldPolicies.workspaceId, context.workspaceId),
+        eq(fieldPolicies.id, id),
+        isNull(fieldPolicies.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? unavailableGovernanceResult();
+}
+
+async function replayVisibleConsent(
+  context: ResearchServiceContext,
+  id: string,
+) {
+  const [row] = await context.database
+    .select({ consent: consentRecords })
+    .from(consentRecords)
+    .innerJoin(
+      people,
+      and(
+        eq(people.workspaceId, consentRecords.workspaceId),
+        eq(people.id, consentRecords.personId),
+      ),
+    )
+    .where(
+      and(
+        eq(consentRecords.workspaceId, context.workspaceId),
+        eq(consentRecords.id, id),
+        isNull(consentRecords.deletedAt),
+        isNull(people.deletedAt),
+        resourceVisibilitySql(context, {
+          resourceKind: "person",
+          id: people.id,
+          sensitivity: people.sensitivity,
+        }),
+      ),
+    )
+    .limit(1);
+  return row?.consent ?? unavailableGovernanceResult();
+}
+
+async function replayVisibleApproval(
+  context: ResearchServiceContext,
+  id: string,
+) {
+  const [row] = await context.database
+    .select({ approval: accessApprovals })
+    .from(accessApprovals)
+    .innerJoin(
+      people,
+      and(
+        eq(people.workspaceId, accessApprovals.workspaceId),
+        eq(people.id, accessApprovals.personId),
+      ),
+    )
+    .where(
+      and(
+        eq(accessApprovals.workspaceId, context.workspaceId),
+        eq(accessApprovals.id, id),
+        isNull(accessApprovals.deletedAt),
+        isNull(people.deletedAt),
+        resourceVisibilitySql(context, {
+          resourceKind: "person",
+          id: people.id,
+          sensitivity: people.sensitivity,
+        }),
+      ),
+    )
+    .limit(1);
+  return row?.approval ?? unavailableGovernanceResult();
+}
+
+async function requireVisiblePerson(
+  context: ResearchServiceContext,
+  personId: string,
+) {
+  const [visiblePerson] = await context.database
+    .select({ id: people.id })
+    .from(people)
+    .where(
+      and(
+        eq(people.workspaceId, context.workspaceId),
+        eq(people.id, personId),
+        isNull(people.deletedAt),
+        resourceVisibilitySql(context, {
+          resourceKind: "person",
+          id: people.id,
+          sensitivity: people.sensitivity,
+        }),
+      ),
+    )
+    .limit(1);
+  if (!visiblePerson) unavailableGovernanceResult();
+}
 
 function cursor(row: { createdAt: Date; id: string }) {
   return Buffer.from(
@@ -61,6 +234,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
   };
   return {
     async createPurposePolicy(input: {
+      idempotencyKey: GovernanceIdempotencyKey;
       purpose: unknown;
       lawfulBases: unknown;
       effectiveFrom: unknown;
@@ -68,7 +242,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
       caseReference?: unknown;
       metadata?: unknown;
       state?: "draft" | "active" | "disabled" | "archived";
-    }) {
+    }): Promise<PurposePolicyRow> {
       administrative();
       const normalized = normalizeGovernanceInput({
         purpose: input.purpose,
@@ -108,6 +282,43 @@ export function createGovernanceService(context: ResearchServiceContext) {
           "The purpose policy is invalid.",
         );
       }
+      const idempotency = governanceIdempotency(context, {
+        idempotencyKey: input.idempotencyKey,
+        operation: "governance.purpose_policy.create",
+        requestMaterial: {
+          caseReference:
+            typeof input.caseReference === "string"
+              ? input.caseReference.trim() || null
+              : null,
+          effectiveFrom: normalized.value.effectiveFrom?.toISOString() ?? null,
+          effectiveUntil:
+            normalized.value.effectiveUntil?.toISOString() ?? null,
+          lawfulBases: [...new Set(bases)].sort(),
+          metadata: (normalized.value.metadata ??
+            {}) as CanonicalRequestMaterial,
+          purpose: normalized.value.purpose,
+          state: input.state ?? "draft",
+        },
+      });
+      if (idempotency) {
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["workspace:update"],
+          async (scopedContext) => ({
+            governanceMutationId: (
+              await createGovernanceService(scopedContext).createPurposePolicy({
+                ...input,
+                idempotencyKey: internalGovernanceIdempotencyKey,
+              })
+            ).id,
+          }),
+        );
+        return replayPurposePolicy(
+          context,
+          governanceMutationId(executed.responseReference),
+        );
+      }
       const [row] = await context.database.transaction(async (tx) => {
         const [created] = await tx
           .insert(purposePolicies)
@@ -140,19 +351,50 @@ export function createGovernanceService(context: ResearchServiceContext) {
       return row!;
     },
     async setFieldPolicy(input: {
+      idempotencyKey: GovernanceIdempotencyKey;
       purposePolicyId: string;
       fieldDefinitionId: string;
       permittedScopes: GovernanceScope[];
       sensitivityCeiling?:
         "public" | "internal" | "confidential" | "restricted";
       caseReference?: string | null;
-    }) {
+    }): Promise<FieldPolicyRow> {
       administrative();
       if (!input.permittedScopes.length)
         throw createGraphQLError(
           "VALIDATION_FAILED",
           "At least one scope is required.",
         );
+      const idempotency = governanceIdempotency(context, {
+        idempotencyKey: input.idempotencyKey,
+        operation: "governance.field_policy.create",
+        requestMaterial: {
+          caseReference: input.caseReference?.trim() || null,
+          fieldDefinitionId: input.fieldDefinitionId,
+          permittedScopes: [...new Set(input.permittedScopes)].sort(),
+          purposePolicyId: input.purposePolicyId,
+          sensitivityCeiling: input.sensitivityCeiling ?? "internal",
+        },
+      });
+      if (idempotency) {
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["workspace:update"],
+          async (scopedContext) => ({
+            governanceMutationId: (
+              await createGovernanceService(scopedContext).setFieldPolicy({
+                ...input,
+                idempotencyKey: internalGovernanceIdempotencyKey,
+              })
+            ).id,
+          }),
+        );
+        return replayFieldPolicy(
+          context,
+          governanceMutationId(executed.responseReference),
+        );
+      }
       const [row] = await context.database.transaction(async (tx) => {
         const [created] = await tx
           .insert(fieldPolicies)
@@ -180,6 +422,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
       return row!;
     },
     async recordConsent(input: {
+      idempotencyKey: GovernanceIdempotencyKey;
       personId: string;
       purpose: unknown;
       scopes: GovernanceScope[];
@@ -189,7 +432,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
       noticeVersion?: string | null;
       collectionMethod?: string | null;
       metadata?: unknown;
-    }) {
+    }): Promise<ConsentRecordRow> {
       administrative();
       const normalized = normalizeGovernanceInput(input);
       if (!normalized.value)
@@ -197,6 +440,43 @@ export function createGovernanceService(context: ResearchServiceContext) {
           "VALIDATION_FAILED",
           "The consent record is invalid.",
         );
+      await requireVisiblePerson(context, input.personId);
+      const idempotency = governanceIdempotency(context, {
+        idempotencyKey: input.idempotencyKey,
+        operation: "governance.consent.record",
+        requestMaterial: {
+          collectionMethod: input.collectionMethod?.trim() || null,
+          effectiveFrom: normalized.value.effectiveFrom?.toISOString() ?? null,
+          effectiveUntil:
+            normalized.value.effectiveUntil?.toISOString() ?? null,
+          lawfulBasis: normalized.value.lawfulBasis,
+          metadata: (normalized.value.metadata ??
+            {}) as CanonicalRequestMaterial,
+          noticeVersion: input.noticeVersion?.trim() || null,
+          personId: input.personId,
+          purpose: normalized.value.purpose,
+          scopes: [...normalized.value.scopes].sort(),
+        },
+      });
+      if (idempotency) {
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["workspace:update", "person:read"],
+          async (scopedContext) => ({
+            governanceMutationId: (
+              await createGovernanceService(scopedContext).recordConsent({
+                ...input,
+                idempotencyKey: internalGovernanceIdempotencyKey,
+              })
+            ).id,
+          }),
+        );
+        return replayVisibleConsent(
+          context,
+          governanceMutationId(executed.responseReference),
+        );
+      }
       const [row] = await context.database.transaction(async (tx) => {
         const [created] = await tx
           .insert(consentRecords)
@@ -241,12 +521,43 @@ export function createGovernanceService(context: ResearchServiceContext) {
       return row!;
     },
     async withdrawConsent(input: {
+      idempotencyKey: GovernanceIdempotencyKey;
       id: string;
       expectedVersion: number;
       withdrawalEffect?:
         "stop_processing" | "restrict_processing" | "retain_under_hold";
-    }) {
+    }): Promise<ConsentRecordRow> {
       administrative();
+      const withdrawalEffect = input.withdrawalEffect ?? "stop_processing";
+      const idempotency = governanceIdempotency(context, {
+        idempotencyKey: input.idempotencyKey,
+        operation: "governance.consent.withdraw",
+        requestMaterial: {
+          expectedVersion: input.expectedVersion,
+          id: input.id,
+          withdrawalEffect,
+        },
+      });
+      if (idempotency) {
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["workspace:update", "person:read"],
+          async (scopedContext) => ({
+            governanceMutationId: (
+              await createGovernanceService(scopedContext).withdrawConsent({
+                ...input,
+                idempotencyKey: internalGovernanceIdempotencyKey,
+                withdrawalEffect,
+              })
+            ).id,
+          }),
+        );
+        return replayVisibleConsent(
+          context,
+          governanceMutationId(executed.responseReference),
+        );
+      }
       const [row] = await context.database.transaction(async (tx) => {
         // Consent records are themselves sensitive subject data.  Keep this
         // mutation subject-scoped so a workspace administrator cannot use an
@@ -288,7 +599,7 @@ export function createGovernanceService(context: ResearchServiceContext) {
             status: "withdrawn",
             withdrawnAt: new Date(),
             withdrawnBy: actor,
-            withdrawalEffect: input.withdrawalEffect ?? "stop_processing",
+            withdrawalEffect,
             updatedAt: new Date(),
             updatedBy: actor,
             version: sql`${consentRecords.version} + 1`,
@@ -321,13 +632,14 @@ export function createGovernanceService(context: ResearchServiceContext) {
       return checkPurposeCoverage(context, input);
     },
     async requestApproval(input: {
+      idempotencyKey: GovernanceIdempotencyKey;
       personId: string;
       fieldDefinitionId: string;
       purpose: string;
       reason: unknown;
       caseReference?: string | null;
       expiresAt?: Date | null;
-    }) {
+    }): Promise<AccessApprovalRow> {
       if (!context.permissions.has("person:read")) {
         throw createGraphQLError(
           "FORBIDDEN",
@@ -365,6 +677,40 @@ export function createGovernanceService(context: ResearchServiceContext) {
           "VALIDATION_FAILED",
           "An approval reason is required.",
         );
+      const expiresAt =
+        input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const idempotency = governanceIdempotency(context, {
+        idempotencyKey: input.idempotencyKey,
+        operation: "governance.approval.request",
+        requestMaterial: {
+          caseReference: governance.governanceCaseReference,
+          expiresAt: expiresAt.toISOString(),
+          fieldDefinitionId: input.fieldDefinitionId,
+          personId: input.personId,
+          purpose: governance.governancePurpose!,
+          reason: reason.value,
+        },
+      });
+      if (idempotency) {
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["person:read"],
+          async (scopedContext) => ({
+            governanceMutationId: (
+              await createGovernanceService(scopedContext).requestApproval({
+                ...input,
+                expiresAt,
+                idempotencyKey: internalGovernanceIdempotencyKey,
+              })
+            ).id,
+          }),
+        );
+        return replayVisibleApproval(
+          context,
+          governanceMutationId(executed.responseReference),
+        );
+      }
       const [row] = await context.database.transaction(async (tx) => {
         const [created] = await tx
           .insert(accessApprovals)
@@ -396,11 +742,12 @@ export function createGovernanceService(context: ResearchServiceContext) {
       return row!;
     },
     async reviewApproval(input: {
+      idempotencyKey: GovernanceIdempotencyKey;
       id: string;
       expectedVersion: number;
       state: "approved" | "rejected" | "revoked";
       reason: unknown;
-    }) {
+    }): Promise<AccessApprovalRow> {
       administrative();
       const fromState = approvalTransitionSource(input.state);
       const reason = validateApprovalReason(input.reason);
@@ -409,6 +756,36 @@ export function createGovernanceService(context: ResearchServiceContext) {
           "VALIDATION_FAILED",
           "An approval reason is required.",
         );
+      const idempotency = governanceIdempotency(context, {
+        idempotencyKey: input.idempotencyKey,
+        operation: "governance.approval.review",
+        requestMaterial: {
+          expectedVersion: input.expectedVersion,
+          id: input.id,
+          reason: reason.value,
+          state: input.state,
+        },
+      });
+      if (idempotency) {
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          ["workspace:update", "person:read"],
+          async (scopedContext) => ({
+            governanceMutationId: (
+              await createGovernanceService(scopedContext).reviewApproval({
+                ...input,
+                idempotencyKey: internalGovernanceIdempotencyKey,
+                reason: reason.value,
+              })
+            ).id,
+          }),
+        );
+        return replayVisibleApproval(
+          context,
+          governanceMutationId(executed.responseReference),
+        );
+      }
       const [row] = await context.database.transaction(async (tx) => {
         // Approval review is an independent control.  Require visibility of
         // the subject as well as a reviewer other than the requesting

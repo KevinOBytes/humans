@@ -47,11 +47,13 @@ mutation GovernanceCreateConsentRecord($input: CreateConsentInput!) {
 mutation WithdrawConsent(
   $id: UUID!
   $expectedVersion: Int!
+  $idempotencyKey: String!
   $withdrawalEffect: GovernanceWithdrawalEffect
 ) {
   withdrawConsent(
     id: $id
     expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
     withdrawalEffect: $withdrawalEffect
   ) {
     id
@@ -68,6 +70,7 @@ mutation RequestAccessApproval(
   $purpose: String!
   $reason: String!
   $caseReference: String
+  $idempotencyKey: String!
 ) {
   requestAccessApproval(
     personId: $personId
@@ -75,6 +78,7 @@ mutation RequestAccessApproval(
     purpose: $purpose
     reason: $reason
     caseReference: $caseReference
+    idempotencyKey: $idempotencyKey
   ) {
     id
     state
@@ -89,12 +93,14 @@ mutation ReviewAccessApproval(
   $expectedVersion: Int!
   $state: String!
   $reason: String!
+  $idempotencyKey: String!
 ) {
   reviewAccessApproval(
     id: $id
     expectedVersion: $expectedVersion
     state: $state
     reason: $reason
+    idempotencyKey: $idempotencyKey
   ) {
     id
     state

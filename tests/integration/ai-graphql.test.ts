@@ -403,12 +403,14 @@ liveDescribe("canonical AI analyst GraphQL API", () => {
       await caseContext(fixture, actor),
     );
     await governance.createPurposePolicy({
+      idempotencyKey: newId(),
       purpose: "research",
       lawfulBases: ["consent"],
       effectiveFrom: new Date(Date.now() - 60_000),
       state: "active",
     });
     await governance.recordConsent({
+      idempotencyKey: newId(),
       personId,
       purpose: "research",
       scopes: ["read", "ai_operation"],

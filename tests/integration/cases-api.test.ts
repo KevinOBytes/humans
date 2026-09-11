@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
+import { newId } from "@/db/id";
 import { createCasesService } from "@/modules/cases/service";
 import {
   canAccessResource,
@@ -113,6 +114,7 @@ liveDescribe("case membership and resource boundary", () => {
     });
     expect((await service.timeline({ caseId: row.id })).nodes).toHaveLength(1);
     await createGovernanceService(context).withdrawConsent({
+      idempotencyKey: newId(),
       id: person.consentId,
       expectedVersion: 1,
     });

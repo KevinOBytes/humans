@@ -153,6 +153,7 @@ export function registerGovernanceGraphQL() {
       args: {
         id: t.arg({ type: "UUID", required: true }),
         expectedVersion: t.arg.int({ required: true }),
+        idempotencyKey: t.arg.string({ required: true }),
         withdrawalEffect: t.arg({ type: WithdrawalEffect }),
       },
       resolve: async (_root, args, context) =>
@@ -169,6 +170,7 @@ export function registerGovernanceGraphQL() {
         purpose: t.arg.string({ required: true }),
         reason: t.arg.string({ required: true }),
         caseReference: t.arg.string(),
+        idempotencyKey: t.arg.string({ required: true }),
       },
       resolve: async (_root, args, context) => {
         requirePermission(context, "person", "read");
@@ -182,6 +184,7 @@ export function registerGovernanceGraphQL() {
         expectedVersion: t.arg.int({ required: true }),
         state: t.arg.string({ required: true }),
         reason: t.arg.string({ required: true }),
+        idempotencyKey: t.arg.string({ required: true }),
       },
       resolve: async (_root, args, context) =>
         context.services.governance.reviewApproval({

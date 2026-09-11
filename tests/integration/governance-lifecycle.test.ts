@@ -85,6 +85,7 @@ liveDescribe(
       });
       const governance = createGovernanceService(context);
       const policy = await governance.createPurposePolicy({
+        idempotencyKey: newId(),
         purpose: "research",
         lawfulBases: ["consent"],
         effectiveFrom: "2026-01-01T00:00:00Z",
@@ -92,6 +93,7 @@ liveDescribe(
       });
       policyId = policy.id;
       await governance.setFieldPolicy({
+        idempotencyKey: newId(),
         purposePolicyId: policyId,
         fieldDefinitionId: definitionId,
         permittedScopes: ["write", "restricted_read"],
@@ -99,6 +101,7 @@ liveDescribe(
       });
       consentId = (
         await governance.recordConsent({
+          idempotencyKey: newId(),
           personId,
           purpose: "research",
           scopes: ["write", "restricted_read", "ai_operation"],
@@ -207,6 +210,7 @@ liveDescribe(
 
     it("uses the newest field policy and the actual row sensitivity rather than the definition default", async () => {
       await createGovernanceService(context).setFieldPolicy({
+        idempotencyKey: newId(),
         purposePolicyId: policyId,
         fieldDefinitionId: definitionId,
         permittedScopes: ["write"],
@@ -229,6 +233,7 @@ liveDescribe(
       const governance = createGovernanceService(context);
       expect(await service.get(fact.id)).toBeNull();
       const approval = await governance.requestApproval({
+        idempotencyKey: newId(),
         personId,
         fieldDefinitionId: definitionId,
         purpose: "research",
@@ -237,6 +242,7 @@ liveDescribe(
       expect(await service.get(fact.id)).toBeNull();
       await expect(
         governance.reviewApproval({
+          idempotencyKey: newId(),
           id: approval.id,
           expectedVersion: 1,
           state: "approved",
@@ -261,6 +267,7 @@ liveDescribe(
         },
       };
       await createGovernanceService(reviewerContext).reviewApproval({
+        idempotencyKey: newId(),
         id: approval.id,
         expectedVersion: 1,
         state: "approved",
@@ -277,7 +284,11 @@ liveDescribe(
           ),
         );
       expect(audits.length).toBeGreaterThan(0);
-      await governance.withdrawConsent({ id: consentId, expectedVersion: 1 });
+      await governance.withdrawConsent({
+        idempotencyKey: newId(),
+        id: consentId,
+        expectedVersion: 1,
+      });
       expect(await service.get(fact.id)).toBeNull();
       expect(
         (
@@ -356,12 +367,14 @@ liveDescribe(
       expect(result.body?.data?.fact).toBeNull();
       const governance = createGovernanceService(context);
       const approval = await governance.requestApproval({
+        idempotencyKey: newId(),
         personId,
         fieldDefinitionId: definitionId,
         purpose: "research",
         reason: "Documented need",
       });
       await governance.reviewApproval({
+        idempotencyKey: newId(),
         id: approval.id,
         expectedVersion: 1,
         state: "approved",

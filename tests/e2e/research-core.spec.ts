@@ -157,12 +157,14 @@ test("person research loads governed proposals and applies only the reviewed fie
   const serviceContext = await caseContext(fixture, actor);
   const governance = createGovernanceService(serviceContext);
   await governance.createPurposePolicy({
+    idempotencyKey: newId(),
     purpose: "research",
     lawfulBases: ["consent"],
     effectiveFrom: new Date(Date.now() - 60_000),
     state: "active",
   });
   await governance.recordConsent({
+    idempotencyKey: newId(),
     personId,
     purpose: "research",
     scopes: ["read", "write", "ai_operation"],
