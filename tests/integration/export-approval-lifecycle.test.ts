@@ -1,11 +1,12 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
+import { caseMembers } from "@/db/schema/cases";
 import { exportApprovals } from "@/db/schema/export-approvals";
-import { auditEvents } from "@/db/schema/operations";
+import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
 import { rolePermissionKeys } from "@/modules/auth/permissions";
 import type { ResearchServiceContext } from "@/modules/audit/service";
 import { createCasesService } from "@/modules/cases/service";
@@ -53,6 +54,23 @@ const REVIEW = /* GraphQL */ `
   }
 `;
 
+const PENDING = /* GraphQL */ `
+  query PendingExportApprovals($caseId: UUID, $first: Int!) {
+    pendingExportApprovals(caseId: $caseId, first: $first) {
+      id
+      caseId
+      previewHash
+      purpose
+      redactionProfile
+      requestedByPrincipalId
+      state
+      requestReason
+      expiresAt
+      version
+    }
+  }
+`;
+
 liveDescribe("reviewed governed export approval lifecycle", () => {
   let fixture: ResearchFixture;
 
@@ -88,9 +106,22 @@ liveDescribe("reviewed governed export approval lifecycle", () => {
     }>({ jar: owner.jar, query: REQUEST, variables: { input: requestInput } });
     expect(replay.body?.data?.requestExportApproval).toEqual(requested);
 
+    const pendingBeforeReview = await fixture.execute<{
+      pendingExportApprovals: Array<{ id: string; previewHash: string }>;
+    }>({
+      jar: admin.jar,
+      query: PENDING,
+      variables: { caseId: null, first: 25 },
+    });
+    expect(pendingBeforeReview.body?.errors).toBeUndefined();
+    expect(pendingBeforeReview.body?.data?.pendingExportApprovals).toEqual([
+      expect.objectContaining({ id: requested!.id, previewHash: hash }),
+    ]);
+
     const reviewInput = {
       id: requested!.id,
       expectedVersion: 1,
+      expectedPreviewHash: hash,
       decision: "APPROVED",
       reason: "Purpose, scope, provenance and redaction were reviewed.",
       idempotencyKey: "graphql-export-review",
@@ -104,6 +135,22 @@ liveDescribe("reviewed governed export approval lifecycle", () => {
       state: "APPROVED",
       version: 2,
     });
+    const reviewReplay = await fixture.execute<{
+      reviewExportApproval: { id: string; version: number; state: string };
+    }>({ jar: admin.jar, query: REVIEW, variables: { input: reviewInput } });
+    expect(reviewReplay.body?.errors).toBeUndefined();
+    expect(reviewReplay.body?.data?.reviewExportApproval).toEqual(
+      reviewed.body?.data?.reviewExportApproval,
+    );
+    const pendingAfterReview = await fixture.execute<{
+      pendingExportApprovals: Array<{ id: string }>;
+    }>({
+      jar: admin.jar,
+      query: PENDING,
+      variables: { caseId: null, first: 25 },
+    });
+    expect(pendingAfterReview.body?.errors).toBeUndefined();
+    expect(pendingAfterReview.body?.data?.pendingExportApprovals).toEqual([]);
 
     const ownerContext = await caseContext(fixture, owner);
     await expect(
@@ -123,16 +170,27 @@ liveDescribe("reviewed governed export approval lifecycle", () => {
       .from(exportApprovals)
       .where(eq(exportApprovals.id, requested!.id));
     expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      state: "approved",
+      version: 2,
+      previewHash: hash,
+    });
     const events = await fixture.database
       .select()
       .from(auditEvents)
       .where(
-        inArray(auditEvents.action, [
-          "export.approval.requested",
-          "export.approval.reviewed",
-        ]),
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          inArray(auditEvents.action, [
+            "export.approval.requested",
+            "export.approval.reviewed",
+          ]),
+        ),
       );
     expect(events).toHaveLength(2);
+    expect(
+      events.filter((event) => event.action === "export.approval.reviewed"),
+    ).toHaveLength(1);
     expect(JSON.stringify(events)).not.toContain(requestInput.requestReason);
   });
 
@@ -158,6 +216,7 @@ liveDescribe("reviewed governed export approval lifecycle", () => {
           input: {
             id: approval.id,
             expectedVersion: 1,
+            expectedPreviewHash: hash,
             decision: "APPROVED",
             reason: "Self approval must fail.",
             idempotencyKey: newId(),
@@ -174,6 +233,7 @@ liveDescribe("reviewed governed export approval lifecycle", () => {
           input: {
             id: approval.id,
             expectedVersion: 2,
+            expectedPreviewHash: hash,
             decision: "APPROVED",
             reason: "Stale review must fail.",
             idempotencyKey: newId(),
@@ -195,6 +255,7 @@ liveDescribe("reviewed governed export approval lifecycle", () => {
     await createExportApprovalService(adminContext).review({
       id: approval.id,
       expectedVersion: 1,
+      expectedPreviewHash: hash,
       decision: "approved",
       reason: "Approved after independent review.",
       idempotencyKey: newId(),
@@ -257,11 +318,33 @@ liveDescribe("reviewed governed export approval lifecycle", () => {
       input: {
         id: approval.id,
         expectedVersion: 1,
+        expectedPreviewHash: hash,
         decision: "APPROVED",
         reason: "Case scope was independently reviewed.",
         idempotencyKey: newId(),
       },
     };
+
+    const ordinaryQueue = await fixture.execute<{
+      pendingExportApprovals: Array<{ id: string }>;
+    }>({
+      jar: ordinary.jar,
+      query: PENDING,
+      variables: { caseId: researchCase.id, first: 25 },
+    });
+    expect(ordinaryQueue.body?.errors).toBeUndefined();
+    expect(ordinaryQueue.body?.data?.pendingExportApprovals).toEqual([]);
+    const reviewerQueue = await fixture.execute<{
+      pendingExportApprovals: Array<{ id: string; previewHash: string }>;
+    }>({
+      jar: analyst.jar,
+      query: PENDING,
+      variables: { caseId: researchCase.id, first: 25 },
+    });
+    expect(reviewerQueue.body?.errors).toBeUndefined();
+    expect(reviewerQueue.body?.data?.pendingExportApprovals).toEqual([
+      expect.objectContaining({ id: approval.id, previewHash: hash }),
+    ]);
 
     expectGraphQLError(
       await fixture.execute({ jar: ordinary.jar, query: REVIEW, variables }),
@@ -275,5 +358,105 @@ liveDescribe("reviewed governed export approval lifecycle", () => {
       state: "APPROVED",
       version: 2,
     });
+    await fixture.database
+      .update(caseMembers)
+      .set({ deletedAt: new Date(), deletedBy: owner.principalId })
+      .where(
+        and(
+          eq(caseMembers.workspaceId, owner.workspaceId),
+          eq(caseMembers.caseId, researchCase.id),
+          eq(caseMembers.principalId, analyst.principalId),
+        ),
+      );
+    expectGraphQLError(
+      await fixture.execute({ jar: analyst.jar, query: REVIEW, variables }),
+      "FORBIDDEN",
+    );
+  });
+
+  it("rolls back the approval row, request audit, and idempotency claim on injected insert failure", async () => {
+    const owner = await fixture.createActor();
+    const failureHash = "d4".repeat(32);
+    await fixture.database.execute(
+      sql.raw(
+        "DROP TRIGGER IF EXISTS test_fail_export_approval_insert ON export_approvals",
+      ),
+    );
+    await fixture.database.execute(
+      sql.raw("DROP FUNCTION IF EXISTS test_fail_export_approval_insert()"),
+    );
+    await fixture.database.execute(
+      sql.raw(`
+      CREATE FUNCTION test_fail_export_approval_insert() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'injected export approval insert failure';
+      END;
+      $$
+    `),
+    );
+    await fixture.database.execute(
+      sql.raw(`
+      CREATE TRIGGER test_fail_export_approval_insert
+      BEFORE INSERT ON export_approvals
+      FOR EACH ROW EXECUTE FUNCTION test_fail_export_approval_insert()
+    `),
+    );
+    try {
+      const failed = await fixture.execute({
+        jar: owner.jar,
+        query: REQUEST,
+        variables: {
+          input: {
+            purpose: "rollback export",
+            caseId: null,
+            previewHash: failureHash,
+            redactionProfile: "CONFIDENTIAL",
+            requestReason: "This transaction is expected to roll back.",
+            expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+            idempotencyKey: "graphql-export-request-rollback",
+          },
+        },
+      });
+      expect(failed.body?.errors).toBeDefined();
+    } finally {
+      await fixture.database.execute(
+        sql.raw(
+          "DROP TRIGGER IF EXISTS test_fail_export_approval_insert ON export_approvals",
+        ),
+      );
+      await fixture.database.execute(
+        sql.raw("DROP FUNCTION IF EXISTS test_fail_export_approval_insert()"),
+      );
+    }
+
+    await expect(
+      fixture.database
+        .select()
+        .from(exportApprovals)
+        .where(eq(exportApprovals.previewHash, failureHash)),
+    ).resolves.toHaveLength(0);
+    await expect(
+      fixture.database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.action, "export.approval.requested"),
+          ),
+        ),
+    ).resolves.toHaveLength(0);
+    await expect(
+      fixture.database
+        .select()
+        .from(idempotencyKeys)
+        .where(
+          and(
+            eq(idempotencyKeys.workspaceId, owner.workspaceId),
+            eq(idempotencyKeys.operation, "export.approval.request"),
+          ),
+        ),
+    ).resolves.toHaveLength(0);
   });
 });

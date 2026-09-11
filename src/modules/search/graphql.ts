@@ -271,6 +271,7 @@ const ReviewExportApprovalInput = builder.inputType(
     fields: (t) => ({
       id: t.field({ type: "UUID", required: true }),
       expectedVersion: t.int({ required: true }),
+      expectedPreviewHash: t.string({ required: true }),
       decision: t.field({ type: ExportApprovalDecision, required: true }),
       reason: t.string({ required: true }),
       idempotencyKey: t.string({ required: true }),
@@ -561,6 +562,25 @@ export function registerSearchGraphQL(): void {
       resolve: (_root, args, context) => {
         requirePermission(context, "savedQuery", "read");
         return context.services.search.read(args.id);
+      },
+    }),
+    pendingExportApprovals: t.field({
+      type: [ExportApprovalType],
+      nullable: false,
+      args: {
+        caseId: t.arg({ type: "UUID" }),
+        first: t.arg.int(),
+      },
+      complexity: (args) => ({
+        field: 10,
+        multiplier: Math.min(Math.max(args.first ?? 25, 1), 50),
+      }),
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "read");
+        return context.services.exportApprovals.listPending({
+          caseId: args.caseId ?? null,
+          first: args.first ?? undefined,
+        });
       },
     }),
   }));

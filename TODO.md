@@ -5,12 +5,16 @@ approval records bind one requester to the exact workspace, purpose, optional ca
 redaction profile, deterministic preview hash, and expiry. Independent owner/admin
 or assigned case review is versioned and replay-safe, and governed commit now
 requires the matching non-expired approved record after validating its signed
-preview token. Generated request/review operations return approval metadata without
-exported values. Focused unit/schema tests pass; the PostgreSQL/GraphQL lifecycle
-suite is present but skipped because `TEST_DATABASE_URL` is absent. No requirement
-row is closed. Live migration/object-store/browser/provider proof, stale-artifact
-reconciliation, retention cleanup, bulk alerts, and the remaining whole-product
-matrix remain open.
+preview token. Current reviewer authority is checked before state/version/expiry
+disclosure and rechecked on idempotent replay. The evidence workspace consumes the
+generated preview/request/review/commit operations and exposes a current-role-scoped
+pending queue; its UI carries the exact preview fingerprint and renders metadata,
+not exported values. Focused unit/component/schema tests pass, including removed,
+inactive, and demoted reviewer scope plus fail-closed commit. The expanded
+PostgreSQL/GraphQL replay and rollback lifecycle suite is present but gated because
+`TEST_DATABASE_URL` is absent. No requirement row is closed. Live migration,
+object-store, browser, and provider proof, stale-artifact reconciliation, retention
+cleanup, bulk alerts, and the remaining whole-product matrix remain open.
 
 Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
 source-comparison, duplicate, contradiction and descriptive graph analysis now

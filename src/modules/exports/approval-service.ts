@@ -1,8 +1,9 @@
 import "server-only";
 
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
+import { caseMembers, cases } from "@/db/schema/cases";
 import { exportApprovals } from "@/db/schema/export-approvals";
 import { createGraphQLError, publicErrorMessage } from "@/graphql/errors";
 import {
@@ -202,6 +203,48 @@ async function replay(
   return projection(row);
 }
 
+async function isCurrentReviewer(
+  context: ResearchServiceContext,
+  row: ExportApprovalRow,
+): Promise<boolean> {
+  if (
+    context.actor.type !== "user" ||
+    row.requestedByPrincipalId === context.actor.principalId
+  )
+    return false;
+  if (
+    context.permissions.has("workspace:update") &&
+    (context.actor.role === "owner" || context.actor.role === "admin")
+  )
+    return true;
+  if (!row.caseId) return false;
+  const membership = await createCasesRepository(context.database).get(
+    context.workspaceId,
+    row.caseId,
+    context.actor.principalId,
+  );
+  return !(
+    membership?.case.state !== "active" ||
+    (membership.role !== "owner" && membership.role !== "reviewer")
+  );
+}
+
+async function requireCurrentReviewer(
+  context: ResearchServiceContext,
+  row: ExportApprovalRow,
+): Promise<void> {
+  if (!(await isCurrentReviewer(context, row))) return forbidden();
+}
+
+async function replayReview(
+  context: ResearchServiceContext,
+  id: string,
+): Promise<ExportApprovalProjection> {
+  const row = await loadApproval(context, id);
+  await requireCurrentReviewer(context, row);
+  return projection(row);
+}
+
 function exactBinding(row: ExportApprovalRow, input: Binding): boolean {
   return (
     row.workspaceId === input.workspaceId &&
@@ -215,6 +258,52 @@ function exactBinding(row: ExportApprovalRow, input: Binding): boolean {
 
 export function createExportApprovalService(context: ResearchServiceContext) {
   return {
+    async listPending(input: {
+      caseId?: string | null;
+      first?: number;
+    }): Promise<readonly ExportApprovalProjection[]> {
+      if (
+        context.actor.type !== "user" ||
+        !context.permissions.has("workspace:read")
+      )
+        return forbidden();
+      const first = input.first ?? 25;
+      if (!Number.isSafeInteger(first) || first < 1 || first > 50)
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The pending approval page size is invalid.",
+        );
+      const caseId = input.caseId ?? null;
+      const workspaceReviewer =
+        context.permissions.has("workspace:update") &&
+        (context.actor.role === "owner" || context.actor.role === "admin");
+      const caseReviewerScope = sql`EXISTS (SELECT 1 FROM ${caseMembers} INNER JOIN ${cases} ON ${cases.workspaceId} = ${caseMembers.workspaceId} AND ${cases.id} = ${caseMembers.caseId} WHERE ${caseMembers.workspaceId} = ${exportApprovals.workspaceId} AND ${caseMembers.caseId} = ${exportApprovals.caseId} AND ${caseMembers.principalId} = ${context.actor.principalId}::uuid AND ${caseMembers.deletedAt} IS NULL AND ${cases.deletedAt} IS NULL AND ${cases.state} = 'active' AND ${caseMembers.role} IN ('owner', 'reviewer'))`;
+      const rows = await context.database
+        .select()
+        .from(exportApprovals)
+        .where(
+          and(
+            eq(exportApprovals.workspaceId, context.workspaceId),
+            ne(
+              exportApprovals.requestedByPrincipalId,
+              context.actor.principalId,
+            ),
+            eq(exportApprovals.state, "requested"),
+            gt(exportApprovals.expiresAt, new Date()),
+            caseId ? eq(exportApprovals.caseId, caseId) : undefined,
+            workspaceReviewer ? undefined : caseReviewerScope,
+          ),
+        )
+        .orderBy(desc(exportApprovals.createdAt), desc(exportApprovals.id))
+        .limit(first);
+      const authorized: ExportApprovalProjection[] = [];
+      for (const row of rows) {
+        if (await isCurrentReviewer(context, row))
+          authorized.push(projection(row));
+      }
+      return authorized;
+    },
+
     async request(input: {
       purpose: string;
       caseId?: string | null;
@@ -320,6 +409,7 @@ export function createExportApprovalService(context: ResearchServiceContext) {
     async review(input: {
       id: string;
       expectedVersion: number;
+      expectedPreviewHash: string;
       decision: "approved" | "rejected";
       reason: string;
       idempotencyKey: IdempotencyKey;
@@ -331,6 +421,7 @@ export function createExportApprovalService(context: ResearchServiceContext) {
         "The export review reason",
         1_000,
       );
+      const expectedPreviewHash = normalizeHash(input.expectedPreviewHash);
       if (
         !Number.isSafeInteger(input.expectedVersion) ||
         input.expectedVersion < 1 ||
@@ -347,6 +438,7 @@ export function createExportApprovalService(context: ResearchServiceContext) {
         requestMaterial: {
           decision: input.decision,
           expectedVersion: input.expectedVersion,
+          expectedPreviewHash,
           id: input.id,
           reason,
         },
@@ -360,42 +452,27 @@ export function createExportApprovalService(context: ResearchServiceContext) {
             exportApprovalId: (
               await createExportApprovalService(scoped).review({
                 ...input,
+                expectedPreviewHash,
                 reason,
                 idempotencyKey: internalIdempotencyKey,
               })
             ).id,
           }),
         );
-        return replay(context, approvalId(result.responseReference));
+        return replayReview(context, approvalId(result.responseReference));
       }
 
       return context.database.transaction(async (database) => {
         const scoped = { ...context, database };
         const current = await loadApproval(scoped, input.id);
-        if (current.requestedByPrincipalId === actor.principalId)
-          return forbidden();
+        await requireCurrentReviewer(scoped, current);
         if (
+          current.previewHash !== expectedPreviewHash ||
           current.state !== "requested" ||
           current.version !== input.expectedVersion ||
           current.expiresAt.getTime() <= Date.now()
         )
           throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
-
-        const workspaceReviewer =
-          context.permissions.has("workspace:update") &&
-          (actor.role === "owner" || actor.role === "admin");
-        let caseReviewer = false;
-        if (current.caseId) {
-          const membership = await createCasesRepository(database).get(
-            context.workspaceId,
-            current.caseId,
-            actor.principalId,
-          );
-          caseReviewer =
-            membership?.case.state === "active" &&
-            (membership.role === "owner" || membership.role === "reviewer");
-        }
-        if (!workspaceReviewer && !caseReviewer) return forbidden();
 
         const reviewedAt = new Date();
         if (current.expiresAt.getTime() <= reviewedAt.getTime())

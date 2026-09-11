@@ -13,6 +13,7 @@ type ExportPreview = Readonly<{
     redacted: number;
   }>;
   approvalRequired: boolean;
+  previewHash: string;
   expiresAt: string;
 }>;
 
@@ -50,6 +51,9 @@ export function ExportPreviewPanel({
         Purpose: {preview.purpose}
         {preview.caseId ? ` · Case ${preview.caseId}` : ""} · expires{" "}
         {new Date(preview.expiresAt).toLocaleString()}
+      </p>
+      <p className="text-muted-foreground font-mono text-xs break-all">
+        Preview fingerprint: <span>{preview.previewHash}</span>
       </p>
       <ul className="bg-muted max-h-48 overflow-auto rounded-lg p-3 text-xs">
         {preview.rows.map((row) => (

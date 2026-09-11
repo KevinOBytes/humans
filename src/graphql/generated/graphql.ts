@@ -932,6 +932,7 @@ export type ReviewDeletionRequestInput = {
 
 export type ReviewExportApprovalInput = {
   decision: ExportApprovalDecision;
+  expectedPreviewHash: string;
   expectedVersion: number;
   id: string;
   idempotencyKey: string;
@@ -3475,6 +3476,33 @@ export type CommitExportMutation = {
     expiresAt: string | null;
     createdAt: string | null;
   } | null;
+};
+
+export type PendingExportApprovalsQueryVariables = Exact<{
+  caseId?: string | null | undefined;
+  first: number;
+}>;
+
+export type PendingExportApprovalsQuery = {
+  pendingExportApprovals: Array<{
+    id: string | null;
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    previewHash: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    requestedByPrincipalId: string | null;
+    reviewedByPrincipalId: string | null;
+    state: ExportApprovalState | null;
+    requestReason: string | null;
+    decisionReason: string | null;
+    expiresAt: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+    requestAuditReference: string | null;
+    reviewAuditReference: string | null;
+    createdAt: string | null;
+  }>;
 };
 
 export type RequestExportApprovalMutationVariables = Exact<{
@@ -9070,6 +9098,37 @@ export const CommitExportDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   CommitExportMutation,
   CommitExportMutationVariables
+>;
+export const PendingExportApprovalsDocument = new TypedDocumentString(
+  `
+    query PendingExportApprovals($caseId: UUID, $first: Int!) {
+  pendingExportApprovals(caseId: $caseId, first: $first) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:72c8362d2e8cad19df4d5bf8a6a68210cdb9a67a7f7c4f029fdc010eb74cb9dd",
+  },
+) as unknown as TypedDocumentString<
+  PendingExportApprovalsQuery,
+  PendingExportApprovalsQueryVariables
 >;
 export const RequestExportApprovalDocument = new TypedDocumentString(
   `
