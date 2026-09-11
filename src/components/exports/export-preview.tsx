@@ -1,6 +1,20 @@
 "use client";
 
-import type { ExportPreview } from "@/modules/exports/preview";
+type ExportPreview = Readonly<{
+  purpose: string;
+  caseId: string | null;
+  redactionProfile: string;
+  rows: readonly Readonly<{
+    id: string;
+    redactedFields: readonly string[];
+  }>[];
+  fieldCounts: Readonly<{
+    visible: number;
+    redacted: number;
+  }>;
+  approvalRequired: boolean;
+  expiresAt: string;
+}>;
 
 export function ExportPreviewPanel({
   preview,
