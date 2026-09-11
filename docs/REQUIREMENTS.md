@@ -1,5 +1,19 @@
 # MVP requirements
 
+Production-completion Task 1 local checkpoint (2026-09-11): governed export
+previews now expose their non-secret deterministic hash and can create a durable,
+workspace/actor/purpose/case/redaction/expiry-bound approval request. Review is
+optimistically versioned, replay-safe, and limited to an independent workspace
+owner/administrator or assigned active-case owner/reviewer. Export commit verifies
+the signed preview token and then requires the exact non-expired approved binding;
+it cannot silently downgrade an approval-required export. Approval request/review
+audits retain metadata only and never exported values. Focused unit/schema tests
+cover authorization, self-review, case role scope, stale versions, binding changes,
+expiry, and idempotent replay; the PostgreSQL/GraphQL lifecycle suite remains gated
+because `TEST_DATABASE_URL` is absent. This does not close an acceptance row: live
+migration, object-store, browser, retention/reconciliation, bulk-alert, and hosted
+provider evidence remain open.
+
 Task 4 local checkpoint (2026-09-11): the generalized privacy lifecycle covers six request types with workspace/resource/case checks, verification-file evidence, independent reviewer approval, deadlines, optimistic transitions, idempotent creation replay, and completion evidence. Retention evaluation is deterministic and non-destructive; legal holds take precedence, and hard-delete/anonymization policies require review. New deletion fulfillment queues the existing worker instead of deleting synchronously. Processor results remain visible and retryable, with unconfigured external adapters explicitly failed rather than assumed complete. Historical deletion rows are preserved and represented explicitly without manufacturing verification evidence. Unit tests and gated lifecycle tests cover the new boundary. Live PostgreSQL migration/lifecycle proof, external search/cache/email/AI propagation adapters, complete retention enforcement, legacy-settings-path convergence, and browser acceptance remain open; HUM-FR-005 is not closed.
 
 Task 3 local checkpoint (2026-09-11): AI proposals are retained in `ai_review_suggestions` with versioned typed values, source/evidence references, confidence, uncertainty, provider/model, originating run, and prompt-policy version. Explicit human accept/reject/defer and approved batch decisions retain the original proposal and link accepted resources back to that record. Current workspace, case, source visibility and purpose coverage for AI/write are checked before acceptance; fact/relationship writes and Task 2 evidence assertions share the decision transaction. AI-created relationships remain inferred; acceptance is not independent evidence approval or an adverse decision. This supersedes the older web-research description below: the browser no longer sends AI suggestions directly to `UpdatePerson`, and original proposals are not editable in the review queue. Focused validation/queue tests, updated panel tests, and gated `ai-review-lifecycle.test.ts` cover this boundary. Live PostgreSQL/browser/provider verification, retention deletion/expiry for retained provenance, and HUM-FR-023 closure remain open.
@@ -532,13 +546,14 @@ export rows preserve their authorized sensitivity and field provenance; relation
 source and target subjects plus fact field definitions are checked for purpose
 coverage; case exports require a linked case resource; and generated artifact
 downloads re-check state, expiry, case membership, legal holds and current coverage.
-Unapproved high-sensitivity commits fail closed, and non-public typed fact values are
+Unapproved high-sensitivity commits fail closed against a durable, independently
+reviewed, exact preview binding, and non-public typed fact values are
 not exposed through unscoped full-text search. Governed export artifacts retain a
 durable writing/failed state, and the same idempotency-bound commit can replay the
 deterministic object-store write after a process crash or provider timeout;
 concurrent retries reconcile to one ready artifact. Automated stale-artifact
-reconciliation, reviewed approval records, retention cleanup, and live
-database/provider/browser acceptance remain required.
+reconciliation, retention cleanup, and live database/provider/browser acceptance
+remain required.
 
 ### Consent-governed research Task 2 backend checkpoint
 

@@ -146,6 +146,17 @@ export type AuditEventFilterInput = {
 
 export type AuditOutcome = "FAILURE" | "SUCCESS";
 
+export type CommitExportInput = {
+  caseId?: string | null | undefined;
+  commitToken: string;
+  first?: number | null | undefined;
+  format: string;
+  idempotencyKey: string;
+  purpose: string;
+  query: string;
+  redactionProfile: ExportRedactionProfile;
+};
+
 export type ConsentCoverageReason =
   | "CASE_NOT_PERMITTED"
   | "COVERED"
@@ -519,6 +530,10 @@ export type DeletionRequestState =
   | "REJECTED"
   | "REVIEWING";
 
+export type ExportApprovalDecision = "APPROVED" | "REJECTED";
+
+export type ExportApprovalState = "APPROVED" | "REJECTED" | "REQUESTED";
+
 export type ExportRedactionProfile =
   "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
@@ -871,6 +886,16 @@ export type ReplayGraphSnapshotInput = {
   snapshotId: string;
 };
 
+export type RequestExportApprovalInput = {
+  caseId?: string | null | undefined;
+  expiresAt: string;
+  idempotencyKey: string;
+  previewHash: string;
+  purpose: string;
+  redactionProfile: ExportRedactionProfile;
+  requestReason: string;
+};
+
 export type RerunGraphAnalysisInput = {
   algorithm: GraphAnalysisAlgorithm;
   snapshotId: string;
@@ -903,6 +928,14 @@ export type ReviewDeletionRequestInput = {
   idempotencyKey?: string | null | undefined;
   notes?: string | null | undefined;
   state: DeletionRequestState;
+};
+
+export type ReviewExportApprovalInput = {
+  decision: ExportApprovalDecision;
+  expectedVersion: number;
+  id: string;
+  idempotencyKey: string;
+  reason: string;
 };
 
 export type ReviewIdentityCandidateInput = {
@@ -3417,9 +3450,82 @@ export type PreviewExportMutation = {
     rows: unknown;
     fieldCounts: unknown;
     approvalRequired: boolean | null;
+    previewHash: string | null;
     expiresAt: string | null;
     commitToken: string | null;
     provenanceManifest: unknown;
+  } | null;
+};
+
+export type CommitExportMutationVariables = Exact<{
+  input: CommitExportInput;
+}>;
+
+export type CommitExportMutation = {
+  commitExport: {
+    id: string | null;
+    fileId: string | null;
+    caseId: string | null;
+    purpose: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    format: string | null;
+    state: string | null;
+    rowCount: number | null;
+    fieldCounts: unknown;
+    expiresAt: string | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type RequestExportApprovalMutationVariables = Exact<{
+  input: RequestExportApprovalInput;
+}>;
+
+export type RequestExportApprovalMutation = {
+  requestExportApproval: {
+    id: string | null;
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    previewHash: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    requestedByPrincipalId: string | null;
+    reviewedByPrincipalId: string | null;
+    state: ExportApprovalState | null;
+    requestReason: string | null;
+    decisionReason: string | null;
+    expiresAt: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+    requestAuditReference: string | null;
+    reviewAuditReference: string | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type ReviewExportApprovalMutationVariables = Exact<{
+  input: ReviewExportApprovalInput;
+}>;
+
+export type ReviewExportApprovalMutation = {
+  reviewExportApproval: {
+    id: string | null;
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    previewHash: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    requestedByPrincipalId: string | null;
+    reviewedByPrincipalId: string | null;
+    state: ExportApprovalState | null;
+    requestReason: string | null;
+    decisionReason: string | null;
+    expiresAt: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+    requestAuditReference: string | null;
+    reviewAuditReference: string | null;
+    createdAt: string | null;
   } | null;
 };
 
@@ -8926,6 +9032,7 @@ export const PreviewExportDocument = new TypedDocumentString(
     rows
     fieldCounts
     approvalRequired
+    previewHash
     expiresAt
     commitToken
     provenanceManifest
@@ -8933,11 +9040,98 @@ export const PreviewExportDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:dcffb7283a793499f0835280a9dfa9fdbd071945a770d08520360cc422c19a6c",
+    hash: "sha256:6038de4825cc3ae734bdb0c2ca2d64a52c932cb1beb80802b45e6e2a84817611",
   },
 ) as unknown as TypedDocumentString<
   PreviewExportMutation,
   PreviewExportMutationVariables
+>;
+export const CommitExportDocument = new TypedDocumentString(
+  `
+    mutation CommitExport($input: CommitExportInput!) {
+  commitExport(input: $input) {
+    id
+    fileId
+    caseId
+    purpose
+    redactionProfile
+    format
+    state
+    rowCount
+    fieldCounts
+    expiresAt
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:f82b5a81f2669d4e935cd53a5ba6828007377eb4c5978c03eaaf6ec5c37e08d9",
+  },
+) as unknown as TypedDocumentString<
+  CommitExportMutation,
+  CommitExportMutationVariables
+>;
+export const RequestExportApprovalDocument = new TypedDocumentString(
+  `
+    mutation RequestExportApproval($input: RequestExportApprovalInput!) {
+  requestExportApproval(input: $input) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:f6a67fd3fa3ddd0e5aefc28cd66a0eea98674c0b40253734558aadae5736e3c1",
+  },
+) as unknown as TypedDocumentString<
+  RequestExportApprovalMutation,
+  RequestExportApprovalMutationVariables
+>;
+export const ReviewExportApprovalDocument = new TypedDocumentString(
+  `
+    mutation ReviewExportApproval($input: ReviewExportApprovalInput!) {
+  reviewExportApproval(input: $input) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:236bf510e091c055cc5adc408a28d06a9435cd52f63cf6faec9dddca7495fe4e",
+  },
+) as unknown as TypedDocumentString<
+  ReviewExportApprovalMutation,
+  ReviewExportApprovalMutationVariables
 >;
 export const ResearchViewerDocument = new TypedDocumentString(
   `
