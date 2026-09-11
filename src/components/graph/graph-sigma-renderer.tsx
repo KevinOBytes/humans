@@ -20,7 +20,12 @@ import {
   deterministicCirclePositions,
   toGraphologyGraph,
 } from "@/modules/graph/transform";
-import type { GraphPosition, GraphResult } from "@/modules/graph/types";
+import type {
+  GraphPosition,
+  GraphResult,
+  GraphRelationshipState,
+} from "@/modules/graph/types";
+import { relationshipStateStyle } from "./relationship-state-style";
 
 import type { GraphRendererProps } from "./graph-renderer";
 import {
@@ -102,7 +107,10 @@ function prepareGraph(
   });
   graph.forEachEdge((edge, attributes) => {
     graph.mergeEdgeAttributes(edge, {
-      color: "#64748b",
+      color:
+        relationshipStateStyle[attributes.state as GraphRelationshipState]
+          ?.stroke ?? "#64748b",
+      label: `${attributes.label} · ${attributes.state}`,
       size:
         typeof attributes.strength === "number"
           ? 1 + Math.max(0, Math.min(1, attributes.strength)) * 2

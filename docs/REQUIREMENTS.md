@@ -476,6 +476,20 @@ production performance evidence.
 
 ## Traceability rules
 
+### Consent-governed research Task 5 bounded UI checkpoint
+
+Person records now expose explicit-purpose consent checks through generated GraphQL.
+`/cases` provides membership-scoped case listing and paginated linked-resource
+timelines; switching cases clears old results before requesting new ones. Fact cards
+show sensitivity and review state alongside existing confidence, time and evidence.
+Graph edges show evidence-state color/text, editor dash patterns and inspector time
+intervals; the existing confirmation/versioned mutation adapter is unchanged.
+Focused component tests cover bounded denials, coverage invalidation, case-result
+clearing and independent synthetic competing claims. No acceptance row is closed:
+full privacy/hold/case administration UI, per-field coverage, graph source/case
+metadata, export previews, legacy backfill and hosted migration remain open.
+See `docs/operations/consent-governance.md` for verification limits.
+
 ### Consent-governed research Task 2 backend checkpoint
 
 The branch adds case membership and resource links, shared visibility narrowing,

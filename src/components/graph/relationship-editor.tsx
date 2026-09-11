@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toRelationshipEditorGraph } from "@/modules/graph/transform";
 import type { GraphResult } from "@/modules/graph/types";
+import { relationshipStateStyle } from "./relationship-state-style";
 
 type EditorNode = Node<{ label: string }, "person">;
 type EditorEdge = Edge<{ relationshipId: string; version: number }>;
@@ -135,8 +136,9 @@ export function RelationshipEditor({
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        label: edge.label,
-        ariaLabel: `${edge.label} relationship from ${people.get(edge.source)} to ${people.get(edge.target)}, version ${relationship.version}`,
+        label: `${edge.label} · ${relationship.state}`,
+        style: relationshipStateStyle[relationship.state],
+        ariaLabel: `${edge.label} relationship from ${people.get(edge.source)} to ${people.get(edge.target)}, ${relationship.state}, version ${relationship.version}`,
         data: {
           relationshipId: relationship.relationshipId,
           version: relationship.version,
@@ -309,7 +311,9 @@ export function RelationshipEditor({
             <DialogDescription>
               One hop around {people.get(focusId) ?? "the selected person"}.
               Dragging changes only saved-view positions. Dropping a connection
-              opens a form and never writes automatically.
+              opens a form and never writes automatically. Evidence-state
+              promotion requires the evidence review flow; this editor never
+              promotes inferred or disputed claims.
             </DialogDescription>
           </div>
           <Button

@@ -19,6 +19,13 @@ Browser
 
 The browser must never import database repositories. Resolvers and background jobs share domain services so authorization, validation, workspace scoping, redaction, and audit behavior do not diverge.
 
+Consent and case panels consume generated `ConsentCoverage`, `ResearchCases` and
+`CaseTimeline` operations. Coverage is a request-specific observation, not a client
+authorization grant. Purpose/field/case edits invalidate earlier coverage and fence
+late responses. Case changes clear old timelines before fetching; server policy
+remains authoritative. Person links do not implicitly carry case authority into
+unrelated pages. Graph styling cannot promote a relationship's evidence state.
+
 ## Authentication lifecycle
 
 Better Auth remains the identity/session authority. `AUTH_REGISTRATION_MODE`

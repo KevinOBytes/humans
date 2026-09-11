@@ -114,6 +114,16 @@ export function PersonProfile({
                 </p>
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                   <div>
+                    <dt className="text-muted-foreground">Sensitivity</dt>
+                    <dd className="mt-1 font-semibold">{fact.sensitivity}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Review state</dt>
+                    <dd className="mt-1 font-semibold">
+                      {fact.reviewState ?? "Not reviewed"}
+                    </dd>
+                  </div>
+                  <div>
                     <dt className="text-muted-foreground">Confidence</dt>
                     <dd className="mt-1 font-semibold">
                       {fact.confidence === null || fact.confidence === undefined
@@ -130,6 +140,16 @@ export function PersonProfile({
                     </dd>
                   </div>
                 </dl>
+                <p className="text-muted-foreground mt-4 text-xs">
+                  Consent coverage is not asserted by this field display. Check
+                  the intended purpose and operation before processing.
+                </p>
+                <Link
+                  href={`/people/${person.id}?view=governance`}
+                  className="text-primary mt-2 inline-block text-sm underline"
+                >
+                  Check consent & purpose
+                </Link>
                 {actions?.[fact.id]}
 
                 {fact.revisions.length > 0 ? (
