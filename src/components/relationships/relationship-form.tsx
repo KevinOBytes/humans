@@ -15,9 +15,16 @@ import { Label } from "@/components/ui/label";
 import { executeBrowserGraphQL } from "@/graphql/client";
 import { CreateRelationshipDocument } from "@/graphql/generated/graphql";
 
-function optionalUtcDate(value: FormDataEntryValue | null) {
+function optionalUtcDate(
+  value: FormDataEntryValue | null,
+  yearBoundary?: "start" | "end",
+) {
   const date = String(value ?? "").trim();
-  return date ? `${date}T00:00:00.000Z` : null;
+  if (!date) return null;
+  const year = date.slice(0, 4);
+  if (yearBoundary === "start") return `${year}-01-01T00:00:00.000Z`;
+  if (yearBoundary === "end") return `${year}-12-31T23:59:59.999Z`;
+  return `${date}T00:00:00.000Z`;
 }
 
 export function RelationshipForm({
@@ -45,6 +52,25 @@ export function RelationshipForm({
     if (pending) return;
     const formElement = event.currentTarget;
     const data = new FormData(formElement);
+    const temporalSemantics = String(data.get("temporalSemantics")) as
+      | "EXACT"
+      | "APPROXIMATE"
+      | "BEFORE"
+      | "AFTER"
+      | "BETWEEN"
+      | "YEAR_ONLY"
+      | "UNKNOWN";
+    const temporalPrecision = String(data.get("temporalPrecision")) as
+      | "INSTANT"
+      | "SECOND"
+      | "MINUTE"
+      | "HOUR"
+      | "DAY"
+      | "MONTH"
+      | "YEAR"
+      | "RANGE"
+      | "UNKNOWN";
+    const yearOnly = temporalSemantics === "YEAR_ONLY";
     setPending(true);
     setFeedback(null);
     const result = await executeBrowserGraphQL(CreateRelationshipDocument, {
@@ -56,26 +82,16 @@ export function RelationshipForm({
         explicitConfirmed: true,
         state: String(data.get("state")).toLowerCase(),
         confidence: Number(data.get("confidence")),
-        temporalSemantics: String(data.get("temporalSemantics")) as
-          | "EXACT"
-          | "APPROXIMATE"
-          | "BEFORE"
-          | "AFTER"
-          | "BETWEEN"
-          | "YEAR_ONLY"
-          | "UNKNOWN",
-        temporalPrecision: String(data.get("temporalPrecision")) as
-          | "INSTANT"
-          | "SECOND"
-          | "MINUTE"
-          | "HOUR"
-          | "DAY"
-          | "MONTH"
-          | "YEAR"
-          | "RANGE"
-          | "UNKNOWN",
-        validFrom: optionalUtcDate(data.get("validFrom")),
-        validUntil: optionalUtcDate(data.get("validUntil")),
+        temporalSemantics,
+        temporalPrecision,
+        validFrom: optionalUtcDate(
+          data.get("validFrom"),
+          yearOnly ? "start" : undefined,
+        ),
+        validUntil: optionalUtcDate(
+          data.get("validUntil"),
+          yearOnly ? "end" : undefined,
+        ),
         observedAt: optionalUtcDate(data.get("observedAt")),
         creationMethod: String(data.get("creationMethod")).toLowerCase(),
         sensitivity: String(data.get("sensitivity")) as

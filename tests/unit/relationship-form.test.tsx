@@ -102,6 +102,50 @@ describe("RelationshipForm", () => {
     expect(screen.getByRole("checkbox")).toBeChecked();
   });
 
+  it("canonicalizes year-only bounds to the complete UTC year", async () => {
+    const user = userEvent.setup();
+    execute.mockResolvedValue({
+      ok: true,
+      data: {
+        createRelationship: {
+          relationship: { id: "relationship-year" },
+          code: null,
+          currentVersion: null,
+          issues: [],
+        },
+      },
+      requestId: "request-year",
+    });
+    render(
+      <RelationshipForm
+        people={[{ id: "person-b", name: "Grace Collaborator" }]}
+        relationshipTypes={[{ id: "type-a", label: "Knows" }]}
+        sourcePersonId="person-a"
+      />,
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Temporal meaning"),
+      "YEAR_ONLY",
+    );
+    await user.selectOptions(screen.getByLabelText("Date precision"), "YEAR");
+    await user.type(screen.getByLabelText("Valid from"), "1840-01-01");
+    await user.type(screen.getByLabelText("Valid until"), "1840-12-31");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Add relationship" }));
+
+    expect(execute).toHaveBeenCalledWith(
+      CreateRelationshipDocument,
+      expect.objectContaining({
+        input: expect.objectContaining({
+          temporalPrecision: "YEAR",
+          temporalSemantics: "YEAR_ONLY",
+          validFrom: "1840-01-01T00:00:00.000Z",
+          validUntil: "1840-12-31T23:59:59.999Z",
+        }),
+      }),
+    );
+  });
+
   it("maps typed payload issues and request IDs to the related-person field", async () => {
     const user = userEvent.setup();
     execute.mockResolvedValue({
