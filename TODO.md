@@ -1,13 +1,20 @@
 # MVP closure and production hardening backlog
 
-Latest application runtime checkpoint (2026-09-12): commit `9a34b2b`
-passed GitHub Actions run `34723032149` across all 9 checks, including the live
+Latest application runtime checkpoint (2026-09-12): commit `46c70c7`
+passed GitHub Actions run `34724759703` across all 9 checks, including the live
 PostgreSQL, browser, Compose, generated-drift, security, and production-build
 gates. Vercel deployment `dpl_7MQpMMdr9g2vgmZCjwgZQgPVcmAv` reached `READY`
 and serves `humans.kevinbytes.com`. The redacted production smoke passed the
 homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs
 boundaries. Hosted authenticated/provider acceptance and the 24 rows below
 remain open.
+
+The reviewed research-assignment queue browser tranche is included in `46c70c7`:
+the protected case workspace has a generated-GraphQL-only, 25-row queue panel
+with status/kind filters, create/assign/transition/escalate controls, optimistic
+versions, idempotency keys, stale-case response fencing, and explicit null
+unassignment. Focused component coverage and the CI browser gate pass; the
+broader authenticated hosted/provider acceptance remains open.
 
 Latest verified release checkpoint (2026-09-12): commit `a813d97` passed GitHub
 Actions run `34715018651` across all 9 checks. The exact tree was rebuilt and
