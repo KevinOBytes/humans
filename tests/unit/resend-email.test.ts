@@ -5,6 +5,22 @@ import { describe, expect, it, vi } from "vitest";
 import { ResendEmailSender } from "@/lib/email/resend";
 
 describe("Resend email sender", () => {
+  it.each([
+    "ftp://api.resend.test",
+    "https://user:password@api.resend.test",
+    "https://api.resend.test?token=secret",
+    "https://api.resend.test#fragment",
+  ])("rejects unsafe provider endpoint %s before sending", (baseUrl) => {
+    expect(
+      () =>
+        new ResendEmailSender(
+          "provider-api-key",
+          "Humans <humans@example.test>",
+          baseUrl,
+        ),
+    ).toThrow(/^Invalid email provider endpoint$/u);
+  });
+
   it("uses the official request shape and forwards cancellation and idempotency", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     fetchImpl.mockResolvedValue(

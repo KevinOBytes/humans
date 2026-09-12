@@ -140,6 +140,7 @@ describe("safe settings read models", () => {
       emailConfigured: true,
       storageProvider: "minio",
       redisConfigured: true,
+      redisProvider: "local",
       databaseConfigured: true,
       providerBackendAvailable: false,
     });
@@ -165,6 +166,42 @@ describe("safe settings read models", () => {
     ]);
     expect(JSON.stringify(diagnostics)).not.toMatch(
       /postgres(?:ql)?:\/\/|redis(?:s)?:\/\/|api[_-]?key|secret|endpoint/iu,
+    );
+  });
+
+  it("labels managed provider choices without exposing connection material", () => {
+    const diagnostics = buildIntegrationDiagnostics({
+      deploymentMode: "vercel",
+      emailConfigured: true,
+      storageProvider: "r2",
+      redisConfigured: true,
+      redisProvider: "upstash",
+      databaseConfigured: true,
+      providerBackendAvailable: true,
+      aiProvider: "openai",
+    });
+
+    expect(diagnostics).toEqual(
+      expect.arrayContaining([
+        {
+          name: "Redis",
+          status: "configured",
+          detail: "Upstash REST configured",
+        },
+        {
+          name: "Object storage",
+          status: "configured",
+          detail: "R2 configured",
+        },
+        {
+          name: "AI provider",
+          status: "configured",
+          detail: "OpenAI backend configured",
+        },
+      ]),
+    );
+    expect(JSON.stringify(diagnostics)).not.toMatch(
+      /upstash\.io|api\.openai\.com|token|credential|secret/iu,
     );
   });
 });

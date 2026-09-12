@@ -195,6 +195,19 @@ describe("redisConnectionConfig", () => {
       redisConnectionConfig({ url, token: "upstash-rest-token" }),
     ).toThrow(/Redis URL/i);
   });
+
+  it.each([
+    "rediss://redis.example.com/0",
+    "rediss://redis.example.com?db=0",
+    "rediss://redis.example.com#fragment",
+  ])(
+    "rejects token-bearing Redis URLs with derived endpoint material",
+    (url) => {
+      expect(() =>
+        redisConnectionConfig({ url, token: "upstash-rest-token" }),
+      ).toThrow(/Upstash Redis configuration/i);
+    },
+  );
 });
 
 describe("container configuration", () => {

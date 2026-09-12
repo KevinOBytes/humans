@@ -351,6 +351,21 @@ export function redisConnectionConfig(input: {
   }
   if (!input.token) return { provider: "local", url: input.url };
 
+  // REDIS_TOKEN is an Upstash REST token, not a password for the native
+  // Redis protocol. Keep token-bearing configuration TLS-only and reject
+  // query/fragment material that could otherwise alter the derived REST
+  // endpoint. Credentials in the native URL are intentionally discarded.
+  if (
+    url.protocol !== "rediss:" ||
+    url.search ||
+    url.hash ||
+    (url.pathname !== "" && url.pathname !== "/")
+  ) {
+    throw new TypeError(
+      "Upstash Redis configuration requires a TLS URL without a path, query, or fragment.",
+    );
+  }
+
   return {
     provider: "upstash",
     url: `https://${url.hostname}`,
