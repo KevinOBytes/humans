@@ -3948,16 +3948,6 @@ export type FactDetailQuery = {
             publicationDate: string | null;
             collector: string | null;
             extractionMethod: string | null;
-            custodyEvents: {
-              nodes: Array<{
-                id: string | null;
-                eventKind: string | null;
-                occurredAt: string | null;
-                collector: string | null;
-                integrityHash: string | null;
-                notes: string | null;
-              }> | null;
-            } | null;
           } | null;
         } | null;
       }> | null;
@@ -4108,22 +4098,35 @@ export type FactEvidenceQuery = {
             collector: string | null;
             extractionMethod: string | null;
             reliability: number | null;
-            custodyEvents: {
-              nodes: Array<{
-                id: string | null;
-                eventKind: string | null;
-                occurredAt: string | null;
-                collector: string | null;
-                integrityHash: string | null;
-                notes: string | null;
-              }> | null;
-            } | null;
           } | null;
         } | null;
       }> | null;
       pageInfo: {
         " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
       } | null;
+    } | null;
+  } | null;
+};
+
+export type SourceCustodyEventsQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type SourceCustodyEventsQuery = {
+  source: {
+    id: string | null;
+    custodyEvents: {
+      nodes: Array<{
+        id: string | null;
+        sourceId: string | null;
+        eventKind: string | null;
+        occurredAt: string | null;
+        collector: string | null;
+        integrityHash: string | null;
+        notes: string | null;
+        metadata: unknown;
+        createdAt: string | null;
+      }> | null;
     } | null;
   } | null;
 };
@@ -9776,16 +9779,6 @@ export const FactDetailDocument = new TypedDocumentString(
             publicationDate
             collector
             extractionMethod
-            custodyEvents(first: 5) {
-              nodes {
-                id
-                eventKind
-                occurredAt
-                collector
-                integrityHash
-                notes
-              }
-            }
           }
         }
       }
@@ -9800,7 +9793,7 @@ export const FactDetailDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:3b2876605c2734db3c31fc28160509373674b602a46069014282b386fe485aca",
+    hash: "sha256:152bdc1aa8422e89179354bbbc74a1f0c5464f0397b7149b5c8b12fe046c6fbd",
   },
 ) as unknown as TypedDocumentString<FactDetailQuery, FactDetailQueryVariables>;
 export const FactCatalogDocument = new TypedDocumentString(
@@ -9970,16 +9963,6 @@ export const FactEvidenceDocument = new TypedDocumentString(
             publicationDate
             collector
             extractionMethod
-            custodyEvents(first: 5) {
-              nodes {
-                id
-                eventKind
-                occurredAt
-                collector
-                integrityHash
-                notes
-              }
-            }
             reliability
           }
         }
@@ -9995,11 +9978,39 @@ export const FactEvidenceDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:e07677d360aa2eb67caf1b5b31cc7cd0c7445896aed168fda33125d44d35802f",
+    hash: "sha256:3bb9ab24a0620b9ffe2090d76ab3ebc69f54a136a62be2c73880363fdc0e2edc",
   },
 ) as unknown as TypedDocumentString<
   FactEvidenceQuery,
   FactEvidenceQueryVariables
+>;
+export const SourceCustodyEventsDocument = new TypedDocumentString(
+  `
+    query SourceCustodyEvents($id: UUID!) {
+  source(id: $id) {
+    id
+    custodyEvents(first: 5) {
+      nodes {
+        id
+        sourceId
+        eventKind
+        occurredAt
+        collector
+        integrityHash
+        notes
+        metadata
+        createdAt
+      }
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:f0c1386eee0c1d700d30f22c34a5a8779a6693fb9a755171e06ef572e1fbf0d3",
+  },
+) as unknown as TypedDocumentString<
+  SourceCustodyEventsQuery,
+  SourceCustodyEventsQueryVariables
 >;
 export const PersonNotesDocument = new TypedDocumentString(
   `
