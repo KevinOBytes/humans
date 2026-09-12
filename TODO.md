@@ -248,7 +248,8 @@ recovery.
 
 Release-candidate gate evidence (2026-09-12): under the required Node
 24.19.0 runtime, the production-completion branch passes the full local
-Vitest suite (181 files, 1,529 passed, 74 skipped), formatting, lint,
+Vitest suite with bounded local worker pressure (`vitest run --pool=forks
+--maxWorkers=4`) (181 files, 1,529 passed, 74 skipped), formatting, lint,
 typecheck, Drizzle check/drift, GraphQL codegen drift, production build,
 Compose configuration contracts, and diff checks. Disposable database
 lifecycle, hosted authenticated smoke, provider contracts, and full
