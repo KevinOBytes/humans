@@ -223,6 +223,20 @@ describe("GraphTable", () => {
 });
 
 describe("GraphInspector", () => {
+  it("links every visible relationship to its source profile workflow", () => {
+    render(
+      <GraphInspector
+        onClose={() => {}}
+        result={graphResultFixture}
+        selection={{ kind: "edge", id: IDS.directed }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Open relationship record" }),
+    ).toHaveAttribute("href", `/people/${IDS.alice}?view=relationships`);
+  });
+
   it("shows only returned fields and restores focus when closed", async () => {
     const user = userEvent.setup();
     const focusRef = createRef<HTMLButtonElement>();
