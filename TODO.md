@@ -1,5 +1,15 @@
 # MVP closure and production hardening backlog
 
+Current production-closeout checkpoint (2026-09-12): `main` is at commit
+`2ee812d`; GitHub Actions run `34698900436` is green across all 8 checks,
+including PostgreSQL/Redis/MinIO integration, browser acceptance, production
+build, generated drift, Compose lifecycle, quality, image security, dependency
+policy, and secret scanning. The migration lineage fix and synchronized
+43-migration contract are now verified. Vercel production is being refreshed
+so its Ready deployment identity matches this `main` commit. Keep the remaining
+hosted authenticated/provider, external-erasure-adapter, and measured
+whole-product rows open until their stated evidence exists.
+
 Production-completion privacy artifact checkpoint (2026-09-12): commits `bf00b35`,
 `8e3e10e`, `fe71a43`, and `b7c9e6f` now cover person-scoped AI/web-research
 artifact discovery, child/run/thread legal-hold fencing, private-thread and
