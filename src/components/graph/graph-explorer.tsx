@@ -90,7 +90,6 @@ export type GraphExplorerProps = {
   relationshipTypesTruncated?: boolean;
   result: GraphResult;
   savedViewAdapter?: GraphSavedViewAdapter;
-  onRefresh?: () => void;
   workspaceIdentity: string;
 };
 
@@ -164,7 +163,6 @@ export function GraphExplorer({
   relationshipTypesTruncated = false,
   result: initialResult,
   savedViewAdapter,
-  onRefresh,
   workspaceIdentity,
 }: GraphExplorerProps) {
   const generationRef = useRef(0);
@@ -199,6 +197,7 @@ export function GraphExplorer({
     initialLayoutAlgorithm,
   );
   const [editorOpen, setEditorOpen] = useState(false);
+  const [refreshingAfterMutation, setRefreshingAfterMutation] = useState(false);
   const [savedViewId, setSavedViewId] = useState<string | null>(initialViewId);
   const [operationStatus, setOperationStatus] = useState("");
   const [positions, setPositions] = useState<readonly GraphPosition[]>(() =>
@@ -244,6 +243,7 @@ export function GraphExplorer({
     setLayoutRunning(false);
     setLayoutAlgorithm(initialLayoutAlgorithm);
     setEditorOpen(false);
+    setRefreshingAfterMutation(false);
     setSavedViewId(initialViewId);
     setOperationStatus("");
     setPositions(
@@ -366,6 +366,41 @@ export function GraphExplorer({
         : undefined,
     };
   }, [mayArchive, mayCreate, mayUpdate, workspaceIdentity]);
+
+  async function refreshAfterRelationshipMutation() {
+    const generation = generationRef.current;
+    setRefreshingAfterMutation(true);
+    setOperationStatus("Refreshing the canonical graph.");
+    try {
+      const nextResult = await queryAdapter(
+        graphViewFilter(result.normalizedFilter),
+      );
+      if (generation !== generationRef.current) return;
+      setResult(nextResult);
+      setPositions(
+        deterministicCirclePositions(nextResult.nodes.map((node) => node.id)),
+      );
+      setSelected((current) =>
+        current?.kind === "node" &&
+        nextResult.nodes.some((node) => node.id === current.id)
+          ? current
+          : null,
+      );
+      setOperationStatus("Canonical graph refreshed.");
+    } catch (error) {
+      if (generation === generationRef.current) {
+        setOperationStatus(
+          error instanceof Error
+            ? error.message
+            : "The canonical graph could not be refreshed.",
+        );
+      }
+    } finally {
+      if (generation === generationRef.current) {
+        setRefreshingAfterMutation(false);
+      }
+    }
+  }
 
   let liveMessage = operationStatus;
   if (!liveMessage && path) {
@@ -675,7 +710,7 @@ export function GraphExplorer({
                 type="button"
                 variant="outline"
                 aria-label="Edit selected neighborhood"
-                disabled={!selectedNodeId}
+                disabled={!selectedNodeId || refreshingAfterMutation}
                 onClick={() => setEditorOpen(true)}
               >
                 <Network aria-hidden="true" data-icon="inline-start" />
@@ -801,9 +836,9 @@ export function GraphExplorer({
           relationshipTypesTruncated={relationshipTypesTruncated}
           result={result}
           onClose={() => setEditorOpen(false)}
-          onMutationComplete={() => {
+          onMutationComplete={async () => {
             setEditorOpen(false);
-            onRefresh?.();
+            await refreshAfterRelationshipMutation();
           }}
         />
       ) : null}
