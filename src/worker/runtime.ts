@@ -29,6 +29,7 @@ import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery
 import { createExtractionHandler } from "@/worker/handlers/extraction";
 import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
 import { executePrivacyPropagations } from "@/modules/privacy/propagation-worker";
+import { enqueueExpiredRetentionRequests } from "@/modules/privacy/retention-worker";
 import {
   purgeExpiredAiEphemeralInputs,
   purgeExpiredAiThreads,
@@ -184,6 +185,11 @@ export function createRuntimeJobRunner(input: {
           limit: 1,
         });
     if (!options.signal?.aborted) {
+      await enqueueExpiredRetentionRequests({
+        database: input.database,
+        idempotencyHmacKey: input.env.DATA_ENCRYPTION_KEY,
+        limit: 100,
+      });
       await executeApprovedDeletionRequests({
         database: input.database,
         encryptionKey: input.env.DATA_ENCRYPTION_KEY,
