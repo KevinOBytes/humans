@@ -30,6 +30,7 @@ import {
 } from "@/graphql/generated/graphql";
 import { lookup } from "node:dns/promises";
 import {
+  auditEvents,
   idempotencyKeys,
   jobs,
   webhookDeliveries,
@@ -401,6 +402,110 @@ liveDescribe("webhook lifecycle acceptance", () => {
       nextRetryAt: null,
     });
     expect(delivery?.completedAt).toBeInstanceOf(Date);
+  });
+
+  it("terminalizes queued deliveries when an administrator disables their webhook", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/cancelled",
+        },
+      },
+    });
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "cancelled webhook ID",
+    );
+    const queued = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId } },
+    });
+    const deliveryId = required(
+      queued.body?.data?.sendWebhookTestEvent.deliveryId,
+      "cancelled delivery ID",
+    );
+
+    await fixture.database
+      .update(webhooks)
+      .set({ state: "disabled", deletedAt: new Date() })
+      .where(eq(webhooks.id, webhookId));
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const handler = createWebhookDeliveryHandler({
+      database: fixture.database,
+      encryptionKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+    });
+
+    await expect(
+      handler(
+        { deliveryId, webhookId },
+        { job: { attemptCount: 1 }, signal: new AbortController().signal },
+      ),
+    ).resolves.toEqual({ resultReferences: [deliveryId] });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const [delivery] = await fixture.database
+      .select({
+        completedAt: webhookDeliveries.completedAt,
+        nextRetryAt: webhookDeliveries.nextRetryAt,
+        redactedError: webhookDeliveries.redactedError,
+      })
+      .from(webhookDeliveries)
+      .where(eq(webhookDeliveries.id, deliveryId));
+    expect(delivery).toMatchObject({
+      redactedError: { code: "webhook_disabled" },
+      nextRetryAt: null,
+    });
+    expect(delivery?.completedAt).toBeInstanceOf(Date);
+
+    const cancellationAudits = await fixture.database
+      .select({
+        action: auditEvents.action,
+        redactedDiff: auditEvents.redactedDiff,
+      })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.resourceId, deliveryId),
+          eq(auditEvents.action, "webhook.delivery_cancelled"),
+        ),
+      );
+    expect(cancellationAudits).toEqual([
+      {
+        action: "webhook.delivery_cancelled",
+        redactedDiff: { code: "webhook_disabled" },
+      },
+    ]);
+
+    await expect(
+      handler(
+        { deliveryId, webhookId },
+        { job: { attemptCount: 2 }, signal: new AbortController().signal },
+      ),
+    ).resolves.toEqual({ resultReferences: [deliveryId] });
+    expect(fetchMock).not.toHaveBeenCalled();
+    const repeatCancellationAudits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.resourceId, deliveryId),
+          eq(auditEvents.action, "webhook.delivery_cancelled"),
+        ),
+      );
+    expect(repeatCancellationAudits).toHaveLength(1);
   });
 
   it("replays test-event enqueue references with expiry, malformed, concurrency, and tenant fencing", async () => {

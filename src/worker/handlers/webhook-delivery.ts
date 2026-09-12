@@ -1,6 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 
-import { webhookDeliveries, webhooks } from "@/db/schema/operations";
+import { newId } from "@/db/id";
+import {
+  auditEvents,
+  webhookDeliveries,
+  webhooks,
+} from "@/db/schema/operations";
 import { openSealedEnvelope } from "@/lib/security/sealed-envelope";
 import { JobExecutionError } from "@/modules/jobs/types";
 import {
@@ -13,6 +18,54 @@ import { assertPublicWebhookTarget } from "@/modules/webhooks/target";
 function safeError(error: unknown): Record<string, string> {
   void error;
   return { code: "delivery_failed" };
+}
+
+/**
+ * A delivery cannot remain retryable after its destination is disabled. The
+ * update predicate makes this transition idempotent and ensures concurrent
+ * duplicate jobs produce at most one cancellation audit event.
+ */
+async function terminalizeDisabledDelivery(input: {
+  database: Database;
+  deliveryId: string;
+  workspaceId: string;
+}): Promise<void> {
+  const completedAt = new Date();
+  await input.database.transaction(async (transaction) => {
+    const [updated] = await transaction
+      .update(webhookDeliveries)
+      .set({
+        completedAt,
+        nextRetryAt: null,
+        redactedError: { code: "webhook_disabled" },
+      })
+      .where(
+        and(
+          eq(webhookDeliveries.id, input.deliveryId),
+          eq(webhookDeliveries.workspaceId, input.workspaceId),
+          or(
+            isNull(webhookDeliveries.completedAt),
+            isNotNull(webhookDeliveries.nextRetryAt),
+          ),
+        ),
+      )
+      .returning({ id: webhookDeliveries.id });
+    if (!updated) return;
+    await transaction.insert(auditEvents).values({
+      id: newId(),
+      workspaceId: input.workspaceId,
+      actorUserId: null,
+      sessionId: null,
+      apiKeyId: null,
+      action: "webhook.delivery_cancelled",
+      resourceKind: "webhook_delivery",
+      resourceId: input.deliveryId,
+      requestId: "worker:webhook-delivery",
+      outcome: "cancelled",
+      redactedDiff: { code: "webhook_disabled" },
+      occurredAt: completedAt,
+    });
+  });
 }
 
 export function createWebhookDeliveryHandler(input: {
@@ -47,6 +100,14 @@ export function createWebhookDeliveryHandler(input: {
     if (!row) {
       throw new JobExecutionError("webhook_delivery_not_found", "permanent");
     }
+    if (row.webhook.state !== "active" || row.webhook.deletedAt) {
+      await terminalizeDisabledDelivery({
+        database: input.database,
+        deliveryId: row.delivery.id,
+        workspaceId: row.delivery.workspaceId,
+      });
+      return { resultReferences: [row.delivery.id] };
+    }
     // A completed delivery is terminal unless it has a scheduled retry. A
     // retryable HTTP/transport failure records completion for the attempt but
     // must still allow the worker's next attempt to progress; a duplicate
@@ -59,9 +120,6 @@ export function createWebhookDeliveryHandler(input: {
       row.delivery.completedAt &&
       (!hasScheduledRetry || context.job.attemptCount <= row.delivery.attempt)
     ) {
-      return { resultReferences: [row.delivery.id] };
-    }
-    if (row.webhook.state !== "active" || row.webhook.deletedAt) {
       return { resultReferences: [row.delivery.id] };
     }
     if (context.signal.aborted) {
