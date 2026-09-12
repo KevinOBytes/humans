@@ -15,6 +15,7 @@ import {
 } from "@/modules/evidence/assertions";
 import { createGovernanceService } from "@/modules/governance/service";
 import type { ResearchServiceContext } from "@/modules/audit/service";
+import { rolePermissionKeys } from "@/modules/auth/permissions";
 import { ResearchFixture } from "../support/research-fixture";
 import { caseContext, coveredPerson } from "../support/cases";
 
@@ -33,10 +34,23 @@ liveDescribe("relationship evidence review and promotion", () => {
     await fixture.reset();
     const actor = await fixture.createActor();
     context = await caseContext(fixture, actor);
-    reviewer = await caseContext(
-      fixture,
-      await fixture.createWorkspaceMember(actor, "admin"),
-    );
+    const reviewerActor = await fixture.createWorkspaceMember(actor, "admin");
+    const reviewerContext = await caseContext(fixture, reviewerActor);
+    // The fixture helper defaults service contexts to owner for the common
+    // owner path. This reviewer is an administrator in the database, so the
+    // live-authority/idempotency check must see the same role and permission
+    // set as the persisted membership.
+    reviewer = {
+      ...reviewerContext,
+      actor: {
+        ...(reviewerContext.actor as Extract<
+          ResearchServiceContext["actor"],
+          { type: "user" }
+        >),
+        role: "admin",
+      },
+      permissions: new Set(rolePermissionKeys("admin")),
+    };
     const first = await coveredPerson(context);
     const second = await coveredPerson(context, { policy: false });
     consentId = first.consentId;
