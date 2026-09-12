@@ -118,6 +118,7 @@ export async function runProductionSmoke({
         "content-type": "application/json",
         origin: base.origin,
         referer: new URL("/sign-in", base).toString(),
+        "sec-fetch-site": "same-origin",
       },
       body: JSON.stringify({ email: adminEmail, password: adminPassword }),
     });
