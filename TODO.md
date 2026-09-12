@@ -368,6 +368,7 @@ recovery.
   - Bounded HUM-NFR-008 source evidence (2026-09-12): generated `createSource`, `updateSource`, `archiveSource`, and `recordSourceCustodyEvent` now accept optional principal-bound durable idempotency keys. Source replay rechecks current workspace visibility and version (including archived responses), while custody replay fences both source and event references. Disposable PostgreSQL coverage proves concurrent create/update/archive/custody convergence, one source/custody/audit effect per operation, and changed-material conflicts; malformed-reference, expiry-takeover, and cross-workspace source evidence remain open.
 
 - [ ] `HUM-NFR-009` Complete responsive and whole-product accessibility acceptance beyond the tested Task 12 search and graph-analysis controls/results. Profile semantic sections, keyboard tab activation, RTL/200% zoom no-overflow/axe evidence, and the keyboard-tested graph-relationship-to-profile transition are bounded additions; full responsive primary-journey coverage remains open.
+  - Bounded queue-browser evidence (2026-09-13): one disposable authenticated Chromium owner/reviewer/viewer journey selects a fictional case, filters the 25-row generated-GraphQL assignment queue, creates/assigns/transitions/keyboard-escalates a row with reasons, and verifies native focus, mobile no-horizontal-overflow, and an axe scan. The test also proves a foreign viewer receives no case selector entry. This is local evidence included in the required CI browser command, not a fresh CI, hosted, or whole-product accessibility claim.
 - [ ] `HUM-NFR-011` Complete the remaining whole-product PostgreSQL, Redis, storage, GraphQL, browser, and CI matrix beyond the Task 12 foundation and Task 18 live upgrade/concurrency/browser/Compose suite. Consent-governed research Task 2 adds case/assertion/relationship-review backend tests and migration 0033; its live PostgreSQL cases/provenance/GraphQL tests remain unverified without disposable `TEST_DATABASE_URL`, and browser/runtime acceptance remains open.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage. The graph-to-profile relationship transition reuses only the already-authorized generated graph result and the profile's existing authorized generated GraphQL reads; cross-workspace and redaction behavior remain owned by those server boundaries.
 - [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. GitHub Actions run `34724759703` for runtime commit `46c70c7` is the current verification run across all 9 checks, including the Node 24 PostgreSQL/Redis/MinIO integration seam, browser, build, Compose, generated drift, quality, image, dependency, and secret gates; all 9 checks completed successfully. Documentation commit `3d892e5` also passed all 9 checks in run `34725180690`. Hosted authenticated/provider/runtime proof and the remaining TODO rows are still outstanding.
@@ -450,5 +451,11 @@ coverage, external storage/email/AI acceptance, and live Compose evidence.
       all 7 assignment lifecycle tests as part of `pnpm test:db` (35 files,
       490 passed, 2 skipped in CI). The protected case workspace also has a
       bounded 25-row generated-GraphQL queue panel with focused component
-      coverage for listing, creation, and valid transition inputs; authenticated
-      browser and hosted acceptance remain open.
+      coverage for listing, creation, and valid transition inputs. A 2026-09-13
+      local disposable authenticated Chromium journey now selects a fictional
+      seeded case, filters, creates, assigns a valid reviewer, transitions,
+      keyboard-escalates, and verifies generated GraphQL/database state, event
+      provenance, unchanged case-resource links, foreign-viewer denial, mobile
+      no-overflow, and queue-region axe results. It is included in the required
+      browser CI command, but fresh CI, hosted acceptance, and the full
+      role/resource matrix remain open.

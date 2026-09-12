@@ -477,6 +477,7 @@ function createServices(input: {
     researchAssignments: createResearchAssignmentsService({
       ...input.context,
       database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
       searchIndexMaintenance: input.searchIndexMaintenance,
     }),
     settings: createSettingsService({

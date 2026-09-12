@@ -109,7 +109,11 @@ const AssignmentConnection = builder
   }>("ResearchAssignmentConnection")
   .implement({
     fields: (t) => ({
-      nodes: t.field({ type: [Assignment], resolve: (r) => r.nodes }),
+      nodes: t.field({
+        type: [Assignment],
+        resolve: (r) => r.nodes,
+        complexity: { field: 0, multiplier: 1 },
+      }),
       pageInfo: t.field({ type: PageInfo, resolve: (r) => r.pageInfo }),
     }),
   });
@@ -120,7 +124,11 @@ const AssignmentEventConnection = builder
   }>("ResearchAssignmentEventConnection")
   .implement({
     fields: (t) => ({
-      nodes: t.field({ type: [AssignmentEvent], resolve: (r) => r.nodes }),
+      nodes: t.field({
+        type: [AssignmentEvent],
+        resolve: (r) => r.nodes,
+        complexity: { field: 0, multiplier: 1 },
+      }),
       pageInfo: t.field({ type: PageInfo, resolve: (r) => r.pageInfo }),
     }),
   });
