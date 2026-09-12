@@ -71,6 +71,13 @@ export const people = pgTable(
       table.workspaceId,
       table.displayName,
     ),
+    index("people_workspace_sort_idx")
+      .on(
+        table.workspaceId,
+        sql`coalesce(${table.sortName}, ${table.displayName})`,
+        table.id,
+      )
+      .where(sql`${table.deletedAt} IS NULL`),
     foreignKey({
       name: "people_workspace_merged_into_fk",
       columns: [table.workspaceId, table.mergedIntoPersonId],

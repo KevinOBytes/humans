@@ -127,6 +127,25 @@ describe("rendered Compose configuration contract", () => {
     });
   }, 15_000);
 
+  it("allocates one database slot per concurrent graph reference reader", () => {
+    const config = render(
+      [
+        "docker-compose.yml",
+        "docker-compose.test.yml",
+        "docker-compose.performance.yml",
+      ],
+      undefined,
+      {
+        ...syntheticEnvironment,
+        PERF_POSTGRES_PORT: "55442",
+        PERF_REDIS_PORT: "6382",
+        PERF_MINIO_PORT: "9005",
+      },
+    );
+
+    expect(config.services.app?.environment?.DATABASE_POOL_MAX).toBe("20");
+  });
+
   it("renders the published self-hosting example with production-secure cookies", () => {
     const config = render(
       ["docker-compose.yml"],

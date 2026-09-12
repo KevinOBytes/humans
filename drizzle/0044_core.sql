@@ -1,0 +1,1 @@
+CREATE INDEX "people_workspace_sort_idx" ON "people" USING btree ("workspace_id",coalesce("sort_name", "display_name"),"id") WHERE "people"."deleted_at" IS NULL;

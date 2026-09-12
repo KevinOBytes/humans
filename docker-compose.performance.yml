@@ -4,6 +4,13 @@ name: humans-performance
 # Keep this file paired with docker-compose.yml and use a unique project name;
 # every data volume is tmpfs-backed and is discarded when the project is down.
 services:
+  app:
+    environment:
+      # The reference workload exercises 20 concurrent authenticated readers.
+      # Keep one Postgres slot available per reader so the harness measures
+      # graph query execution instead of default pool queueing.
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-20}
+
   postgres:
     networks:
       - backend
