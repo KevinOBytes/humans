@@ -742,6 +742,7 @@ export type LinkEvidenceAssertionInput = {
   confidence: number;
   evidenceId: string;
   explicitConfirmed: boolean;
+  idempotencyKey?: string | null | undefined;
   locator: string;
   purpose: string;
   quote: string;
@@ -1695,6 +1696,7 @@ export type ReviewEvidenceAssertionMutationVariables = Exact<{
   expectedVersion: number;
   state: string;
   reason: string;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type ReviewEvidenceAssertionMutation = {
@@ -6801,12 +6803,13 @@ export const LinkEvidenceAssertionDocument = new TypedDocumentString(
 >;
 export const ReviewEvidenceAssertionDocument = new TypedDocumentString(
   `
-    mutation ReviewEvidenceAssertion($id: UUID!, $expectedVersion: Int!, $state: String!, $reason: String!) {
+    mutation ReviewEvidenceAssertion($id: UUID!, $expectedVersion: Int!, $state: String!, $reason: String!, $idempotencyKey: String) {
   reviewEvidenceAssertion(
     id: $id
     expectedVersion: $expectedVersion
     state: $state
     reason: $reason
+    idempotencyKey: $idempotencyKey
   ) {
     id
     reviewState
@@ -6816,7 +6819,7 @@ export const ReviewEvidenceAssertionDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:f0155805446f3227931a0714db9ac360f0bb61edf8890bfcc727cb5dbd01b971",
+    hash: "sha256:cd0301a1ec13abb8879490cfb5b504ab3d0cd10e6763747b0da768815a64deb8",
   },
 ) as unknown as TypedDocumentString<
   ReviewEvidenceAssertionMutation,

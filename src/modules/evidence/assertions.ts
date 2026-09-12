@@ -13,7 +13,13 @@ import {
   createAuditService,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
-import { withResearchWriteTransaction } from "@/modules/audit/transactions";
+import {
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
+  withResearchWriteTransaction,
+  type CanonicalRequestMaterial,
+  type ResearchResponseReference,
+} from "@/modules/audit/transactions";
 import {
   createCasesService,
   requireCaseResource,
@@ -39,7 +45,81 @@ type AssertionInput = {
   purpose: string;
   caseId?: string | null;
   explicitConfirmed: boolean;
+  idempotencyKey?: string | null;
 };
+
+type AssertionReference = ResearchResponseReference &
+  Readonly<{ assertionId: string; auditReference: string }>;
+
+const ASSERTION_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function referenceUuid(
+  reference: ResearchResponseReference,
+  key: "assertionId" | "auditReference",
+  label: string,
+): string {
+  const value = reference[key];
+  if (typeof value !== "string" || !UUID.test(value))
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      `The stored ${label} mutation result is invalid.`,
+    );
+  return value.toLowerCase();
+}
+
+function idempotency(
+  context: ResearchServiceContext,
+  input: {
+    key: string;
+    operation: string;
+    material: Readonly<Record<string, CanonicalRequestMaterial>>;
+  },
+) {
+  if (!context.idempotencyHmacKey)
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "Evidence assertion idempotency is not configured.",
+    );
+  return derivePrincipalResearchIdempotency(context, {
+    expiresAt: new Date(Date.now() + ASSERTION_IDEMPOTENCY_TTL_MS),
+    idempotencyKey: input.key,
+    operation: input.operation,
+    requestMaterial: input.material,
+    secret: context.idempotencyHmacKey,
+  });
+}
+
+async function replayAssertion(
+  context: ResearchServiceContext,
+  reference: ResearchResponseReference,
+) {
+  const assertionId = referenceUuid(reference, "assertionId", "assertion");
+  const auditReference = referenceUuid(
+    reference,
+    "auditReference",
+    "assertion",
+  );
+  const { row, evidence } = await requireAssertion(context, assertionId);
+  return {
+    ...row,
+    auditReference,
+    sourceReliability: evidence.sourceReliability,
+    informationCredibility: row.confidence,
+  };
+}
+
+function requireIndependentReviewer(
+  context: ResearchServiceContext,
+  createdBy: string,
+) {
+  if (context.actor.type !== "user" || createdBy === context.actor.principalId)
+    throw createGraphQLError(
+      "FORBIDDEN",
+      "An independent reviewer is required.",
+    );
+}
 export function createEvidenceAssertionsService(
   context: ResearchServiceContext,
 ) {
@@ -152,6 +232,47 @@ export async function linkEvidenceAssertion(
     governancePurpose: input.purpose,
     governanceCaseReference: input.caseId,
   });
+  if (input.idempotencyKey != null) {
+    const executed = await runPrincipalIdempotentResearchWrite(
+      context,
+      idempotency(context, {
+        key: input.idempotencyKey,
+        operation: "evidence.assertion.link.graphql",
+        material: {
+          caseId: input.caseId ?? null,
+          confidence: normalized.confidence,
+          evidenceId: input.evidenceId,
+          explicitConfirmed: input.explicitConfirmed,
+          locator: normalized.locator,
+          quote: normalized.quote,
+          purpose: governance.governancePurpose!,
+          resourceId: input.resourceId,
+          resourceKind: normalized.resourceKind,
+          role: normalized.role,
+        },
+      }),
+      [
+        "evidence:update",
+        "evidence:read",
+        "source:read",
+        `${normalized.resourceKind}:update`,
+        `${normalized.resourceKind}:read`,
+        "person:read",
+        "workspace:read",
+      ],
+      async (scopedContext): Promise<AssertionReference> => {
+        const row = await linkEvidenceAssertion(scopedContext, {
+          ...input,
+          idempotencyKey: null,
+        });
+        return {
+          assertionId: row.id,
+          auditReference: row.auditReference,
+        };
+      },
+    );
+    return replayAssertion(context, executed.responseReference);
+  }
   return withResearchWriteTransaction(context, async (database) => {
     const scoped = { ...context, database };
     if (input.caseId) {
@@ -210,7 +331,13 @@ export async function linkEvidenceAssertion(
 }
 export async function reviewEvidenceAssertion(
   context: ResearchServiceContext,
-  input: { id: string; expectedVersion: number; state: string; reason: string },
+  input: {
+    id: string;
+    expectedVersion: number;
+    state: string;
+    reason: string;
+    idempotencyKey?: string | null;
+  },
 ) {
   permitted(context, "workspace:update");
   permitted(context, "evidence:update");
@@ -220,18 +347,48 @@ export async function reviewEvidenceAssertion(
       "The review state is invalid.",
     );
   const reason = boundedCaseText(input.reason, 2000);
+  if (input.idempotencyKey != null) {
+    const executed = await runPrincipalIdempotentResearchWrite(
+      context,
+      idempotency(context, {
+        key: input.idempotencyKey,
+        operation: "evidence.assertion.review.graphql",
+        material: {
+          expectedVersion: input.expectedVersion,
+          id: input.id,
+          reason,
+          state: input.state,
+        },
+      }),
+      [
+        "workspace:update",
+        "workspace:read",
+        "evidence:update",
+        "evidence:read",
+        "source:read",
+        "person:read",
+        "relationship:read",
+      ],
+      async (scopedContext): Promise<AssertionReference> => {
+        const row = await reviewEvidenceAssertion(scopedContext, {
+          ...input,
+          idempotencyKey: null,
+        });
+        return {
+          assertionId: row.id,
+          auditReference: row.auditReference,
+        };
+      },
+    );
+    const replayed = await replayAssertion(context, executed.responseReference);
+    requireIndependentReviewer(context, replayed.createdBy);
+    return replayed;
+  }
   return withResearchWriteTransaction(context, async (database) => {
     const scoped = { ...context, database };
     const { row, evidence } = await requireAssertion(scoped, input.id);
     // An independent human reviewer, not an API key or the assertion author.
-    if (
-      context.actor.type !== "user" ||
-      row.createdBy === context.actor.principalId
-    )
-      throw createGraphQLError(
-        "FORBIDDEN",
-        "An independent reviewer is required.",
-      );
+    requireIndependentReviewer(context, row.createdBy);
     if (row.resourceKind !== "relationship")
       throw createGraphQLError(
         "PRECONDITION_FAILED",

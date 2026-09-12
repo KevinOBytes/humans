@@ -116,6 +116,53 @@ liveDescribe("relationship evidence review and promotion", () => {
     expect(JSON.stringify(event)).not.toContain("A private fixture quote");
     expect(JSON.stringify(event)).not.toContain("page 1");
   });
+  it("replays assertion link and independent review without duplicate effects", async () => {
+    const input = {
+      evidenceId,
+      resourceKind: "relationship",
+      resourceId: id,
+      locator: "page 1",
+      quote: "A private fixture quote",
+      role: "supports",
+      confidence: 0.8,
+      purpose: "research",
+      explicitConfirmed: true,
+      idempotencyKey: "assertion-link-replay-v1",
+    } as const;
+    const [first, replay] = await Promise.all([
+      linkEvidenceAssertion(context, input),
+      linkEvidenceAssertion(context, input),
+    ]);
+    expect(replay).toEqual(first);
+    await expect(
+      linkEvidenceAssertion(context, { ...input, quote: "Changed material" }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "evidence.assertion.link")),
+    ).toHaveLength(1);
+
+    const reviewInput = {
+      id: first.id,
+      expectedVersion: 1,
+      state: "approved",
+      reason: "Verified source",
+      idempotencyKey: "assertion-review-replay-v1",
+    } as const;
+    const [reviewed, reviewReplay] = await Promise.all([
+      reviewEvidenceAssertion(reviewer, reviewInput),
+      reviewEvidenceAssertion(reviewer, reviewInput),
+    ]);
+    expect(reviewReplay).toEqual(reviewed);
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "evidence.assertion.review")),
+    ).toHaveLength(1);
+  });
   it("requires independent review and promotes using a version-bound approval", async () => {
     const row = await assertion();
     await expect(

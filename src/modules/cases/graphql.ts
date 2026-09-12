@@ -106,6 +106,7 @@ const AssertionInput = builder.inputType("LinkEvidenceAssertionInput", {
     purpose: t.string({ required: true }),
     caseId: t.field({ type: "UUID" }),
     explicitConfirmed: t.boolean({ required: true }),
+    idempotencyKey: t.string(),
   }),
 });
 
@@ -189,6 +190,7 @@ export function registerCasesGraphQL() {
         expectedVersion: t.arg.int({ required: true }),
         state: t.arg.string({ required: true }),
         reason: t.arg.string({ required: true }),
+        idempotencyKey: t.arg.string(),
       },
       resolve: (_r, a, c) => c.services.evidenceAssertions.review(a),
     }),
