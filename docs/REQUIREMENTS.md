@@ -1,7 +1,7 @@
 # MVP requirements
 
-Current repository gate (2026-09-12): commit `20cff61` passed GitHub Actions
-run `34703224229` across all 9 checks, including the expanded Node 24 database
+Current repository gate (2026-09-12): commit `546a2d7` passed GitHub Actions
+run `34704695100` across all 9 checks, including the expanded Node 24 database
 matrix (35 files, 490 passed, 2 skipped), browser acceptance, production build,
 generated drift, Compose lifecycle, quality, image security, dependency policy,
 and secret scanning. The gate includes the guarded rich synthetic seed,
@@ -11,13 +11,16 @@ only; hosted authenticated/provider/runtime and the remaining explicitly
 incomplete requirements remain open.
 
 Current production-closeout checkpoint (2026-09-12): application commit
-`20cff61` has GitHub Actions run `34703224229` green across all 9 checks,
+`546a2d7` has GitHub Actions run `34704695100` green across all 9 checks,
 including the full PostgreSQL/Redis/MinIO integration seam (35 files, 490
 tests plus 2 skips), browser acceptance, production build, generated drift,
 Compose lifecycle, quality, image security, dependency policy, and secret
-scanning. The Vercel production deployment `dpl_3YiLfPTWbDEeS2HietXG8PBJwT6H`
+scanning. The Vercel production deployment `dpl_66ReDy6ARv6G5DuXckCn6Ei3MFuZ`
 is Ready with aliases including `humans.kevinbytes.com` and was built from the
-final application tree. This closes the
+verified `main` tree after the green CI run. A fresh public smoke confirmed the
+homepage, liveness, readiness, PostgreSQL, Redis, storage, unauthenticated
+GraphQL, and invalid-bearer jobs boundaries; authenticated/provider acceptance
+remains explicitly open. This closes the
 repository/CI gate, not the separately marked hosted authenticated/provider,
 external-erasure-adapter, and measured whole-product requirements below.
 
