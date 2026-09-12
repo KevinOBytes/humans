@@ -102,14 +102,17 @@ pnpm build
 ```
 
 The repository also provides fail-closed dependency-license review, a
-high/critical production audit, local Gitleaks/Syft/Trivy wrappers, and an
-eight-job GitHub Actions workflow covering quality, generated drift, PostgreSQL,
-production build, Compose lifecycle, dependencies, secrets, and exact-image
-SBOM/vulnerability scanning. It runs for pull requests and pushes to `main`,
-without duplicating the pull-request run on every feature-branch push. As
-verified on 2026-08-04, all eight checks pass on the public repository and are
-required on `main` by the active repository ruleset. Merges are squash-only, resolved conversations are required, force
-pushes and deletion are blocked, and merged branches are deleted automatically.
+high/critical production audit, local Gitleaks/Syft/Trivy wrappers, and a
+nine-job GitHub Actions workflow covering quality, generated drift, PostgreSQL,
+production build, Compose lifecycle, dependencies, secrets, exact-image
+SBOM/vulnerability scanning, and browser acceptance. It runs for pull requests
+and pushes to `main`, without duplicating the pull-request run on every
+feature-branch push. The active `main` ruleset requires eight checks; the
+browser suite is an additional release signal until the hosted ruleset is
+deliberately updated. The current public CI gate is green, with the exact
+application-tree evidence recorded in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+Merges are squash-only, resolved conversations are required, force pushes and
+deletion are blocked, and merged branches are deleted automatically.
 See [Repository governance](docs/REPOSITORY_GOVERNANCE.md) and
 [Dependency policy](docs/DEPENDENCY_POLICY.md).
 
