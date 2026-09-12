@@ -355,10 +355,10 @@ const workspaceA = "01900000-0000-7000-8000-000000000001";
 const workspaceB = "01900000-0000-7000-8000-000000000002";
 const personA = "01900000-0000-7000-8000-000000000011";
 const personB = "01900000-0000-7000-8000-000000000012";
-const actorA = "seed-user-alpha";
-const actorB = "seed-user-beta";
-const principalA = "01900000-0000-7000-8000-000000000003";
-const principalB = "01900000-0000-7000-8000-000000000004";
+const actorA = "01900000-0000-7000-8000-000000000101";
+const actorB = "01900000-0000-7000-8000-000000000103";
+const principalA = "01900000-0000-7000-8000-000000000401";
+const principalB = "01900000-0000-7000-8000-000000000403";
 const ids = {
   aiMessageA1: "01900000-0000-7000-8000-000000000031",
   aiMessageA2: "01900000-0000-7000-8000-000000000032",
@@ -366,7 +366,7 @@ const ids = {
   aiThreadA1: "01900000-0000-7000-8000-000000000034",
   aiThreadA2: "01900000-0000-7000-8000-000000000035",
   aiThreadB: "01900000-0000-7000-8000-000000000021",
-  apiKeyB: "seed-api-key-beta",
+  apiKeyB: "01900000-0000-7000-8000-00000000002f",
   evidenceB: "01900000-0000-7000-8000-000000000022",
   factA: "01900000-0000-7000-8000-00000000002b",
   factDefinitionFileA: "01900000-0000-7000-8000-00000000002c",
@@ -415,12 +415,12 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
     await seedDatabase(databaseUrl!);
     await seedDatabase(databaseUrl!);
 
-    await db()`INSERT INTO places (id, workspace_id, name, kind, created_by, updated_by) VALUES (${ids.placeB}, ${workspaceB}, 'London', 'city', 'seed-user-beta', 'seed-user-beta')`;
-    await db()`INSERT INTO files (id, workspace_id, storage_provider, storage_bucket, storage_key, original_name, byte_size, checksum, uploaded_by, created_by, updated_by) VALUES (${ids.fileB}, ${workspaceB}, 's3', 'test', 'beta/file', 'file.txt', 1, 'sha256:beta', 'seed-user-beta', 'seed-user-beta', 'seed-user-beta')`;
+    await db()`INSERT INTO places (id, workspace_id, name, kind, created_by, updated_by) VALUES (${ids.placeB}, ${workspaceB}, 'London', 'city', ${actorB}, ${actorB})`;
+    await db()`INSERT INTO files (id, workspace_id, storage_provider, storage_bucket, storage_key, original_name, byte_size, checksum, uploaded_by, created_by, updated_by) VALUES (${ids.fileB}, ${workspaceB}, 's3', 'test', 'beta/file', 'file.txt', 1, 'sha256:beta', ${actorB}, ${actorB}, ${actorB})`;
     await db()`INSERT INTO files (id, workspace_id, storage_provider, storage_bucket, storage_key, original_name, byte_size, checksum, uploaded_by, created_by, updated_by) VALUES (${ids.fileA}, ${workspaceA}, 's3', 'test', 'alpha/file', 'file.txt', 1, 'sha256:alpha', ${actorA}, ${actorA}, ${actorA})`;
-    await db()`INSERT INTO sources (id, workspace_id, kind, title, created_by, updated_by) VALUES (${ids.sourceB}, ${workspaceB}, 'document', 'Beta source', 'seed-user-beta', 'seed-user-beta')`;
-    await db()`INSERT INTO evidence_items (id, workspace_id, source_id, file_id, checksum, created_by, updated_by) VALUES (${ids.evidenceB}, ${workspaceB}, ${ids.sourceB}, ${ids.fileB}, 'sha256:evidence', 'seed-user-beta', 'seed-user-beta')`;
-    await db()`INSERT INTO imports (id, workspace_id, file_id, format, idempotency_key, created_by, updated_by) VALUES (${ids.importB}, ${workspaceB}, ${ids.fileB}, 'csv', 'beta-import', 'seed-user-beta', 'seed-user-beta')`;
+    await db()`INSERT INTO sources (id, workspace_id, kind, title, created_by, updated_by) VALUES (${ids.sourceB}, ${workspaceB}, 'document', 'Beta source', ${actorB}, ${actorB})`;
+    await db()`INSERT INTO evidence_items (id, workspace_id, source_id, file_id, checksum, created_by, updated_by) VALUES (${ids.evidenceB}, ${workspaceB}, ${ids.sourceB}, ${ids.fileB}, 'sha256:evidence', ${actorB}, ${actorB})`;
+    await db()`INSERT INTO imports (id, workspace_id, file_id, format, idempotency_key, created_by, updated_by) VALUES (${ids.importB}, ${workspaceB}, ${ids.fileB}, 'csv', 'beta-import', ${actorB}, ${actorB})`;
     await db()`INSERT INTO relationship_types (id, workspace_id, key, forward_label, inverse_label, created_by, updated_by) VALUES (${ids.relationshipTypeA}, ${workspaceA}, 'knows', 'knows', 'known by', ${actorA}, ${actorA})`;
     await db()`INSERT INTO fact_definitions (id, workspace_id, namespace, field_key, label, allowed_value_type, created_by, updated_by) VALUES (${ids.factDefinitionTextA}, ${workspaceA}, 'seed', 'name', 'Name', 'text', ${actorA}, ${actorA}), (${ids.factDefinitionPlaceA}, ${workspaceA}, 'seed', 'place', 'Place', 'place_reference', ${actorA}, ${actorA}), (${ids.factDefinitionFileA}, ${workspaceA}, 'seed', 'file', 'File', 'file_reference', ${actorA}, ${actorA})`;
     await db()`INSERT INTO facts (id, workspace_id, person_id, fact_definition_id, namespace, field_key, label, value_type, value_text, created_by, updated_by) VALUES (${ids.factA}, ${workspaceA}, ${personA}, ${ids.factDefinitionTextA}, 'seed', 'name', 'Name', 'text', 'Ada Lovelace', ${actorA}, ${actorA})`;
@@ -447,27 +447,27 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
       FROM workspace_principals
       WHERE workspace_id = ${workspaceB} AND user_id = ${actorB}
     `;
-    await db()`INSERT INTO graph_views (id, workspace_id, owner_id, name, created_by, updated_by) VALUES (${ids.graphViewB}, ${workspaceB}, 'seed-user-beta', 'Beta view', 'seed-user-beta', 'seed-user-beta')`;
+    await db()`INSERT INTO graph_views (id, workspace_id, owner_id, name, created_by, updated_by) VALUES (${ids.graphViewB}, ${workspaceB}, ${actorB}, 'Beta view', ${actorB}, ${actorB})`;
     await db()`INSERT INTO ai_threads (id, workspace_id, owner_id, title, created_by, updated_by) VALUES (${ids.aiThreadB}, ${workspaceB}, ${principalB}, 'Beta thread', ${principalB}, ${principalB})`;
     await db()`INSERT INTO ai_threads (id, workspace_id, owner_id, title, created_by, updated_by) VALUES (${ids.aiThreadA1}, ${workspaceA}, ${principalA}, 'Alpha thread one', ${principalA}, ${principalA}), (${ids.aiThreadA2}, ${workspaceA}, ${principalA}, 'Alpha thread two', ${principalA}, ${principalA})`;
     await db()`INSERT INTO ai_messages (id, workspace_id, thread_id, role, encrypted_content, content_hash, created_by, updated_by) VALUES (${ids.aiMessageA1}, ${workspaceA}, ${ids.aiThreadA1}, 'user', 'encrypted:one', 'sha256:one', ${principalA}, ${principalA}), (${ids.aiMessageA2}, ${workspaceA}, ${ids.aiThreadA2}, 'assistant', 'encrypted:two', 'sha256:two', ${principalA}, ${principalA})`;
     await db()`INSERT INTO sessions (id, expires_at, token, user_id) VALUES (${ids.sessionA}, now() + interval '1 day', 'seed-session-token-alpha', ${actorA}), (${ids.sessionB}, now() + interval '1 day', 'seed-session-token-beta', ${actorB})`;
-    await db()`INSERT INTO api_keys (id, config_id, reference_id, key, created_at, updated_at, workspace_id) VALUES (${ids.apiKeyB}, 'default', 'seed-organization-beta', 'seed-api-key-value-beta', now(), now(), ${workspaceB})`;
-    await db()`INSERT INTO webhooks (id, workspace_id, url, encrypted_secret, secret_fingerprint, subscribed_events, created_by, updated_by) VALUES (${ids.webhookB}, ${workspaceB}, 'https://example.test/hook', 'encrypted:test', 'sha256:test', ARRAY['person.updated'], 'seed-user-beta', 'seed-user-beta')`;
+    await db()`INSERT INTO api_keys (id, config_id, reference_id, key, created_at, updated_at, workspace_id) VALUES (${ids.apiKeyB}, 'default', '01900000-0000-7000-8000-000000000202', 'seed-api-key-value-beta', now(), now(), ${workspaceB})`;
+    await db()`INSERT INTO webhooks (id, workspace_id, url, encrypted_secret, secret_fingerprint, subscribed_events, created_by, updated_by) VALUES (${ids.webhookB}, ${workspaceB}, 'https://example.test/hook', 'encrypted:test', 'sha256:test', ARRAY['person.updated'], ${actorB}, ${actorB})`;
   }, 30_000);
 
   afterAll(async () => {
     await liveClient?.end();
   });
 
-  it("seeds two isolated organizations with the same person name idempotently", async () => {
+  it("seeds two isolated fictional workspaces idempotently", async () => {
     const [counts] = await db()<
       [{ organizations: number; people: number; workspaces: number }]
     >`
       SELECT
-        (SELECT count(*)::int FROM organizations WHERE id LIKE 'seed-organization-%') AS organizations,
+        (SELECT count(*)::int FROM organizations WHERE id IN ('01900000-0000-7000-8000-000000000201', '01900000-0000-7000-8000-000000000202')) AS organizations,
         (SELECT count(*)::int FROM workspaces WHERE id IN (${workspaceA}, ${workspaceB})) AS workspaces,
-        (SELECT count(*)::int FROM people WHERE display_name = 'Ada Lovelace') AS people
+        (SELECT count(*)::int FROM people WHERE id IN (${personA}, ${personB})) AS people
     `;
     expect(counts).toEqual({ organizations: 2, people: 2, workspaces: 2 });
   });
@@ -477,8 +477,8 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
     const memberId = `derived-member-${newId()}`;
     const apiKeyId = `derived-key-${newId()}`;
     await db()`INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES (${userId}, 'Derived User', ${`${newId()}@example.test`}, true, now(), now())`;
-    await db()`INSERT INTO members (id, organization_id, user_id, role, created_at, workspace_id) VALUES (${memberId}, 'seed-organization-alpha', ${userId}, 'viewer', now(), ${workspaceB})`;
-    await db()`INSERT INTO api_keys (id, config_id, reference_id, key, created_at, updated_at, workspace_id) VALUES (${apiKeyId}, 'organization', 'seed-organization-alpha', ${`hashed-${newId()}`}, now(), now(), ${workspaceB})`;
+    await db()`INSERT INTO members (id, organization_id, user_id, role, created_at, workspace_id) VALUES (${memberId}, '01900000-0000-7000-8000-000000000201', ${userId}, 'viewer', now(), ${workspaceB})`;
+    await db()`INSERT INTO api_keys (id, config_id, reference_id, key, created_at, updated_at, workspace_id) VALUES (${apiKeyId}, 'organization', '01900000-0000-7000-8000-000000000201', ${`hashed-${newId()}`}, now(), now(), ${workspaceB})`;
 
     const [derived] = await db()<
       [{ api_key_workspace_id: string; member_workspace_id: string }]
@@ -520,7 +520,7 @@ liveDescribe("workspace constraints on PostgreSQL 18", () => {
 
   it("validates live identities before creating immutable principal snapshots", async () => {
     await expectForeignKeyViolation(
-      db()`INSERT INTO workspace_principals (id, workspace_id, principal_type, user_id, member_id_snapshot) VALUES (${newId()}, ${workspaceA}, 'user', ${actorB}, 'seed-member-beta')`,
+      db()`INSERT INTO workspace_principals (id, workspace_id, principal_type, user_id, member_id_snapshot) VALUES (${newId()}, ${workspaceA}, 'user', ${actorB}, '01900000-0000-7000-8000-000000000303')`,
     );
     await expect(
       db()`INSERT INTO workspace_principals (id, workspace_id, principal_type, user_id) VALUES (${newId()}, ${workspaceA}, 'legacy_user', 'new-legacy-user')`,
