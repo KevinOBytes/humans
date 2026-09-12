@@ -14,16 +14,18 @@ Prerequisites:
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
-cp .env.example .env.local
+cp .env.example .env
 pnpm db:migrate
 pnpm admin:bootstrap
 pnpm dev
 ```
 
 Open <http://localhost:3000>. The example environment contains documentation-only placeholders; replace them before enabling services. Never commit a populated environment file.
-The one-shot `db:migrate` and `admin:bootstrap` scripts load the ignored
-`.env.local` directly through Node's environment-file support; secret values
-are not placed in command arguments. Next.js loads the same file for `dev`.
+The one-shot `db:migrate`, `admin:bootstrap`, and `admin:rotate-password`
+scripts load the ignored `.env` directly through Node's environment-file
+support; an optional `.env.local` can override it for a developer-specific
+target. Secret values are not placed in command arguments. Next.js loads the
+same `.env` file for `dev`.
 
 The analyst also needs the durable worker. Run `pnpm worker` in a second
 terminal, sign in with `analysis:read`, `analysis:create`, and `analysis:run`,
@@ -197,7 +199,8 @@ summaries. Questions, provider credentials and endpoints, raw tool material,
 and upstream errors are not placed in URLs, browser storage, initial HTML,
 logs, or public error messages.
 
-Configure exactly one server-side provider in `.env.local`:
+Configure exactly one server-side provider in the ignored `.env` file (or an
+ignored `.env.local` override):
 
 - OpenAI: `AI_PROVIDER=openai`, the canonical
   `AI_BASE_URL=https://api.openai.com/v1`, a private `AI_API_KEY`, and an
