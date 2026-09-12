@@ -43,6 +43,8 @@ export const researchAssignmentItems = pgTable(
     dueAt: time("due_at"),
     escalationCount: integer("escalation_count").default(0).notNull(),
     ...attribution(),
+    deletedAt: time("deleted_at"),
+    deletedBy: uuid("deleted_by"),
   },
   (t) => [
     unique("research_assignment_items_workspace_id_unique").on(
@@ -82,6 +84,11 @@ export const researchAssignmentItems = pgTable(
       columns: [t.workspaceId, t.updatedBy],
       foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "research_assignment_items_deleted_by_fk",
+      columns: [t.workspaceId, t.deletedBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
     check(
       "research_assignment_items_kind_check",
       sql`${t.queueKind} IN ('review', 'verification', 'consent_follow_up', 'source_reconciliation', 'privacy_request')`,
@@ -103,6 +110,10 @@ export const researchAssignmentItems = pgTable(
       "research_assignment_items_text_check",
       sql`length(trim(${t.title})) BETWEEN 1 AND 200 AND (${t.description} IS NULL OR length(${t.description}) <= 4000)`,
     ),
+    check(
+      "research_assignment_items_deleted_attribution_check",
+      sql`(${t.deletedAt} IS NULL AND ${t.deletedBy} IS NULL) OR (${t.deletedAt} IS NOT NULL AND ${t.deletedBy} IS NOT NULL)`,
+    ),
   ],
 );
 
@@ -119,6 +130,8 @@ export const researchAssignmentEvents = pgTable(
     toStatus: text("to_status"),
     fromAssigneePrincipalId: uuid("from_assignee_principal_id"),
     toAssigneePrincipalId: uuid("to_assignee_principal_id"),
+    fromEscalationCount: integer("from_escalation_count"),
+    toEscalationCount: integer("to_escalation_count"),
     reason: text("reason"),
     actorPrincipalId: uuid("actor_principal_id").notNull(),
     occurredAt: time("occurred_at").defaultNow().notNull(),
@@ -164,6 +177,10 @@ export const researchAssignmentEvents = pgTable(
     check(
       "research_assignment_events_reason_check",
       sql`${t.reason} IS NULL OR length(trim(${t.reason})) BETWEEN 1 AND 2000`,
+    ),
+    check(
+      "research_assignment_events_escalation_check",
+      sql`(${t.fromEscalationCount} IS NULL OR ${t.fromEscalationCount} BETWEEN 0 AND 1000) AND (${t.toEscalationCount} IS NULL OR ${t.toEscalationCount} BETWEEN 0 AND 1000)`,
     ),
   ],
 );

@@ -14,33 +14,90 @@ fragment ResearchAssignmentFields on ResearchAssignment {
   updatedAt
 }
 
-query ResearchAssignments($caseId: UUID, $status: ResearchAssignmentStatus, $queueKind: ResearchAssignmentQueueKind, $first: Int, $after: String) {
-  researchAssignments(caseId: $caseId, status: $status, queueKind: $queueKind, first: $first, after: $after) {
-    nodes { ...ResearchAssignmentFields }
-    pageInfo { hasNextPage endCursor }
+query ResearchAssignments(
+  $caseId: UUID
+  $status: ResearchAssignmentStatus
+  $queueKind: ResearchAssignmentQueueKind
+  $first: Int
+  $after: String
+) {
+  researchAssignments(
+    caseId: $caseId
+    status: $status
+    queueKind: $queueKind
+    first: $first
+    after: $after
+  ) {
+    nodes {
+      ...ResearchAssignmentFields
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
   }
 }
 
-query ResearchAssignment($id: UUID!) {
-  researchAssignment(id: $id) { ...ResearchAssignmentFields }
-  researchAssignmentEvents(assignmentId: $id) {
-    id assignmentId eventKind fromStatus toStatus fromAssigneePrincipalId
-    toAssigneePrincipalId reason actorPrincipalId occurredAt
+query ResearchAssignment($id: UUID!, $eventsFirst: Int, $eventsAfter: String) {
+  researchAssignment(id: $id) {
+    ...ResearchAssignmentFields
+  }
+  researchAssignmentEvents(
+    assignmentId: $id
+    first: $eventsFirst
+    after: $eventsAfter
+  ) {
+    nodes {
+      id
+      assignmentId
+      eventKind
+      fromStatus
+      toStatus
+      fromAssigneePrincipalId
+      toAssigneePrincipalId
+      fromEscalationCount
+      toEscalationCount
+      reason
+      actorPrincipalId
+      occurredAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
   }
 }
 
 mutation CreateResearchAssignment($input: CreateResearchAssignmentInput!) {
-  createResearchAssignment(input: $input) { assignment { ...ResearchAssignmentFields } }
+  createResearchAssignment(input: $input) {
+    assignment {
+      ...ResearchAssignmentFields
+    }
+  }
 }
 
 mutation AssignResearchAssignment($input: AssignResearchAssignmentInput!) {
-  assignResearchAssignment(input: $input) { assignment { ...ResearchAssignmentFields } }
+  assignResearchAssignment(input: $input) {
+    assignment {
+      ...ResearchAssignmentFields
+    }
+  }
 }
 
-mutation TransitionResearchAssignment($input: TransitionResearchAssignmentInput!) {
-  transitionResearchAssignment(input: $input) { assignment { ...ResearchAssignmentFields } }
+mutation TransitionResearchAssignment(
+  $input: TransitionResearchAssignmentInput!
+) {
+  transitionResearchAssignment(input: $input) {
+    assignment {
+      ...ResearchAssignmentFields
+    }
+  }
 }
 
 mutation EscalateResearchAssignment($input: EscalateResearchAssignmentInput!) {
-  escalateResearchAssignment(input: $input) { assignment { ...ResearchAssignmentFields } }
+  escalateResearchAssignment(input: $input) {
+    assignment {
+      ...ResearchAssignmentFields
+    }
+  }
 }

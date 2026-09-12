@@ -1,0 +1,7 @@
+ALTER TABLE "research_assignment_events" ADD COLUMN "from_escalation_count" integer;--> statement-breakpoint
+ALTER TABLE "research_assignment_events" ADD COLUMN "to_escalation_count" integer;--> statement-breakpoint
+ALTER TABLE "research_assignment_items" ADD COLUMN "deleted_at" timestamp (3) with time zone;--> statement-breakpoint
+ALTER TABLE "research_assignment_items" ADD COLUMN "deleted_by" uuid;--> statement-breakpoint
+ALTER TABLE "research_assignment_items" ADD CONSTRAINT "research_assignment_items_deleted_by_fk" FOREIGN KEY ("workspace_id","deleted_by") REFERENCES "public"."workspace_principals"("workspace_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "research_assignment_events" ADD CONSTRAINT "research_assignment_events_escalation_check" CHECK (("research_assignment_events"."from_escalation_count" IS NULL OR "research_assignment_events"."from_escalation_count" BETWEEN 0 AND 1000) AND ("research_assignment_events"."to_escalation_count" IS NULL OR "research_assignment_events"."to_escalation_count" BETWEEN 0 AND 1000));--> statement-breakpoint
+ALTER TABLE "research_assignment_items" ADD CONSTRAINT "research_assignment_items_deleted_attribution_check" CHECK (("research_assignment_items"."deleted_at" IS NULL AND "research_assignment_items"."deleted_by" IS NULL) OR ("research_assignment_items"."deleted_at" IS NOT NULL AND "research_assignment_items"."deleted_by" IS NOT NULL));

@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { newId } from "@/db/id";
-import { caseMembers } from "@/db/schema/cases";
+import { caseMembers, cases } from "@/db/schema/cases";
 import { workspacePrincipals } from "@/db/schema/principals";
 import {
   researchAssignmentEvents,
@@ -103,24 +103,74 @@ function reason(value: unknown, required = true) {
 }
 function cursor(row: Pick<ItemRow, "createdAt" | "id">) {
   return Buffer.from(
-    JSON.stringify({ at: row.createdAt.toISOString(), id: row.id }),
+    JSON.stringify({ v: 1, t: row.createdAt.toISOString(), i: row.id }),
     "utf8",
   ).toString("base64url");
+}
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+function eventCursor(row: { occurredAt: Date; id: string }) {
+  return Buffer.from(
+    JSON.stringify({ v: 1, t: row.occurredAt.toISOString(), i: row.id }),
+    "utf8",
+  ).toString("base64url");
+}
+function afterEventCursor(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    if (value.length > 1024 || !/^[A-Za-z0-9_-]+$/u.test(value))
+      throw new Error("invalid");
+    const bytes = Buffer.from(value, "base64url");
+    if (bytes.toString("base64url") !== value) throw new Error("invalid");
+    const decoded = JSON.parse(bytes.toString("utf8")) as {
+      v?: number;
+      t?: string;
+      i?: string;
+    };
+    if (
+      Object.keys(decoded).sort().join(",") !== "i,t,v" ||
+      decoded.i !== decoded.i?.toLowerCase()
+    )
+      throw new Error("invalid");
+    const at = new Date(decoded.t ?? "");
+    if (
+      decoded.v !== 1 ||
+      !UUID.test(decoded.i ?? "") ||
+      Number.isNaN(at.getTime()) ||
+      at.toISOString() !== decoded.t
+    )
+      throw new Error("invalid");
+    return { at, id: decoded.i! };
+  } catch {
+    throw createGraphQLError("VALIDATION_FAILED", "The cursor is invalid.");
+  }
 }
 function afterCursor(value: string | null | undefined) {
   if (!value) return null;
   try {
-    const decoded = JSON.parse(
-      Buffer.from(value, "base64url").toString("utf8"),
-    ) as { at?: string; id?: string };
-    const at = new Date(decoded.at ?? "");
+    if (value.length > 1024 || !/^[A-Za-z0-9_-]+$/u.test(value))
+      throw new Error("invalid");
+    const bytes = Buffer.from(value, "base64url");
+    if (bytes.toString("base64url") !== value) throw new Error("invalid");
+    const decoded = JSON.parse(bytes.toString("utf8")) as {
+      v?: number;
+      t?: string;
+      i?: string;
+    };
     if (
-      !decoded.id ||
-      Number.isNaN(at.getTime()) ||
-      at.toISOString() !== decoded.at
+      Object.keys(decoded).sort().join(",") !== "i,t,v" ||
+      decoded.i !== decoded.i?.toLowerCase()
     )
       throw new Error("invalid");
-    return { at, id: decoded.id };
+    const at = new Date(decoded.t ?? "");
+    if (
+      decoded.v !== 1 ||
+      !UUID.test(decoded.i ?? "") ||
+      Number.isNaN(at.getTime()) ||
+      at.toISOString() !== decoded.t
+    )
+      throw new Error("invalid");
+    return { at, id: decoded.i! };
   } catch {
     throw createGraphQLError("VALIDATION_FAILED", "The cursor is invalid.");
   }
@@ -164,16 +214,20 @@ export function createResearchAssignmentsService(
   const repository = createResearchAssignmentsRepository(context.database);
   const audit = createAuditService(context);
 
-  async function visibleCase(caseId: string | null | undefined) {
+  async function visibleCase(
+    scoped: ResearchServiceContext,
+    caseId: string | null | undefined,
+  ) {
     if (!caseId) return null;
-    return createCasesService(context).getCase(caseId);
+    return createCasesService(scoped).getCase(caseId);
   }
   async function validateAssignee(
+    database: ResearchServiceContext["database"],
     assigneePrincipalId: string | null,
     caseId: string | null,
   ) {
     if (!assigneePrincipalId) return;
-    const [principal] = await context.database
+    const [principal] = await database
       .select({ id: workspacePrincipals.id })
       .from(workspacePrincipals)
       .where(
@@ -189,7 +243,7 @@ export function createResearchAssignmentsService(
         "The requested assignee was not found.",
       );
     if (caseId) {
-      const [member] = await context.database
+      const [member] = await database
         .select({ id: caseMembers.id })
         .from(caseMembers)
         .where(
@@ -197,6 +251,7 @@ export function createResearchAssignmentsService(
             eq(caseMembers.workspaceId, context.workspaceId),
             eq(caseMembers.caseId, caseId),
             eq(caseMembers.principalId, assigneePrincipalId),
+            isNull(caseMembers.deletedAt),
           ),
         )
         .limit(1);
@@ -207,14 +262,57 @@ export function createResearchAssignmentsService(
         );
     }
   }
-  async function loadVisible(id: string, lock = false) {
-    const row = await repository.get(context.workspaceId, id, lock);
+  async function authorizeMutation(
+    scoped: ResearchServiceContext,
+    caseId: string | null,
+  ) {
+    if (!caseId) {
+      permission(scoped, "workspace:update");
+      return;
+    }
+    const [authority] = await scoped.database
+      .select({ role: caseMembers.role })
+      .from(caseMembers)
+      .innerJoin(
+        cases,
+        and(
+          eq(cases.workspaceId, caseMembers.workspaceId),
+          eq(cases.id, caseMembers.caseId),
+        ),
+      )
+      .where(
+        and(
+          eq(caseMembers.workspaceId, scoped.workspaceId),
+          eq(caseMembers.caseId, caseId),
+          eq(caseMembers.principalId, scoped.actor.principalId),
+          isNull(caseMembers.deletedAt),
+          isNull(cases.deletedAt),
+          eq(cases.state, "active"),
+        ),
+      )
+      .limit(1);
+    if (!authority || !["owner", "reviewer"].includes(authority.role))
+      throw createGraphQLError(
+        "FORBIDDEN",
+        "An active case owner or reviewer is required.",
+      );
+  }
+  async function loadVisible(
+    scoped: ResearchServiceContext,
+    id: string,
+    lock = false,
+  ) {
+    const row = await createResearchAssignmentsRepository(scoped.database).get(
+      scoped.workspaceId,
+      id,
+      lock,
+    );
     if (!row)
       throw createGraphQLError(
         "NOT_FOUND",
         "The requested assignment was not found.",
       );
-    await visibleCase(row.caseId);
+    await visibleCase(scoped, row.caseId);
     return row;
   }
   async function mutate(
@@ -228,10 +326,15 @@ export function createResearchAssignmentsService(
     const result = await runPrincipalIdempotentResearchWrite(
       context,
       idempotency(context, { key, operation, material }),
-      ["workspace:read", "workspace:update"],
+      ["workspace:read"],
       write,
     );
-    return loadVisible(referenceId(result.responseReference));
+    const row = await loadVisible(
+      context,
+      referenceId(result.responseReference),
+    );
+    await authorizeMutation(context, row.caseId);
+    return row;
   }
 
   return {
@@ -245,7 +348,7 @@ export function createResearchAssignmentsService(
       } = {},
     ) {
       permission(context, "workspace:read");
-      await visibleCase(input.caseId);
+      await visibleCase(context, input.caseId);
       const page = normalizePagination(input);
       const rows = await repository.list(context.workspaceId, {
         caseId: input.caseId,
@@ -266,12 +369,33 @@ export function createResearchAssignmentsService(
     },
     async get(id: string) {
       permission(context, "workspace:read");
-      return loadVisible(id);
+      return loadVisible(context, id);
     },
-    async events(id: string) {
+    async events(input: {
+      assignmentId: string;
+      first?: number | null;
+      after?: string | null;
+    }) {
       permission(context, "workspace:read");
-      await loadVisible(id);
-      return repository.events(context.workspaceId, id);
+      await loadVisible(context, input.assignmentId);
+      const page = normalizePagination(input);
+      const rows = await repository.events(
+        context.workspaceId,
+        input.assignmentId,
+        {
+          first: page.first + 1,
+          after: afterEventCursor(page.after),
+        },
+      );
+      const nodes = rows.slice(0, page.first);
+      const last = nodes.at(-1);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > page.first,
+          endCursor: last ? eventCursor(last) : null,
+        },
+      };
     },
     async create(input: {
       caseId?: string | null;
@@ -283,9 +407,8 @@ export function createResearchAssignmentsService(
       dueAt?: Date | string | null;
       idempotencyKey: string;
     }) {
-      permission(context, "workspace:update");
+      permission(context, "workspace:read");
       const caseId = input.caseId ?? null;
-      await visibleCase(caseId);
       const normalized = {
         caseId,
         queueKind: kind(input.queueKind),
@@ -295,12 +418,17 @@ export function createResearchAssignmentsService(
         assigneePrincipalId: input.assigneePrincipalId ?? null,
         dueAt: date(input.dueAt, "Due date"),
       };
-      await validateAssignee(normalized.assigneePrincipalId, caseId);
       return mutate(
         "research-assignment.create",
         input.idempotencyKey,
         { ...normalized, dueAt: normalized.dueAt?.toISOString() ?? null },
         async (scoped) => {
+          await authorizeMutation(scoped, caseId);
+          await validateAssignee(
+            scoped.database,
+            normalized.assigneePrincipalId,
+            caseId,
+          );
           const [row] = await scoped.database
             .insert(researchAssignmentItems)
             .values({
@@ -318,6 +446,8 @@ export function createResearchAssignmentsService(
             assignmentId: row.id,
             eventKind: "created",
             toAssigneePrincipalId: row.assigneePrincipalId,
+            fromEscalationCount: null,
+            toEscalationCount: row.escalationCount,
             reason: null,
             actorPrincipalId: scoped.actor.principalId,
             occurredAt: new Date(),
@@ -330,6 +460,7 @@ export function createResearchAssignmentsService(
               "queueKind",
               "caseId",
               "title",
+              "description",
               "priority",
               "assigneePrincipalId",
               "dueAt",
@@ -346,7 +477,7 @@ export function createResearchAssignmentsService(
       reason: string;
       idempotencyKey: string;
     }) {
-      permission(context, "workspace:update");
+      permission(context, "workspace:read");
       const normalizedReason = reason(input.reason)!;
       return mutate(
         "research-assignment.assign",
@@ -366,8 +497,12 @@ export function createResearchAssignmentsService(
               "NOT_FOUND",
               "The requested assignment was not found.",
             );
-          await visibleCase(row.caseId);
-          await validateAssignee(input.assigneePrincipalId ?? null, row.caseId);
+          await authorizeMutation(scoped, row.caseId);
+          await validateAssignee(
+            scoped.database,
+            input.assigneePrincipalId ?? null,
+            row.caseId,
+          );
           if (row.version !== input.expectedVersion)
             throw createGraphQLError("CONFLICT", "The assignment has changed.");
           if (["completed", "cancelled"].includes(row.status))
@@ -400,6 +535,8 @@ export function createResearchAssignmentsService(
             eventKind: "assigned",
             fromAssigneePrincipalId: row.assigneePrincipalId,
             toAssigneePrincipalId: updated.assigneePrincipalId,
+            fromEscalationCount: row.escalationCount,
+            toEscalationCount: updated.escalationCount,
             reason: normalizedReason,
             actorPrincipalId: scoped.actor.principalId,
             occurredAt: new Date(),
@@ -421,7 +558,7 @@ export function createResearchAssignmentsService(
       reason: string;
       idempotencyKey: string;
     }) {
-      permission(context, "workspace:update");
+      permission(context, "workspace:read");
       const next = status(input.status);
       const normalizedReason = reason(input.reason)!;
       return mutate(
@@ -442,7 +579,7 @@ export function createResearchAssignmentsService(
               "NOT_FOUND",
               "The requested assignment was not found.",
             );
-          await visibleCase(row.caseId);
+          await authorizeMutation(scoped, row.caseId);
           if (row.version !== input.expectedVersion)
             throw createGraphQLError("CONFLICT", "The assignment has changed.");
           if (!transitions[row.status]?.includes(next))
@@ -475,6 +612,8 @@ export function createResearchAssignmentsService(
             eventKind: "status_changed",
             fromStatus: row.status,
             toStatus: next,
+            fromEscalationCount: row.escalationCount,
+            toEscalationCount: updated.escalationCount,
             reason: normalizedReason,
             actorPrincipalId: scoped.actor.principalId,
             occurredAt: new Date(),
@@ -495,7 +634,7 @@ export function createResearchAssignmentsService(
       reason: string;
       idempotencyKey: string;
     }) {
-      permission(context, "workspace:update");
+      permission(context, "workspace:read");
       const normalizedReason = reason(input.reason)!;
       return mutate(
         "research-assignment.escalate",
@@ -514,7 +653,7 @@ export function createResearchAssignmentsService(
               "NOT_FOUND",
               "The requested assignment was not found.",
             );
-          await visibleCase(row.caseId);
+          await authorizeMutation(scoped, row.caseId);
           if (row.version !== input.expectedVersion)
             throw createGraphQLError("CONFLICT", "The assignment has changed.");
           if (["completed", "cancelled"].includes(row.status))
@@ -545,6 +684,8 @@ export function createResearchAssignmentsService(
             workspaceId: scoped.workspaceId,
             assignmentId: row.id,
             eventKind: "escalated",
+            fromEscalationCount: row.escalationCount,
+            toEscalationCount: updated.escalationCount,
             reason: normalizedReason,
             actorPrincipalId: scoped.actor.principalId,
             occurredAt: new Date(),

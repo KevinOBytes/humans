@@ -8,7 +8,7 @@ describe("research assignment queue schema contract", () => {
       "src/db/schema/research-assignments.ts",
       "utf8",
     );
-    const migration = await readFile("drizzle/0040_core.sql", "utf8");
+    const migration = `${await readFile("drizzle/0040_core.sql", "utf8")}\n${await readFile("drizzle/0041_core.sql", "utf8")}`;
     for (const field of [
       "workspaceId",
       "caseId",
@@ -18,6 +18,10 @@ describe("research assignment queue schema contract", () => {
       "assigneePrincipalId",
       "dueAt",
       "escalationCount",
+      "deletedAt",
+      "deletedBy",
+      "fromEscalationCount",
+      "toEscalationCount",
       "version",
     ])
       expect(schema).toContain(field);
@@ -27,6 +31,9 @@ describe("research assignment queue schema contract", () => {
     expect(migration).toContain("research_assignment_events_no_delete");
     expect(migration).toContain("research_assignment_items_case_fk");
     expect(migration).toContain("research_assignment_items_assignee_fk");
+    expect(migration).toContain(
+      "research_assignment_items_deleted_attribution_check",
+    );
   });
 
   it("publishes all queue operations through GraphQL generated documents", async () => {
@@ -35,6 +42,10 @@ describe("research assignment queue schema contract", () => {
       "utf8",
     );
     const generated = await readFile("src/graphql/generated/gql.ts", "utf8");
+    const generatedSchema = await readFile(
+      "src/graphql/generated/graphql.ts",
+      "utf8",
+    );
     for (const operation of [
       "ResearchAssignments",
       "CreateResearchAssignment",
@@ -45,5 +56,9 @@ describe("research assignment queue schema contract", () => {
       expect(operations).toContain(operation);
       expect(generated).toContain(operation);
     }
+    expect(operations).toContain("fromEscalationCount");
+    expect(operations).toContain("toEscalationCount");
+    expect(generatedSchema).toContain("researchAssignmentEvents: {");
+    expect(generatedSchema).toContain("fromEscalationCount: number | null");
   });
 });

@@ -307,8 +307,13 @@ continue to cover hosted credentials, provider contracts, browser/accessibility
 coverage, external storage/email/AI acceptance, and live Compose evidence.
 
 - [ ] `HUM-FR-038` Run the research-assignment queue lifecycle against disposable
-      PostgreSQL: prove workspace/case isolation, valid and invalid transitions,
-      optimistic conflicts, append-only event protection, principal-bound
-      idempotent replay, and redacted audit output. The queue schema, repository,
-      service, GraphQL operations, migration, and generated-document contract are
-      present; live lifecycle and hosted/browser evidence remain open.
+      PostgreSQL: prove workspace/case isolation, reviewer/owner mutation
+      authority, valid and invalid transitions, deleted/foreign assignee
+      fencing, optimistic conflicts, append-only event update/delete protection,
+      strict bounded event cursors, escalation before/after counts, soft-delete
+      visibility with event preservation, principal-bound idempotent replay
+      (including material, principal, and concurrency cases), no case-resource
+      grant side effects, and redacted audit output. The queue schema,
+      repository, service, GraphQL operations, migration, and generated-document
+      contract are present; live lifecycle and hosted/browser evidence remain
+      open.

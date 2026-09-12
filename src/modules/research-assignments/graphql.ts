@@ -78,6 +78,12 @@ const AssignmentEvent = builder
         type: "UUID",
         nullable: true,
       }),
+      fromEscalationCount: t.exposeInt("fromEscalationCount", {
+        nullable: true,
+      }),
+      toEscalationCount: t.exposeInt("toEscalationCount", {
+        nullable: true,
+      }),
       reason: t.exposeString("reason", { nullable: true }),
       actorPrincipalId: t.expose("actorPrincipalId", { type: "UUID" }),
       occurredAt: t.field({
@@ -104,6 +110,17 @@ const AssignmentConnection = builder
   .implement({
     fields: (t) => ({
       nodes: t.field({ type: [Assignment], resolve: (r) => r.nodes }),
+      pageInfo: t.field({ type: PageInfo, resolve: (r) => r.pageInfo }),
+    }),
+  });
+const AssignmentEventConnection = builder
+  .objectRef<{
+    nodes: ResearchAssignmentEventRow[];
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  }>("ResearchAssignmentEventConnection")
+  .implement({
+    fields: (t) => ({
+      nodes: t.field({ type: [AssignmentEvent], resolve: (r) => r.nodes }),
       pageInfo: t.field({ type: PageInfo, resolve: (r) => r.pageInfo }),
     }),
   });
@@ -181,10 +198,18 @@ export function registerResearchAssignmentsGraphQL() {
         context.services.researchAssignments.get(args.id),
     }),
     researchAssignmentEvents: t.field({
-      type: [AssignmentEvent],
-      args: { assignmentId: t.arg({ type: "UUID", required: true }) },
+      type: AssignmentEventConnection,
+      args: {
+        assignmentId: t.arg({ type: "UUID", required: true }),
+        first: t.arg.int(),
+        after: t.arg.string(),
+      },
+      complexity: (args) => ({
+        field: 1,
+        multiplier: normalizePagination(args).first,
+      }),
       resolve: (_root, args, context) =>
-        context.services.researchAssignments.events(args.assignmentId),
+        context.services.researchAssignments.events(args),
     }),
   }));
   builder.mutationFields((t) => ({
