@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +78,8 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [reason, setReason] = useState<Record<string, string>>({});
+  const [assignee, setAssignee] = useState<Record<string, string>>({});
+  const requestGeneration = useRef(0);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -83,6 +91,7 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
 
   const load = useCallback(
     async (after?: string, append = false) => {
+      const generation = ++requestGeneration.current;
       setBusy(true);
       setError("");
       try {
@@ -98,6 +107,7 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
         );
         if (!result.ok || !result.data.researchAssignments)
           throw new Error("unavailable");
+        if (generation !== requestGeneration.current) return;
         const connection = result.data.researchAssignments;
         const next = connection.nodes as ResearchAssignmentFieldsFragment[];
         setRows((current) => (append ? [...current, ...next] : next));
@@ -106,13 +116,14 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
           endCursor: connection.pageInfo?.endCursor ?? null,
         });
       } catch {
+        if (generation !== requestGeneration.current) return;
         setRows([]);
         setPage({ hasNextPage: false, endCursor: null });
         setError(
           "Assignments are unavailable. Check current case membership and permissions.",
         );
       } finally {
-        setBusy(false);
+        if (generation === requestGeneration.current) setBusy(false);
       }
     },
     [caseId, queueKind, status],
@@ -126,20 +137,23 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
   async function mutate(
     request: () => ReturnType<typeof executeBrowserGraphQL>,
   ) {
+    const generation = requestGeneration.current;
     setBusy(true);
     setError("");
     try {
       const result = await request();
       if (!result.ok) throw new Error("denied");
+      if (generation !== requestGeneration.current) return false;
       await load();
       return true;
     } catch {
+      if (generation !== requestGeneration.current) return false;
       setError(
         "The assignment could not be saved. Refresh to check current access and state.",
       );
       return false;
     } finally {
-      setBusy(false);
+      if (generation === requestGeneration.current) setBusy(false);
     }
   }
 
@@ -193,9 +207,12 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
             id="assignment-status-filter"
             className="border-input bg-background min-h-11 w-full rounded-xl border px-3"
             value={status}
-            onChange={(e) =>
-              setStatus(e.target.value as ResearchAssignmentStatus | "")
-            }
+            onChange={(e) => {
+              ++requestGeneration.current;
+              setRows([]);
+              setPage({ hasNextPage: false, endCursor: null });
+              setStatus(e.target.value as ResearchAssignmentStatus | "");
+            }}
           >
             <option value="">All statuses</option>
             {statuses.map((item) => (
@@ -211,9 +228,12 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
             id="assignment-kind-filter"
             className="border-input bg-background min-h-11 w-full rounded-xl border px-3"
             value={queueKind}
-            onChange={(e) =>
-              setQueueKind(e.target.value as ResearchAssignmentQueueKind | "")
-            }
+            onChange={(e) => {
+              ++requestGeneration.current;
+              setRows([]);
+              setPage({ hasNextPage: false, endCursor: null });
+              setQueueKind(e.target.value as ResearchAssignmentQueueKind | "");
+            }}
           >
             <option value="">All kinds</option>
             {queueKinds.map((item) => (
@@ -394,16 +414,19 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
               ) : null}
             </div>
             <div className="mt-3">
+              <p className="text-muted-foreground mb-1 text-sm">
+                Current assignee: {row.assigneePrincipalId ?? "Unassigned"}
+              </p>
               <Label htmlFor={`assignment-assignee-${row.id}`}>
-                Assign principal ID
+                Assignee principal ID (clear to unassign)
               </Label>
               <Input
                 id={`assignment-assignee-${row.id}`}
-                value={reason[`assignee-${row.id}`] ?? ""}
+                value={assignee[row.id ?? ""] ?? row.assigneePrincipalId ?? ""}
                 onChange={(e) =>
-                  setReason({
-                    ...reason,
-                    [`assignee-${row.id}`]: e.target.value,
+                  setAssignee({
+                    ...assignee,
+                    [row.id ?? ""]: e.target.value,
                   })
                 }
               />
@@ -419,7 +442,7 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
                         id: row.id!,
                         expectedVersion: row.version!,
                         assigneePrincipalId:
-                          reason[`assignee-${row.id}`] || null,
+                          assignee[row.id!] ?? row.assigneePrincipalId ?? null,
                         reason: reason[row.id!]!,
                         idempotencyKey: idempotencyKey(),
                       },

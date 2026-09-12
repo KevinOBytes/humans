@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ResearchAssignmentQueue } from "@/components/cases/research-assignment-queue";
 import {
+  AssignResearchAssignmentDocument,
   CreateResearchAssignmentDocument,
+  type ResearchAssignmentFieldsFragment,
   ResearchAssignmentsDocument,
   TransitionResearchAssignmentDocument,
 } from "@/graphql/generated/graphql";
@@ -12,7 +14,7 @@ import {
 const execute = vi.hoisted(() => vi.fn());
 vi.mock("@/graphql/client", () => ({ executeBrowserGraphQL: execute }));
 
-const assignment = {
+const assignment: ResearchAssignmentFieldsFragment = {
   id: "018f0000-0000-7000-8000-000000000001",
   caseId: "case-a",
   queueKind: "REVIEW" as const,
@@ -28,7 +30,7 @@ const assignment = {
   updatedAt: "2026-09-01T00:00:00Z",
 };
 
-function listResult(nodes = [assignment]) {
+function listResult(nodes: ResearchAssignmentFieldsFragment[] = [assignment]) {
   return {
     ok: true,
     data: {
@@ -113,6 +115,63 @@ describe("ResearchAssignmentQueue", () => {
             status: "IN_PROGRESS",
             reason: "Begin review",
             idempotencyKey: expect.any(String),
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("ignores a stale response when the selected case changes", async () => {
+    let resolveFirst!: (value: ReturnType<typeof listResult>) => void;
+    const first = new Promise<ReturnType<typeof listResult>>((resolve) => {
+      resolveFirst = resolve;
+    });
+    execute
+      .mockImplementationOnce(() => first)
+      .mockResolvedValueOnce(
+        listResult([{ ...assignment, caseId: "case-b", title: "Case B work" }]),
+      );
+    const view = render(<ResearchAssignmentQueue caseId="case-a" />);
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+    view.rerender(<ResearchAssignmentQueue caseId="case-b" />);
+    expect(await screen.findByText("Case B work")).toBeVisible();
+    resolveFirst(listResult([assignment]));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(screen.queryByText("Check source")).toBeNull();
+  });
+
+  it("keeps the current assignee when saving without editing the field", async () => {
+    const user = userEvent.setup();
+    const assigned = {
+      ...assignment,
+      assigneePrincipalId: "018f0000-0000-7000-8000-000000000099",
+    };
+    execute
+      .mockResolvedValueOnce(listResult([assigned]))
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { assignResearchAssignment: { assignment: assigned } },
+      })
+      .mockResolvedValueOnce(listResult([assigned]));
+    render(<ResearchAssignmentQueue caseId="case-a" />);
+    expect(await screen.findByText(/Current assignee:/)).toHaveTextContent(
+      assigned.assigneePrincipalId!,
+    );
+    const input = screen.getByLabelText(
+      "Assignee principal ID (clear to unassign)",
+    );
+    expect(input).toHaveValue(assigned.assigneePrincipalId);
+    await user.type(
+      screen.getByLabelText("Reason for Check source"),
+      "Reconfirm",
+    );
+    await user.click(screen.getByRole("button", { name: "Save assignee" }));
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith(
+        AssignResearchAssignmentDocument,
+        expect.objectContaining({
+          input: expect.objectContaining({
+            assigneePrincipalId: assigned.assigneePrincipalId,
           }),
         }),
       ),
