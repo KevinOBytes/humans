@@ -1,7 +1,7 @@
 # MVP closure and production hardening backlog
 
-Current repository gate (2026-09-12): commit `20cff61` passed GitHub Actions
-run `34703224229` across all 9 checks. The Node 24 database job ran 35 files
+Current repository gate (2026-09-12): commit `546a2d7` passed GitHub Actions
+run `34704695100` across all 9 checks. The Node 24 database job ran 35 files
 with 490 tests passed and 2 skipped, including privacy-request, retention/legal-
 hold, assignment, relationship-provenance, AI-review, and the guarded rich
 synthetic-seed contracts. Browser acceptance also passed after the graph editor
@@ -9,13 +9,15 @@ refresh-serialization fix. Hosted authenticated/provider/runtime proof and the
 remaining incomplete rows below remain open.
 
 Current production-closeout checkpoint (2026-09-12): application commit
-`20cff61`; GitHub Actions run `34703224229` is green across all 9 checks,
+`546a2d7`; GitHub Actions run `34704695100` is green across all 9 checks,
 including PostgreSQL/Redis/MinIO integration, browser acceptance, production
 build, generated drift, Compose lifecycle, quality, image security, dependency
 policy, and secret scanning. The graph refresh serialization fix and the
 privacy/retention matrix are now verified. Vercel production deployment
-`dpl_3YiLfPTWbDEeS2HietXG8PBJwT6H` is Ready with the
-`humans.kevinbytes.com` alias. Keep the remaining
+`dpl_66ReDy6ARv6G5DuXckCn6Ei3MFuZ` is Ready with the
+`humans.kevinbytes.com` alias. Fresh public smoke confirms homepage, liveness,
+readiness, PostgreSQL, Redis, storage, unauthenticated GraphQL, and invalid-
+bearer jobs boundaries. Keep the remaining
 hosted authenticated/provider, external-erasure-adapter, and measured
 whole-product rows open until their stated evidence exists.
 
