@@ -648,6 +648,15 @@ execution, database-backed facet aggregation, persisted bulk/break-glass audit
 controls, key/session integration, and live database/provider/object-storage/browser
 evidence remain open.
 
+Import staging recovery checkpoint (2026-09-12): storage read failures during
+preparation now atomically clear staged rows, persist only a stable failure code
+in the redacted `import.staging_failed` audit event, and return a generic
+provider-unavailable error. A later request with the same principal/workspace
+preparation key can reclaim the failed staging record after the object store
+recovers, with an auditable `import.staging_recovered` event. Focused live
+PostgreSQL coverage passes in `tests/integration/imports-api.test.ts`; this does
+not close durable import/export, provider, browser, or whole-product acceptance.
+
 The follow-up security review hardened this boundary without marking an acceptance
 row complete: import commit tokens no longer serialize signing/encryption material;
 export rows preserve their authorized sensitivity and field provenance; relationship
