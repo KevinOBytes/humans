@@ -581,6 +581,16 @@ remain outside this backend checkpoint. No acceptance row is closed: disposable
 PostgreSQL lifecycle and whole-product browser/runtime evidence are still required.
 See the Task 2 SDD report for local commands and explicitly skipped live tests.
 
+Release-candidate gate evidence (2026-09-11): the production-completion
+branch passes the full local Vitest suite (181 files, 1,529 passed, 74
+skipped), format, lint, typecheck, Drizzle check/drift, GraphQL codegen drift,
+production build, Compose configuration contracts, and `git diff --check`.
+The local runtime is Node 26.8.1 while the repository contract requires Node
+24, so the gate is a compatibility signal rather than Node-24 release proof.
+Disposable PostgreSQL/Redis/MinIO lifecycle, authenticated hosted smoke,
+external provider contracts, and browser/performance release evidence remain
+open and are not marked complete.
+
 Bounded AI provenance/retention evidence (2026-09-11): public web research
 sources now persist as immutable workspace/person/run snapshots with retrieval
 hashes, publication and collection timestamps, provider/model disclosure,

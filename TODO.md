@@ -245,3 +245,11 @@ recovery.
   suggestion, and legal hold. `tests/unit/synthetic-seed-contract.test.ts`
   proves the source contract and rejects the prior real-person fixture; live
   Compose seed/GraphQL verification remains required.
+
+Release-candidate gate evidence (2026-09-11): the production-completion
+branch passes the full local Vitest suite (181 files, 1,529 passed, 74
+skipped), formatting, lint, typecheck, Drizzle check/drift, GraphQL codegen
+drift, production build, Compose configuration contracts, and diff checks.
+The local runtime was Node 26.8.1 rather than the required Node 24; disposable
+database lifecycle, hosted authenticated smoke, provider contracts, and full
+browser/performance evidence remain release work.
