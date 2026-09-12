@@ -16,6 +16,7 @@ import {
   people,
   personEvents,
   personFileAttachments,
+  personIdentifiers,
   personNames,
 } from "@/db/schema/people";
 import { files } from "@/db/schema/files";
@@ -36,6 +37,7 @@ export type PersonRow = typeof people.$inferSelect;
 export type NewPersonRow = typeof people.$inferInsert;
 export type PersonNameRow = typeof personNames.$inferSelect;
 export type PersonEventRow = typeof personEvents.$inferSelect;
+export type PersonIdentifierRow = typeof personIdentifiers.$inferSelect;
 export type PersonFileRole = "primary_photo" | "fact" | "evidence" | "direct";
 export type PersonFileRow = typeof files.$inferSelect & {
   roles: readonly PersonFileRole[];
@@ -236,6 +238,47 @@ export function createPeopleRepository(database: Database) {
           ),
         )
         .orderBy(desc(personEvents.createdAt), desc(personEvents.id))
+        .limit(input.limit);
+    },
+
+    async listIdentifiers(input: {
+      workspaceId: string;
+      personId: string;
+      limit: number;
+      cursor?: { createdAt: Date; id: string } | null;
+      visibility?: SQL;
+      personVisibility?: SQL;
+    }): Promise<PersonIdentifierRow[]> {
+      return database
+        .select(getTableColumns(personIdentifiers))
+        .from(personIdentifiers)
+        .innerJoin(
+          people,
+          and(
+            eq(people.workspaceId, input.workspaceId),
+            eq(people.id, personIdentifiers.personId),
+            isNull(people.deletedAt),
+            input.personVisibility,
+          ),
+        )
+        .where(
+          and(
+            eq(personIdentifiers.workspaceId, input.workspaceId),
+            eq(personIdentifiers.personId, input.personId),
+            isNull(personIdentifiers.deletedAt),
+            input.visibility,
+            input.cursor
+              ? or(
+                  lt(personIdentifiers.createdAt, input.cursor.createdAt),
+                  and(
+                    eq(personIdentifiers.createdAt, input.cursor.createdAt),
+                    lt(personIdentifiers.id, input.cursor.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(personIdentifiers.createdAt), desc(personIdentifiers.id))
         .limit(input.limit);
     },
 

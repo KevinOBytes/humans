@@ -12,6 +12,7 @@ import {
   CreateFactDocument,
   MergePersonDocument,
   PersonHeaderDocument,
+  PersonIdentifiersDocument,
   PersonNamesAndEventsDocument,
   PersonFilesDocument,
 } from "@/graphql/generated/graphql";
@@ -23,7 +24,12 @@ import {
   tags,
 } from "@/db/schema/evidence";
 import { auditEvents } from "@/db/schema/operations";
-import { people, personEvents, personNames } from "@/db/schema/people";
+import {
+  people,
+  personEvents,
+  personIdentifiers,
+  personNames,
+} from "@/db/schema/people";
 import { relationshipTypes, relationships } from "@/db/schema/relationships";
 import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 
@@ -97,6 +103,79 @@ liveDescribe("research API", () => {
     expect(result.body?.data?.createPerson?.person?.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
     );
+  });
+
+  it("exposes authorized public identifiers while redacting protected values", async () => {
+    const owner = await fixture.createActor();
+    const person = await fixture.createPerson(owner, {
+      displayName: "Public identifier subject",
+    });
+    const personId = required(person.body?.data?.createPerson?.person?.id);
+    await fixture.database.insert(personIdentifiers).values([
+      {
+        id: newId(),
+        workspaceId: owner.workspaceId,
+        personId,
+        namespace: "public-registry",
+        identifierType: "profile",
+        normalizedValue: "https://example.invalid/profile/42",
+        issuer: "Synthetic Registry",
+        verificationState: "verified",
+        sensitivity: "public",
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      },
+      {
+        id: newId(),
+        workspaceId: owner.workspaceId,
+        personId,
+        namespace: "internal-directory",
+        identifierType: "record",
+        encryptedRawValue: "sealed-internal-record",
+        blindIndex: "a".repeat(64),
+        blindIndexVersion: 1,
+        issuer: "Synthetic Internal Directory",
+        verificationState: "verified",
+        sensitivity: "confidential",
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+      },
+    ]);
+    const result = await fixture.execute<{
+      person: {
+        identifiers: {
+          nodes: Array<{
+            namespace: string;
+            identifierType: string;
+            value: string | null;
+            redacted: boolean;
+          }>;
+        };
+      } | null;
+    }>({
+      jar: owner.jar,
+      operationName: "PersonIdentifiers",
+      query: PersonIdentifiersDocument,
+      variables: { id: personId, first: 10 },
+    });
+    expect(result.body?.errors).toBeUndefined();
+    expect(result.body?.data?.person?.identifiers.nodes).toEqual([
+      expect.objectContaining({
+        namespace: "public-registry",
+        identifierType: "profile",
+        value: "https://example.invalid/profile/42",
+        redacted: false,
+      }),
+    ]);
+
+    const foreign = await fixture.createActor();
+    const foreignRead = await fixture.execute({
+      jar: foreign.jar,
+      operationName: "PersonIdentifiers",
+      query: PersonIdentifiersDocument,
+      variables: { id: personId, first: 10 },
+    });
+    expect(foreignRead.body).toEqual({ data: { person: null } });
   });
 
   it("pages names and events only for a visible parent person", async () => {

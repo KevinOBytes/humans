@@ -9,12 +9,15 @@ import {
   PageControls,
   ResearchList,
 } from "@/components/research/paginated-research-list";
+import { Badge } from "@/components/ui/badge";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
   PageDetailsFragmentDoc,
   PersonEventSummaryFragmentDoc,
+  PersonIdentifierSummaryFragmentDoc,
   PersonNameSummaryFragmentDoc,
   PersonEventsDocument,
+  PersonIdentifiersDocument,
   PersonNamesDocument,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
@@ -112,7 +115,8 @@ export async function NamesTimelineSection({
 }) {
   const namesAfter = cursorParam(search, "nameAfter");
   const eventsAfter = cursorParam(search, "eventAfter");
-  const [namesData, eventsData] = await Promise.all([
+  const identifiersAfter = cursorParam(search, "identifierAfter");
+  const [namesData, eventsData, identifiersData] = await Promise.all([
     executeServerGraphQL(PersonNamesDocument, {
       id: personId,
       first: 5,
@@ -123,8 +127,14 @@ export async function NamesTimelineSection({
       first: 5,
       after: eventsAfter,
     }),
+    executeServerGraphQL(PersonIdentifiersDocument, {
+      id: personId,
+      first: 10,
+      after: identifiersAfter,
+    }),
   ]);
-  if (!namesData.person || !eventsData.person) notFound();
+  if (!namesData.person || !eventsData.person || !identifiersData.person)
+    notFound();
 
   const names = (namesData.person.names?.nodes ?? [])
     .filter(Boolean)
@@ -132,6 +142,9 @@ export async function NamesTimelineSection({
   const events = (eventsData.person.events?.nodes ?? [])
     .filter(Boolean)
     .map((node) => readFragment(PersonEventSummaryFragmentDoc, node));
+  const identifiers = (identifiersData.person.identifiers?.nodes ?? [])
+    .filter(Boolean)
+    .map((node) => readFragment(PersonIdentifierSummaryFragmentDoc, node));
   const namesPage = readFragment(
     PageDetailsFragmentDoc,
     namesData.person.names?.pageInfo,
@@ -140,10 +153,78 @@ export async function NamesTimelineSection({
     PageDetailsFragmentDoc,
     eventsData.person.events?.pageInfo,
   );
+  const identifiersPage = readFragment(
+    PageDetailsFragmentDoc,
+    identifiersData.person.identifiers?.pageInfo,
+  );
 
   return (
     <div className="space-y-7">
       {canUpdate ? <PersonRecordEditor personId={personId} /> : null}
+      <section className="space-y-3">
+        <ResearchList
+          title="Identifiers"
+          empty="No authorized identifiers have been recorded."
+        >
+          {identifiers.map((identifier) => (
+            <li
+              key={identifier.id}
+              className="border-border bg-card rounded-2xl border p-4"
+              aria-label={`${identifier.identifierType} identifier`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                    {identifier.namespace}
+                  </p>
+                  <h3 className="mt-1 font-semibold">
+                    {identifier.identifierType}
+                  </h3>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge>{identifier.verificationState.toLowerCase()}</Badge>
+                  {identifier.redacted ? <Badge>value redacted</Badge> : null}
+                </div>
+              </div>
+              <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-muted-foreground">Issuer</dt>
+                  <dd className="mt-1">
+                    {identifier.issuer ?? "Not recorded"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Value</dt>
+                  <dd className="mt-1 font-mono break-all">
+                    {identifier.value ?? "Redacted by sensitivity policy"}
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ResearchList>
+        <PageControls
+          label="Person identifiers"
+          resetHref={
+            identifiersAfter
+              ? profilePageHref(personId, "names", {
+                  nameAfter: namesAfter,
+                  eventAfter: eventsAfter,
+                })
+              : null
+          }
+          nextHref={
+            identifiersPage?.hasNextPage && identifiersPage.endCursor
+              ? profilePageHref(personId, "names", {
+                  nameAfter: namesAfter,
+                  eventAfter: eventsAfter,
+                  identifierAfter: identifiersPage.endCursor,
+                })
+              : null
+          }
+          nextLabel="More identifiers"
+        />
+      </section>
       <section className="space-y-3">
         <ResearchList
           title="Names"
