@@ -4172,6 +4172,9 @@ export type PersonRelationshipsQuery = {
         temporalPrecision: RelationshipTemporalPrecision | null;
         validFrom: string | null;
         validUntil: string | null;
+        observedAt: string | null;
+        creationMethod: string | null;
+        reviewState: string | null;
         version: number | null;
         createdAt: string | null;
         updatedAt: string | null;
@@ -10251,6 +10254,9 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
         temporalPrecision
         validFrom
         validUntil
+        observedAt
+        creationMethod
+        reviewState
         version
         createdAt
         updatedAt
@@ -10266,7 +10272,7 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:089175672712353d931e38e4d4821f108bc056287dd4eb32af83a0e6cf06927d",
+    hash: "sha256:67125532baf1e50feaf927a902da9155dd455c6d04de076a00ac77ea520cbc13",
   },
 ) as unknown as TypedDocumentString<
   PersonRelationshipsQuery,

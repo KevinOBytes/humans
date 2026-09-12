@@ -15,6 +15,11 @@ import { Label } from "@/components/ui/label";
 import { executeBrowserGraphQL } from "@/graphql/client";
 import { CreateRelationshipDocument } from "@/graphql/generated/graphql";
 
+function optionalUtcDate(value: FormDataEntryValue | null) {
+  const date = String(value ?? "").trim();
+  return date ? `${date}T00:00:00.000Z` : null;
+}
+
 export function RelationshipForm({
   people,
   relationshipTypes,
@@ -49,6 +54,30 @@ export function RelationshipForm({
         relationshipTypeId: String(data.get("relationshipTypeId")),
         governancePurpose: "research",
         explicitConfirmed: true,
+        state: String(data.get("state")).toLowerCase(),
+        confidence: Number(data.get("confidence")),
+        temporalSemantics: String(data.get("temporalSemantics")) as
+          | "EXACT"
+          | "APPROXIMATE"
+          | "BEFORE"
+          | "AFTER"
+          | "BETWEEN"
+          | "YEAR_ONLY"
+          | "UNKNOWN",
+        temporalPrecision: String(data.get("temporalPrecision")) as
+          | "INSTANT"
+          | "SECOND"
+          | "MINUTE"
+          | "HOUR"
+          | "DAY"
+          | "MONTH"
+          | "YEAR"
+          | "RANGE"
+          | "UNKNOWN",
+        validFrom: optionalUtcDate(data.get("validFrom")),
+        validUntil: optionalUtcDate(data.get("validUntil")),
+        observedAt: optionalUtcDate(data.get("observedAt")),
+        creationMethod: String(data.get("creationMethod")).toLowerCase(),
         sensitivity: String(data.get("sensitivity")) as
           "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED",
       },
@@ -124,6 +153,105 @@ export function RelationshipForm({
             {fieldMutationIssue(feedback, "relationshipTypeId")!.message}
           </p>
         ) : null}
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-state">Claim state</Label>
+        <select
+          id="relationship-state"
+          name="state"
+          defaultValue="ASSERTED"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        >
+          <option value="ASSERTED">Asserted</option>
+          <option value="INFERRED">Inferred (hypothesis)</option>
+        </select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-confidence">Confidence</Label>
+        <input
+          id="relationship-confidence"
+          name="confidence"
+          type="number"
+          required
+          min="0"
+          max="1"
+          step="0.01"
+          defaultValue="1"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-origin">Origin</Label>
+        <select
+          id="relationship-origin"
+          name="creationMethod"
+          defaultValue="MANUAL"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        >
+          <option value="MANUAL">Manual</option>
+          <option value="IMPORT">Import</option>
+        </select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-temporal-semantics">
+          Temporal meaning
+        </Label>
+        <select
+          id="relationship-temporal-semantics"
+          name="temporalSemantics"
+          defaultValue="UNKNOWN"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        >
+          <option value="UNKNOWN">Unknown</option>
+          <option value="EXACT">Exact</option>
+          <option value="APPROXIMATE">Approximate</option>
+          <option value="BEFORE">Before</option>
+          <option value="AFTER">After</option>
+          <option value="BETWEEN">Between</option>
+          <option value="YEAR_ONLY">Year only</option>
+        </select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-temporal-precision">Date precision</Label>
+        <select
+          id="relationship-temporal-precision"
+          name="temporalPrecision"
+          defaultValue="UNKNOWN"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        >
+          <option value="UNKNOWN">Unknown</option>
+          <option value="DAY">Day</option>
+          <option value="MONTH">Month</option>
+          <option value="YEAR">Year</option>
+          <option value="RANGE">Range</option>
+        </select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-observed-at">Observed on</Label>
+        <input
+          id="relationship-observed-at"
+          name="observedAt"
+          type="date"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-valid-from">Valid from</Label>
+        <input
+          id="relationship-valid-from"
+          name="validFrom"
+          type="date"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-valid-until">Valid until</Label>
+        <input
+          id="relationship-valid-until"
+          name="validUntil"
+          type="date"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        />
       </div>
       <div className="space-y-2">
         <Label htmlFor="relationship-target">Related person</Label>
