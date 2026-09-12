@@ -470,6 +470,43 @@ test("switching workspaces cannot retain graph, saved-view, or in-flight analysi
   ).toHaveCount(0);
 });
 
+test("a keyboard user can open an asserted relationship in its profile workflow", async ({
+  context,
+  page,
+}) => {
+  await authenticate(context, actor.jar);
+  const expectNoFailures = browserFailures(page);
+  await page.goto("/graph");
+  await expect(
+    page.getByRole("table", { name: "Loaded relationships" }),
+  ).toContainText("collaborates with");
+
+  const relationshipDetails = page.getByRole("button", {
+    name: "Details for collaborates with relationship",
+  });
+  await relationshipDetails.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "collaborates with" }),
+  ).toBeVisible();
+
+  const profileLink = page.getByRole("link", {
+    name: "Open relationship record",
+  });
+  await profileLink.focus();
+  await expect(profileLink).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(/\/people\/[0-9a-f-]+\?view=relationships$/u);
+  await expect(
+    page.getByRole("link", { name: "relationships" }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    page.getByRole("heading", { name: "Relationships" }),
+  ).toBeVisible();
+  expectNoFailures();
+});
+
 test("graph keyboard access, reduced motion, system dark mode, and narrow zoom reflow remain usable", async ({
   browser,
 }) => {

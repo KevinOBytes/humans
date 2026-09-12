@@ -160,18 +160,24 @@ export function GraphInspector({
           </div>
           {edge.state === "inferred" || edge.state === "disputed" ? (
             <div>
+              <dt className="sr-only">Review requirement</dt>
               <dd>
                 Promotion requires evidence review; confidence alone does not
                 establish a fact.
               </dd>
-              <Link
-                href={`/people/${edge.source}?view=relationships`}
-                className="text-primary underline"
-              >
-                Open relationship evidence
-              </Link>
             </div>
           ) : null}
+          <div>
+            <dt className="sr-only">Relationship workflow</dt>
+            <dd>
+              <Link
+                href={`/people/${edge.source}?view=relationships`}
+                className="text-primary focus-visible:ring-ring inline-flex min-h-11 items-center rounded-xl font-semibold underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+              >
+                Open relationship record
+              </Link>
+            </dd>
+          </div>
         </dl>
       ) : null}
     </aside>
