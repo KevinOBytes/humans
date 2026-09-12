@@ -79,6 +79,30 @@ describe("Better Auth administration boundary", () => {
     },
   );
 
+  it.each(["GET", "POST", "PATCH", "PUT", "DELETE"] as const)(
+    "blocks Better Auth admin routes for %s before application authorization",
+    async (method) => {
+      const delegate = vi.fn();
+      const loadHandlers = vi.fn(async () => ({
+        [method]: delegate,
+      }));
+      const handlers = createAuthRouteHandlers(loadHandlers);
+
+      const response = await handlers[method](
+        new Request("https://humans.example.test/api/auth/admin/list-users", {
+          method,
+        }),
+      );
+
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toMatchObject({
+        code: "AUTH_ADMINISTRATION_DISABLED",
+      });
+      expect(loadHandlers).not.toHaveBeenCalled();
+      expect(delegate).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     "/api/auth/organization/accept-invitation",
     "/api/auth/two-factor/disable",
