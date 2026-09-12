@@ -114,7 +114,11 @@ export async function runProductionSmoke({
       );
     const signIn = await call("/api/auth/sign-in/email", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        origin: base.origin,
+        referer: new URL("/sign-in", base).toString(),
+      },
       body: JSON.stringify({ email: adminEmail, password: adminPassword }),
     });
     if (!signIn.ok)
