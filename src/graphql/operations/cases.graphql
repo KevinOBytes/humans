@@ -116,12 +116,14 @@ mutation ReviewEvidenceAssertion(
   $expectedVersion: Int!
   $state: String!
   $reason: String!
+  $idempotencyKey: String
 ) {
   reviewEvidenceAssertion(
     id: $id
     expectedVersion: $expectedVersion
     state: $state
     reason: $reason
+    idempotencyKey: $idempotencyKey
   ) {
     id
     reviewState
