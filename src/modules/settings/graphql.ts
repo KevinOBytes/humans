@@ -209,6 +209,7 @@ const CreateOrganizationApiKeyInput = builder.inputType(
   "CreateOrganizationApiKeyInput",
   {
     fields: (t) => ({
+      idempotencyKey: t.string(),
       name: t.string({ required: true }),
       scopes: t.field({ type: ["String"], required: true }),
       expiresInSeconds: t.int(),
@@ -221,6 +222,7 @@ const RotateOrganizationApiKeyInput = builder.inputType(
   {
     fields: (t) => ({
       actionId: t.string({ required: true }),
+      idempotencyKey: t.string(),
       name: t.string({ required: true }),
       scopes: t.field({ type: ["String"], required: true }),
       expiresInSeconds: t.int(),
@@ -375,6 +377,7 @@ type ApiKeySettingsPage = SafeSettingsPage<SafeApiKeySettings> & {
 type ApiKeyLifecycleMutationResult = {
   actionId: string | null;
   code: "APPLIED" | "INVALID";
+  replayed?: boolean;
   requestId: string;
   secret?: string;
 };
@@ -441,6 +444,10 @@ const SettingsApiKeyLifecycleMutationPayload = builder
     fields: (t) => ({
       actionId: t.exposeString("actionId", { nullable: true }),
       code: t.exposeString("code", { nullable: false }),
+      replayed: t.boolean({
+        nullable: false,
+        resolve: (result) => result.replayed ?? false,
+      }),
       requestId: t.exposeString("requestId", { nullable: false }),
       // The plaintext is populated only for one successful create/rotate
       // response. No query type can select it.

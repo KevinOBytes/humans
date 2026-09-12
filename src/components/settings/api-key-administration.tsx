@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
@@ -80,8 +80,13 @@ export function ApiKeyAdministration({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const pendingMutation = useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+  } | null>(null);
 
   function resetForm() {
+    pendingMutation.current = null;
     setName("");
     setExpiry("");
     setScopes(readOnlySelection(allowedScopes));
@@ -105,6 +110,7 @@ export function ApiKeyAdministration({
   }
 
   function beginRotation(key: ApiKey) {
+    pendingMutation.current = null;
     setSecret(null);
     setCopied(false);
     setFeedback(null);
@@ -148,12 +154,25 @@ export function ApiKeyAdministration({
         ? {}
         : { expiresInSeconds: expiryValue(expiry) }),
     };
-    let payload: { code: string; secret?: string | null } | null = null;
+    const fingerprint = JSON.stringify({
+      ...common,
+      actionId: rotating?.actionId ?? null,
+    });
+    const idempotencyKey =
+      pendingMutation.current?.fingerprint === fingerprint
+        ? pendingMutation.current.idempotencyKey
+        : crypto.randomUUID();
+    pendingMutation.current = { fingerprint, idempotencyKey };
+    let payload: {
+      code: string;
+      replayed: boolean;
+      secret?: string | null;
+    } | null = null;
     if (rotating) {
       const result = await executeBrowserGraphQL(
         RotateOrganizationApiKeyDocument,
         {
-          input: { ...common, actionId: rotating.actionId },
+          input: { ...common, actionId: rotating.actionId, idempotencyKey },
         },
       );
       if (result.ok) payload = result.data.rotateOrganizationApiKey;
@@ -161,7 +180,7 @@ export function ApiKeyAdministration({
       const result = await executeBrowserGraphQL(
         CreateOrganizationApiKeyDocument,
         {
-          input: common,
+          input: { ...common, idempotencyKey },
         },
       );
       if (result.ok) payload = result.data.createOrganizationApiKey;
@@ -174,9 +193,18 @@ export function ApiKeyAdministration({
       });
       return;
     }
+    pendingMutation.current = null;
     setFeedback(mutationFeedback(payload.code));
     if (payload.code === "APPLIED" && payload.secret) {
       setSecret(payload.secret);
+      resetForm();
+      router.refresh();
+    } else if (payload.code === "APPLIED") {
+      setFeedback({
+        kind: "error",
+        message:
+          "The API-key change was applied, but its one-time secret is unavailable. Refresh the list, then rotate or revoke that key before using it.",
+      });
       resetForm();
       router.refresh();
     }

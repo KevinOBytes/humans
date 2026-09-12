@@ -299,6 +299,7 @@ export type CreateNoteInput = {
 
 export type CreateOrganizationApiKeyInput = {
   expiresInSeconds?: number | null | undefined;
+  idempotencyKey?: string | null | undefined;
   name: string;
   scopes: Array<string>;
 };
@@ -1022,6 +1023,7 @@ export type RevokeOrganizationApiKeyInput = {
 export type RotateOrganizationApiKeyInput = {
   actionId: string;
   expiresInSeconds?: number | null | undefined;
+  idempotencyKey?: string | null | undefined;
   name: string;
   scopes: Array<string>;
 };
@@ -5593,6 +5595,7 @@ export type CreateOrganizationApiKeyMutation = {
   createOrganizationApiKey: {
     actionId: string | null;
     code: string;
+    replayed: boolean;
     requestId: string;
     secret: string | null;
   };
@@ -5606,6 +5609,7 @@ export type RotateOrganizationApiKeyMutation = {
   rotateOrganizationApiKey: {
     actionId: string | null;
     code: string;
+    replayed: boolean;
     requestId: string;
     secret: string | null;
   };
@@ -12552,13 +12556,14 @@ export const CreateOrganizationApiKeyDocument = new TypedDocumentString(
   createOrganizationApiKey(input: $input) {
     actionId
     code
+    replayed
     requestId
     secret
   }
 }
     `,
   {
-    hash: "sha256:51ed27cd4d704bca9a7f76334fc02292dbcd6fd65b21effc08f95f808473b11d",
+    hash: "sha256:1d5149fb7782a96e5f2b21c405c1223d366336f746d3f64b7e1bbff07448c948",
   },
 ) as unknown as TypedDocumentString<
   CreateOrganizationApiKeyMutation,
@@ -12570,13 +12575,14 @@ export const RotateOrganizationApiKeyDocument = new TypedDocumentString(
   rotateOrganizationApiKey(input: $input) {
     actionId
     code
+    replayed
     requestId
     secret
   }
 }
     `,
   {
-    hash: "sha256:10dfee84646531365fda45a33fab9e36701d75e00482d0ddf36e63d1eda90a36",
+    hash: "sha256:1b995905e8fe11f08dcaa62dc1313d982ce6a6643a24d5c0570dc9ae4c03c3b5",
   },
 ) as unknown as TypedDocumentString<
   RotateOrganizationApiKeyMutation,

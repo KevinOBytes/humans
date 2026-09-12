@@ -88,6 +88,7 @@ mutation CreateOrganizationApiKey($input: CreateOrganizationApiKeyInput!) {
   createOrganizationApiKey(input: $input) {
     actionId
     code
+    replayed
     requestId
     secret
   }
@@ -97,6 +98,7 @@ mutation RotateOrganizationApiKey($input: RotateOrganizationApiKeyInput!) {
   rotateOrganizationApiKey(input: $input) {
     actionId
     code
+    replayed
     requestId
     secret
   }
