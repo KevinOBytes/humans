@@ -564,6 +564,7 @@ export function createAiWorkerRepository(
           const now = new Date();
           await transaction.insert(aiMessages).values({
             id: messageId,
+            aiRunId: input.runId,
             workspaceId: input.workspaceId,
             threadId: run.threadId,
             role: "assistant",
