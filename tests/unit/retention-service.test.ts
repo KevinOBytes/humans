@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { retentionDecision } from "@/modules/privacy/retention-service";
+import {
+  privacyResourceKinds,
+  retentionDecision,
+} from "@/modules/privacy/retention-service";
 const base = {
   now: new Date("2026-09-11T00:00:00Z"),
   createdAt: new Date("2026-09-01T00:00:00Z"),
@@ -7,6 +10,19 @@ const base = {
   policy: { id: "policy", retentionDays: 10, deletionBehavior: "soft_delete" },
 };
 describe("retention decisions", () => {
+  it("publishes the workspace-scoped legal-hold resource vocabulary", () => {
+    expect(privacyResourceKinds).toEqual([
+      "person",
+      "file",
+      "ai_thread",
+      "ai_run",
+      "ai_ephemeral_input",
+      "ai_suggestion",
+      "ai_citation",
+      "person_web_research_run",
+      "person_web_research_source",
+    ]);
+  });
   it("makes an exact due-time decision without deleting anything", () => {
     expect(retentionDecision(base).state).toBe("eligible_for_deletion");
     expect(

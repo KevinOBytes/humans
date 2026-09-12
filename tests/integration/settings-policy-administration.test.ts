@@ -30,7 +30,12 @@ import {
   UpdateWorkspaceDefaultsDocument,
 } from "@/graphql/generated/graphql";
 import { auditEvents, idempotencyKeys, jobs } from "@/db/schema/operations";
-import { aiReviewSuggestions } from "@/db/schema/ai";
+import {
+  aiMessages,
+  aiReviewSuggestions,
+  aiRuns,
+  aiThreads,
+} from "@/db/schema/ai";
 import { files } from "@/db/schema/files";
 import { people } from "@/db/schema/people";
 import {
@@ -1696,6 +1701,103 @@ liveDescribe("settings policy administration", () => {
       .from(deletionRequests)
       .where(eq(deletionRequests.id, foreignScopeRequestId));
     expect(rejectedForeignScope?.state).toBe("rejected");
+  });
+
+  it("blocks a person deletion when a linked AI run is held without a suggestion", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createPerson: { person: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input: { displayName: "Held AI run subject" } },
+    });
+    const personId = created.body?.data?.createPerson.person?.id;
+    if (!personId) throw new Error("Missing held AI person");
+    const threadId = newId();
+    const messageId = newId();
+    const runId = newId();
+    const now = new Date();
+    await fixture.database.insert(aiThreads).values({
+      id: threadId,
+      workspaceId: owner.workspaceId,
+      ownerId: owner.principalId,
+      title: "Held AI run",
+      sharing: "private",
+      createdAt: now,
+      createdBy: owner.principalId,
+      updatedAt: now,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(aiMessages).values({
+      id: messageId,
+      workspaceId: owner.workspaceId,
+      threadId,
+      role: "user",
+      encryptedContent: "sealed:omitted",
+      contentHash: "sha256:omitted",
+      createdAt: now,
+      createdBy: owner.principalId,
+      updatedAt: now,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(aiRuns).values({
+      id: runId,
+      workspaceId: owner.workspaceId,
+      threadId,
+      reviewPersonIds: [personId],
+      messageId,
+      provider: "COMPATIBLE",
+      baseUrlFingerprint: "a".repeat(64),
+      model: "test-model",
+      capabilityProfile: { version: 1 },
+      promptHash: "sha256:prompt",
+      configurationHash: "sha256:configuration",
+      state: "completed",
+      createdAt: now,
+      createdBy: owner.principalId,
+    });
+    await fixture.database.insert(legalHolds).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      resourceId: runId,
+      resourceKind: "ai_run",
+      reason: "Preserve AI provenance",
+      authority: "Privacy officer",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    const requestId = newId();
+    await fixture.database.insert(deletionRequests).values({
+      id: requestId,
+      workspaceId: owner.workspaceId,
+      requesterId: owner.principalId,
+      scope: { personIds: [personId], fileIds: [] },
+      state: "approved",
+      reviewedAt: now,
+      reviewedBy: owner.principalId,
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+
+    await expect(
+      executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "42".repeat(32),
+      }),
+    ).resolves.toBe(0);
+    const [person] = await fixture.database
+      .select({ deletedAt: people.deletedAt })
+      .from(people)
+      .where(eq(people.id, personId));
+    expect(person?.deletedAt).toBeNull();
+    expect(
+      await fixture.database
+        .select({ id: aiRuns.id })
+        .from(aiRuns)
+        .where(eq(aiRuns.id, runId)),
+    ).toHaveLength(1);
   });
 
   it("archives files, schedules cleanup, and removes indexed people when provided", async () => {

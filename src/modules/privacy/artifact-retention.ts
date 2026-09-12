@@ -1,10 +1,11 @@
 export type PersonArtifact = {
   id: string;
-  kind: "ai_suggestion" | "web_run" | "web_source";
+  kind: "ai_run" | "ai_suggestion" | "web_run" | "web_source";
   accepted?: boolean;
 };
 
 export type PersonArtifactDeletionPlan = {
+  aiRunIds: string[];
   aiSuggestionIds: string[];
   webRunIds: string[];
   webSourceIds: string[];
@@ -25,6 +26,7 @@ export function planPersonArtifactDeletion(input: {
 }): PersonArtifactDeletionPlan {
   const mode = input.mode ?? "subject_deletion";
   const grouped = {
+    aiRunIds: new Set<string>(),
     aiSuggestionIds: new Set<string>(),
     webRunIds: new Set<string>(),
     webSourceIds: new Set<string>(),
@@ -41,12 +43,14 @@ export function planPersonArtifactDeletion(input: {
       artifact.accepted
     )
       continue;
-    if (artifact.kind === "ai_suggestion")
+    if (artifact.kind === "ai_run") grouped.aiRunIds.add(artifact.id);
+    else if (artifact.kind === "ai_suggestion")
       grouped.aiSuggestionIds.add(artifact.id);
     else if (artifact.kind === "web_run") grouped.webRunIds.add(artifact.id);
     else grouped.webSourceIds.add(artifact.id);
   }
   return {
+    aiRunIds: [...grouped.aiRunIds].sort(),
     aiSuggestionIds: [...grouped.aiSuggestionIds].sort(),
     webRunIds: [...grouped.webRunIds].sort(),
     webSourceIds: [...grouped.webSourceIds].sort(),

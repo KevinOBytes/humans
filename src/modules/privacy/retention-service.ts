@@ -1,8 +1,19 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "@/db/id";
+import {
+  aiCitations,
+  aiEphemeralInputs,
+  aiReviewSuggestions,
+  aiRuns,
+  aiThreads,
+} from "@/db/schema/ai";
 import { people } from "@/db/schema/people";
 import { files } from "@/db/schema/files";
+import {
+  personWebResearchRuns,
+  personWebResearchSources,
+} from "@/db/schema/person-research";
 import { legalHolds, retentionPolicies } from "@/db/schema/workspaces";
 import { createGraphQLError } from "@/graphql/errors";
 import {
@@ -12,10 +23,28 @@ import {
 } from "@/modules/audit/service";
 import { runResearchTransaction } from "@/modules/audit/transactions";
 
+export const privacyResourceKinds = [
+  "person",
+  "file",
+  "ai_thread",
+  "ai_run",
+  "ai_ephemeral_input",
+  "ai_suggestion",
+  "ai_citation",
+  "person_web_research_run",
+  "person_web_research_source",
+] as const;
+export type PrivacyResourceKind = (typeof privacyResourceKinds)[number];
 export type PrivacyResource = {
-  resourceKind: "person" | "file";
+  resourceKind: PrivacyResourceKind;
   resourceId: string;
 };
+function isPrivacyResourceKind(value: unknown): value is PrivacyResourceKind {
+  return (
+    typeof value === "string" &&
+    (privacyResourceKinds as readonly string[]).includes(value)
+  );
+}
 export function privacyPermission(
   context: ResearchServiceContext,
   manage = false,
@@ -38,35 +67,70 @@ export async function requirePrivacyResource(
 ) {
   if (
     !z.uuid().safeParse(input.resourceId).success ||
-    !["person", "file"].includes(input.resourceKind)
+    !isPrivacyResourceKind(input.resourceKind)
   )
     throw createGraphQLError("VALIDATION_FAILED", "The resource is invalid.");
-  if (!context.permissions.has(`${input.resourceKind}:read`))
+  const permission =
+    input.resourceKind === "person" || input.resourceKind.startsWith("person_")
+      ? "person:read"
+      : input.resourceKind === "file"
+        ? "file:read"
+        : "analysis:read";
+  if (!context.permissions.has(permission))
     throw createGraphQLError("FORBIDDEN", "This operation is not permitted.");
-  const table = input.resourceKind === "person" ? people : files;
+  if (input.resourceKind === "person" || input.resourceKind === "file") {
+    const table = input.resourceKind === "person" ? people : files;
+    const [row] = await context.database
+      .select({
+        id: table.id,
+        sensitivity: table.sensitivity,
+        createdAt: table.createdAt,
+      })
+      .from(table)
+      .where(
+        and(
+          eq(table.workspaceId, context.workspaceId),
+          eq(table.id, input.resourceId),
+          includeDeleted ? undefined : isNull(table.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (
+      !row ||
+      !(await canAccessResource(context.database, context, {
+        id: row.id,
+        resourceKind: input.resourceKind,
+        sensitivity: row.sensitivity,
+      }))
+    )
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    return row;
+  }
+  const artifactTables = {
+    ai_citation: aiCitations,
+    ai_ephemeral_input: aiEphemeralInputs,
+    ai_run: aiRuns,
+    ai_suggestion: aiReviewSuggestions,
+    ai_thread: aiThreads,
+    person_web_research_run: personWebResearchRuns,
+    person_web_research_source: personWebResearchSources,
+  } as const;
+  const table = artifactTables[input.resourceKind];
   const [row] = await context.database
-    .select({
-      id: table.id,
-      sensitivity: table.sensitivity,
-      createdAt: table.createdAt,
-    })
+    .select({ id: table.id, createdAt: table.createdAt })
     .from(table)
     .where(
       and(
         eq(table.workspaceId, context.workspaceId),
         eq(table.id, input.resourceId),
-        includeDeleted ? undefined : isNull(table.deletedAt),
+        "deletedAt" in table ? isNull(table.deletedAt) : undefined,
       ),
     )
     .limit(1);
-  if (
-    !row ||
-    !(await canAccessResource(context.database, context, {
-      id: row.id,
-      resourceKind: input.resourceKind,
-      sensitivity: row.sensitivity,
-    }))
-  )
+  if (!row)
     throw createGraphQLError(
       "NOT_FOUND",
       "The requested resource was not found.",

@@ -2,10 +2,23 @@ import { builder } from "@/graphql/builder";
 import type { privacyProcessorPropagations } from "@/db/schema/privacy";
 import type { legalHolds } from "@/db/schema/workspaces";
 import type { PrivacyRequestRow } from "./request-types";
-import type { retentionDecision } from "./retention-service";
+import {
+  privacyResourceKinds,
+  type retentionDecision,
+} from "./retention-service";
 
 const ResourceKind = builder.enumType("PrivacyResourceKind", {
-  values: { PERSON: { value: "person" }, FILE: { value: "file" } } as const,
+  values: {
+    PERSON: { value: privacyResourceKinds[0] },
+    FILE: { value: privacyResourceKinds[1] },
+    AI_THREAD: { value: privacyResourceKinds[2] },
+    AI_RUN: { value: privacyResourceKinds[3] },
+    AI_EPHEMERAL_INPUT: { value: privacyResourceKinds[4] },
+    AI_SUGGESTION: { value: privacyResourceKinds[5] },
+    AI_CITATION: { value: privacyResourceKinds[6] },
+    PERSON_WEB_RESEARCH_RUN: { value: privacyResourceKinds[7] },
+    PERSON_WEB_RESEARCH_SOURCE: { value: privacyResourceKinds[8] },
+  } as const,
 });
 const RequestType = builder.enumType("PrivacyRequestType", {
   values: {

@@ -223,11 +223,23 @@ export async function purgeExpiredAiThreads(input: {
               ),
             )
         : [];
+      const ephemeralInputs = runIds.length
+        ? await transaction
+            .select({ id: aiEphemeralInputs.id })
+            .from(aiEphemeralInputs)
+            .where(
+              and(
+                eq(aiEphemeralInputs.workspaceId, candidate.workspaceId),
+                inArray(aiEphemeralInputs.aiRunId, runIds),
+              ),
+            )
+        : [];
       const heldArtifactIds = [
         candidate.id,
         ...runIds,
         ...suggestions.map((suggestion) => suggestion.id),
         ...citations.map((citation) => citation.id),
+        ...ephemeralInputs.map((input) => input.id),
       ];
       const artifactHolds = await transaction
         .select({ id: legalHolds.id })
@@ -238,7 +250,7 @@ export async function purgeExpiredAiThreads(input: {
             eq(legalHolds.state, "active"),
             isNull(legalHolds.deletedAt),
             inArray(legalHolds.resourceId, heldArtifactIds),
-            sql`${legalHolds.resourceKind} in ('ai_thread', 'ai_run', 'ai_suggestion', 'ai_citation')`,
+            sql`${legalHolds.resourceKind} in ('ai_thread', 'ai_run', 'ai_suggestion', 'ai_citation', 'ai_ephemeral_input')`,
           ),
         );
       if (artifactHolds.length) continue;

@@ -1,7 +1,14 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { files } from "@/db/schema/files";
-import { aiReviewSuggestions } from "@/db/schema/ai";
+import {
+  aiCitations,
+  aiEphemeralInputs,
+  aiMessages,
+  aiReviewSuggestions,
+  aiRuns,
+  aiToolCalls,
+} from "@/db/schema/ai";
 import { auditEvents } from "@/db/schema/operations";
 import { deletionRequests, privacyRequests } from "@/db/schema/privacy";
 import {
@@ -243,6 +250,26 @@ export async function executeApprovedDeletionRequests(input: {
               ),
             )
         : [];
+      const aiRunRows = scope.personIds.length
+        ? await transaction
+            .select({
+              id: aiRuns.id,
+              messageId: aiRuns.messageId,
+              threadId: aiRuns.threadId,
+            })
+            .from(aiRuns)
+            .where(
+              and(
+                eq(aiRuns.workspaceId, request.workspaceId),
+                or(
+                  ...scope.personIds.map(
+                    (personId) =>
+                      sql`${aiRuns.reviewPersonIds} @> ${JSON.stringify([personId])}::jsonb`,
+                  ),
+                ),
+              ),
+            )
+        : [];
       const webSourceRows = scope.personIds.length
         ? await transaction
             .select({ id: personWebResearchSources.id })
@@ -270,6 +297,7 @@ export async function executeApprovedDeletionRequests(input: {
             )
         : [];
       const artifacts = [
+        ...aiRunRows.map((row) => ({ id: row.id, kind: "ai_run" as const })),
         ...webRunRows.map((row) => ({ id: row.id, kind: "web_run" as const })),
         ...webSourceRows.map((row) => ({
           id: row.id,
@@ -282,6 +310,17 @@ export async function executeApprovedDeletionRequests(input: {
         })),
       ];
       const holdArtifactPredicates = [
+        ...(aiRunRows.length
+          ? [
+              and(
+                eq(legalHolds.resourceKind, "ai_run"),
+                inArray(
+                  legalHolds.resourceId,
+                  aiRunRows.map((row) => row.id),
+                ),
+              ),
+            ]
+          : []),
         ...(webRunRows.length
           ? [
               and(
@@ -503,6 +542,55 @@ export async function executeApprovedDeletionRequests(input: {
               inArray(aiReviewSuggestions.id, artifactPlan.aiSuggestionIds),
             ),
           );
+      }
+      if (artifactPlan.aiRunIds.length) {
+        const runIds = artifactPlan.aiRunIds;
+        const messageIds = aiRunRows
+          .filter((row) => runIds.includes(row.id) && row.messageId)
+          .map((row) => row.messageId!);
+        await transaction
+          .delete(aiEphemeralInputs)
+          .where(
+            and(
+              eq(aiEphemeralInputs.workspaceId, request.workspaceId),
+              inArray(aiEphemeralInputs.aiRunId, runIds),
+            ),
+          );
+        await transaction
+          .delete(aiCitations)
+          .where(
+            and(
+              eq(aiCitations.workspaceId, request.workspaceId),
+              inArray(aiCitations.aiRunId, runIds),
+            ),
+          );
+        await transaction
+          .delete(aiToolCalls)
+          .where(
+            and(
+              eq(aiToolCalls.workspaceId, request.workspaceId),
+              inArray(aiToolCalls.aiRunId, runIds),
+            ),
+          );
+        await transaction
+          .delete(aiRuns)
+          .where(
+            and(
+              eq(aiRuns.workspaceId, request.workspaceId),
+              inArray(aiRuns.id, runIds),
+            ),
+          );
+        if (messageIds.length) {
+          await transaction
+            .delete(aiMessages)
+            .where(
+              and(
+                eq(aiMessages.workspaceId, request.workspaceId),
+                inArray(aiMessages.id, messageIds),
+                sql`not exists (select 1 from ${aiRuns} where ${aiRuns.workspaceId} = ${request.workspaceId}::uuid and ${aiRuns.messageId} = ${aiMessages.id})`,
+              ),
+            );
+        }
       }
       if (artifactPlan.webSourceIds.length) {
         await transaction

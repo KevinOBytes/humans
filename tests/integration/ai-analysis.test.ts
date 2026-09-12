@@ -912,6 +912,63 @@ liveDescribe("atomic AI analysis persistence", () => {
     ).toHaveLength(1);
   });
 
+  it("preserves an expired AI thread when an ephemeral child is held", async () => {
+    const owner = await fixture.createActor();
+    const context = await userContext(owner);
+    await fixture.database
+      .update(workspaceSettings)
+      .set({ retentionDays: 0 })
+      .where(eq(workspaceSettings.workspaceId, owner.workspaceId));
+    const run = await service(context).startAiAnalysis({
+      question: "Held ephemeral child",
+      idempotencyKey: "retention-ephemeral-held",
+    });
+    const [runRow] = await fixture.database
+      .select({ threadId: aiRuns.threadId })
+      .from(aiRuns)
+      .where(eq(aiRuns.id, run.id));
+    const threadId = required(runRow).threadId;
+    const old = new Date(Date.now() - 60_000);
+    await fixture.database
+      .update(aiThreads)
+      .set({ updatedAt: old })
+      .where(eq(aiThreads.id, threadId));
+    await fixture.database
+      .update(aiRuns)
+      .set({ state: "completed", completedAt: old })
+      .where(eq(aiRuns.id, run.id));
+    const ephemeralId = newId();
+    await fixture.database.insert(aiEphemeralInputs).values({
+      id: ephemeralId,
+      workspaceId: owner.workspaceId,
+      threadId,
+      aiRunId: run.id,
+      encryptedContent: "sealed:ephemeral",
+      contentHash: "sha256:ephemeral",
+      createdAt: new Date(old.getTime() - 2_000),
+      expiresAt: new Date(old.getTime() - 1_000),
+    });
+    await fixture.database.insert(legalHolds).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      resourceId: ephemeralId,
+      resourceKind: "ai_ephemeral_input",
+      reason: "Preserve ephemeral evidence",
+      authority: "Privacy officer",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await expect(
+      purgeExpiredAiThreads({ database: fixture.database, now: new Date() }),
+    ).resolves.toBe(0);
+    expect(
+      await fixture.database
+        .select({ id: aiThreads.id })
+        .from(aiThreads)
+        .where(eq(aiThreads.id, threadId)),
+    ).toHaveLength(1);
+  });
+
   it("revalidates live authority before enqueue, read, and cancel", async () => {
     const owner = await fixture.createActor();
     const context = await apiKeyContext(owner);

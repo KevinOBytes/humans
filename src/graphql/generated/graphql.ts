@@ -869,7 +869,16 @@ export type PrivacyRequestType =
   | "EXPORT"
   | "RESTRICTION";
 
-export type PrivacyResourceKind = "FILE" | "PERSON";
+export type PrivacyResourceKind =
+  | "AI_CITATION"
+  | "AI_EPHEMERAL_INPUT"
+  | "AI_RUN"
+  | "AI_SUGGESTION"
+  | "AI_THREAD"
+  | "FILE"
+  | "PERSON"
+  | "PERSON_WEB_RESEARCH_RUN"
+  | "PERSON_WEB_RESEARCH_SOURCE";
 
 export type PrivacyReviewState = "APPROVED" | "REJECTED" | "REVIEWING";
 
