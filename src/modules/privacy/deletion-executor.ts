@@ -1,14 +1,20 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { files } from "@/db/schema/files";
+import { aiReviewSuggestions } from "@/db/schema/ai";
 import { auditEvents } from "@/db/schema/operations";
 import { deletionRequests, privacyRequests } from "@/db/schema/privacy";
+import {
+  personWebResearchRuns,
+  personWebResearchSources,
+} from "@/db/schema/person-research";
 import { legalHolds } from "@/db/schema/workspaces";
 import { people } from "@/db/schema/people";
 import { newId } from "@/db/id";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { ensureArchivedFileCleanupJob } from "@/modules/files/cleanup";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
+import { planPersonArtifactDeletion } from "./artifact-retention";
 
 const MAX_DELETION_BATCH = 100;
 const WORKER_ACTOR = "worker:deletion";
@@ -226,6 +232,121 @@ export async function executeApprovedDeletionRequests(input: {
             .for("update")
         : [];
 
+      const webRunRows = scope.personIds.length
+        ? await transaction
+            .select({ id: personWebResearchRuns.id })
+            .from(personWebResearchRuns)
+            .where(
+              and(
+                eq(personWebResearchRuns.workspaceId, request.workspaceId),
+                inArray(personWebResearchRuns.personId, scope.personIds),
+              ),
+            )
+        : [];
+      const webSourceRows = scope.personIds.length
+        ? await transaction
+            .select({ id: personWebResearchSources.id })
+            .from(personWebResearchSources)
+            .where(
+              and(
+                eq(personWebResearchSources.workspaceId, request.workspaceId),
+                inArray(personWebResearchSources.personId, scope.personIds),
+              ),
+            )
+        : [];
+      const suggestionRows = scope.personIds.length
+        ? await transaction
+            .select({
+              accepted: aiReviewSuggestions.status,
+              aiRunId: aiReviewSuggestions.aiRunId,
+              id: aiReviewSuggestions.id,
+            })
+            .from(aiReviewSuggestions)
+            .where(
+              and(
+                eq(aiReviewSuggestions.workspaceId, request.workspaceId),
+                inArray(aiReviewSuggestions.personId, scope.personIds),
+              ),
+            )
+        : [];
+      const artifacts = [
+        ...webRunRows.map((row) => ({ id: row.id, kind: "web_run" as const })),
+        ...webSourceRows.map((row) => ({
+          id: row.id,
+          kind: "web_source" as const,
+        })),
+        ...suggestionRows.map((row) => ({
+          accepted: row.accepted === "accepted",
+          id: row.id,
+          kind: "ai_suggestion" as const,
+        })),
+      ];
+      const holdArtifactPredicates = [
+        ...(webRunRows.length
+          ? [
+              and(
+                eq(legalHolds.resourceKind, "person_web_research_run"),
+                inArray(
+                  legalHolds.resourceId,
+                  webRunRows.map((row) => row.id),
+                ),
+              ),
+            ]
+          : []),
+        ...(webSourceRows.length
+          ? [
+              and(
+                eq(legalHolds.resourceKind, "person_web_research_source"),
+                inArray(
+                  legalHolds.resourceId,
+                  webSourceRows.map((row) => row.id),
+                ),
+              ),
+            ]
+          : []),
+        ...(suggestionRows.length
+          ? [
+              and(
+                eq(legalHolds.resourceKind, "ai_suggestion"),
+                inArray(
+                  legalHolds.resourceId,
+                  suggestionRows.map((row) => row.id),
+                ),
+              ),
+            ]
+          : []),
+        ...(() => {
+          const aiRunIds = suggestionRows
+            .map((row) => row.aiRunId)
+            .filter((id): id is string => Boolean(id));
+          return aiRunIds.length
+            ? [
+                and(
+                  eq(legalHolds.resourceKind, "ai_run"),
+                  inArray(legalHolds.resourceId, aiRunIds),
+                ),
+              ]
+            : [];
+        })(),
+      ];
+      const artifactHolds = holdArtifactPredicates.length
+        ? await transaction
+            .select({ resourceId: legalHolds.resourceId })
+            .from(legalHolds)
+            .where(
+              and(
+                eq(legalHolds.workspaceId, request.workspaceId),
+                eq(legalHolds.state, "active"),
+                isNull(legalHolds.deletedAt),
+                or(...holdArtifactPredicates),
+              ),
+            )
+        : [];
+      const artifactPlan = planPersonArtifactDeletion({
+        artifacts,
+        heldIds: new Set(artifactHolds.map((hold) => hold.resourceId)),
+      });
+
       // A deletion request is an explicit resource set. Fail closed when an
       // ID is stale, already deleted, or belongs to another workspace rather
       // than silently completing a partial (or empty) deletion.
@@ -285,6 +406,7 @@ export async function executeApprovedDeletionRequests(input: {
               ),
             ]
           : []),
+        ...holdArtifactPredicates,
       ];
       const holds = holdPredicates.length
         ? await transaction
@@ -369,6 +491,36 @@ export async function executeApprovedDeletionRequests(input: {
                 personRows.map((row) => row.id),
               ),
               isNull(people.deletedAt),
+            ),
+          );
+      }
+      if (artifactPlan.aiSuggestionIds.length) {
+        await transaction
+          .delete(aiReviewSuggestions)
+          .where(
+            and(
+              eq(aiReviewSuggestions.workspaceId, request.workspaceId),
+              inArray(aiReviewSuggestions.id, artifactPlan.aiSuggestionIds),
+            ),
+          );
+      }
+      if (artifactPlan.webSourceIds.length) {
+        await transaction
+          .delete(personWebResearchSources)
+          .where(
+            and(
+              eq(personWebResearchSources.workspaceId, request.workspaceId),
+              inArray(personWebResearchSources.id, artifactPlan.webSourceIds),
+            ),
+          );
+      }
+      if (artifactPlan.webRunIds.length) {
+        await transaction
+          .delete(personWebResearchRuns)
+          .where(
+            and(
+              eq(personWebResearchRuns.workspaceId, request.workspaceId),
+              inArray(personWebResearchRuns.id, artifactPlan.webRunIds),
             ),
           );
       }

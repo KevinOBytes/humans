@@ -30,8 +30,13 @@ import {
   UpdateWorkspaceDefaultsDocument,
 } from "@/graphql/generated/graphql";
 import { auditEvents, idempotencyKeys, jobs } from "@/db/schema/operations";
+import { aiReviewSuggestions } from "@/db/schema/ai";
 import { files } from "@/db/schema/files";
 import { people } from "@/db/schema/people";
+import {
+  personWebResearchRuns,
+  personWebResearchSources,
+} from "@/db/schema/person-research";
 import { consentRecords, deletionRequests } from "@/db/schema/privacy";
 import {
   accessPolicies,
@@ -1416,6 +1421,66 @@ liveDescribe("settings policy administration", () => {
     });
     const personId = created.body?.data?.createPerson.person?.id;
     if (!personId) throw new Error("Missing deletion executor person");
+    const researchRunId = newId();
+    const researchSourceId = newId();
+    await fixture.database.insert(personWebResearchRuns).values({
+      id: researchRunId,
+      workspaceId: owner.workspaceId,
+      personId,
+      governancePurpose: "subject-rights test",
+      provider: "COMPATIBLE",
+      model: "test-model",
+      queryHash: "a".repeat(64),
+      sourceCount: 1,
+      sources: [
+        {
+          title: "Public source",
+          url: "https://example.com/source",
+          snippet: "redacted test snippet",
+        },
+      ],
+      suggestions: [],
+      consentedAt: new Date(),
+      createdBy: owner.principalId,
+    });
+    await fixture.database.insert(personWebResearchSources).values({
+      id: researchSourceId,
+      workspaceId: owner.workspaceId,
+      runId: researchRunId,
+      personId,
+      url: "https://example.com/source",
+      title: "Public source",
+      snippet: "redacted test snippet",
+      retrievalHash: "b".repeat(64),
+      provider: "COMPATIBLE",
+      model: "test-model",
+      metadata: {},
+    });
+    const suggestionId = newId();
+    await fixture.database.insert(aiReviewSuggestions).values({
+      id: suggestionId,
+      workspaceId: owner.workspaceId,
+      personId,
+      purpose: "subject-rights test",
+      fieldKey: "biography",
+      proposedValue: { version: 1, kind: "profile", value: "draft" },
+      evidenceReferences: [
+        {
+          kind: "web",
+          url: "https://example.com/source",
+          locator: "snippet",
+          quote: "redacted test snippet",
+        },
+      ],
+      confidence: 0.5,
+      uncertainty: "test uncertainty",
+      provider: "COMPATIBLE",
+      model: "test-model",
+      promptPolicyVersion: "v1",
+      webRunId: researchRunId,
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
 
     const request = await fixture.execute<{
       createDeletionRequest: { id: string | null };
@@ -1467,6 +1532,24 @@ liveDescribe("settings policy administration", () => {
       .where(eq(people.id, personId));
     expect(person).toMatchObject({ status: "archived" });
     expect(person?.deletedAt).toBeInstanceOf(Date);
+    expect(
+      await fixture.database
+        .select({ id: personWebResearchRuns.id })
+        .from(personWebResearchRuns)
+        .where(eq(personWebResearchRuns.id, researchRunId)),
+    ).toHaveLength(0);
+    expect(
+      await fixture.database
+        .select({ id: personWebResearchSources.id })
+        .from(personWebResearchSources)
+        .where(eq(personWebResearchSources.id, researchSourceId)),
+    ).toHaveLength(0);
+    expect(
+      await fixture.database
+        .select({ id: aiReviewSuggestions.id })
+        .from(aiReviewSuggestions)
+        .where(eq(aiReviewSuggestions.id, suggestionId)),
+    ).toHaveLength(0);
     const [completedRequest] = await fixture.database
       .select({ state: deletionRequests.state })
       .from(deletionRequests)
