@@ -144,7 +144,9 @@ export function CaseWorkspace({
           ) : null}
         </>
       ) : null}
-      {selected?.id ? <ResearchAssignmentQueue caseId={selected.id} /> : null}
+      {selected?.id ? (
+        <ResearchAssignmentQueue key={selected.id} caseId={selected.id} />
+      ) : null}
     </section>
   );
 }
