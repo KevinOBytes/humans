@@ -1,5 +1,16 @@
 # MVP requirements
 
+Latest application runtime checkpoint (2026-09-12): corrected tree
+`bfc83c2` passed GitHub Actions run `34717862746` across all 9 checks,
+including the live PostgreSQL migration and identifier-projection acceptance.
+The Docker Compose app/worker image was rebuilt with migration `0043` applied;
+local readiness reported configuration, PostgreSQL, Redis, and storage healthy.
+Vercel deployment `dpl_BMqkFtju5aNuRk4fehtfBf88aLos` reached `READY` and is
+serving `humans.kevinbytes.com`. The redacted production smoke passed the
+homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs
+boundaries. Hosted authenticated/provider acceptance and the 24 explicitly
+incomplete rows remain open.
+
 Latest verified release checkpoint (2026-09-12): commit `a813d97` passed GitHub
 Actions run `34715018651` across all 9 checks. The exact tree was rebuilt and
 started with the local PostgreSQL/Redis/MinIO Compose stack; `/api/health/ready`
