@@ -15,6 +15,7 @@ describe("person-scoped artifact retention", () => {
         heldIds: new Set(["suggestion-1"]),
       }),
     ).toEqual({
+      aiRunIds: [],
       aiSuggestionIds: [],
       webRunIds: ["run-1"],
       webSourceIds: ["source-1"],
@@ -33,6 +34,7 @@ describe("person-scoped artifact retention", () => {
         mode: "retention",
       }),
     ).toEqual({
+      aiRunIds: [],
       aiSuggestionIds: ["pending"],
       webRunIds: [],
       webSourceIds: [],

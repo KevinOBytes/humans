@@ -55,4 +55,20 @@ describe("AI artifact retention candidates", () => {
       }).runs,
     ).toEqual(["run-expired"]);
   });
+
+  it("keeps an expired ephemeral child when that child is held", () => {
+    expect(
+      evaluateAiRetention({
+        now,
+        retentionDays: 30,
+        runs: [],
+        suggestions: [],
+        citations: [],
+        ephemeralInputs: [
+          { id: "input-held", runId: "run-expired", expiresAt: expired },
+        ],
+        legalHoldResourceIds: new Set(["input-held"]),
+      }).ephemeralInputs,
+    ).toEqual([]);
+  });
 });
