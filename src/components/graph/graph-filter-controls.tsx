@@ -178,7 +178,7 @@ export function GraphFilterControls({
       className="border-border mt-4 rounded-xl border p-4"
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
-      <summary className="cursor-pointer text-sm font-semibold">
+      <summary className="focus-visible:ring-ring focus-visible:ring-offset-background cursor-pointer rounded-lg text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-offset-2">
         Relationship and time filters
       </summary>
       <div className="mt-4 grid gap-5 lg:grid-cols-2">
