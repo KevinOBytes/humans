@@ -25,6 +25,7 @@ import type {
   PersonTagRow,
   RelationshipEvidenceRow,
   RelationshipTagRow,
+  SourceCustodyEventRow,
   SourceRow,
   TagRow,
 } from "./repository";
@@ -57,6 +58,44 @@ const EvidenceFilterInput = builder.inputType("EvidenceFilterInput", {
   }),
 });
 
+export const SourceCustodyEvent = builder
+  .objectRef<SourceCustodyEventRow>("SourceCustodyEvent")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      sourceId: t.expose("sourceId", { type: "UUID" }),
+      eventKind: t.exposeString("eventKind"),
+      occurredAt: t.field({
+        type: "DateTime",
+        resolve: (row) => row.occurredAt.toISOString(),
+      }),
+      collector: t.exposeString("collector", { nullable: true }),
+      integrityHash: t.exposeString("integrityHash", { nullable: true }),
+      notes: t.exposeString("notes", { nullable: true }),
+      metadata: t.field({ type: "JSON", resolve: (row) => row.metadata }),
+      createdAt: t.field({
+        type: "DateTime",
+        resolve: (row) => row.createdAt.toISOString(),
+      }),
+      createdBy: t.field({
+        type: ActorAttribution,
+        resolve: (row, _args, context) =>
+          context.loaders.actorAttribution.load(`p:${row.createdBy}`),
+      }),
+    }),
+  });
+
+const SourceCustodyEventConnection = builder
+  .objectRef<{ nodes: SourceCustodyEventRow[] }>("SourceCustodyEventConnection")
+  .implement({
+    fields: (t) => ({
+      nodes: t.expose("nodes", {
+        type: [SourceCustodyEvent],
+        complexity: { field: 0, multiplier: 1 },
+      }),
+    }),
+  });
+
 export const Source = builder.objectRef<SourceRow>("Source").implement({
   fields: (t) => ({
     id: t.expose("id", { type: "UUID" }),
@@ -66,6 +105,13 @@ export const Source = builder.objectRef<SourceRow>("Source").implement({
     author: t.exposeString("author", { nullable: true }),
     canonicalUrl: t.exposeString("canonicalUrl", { nullable: true }),
     citation: t.exposeString("citation", { nullable: true }),
+    publicationDate: t.field({
+      type: "DateTime",
+      nullable: true,
+      resolve: (row) => row.publicationDate?.toISOString() ?? null,
+    }),
+    collector: t.exposeString("collector", { nullable: true }),
+    extractionMethod: t.exposeString("extractionMethod", { nullable: true }),
     collectionMethod: t.exposeString("collectionMethod", { nullable: true }),
     collectedAt: t.field({
       type: "DateTime",
@@ -101,6 +147,17 @@ export const Source = builder.objectRef<SourceRow>("Source").implement({
       type: ActorAttribution,
       resolve: (row, _args, context) =>
         context.loaders.actorAttribution.load(`p:${row.updatedBy}`),
+    }),
+    custodyEvents: t.field({
+      type: SourceCustodyEventConnection,
+      args: { first: t.arg.int() },
+      complexity: (args) => ({ field: 2, multiplier: multiplier(args.first) }),
+      resolve: (row, args, context) => {
+        requirePermission(context, "source", "read");
+        return context.services.evidence
+          .listSourceCustodyEvents(row.id, args.first)
+          .then((nodes) => ({ nodes }));
+      },
     }),
   }),
 });
@@ -450,6 +507,9 @@ const CreateSourceInput = builder.inputType("CreateSourceInput", {
     author: t.string(),
     canonicalUrl: t.string(),
     citation: t.string(),
+    publicationDate: t.field({ type: "DateTime" }),
+    collector: t.string(),
+    extractionMethod: t.string(),
     collectionMethod: t.string(),
     collectedAt: t.field({ type: "DateTime" }),
     reliability: t.float(),
@@ -467,6 +527,9 @@ const UpdateSourceInput = builder.inputType("UpdateSourceInput", {
     author: t.string(),
     canonicalUrl: t.string(),
     citation: t.string(),
+    publicationDate: t.field({ type: "DateTime" }),
+    collector: t.string(),
+    extractionMethod: t.string(),
     reliability: t.float(),
     sensitivity: t.field({ type: Sensitivity }),
     metadata: t.field({ type: "JSON" }),
@@ -478,6 +541,20 @@ const ArchiveSourceInput = builder.inputType("ArchiveSourceInput", {
     expectedVersion: t.int({ required: true }),
   }),
 });
+const RecordSourceCustodyEventInput = builder.inputType(
+  "RecordSourceCustodyEventInput",
+  {
+    fields: (t) => ({
+      sourceId: t.field({ type: "UUID", required: true }),
+      eventKind: t.string({ required: true }),
+      occurredAt: t.field({ type: "DateTime", required: true }),
+      collector: t.string(),
+      integrityHash: t.string(),
+      notes: t.string(),
+      metadata: t.field({ type: "JSON" }),
+    }),
+  },
+);
 const CreateEvidenceItemInput = builder.inputType("CreateEvidenceItemInput", {
   fields: (t) => ({
     /** Optional for backwards compatibility; supplied keys are durable. */
@@ -704,6 +781,11 @@ function payloadType(name: string, fieldName: string, objectType: never) {
 }
 
 const SourcePayload = payloadType("SourcePayload", "source", Source as never);
+const SourceCustodyEventPayload = payloadType(
+  "SourceCustodyEventPayload",
+  "sourceCustodyEvent",
+  SourceCustodyEvent as never,
+);
 const EvidenceItemPayload = payloadType(
   "EvidenceItemPayload",
   "evidenceItem",
@@ -1070,6 +1152,19 @@ export function registerEvidenceGraphQL(): void {
             id: result.resource.id,
           });
         return withResource(result, "source");
+      },
+    }),
+    recordSourceCustodyEvent: t.field({
+      type: SourceCustodyEventPayload,
+      args: {
+        input: t.arg({ type: RecordSourceCustodyEventInput, required: true }),
+      },
+      resolve: async (_r, args, context) => {
+        requirePermission(context, "source", "update");
+        const result = await context.services.evidence.recordSourceCustodyEvent(
+          args.input,
+        );
+        return withResource(result, "sourceCustodyEvent");
       },
     }),
     archiveSource: t.field({

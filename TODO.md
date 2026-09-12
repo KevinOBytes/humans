@@ -73,6 +73,15 @@ Task 4 local checkpoint (2026-09-11): generalized access/correction/export/restr
 
 Task 3 local checkpoint (2026-09-11): the AI review ledger preserves typed proposals, evidence or validated web-source snapshots, confidence/uncertainty, run/provider/model/prompt-policy attribution, and explicit accept/reject/defer decisions. The person research panel uses generated review mutations instead of direct AI-driven profile updates. Acceptance requires current AI/write purpose coverage, case/resource visibility, human confirmation, and an owned completed source run; fact/relationship acceptance uses domain services and evidence assertions in one transaction. Batch acceptance is explicitly approved and atomic; AI-created relationships remain inferred until the existing independent assertion review permits promotion. Local unit/build/schema gates are required before commit. Live PostgreSQL lifecycle, browser and provider verification remain pending when the test database/provider is unavailable; this does not close HUM-FR-023 or the overall MVP.
 
+Source provenance checkpoint (2026-09-12): source records now expose first-class
+publication timestamp, collector, and extraction method fields, plus an
+append-only workspace-scoped custody ledger with collected/verified/transferred/
+accessed/redacted events. GraphQL exposes authorized custody reads and writes;
+source creation records the initial collection event. Focused migration/schema,
+service, GraphQL, seed, and immutability contract tests pass. Live migration,
+provider, and hosted evidence remain open; this checkpoint does not close the
+whole evidence/provenance requirement.
+
 The usable self-hosted alpha and MVP release-candidate boundary is documented in
 `docs/releases/SELF_HOSTED_ALPHA.md`. Every incomplete requirement is listed
 exactly once below. Full MVP completion still requires the full current matrix

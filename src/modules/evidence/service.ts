@@ -49,6 +49,7 @@ import {
   type RelationshipEvidenceRow,
   type RelationshipTagRow,
   type SourceRow,
+  type SourceCustodyEventRow,
   type TagRow,
 } from "./repository";
 
@@ -628,6 +629,100 @@ export function createEvidenceService(context: ResearchServiceContext) {
         },
       };
     },
+    async listSourceCustodyEvents(
+      sourceId: string,
+      first?: number | null,
+    ): Promise<SourceCustodyEventRow[]> {
+      await requireSource(sourceId);
+      const page = normalizePagination({ first });
+      return repository.listSourceCustodyEvents({
+        workspaceId: context.workspaceId,
+        sourceId,
+        limit: page.first,
+      });
+    },
+    async recordSourceCustodyEvent(input: {
+      sourceId: string;
+      eventKind: string;
+      occurredAt: string;
+      collector?: string | null;
+      integrityHash?: string | null;
+      notes?: string | null;
+      metadata?: unknown;
+    }): Promise<MutationOutcome<SourceCustodyEventRow>> {
+      const source = await requireSource(input.sourceId);
+      const eventKinds = [
+        "collected",
+        "verified",
+        "transferred",
+        "accessed",
+        "redacted",
+      ] as const;
+      const eventKind = input.eventKind.trim().toLowerCase();
+      const occurredAt = new Date(input.occurredAt);
+      const metadata = validateBoundedJson(input.metadata ?? {}, {
+        objectOnly: true,
+        path: ["metadata"],
+      });
+      const issues: ValidationIssue[] = [...metadata.issues];
+      if (!eventKinds.includes(eventKind as (typeof eventKinds)[number]))
+        issues.push({
+          path: ["eventKind"],
+          code: "INVALID_ENUM",
+          message: "The custody event kind is invalid.",
+        });
+      if (Number.isNaN(occurredAt.getTime()))
+        issues.push({
+          path: ["occurredAt"],
+          code: "INVALID_DATE",
+          message: "A valid custody timestamp is required.",
+        });
+      const collector = input.collector?.trim() || null;
+      const notes = input.notes?.trim() || null;
+      const integrityHash = input.integrityHash?.trim() || null;
+      if (collector && collector.length > 300)
+        issues.push({
+          path: ["collector"],
+          code: "TOO_LONG",
+          message: "Collector is too long.",
+        });
+      if (notes && notes.length > 4000)
+        issues.push({
+          path: ["notes"],
+          code: "TOO_LONG",
+          message: "Custody notes are too long.",
+        });
+      if (issues.length) return invalid(issues);
+      const row = await withResearchWriteTransaction(context, async (tx) => {
+        const scoped = createEvidenceRepository(
+          tx as unknown as typeof context.database,
+        );
+        const created = await scoped.createSourceCustodyEvent({
+          workspaceId: context.workspaceId,
+          value: {
+            id: newId(),
+            sourceId: source.id,
+            eventKind,
+            occurredAt,
+            collector,
+            integrityHash,
+            notes,
+            metadata: metadata.value,
+            createdBy: context.actor.principalId,
+          },
+        });
+        await audit.write(tx as unknown as typeof context.database, {
+          action: "source.custody.record",
+          resourceKind: "source",
+          resourceId: source.id,
+          changedFields: ["custodyEvent", "eventKind", "occurredAt"],
+          sensitivity: source.sensitivity,
+          metadata: { custodyEventId: created.id, eventKind },
+        });
+        return created;
+      });
+      return { resource: row, issues: [], code: null };
+    },
     async createSource(input: {
       kind: string;
       title: string;
@@ -635,6 +730,9 @@ export function createEvidenceService(context: ResearchServiceContext) {
       author?: string | null;
       canonicalUrl?: string | null;
       citation?: string | null;
+      publicationDate?: string | null;
+      collector?: string | null;
+      extractionMethod?: string | null;
       collectionMethod?: string | null;
       collectedAt?: string | null;
       reliability?: number | null;
@@ -653,6 +751,12 @@ export function createEvidenceService(context: ResearchServiceContext) {
         max: 500,
       });
       const url = validateHttpUrl(input.canonicalUrl, ["canonicalUrl"]);
+      const publicationDate = input.publicationDate
+        ? new Date(input.publicationDate)
+        : null;
+      const collectedAt = input.collectedAt
+        ? new Date(input.collectedAt)
+        : null;
       const reliability = validateUnitDecimal(input.reliability, {
         min: 0,
         max: 1,
@@ -671,6 +775,18 @@ export function createEvidenceService(context: ResearchServiceContext) {
         ...access.issues,
         ...metadata.issues,
       ];
+      if (publicationDate && Number.isNaN(publicationDate.getTime()))
+        issues.push({
+          path: ["publicationDate"],
+          code: "INVALID_DATE",
+          message: "Publication date is invalid.",
+        });
+      if (collectedAt && Number.isNaN(collectedAt.getTime()))
+        issues.push({
+          path: ["collectedAt"],
+          code: "INVALID_DATE",
+          message: "Collection timestamp is invalid.",
+        });
       if (issues.length) return invalid(issues);
       const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
@@ -686,14 +802,34 @@ export function createEvidenceService(context: ResearchServiceContext) {
             author: input.author?.trim() || null,
             canonicalUrl: url.value,
             citation: input.citation?.trim() || null,
+            publicationDate,
+            collector: input.collector?.trim() || null,
+            extractionMethod: input.extractionMethod?.trim() || null,
             collectionMethod: input.collectionMethod?.trim() || null,
-            collectedAt: input.collectedAt ? new Date(input.collectedAt) : null,
+            collectedAt,
             reliability: reliability.value,
             sensitivity: access.value!,
             metadata: metadata.value,
             contentHash: input.contentHash?.trim() || null,
             createdBy: context.actor.principalId,
             updatedBy: context.actor.principalId,
+          },
+        });
+        await scoped.createSourceCustodyEvent({
+          workspaceId: context.workspaceId,
+          value: {
+            id: newId(),
+            sourceId: created.id,
+            eventKind: "collected",
+            occurredAt: created.collectedAt ?? new Date(),
+            collector: created.collector,
+            integrityHash: created.contentHash,
+            notes: "Source collection recorded at creation.",
+            metadata: {
+              collectionMethod: created.collectionMethod,
+              extractionMethod: created.extractionMethod,
+            },
+            createdBy: context.actor.principalId,
           },
         });
         await audit.write(tx as unknown as typeof context.database, {
@@ -731,6 +867,9 @@ export function createEvidenceService(context: ResearchServiceContext) {
       author?: string | null;
       canonicalUrl?: string | null;
       citation?: string | null;
+      publicationDate?: string | null;
+      collector?: string | null;
+      extractionMethod?: string | null;
       reliability?: number | null;
       sensitivity?: string | null;
       metadata?: unknown;
@@ -753,6 +892,24 @@ export function createEvidenceService(context: ResearchServiceContext) {
         changed.push("title");
       }
       for (const key of ["publisher", "author", "citation"] as const)
+        if (input[key] !== undefined) {
+          patch[key] = input[key]?.trim() || null;
+          changed.push(key);
+        }
+      if (input.publicationDate !== undefined) {
+        const value = input.publicationDate
+          ? new Date(input.publicationDate)
+          : null;
+        if (value && Number.isNaN(value.getTime()))
+          issues.push({
+            path: ["publicationDate"],
+            code: "INVALID_DATE",
+            message: "Publication date is invalid.",
+          });
+        else patch.publicationDate = value;
+        changed.push("publicationDate");
+      }
+      for (const key of ["collector", "extractionMethod"] as const)
         if (input[key] !== undefined) {
           patch[key] = input[key]?.trim() || null;
           changed.push(key);

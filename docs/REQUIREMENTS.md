@@ -631,6 +631,16 @@ Focused provenance/retention tests, schema checks, typecheck, and formatting
 pass; live PostgreSQL trigger/worker execution and external provider acceptance
 remain required.
 
+Bounded source-custody evidence (2026-09-12): generic source records now carry
+first-class publication timestamp, collector, and extraction-method fields.
+Each source creation records a workspace-scoped collection checkpoint, and
+authorized users can append verified, transferred, accessed, or redacted
+custody events through GraphQL. Custody rows have composite tenant/source
+foreign keys, bounded metadata, redacted audit events, and a PostgreSQL
+immutability trigger that rejects update/delete. Focused schema, migration,
+service, GraphQL, seed, and contract tests pass; live migration/provider
+acceptance remains part of the release matrix.
+
 Bounded production smoke evidence (2026-09-11): `pnpm production:smoke`
 provides a credential-free URL parser and a redacted native-fetch contract for
 homepage, liveness, readiness, unauthenticated GraphQL, protected jobs, and an
