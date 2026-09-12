@@ -1,5 +1,16 @@
 # MVP closure and production hardening backlog
 
+Production-completion privacy artifact checkpoint (2026-09-12): commits `bf00b35`,
+`8e3e10e`, `fe71a43`, and `b7c9e6f` now cover person-scoped AI/web-research
+artifact discovery, child/run/thread legal-hold fencing, private-thread and
+parent-person visibility, assistant-response lineage, and fail-closed handling
+for ambiguous legacy assistant messages. Focused unit/schema/type/lint/drift
+checks pass; live PostgreSQL migration and worker/deletion execution remain a
+release gate because `TEST_DATABASE_URL` is not configured. External provider
+propagation and hosted/browser evidence remain open. Do not remove the privacy
+backlog rows or mark HUM-FR-005/HUM-FR-023 complete until that live evidence is
+captured.
+
 Production-completion Task 1 local checkpoint (2026-09-11): durable export
 approval records bind one requester to the exact workspace, purpose, optional case,
 redaction profile, deterministic preview hash, and expiry. Independent owner/admin

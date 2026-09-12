@@ -1,5 +1,18 @@
 # MVP requirements
 
+Production-completion privacy artifact checkpoint (2026-09-12): commits `bf00b35`,
+`8e3e10e`, `fe71a43`, and `b7c9e6f` extend the governed deletion/retention
+boundary to person-scoped AI runs, assistant-response lineage, ephemeral inputs,
+citations, review suggestions, and web-research runs/sources. Descendant legal
+holds are workspace-scoped and checked before mutation; private-thread ownership
+and parent-person visibility are enforced for artifact hold management; ambiguous
+legacy assistant lineage is backfilled only when unambiguous and otherwise blocks
+deletion with a redacted audit reason. Focused unit, schema, type, lint, drift,
+and migration-contract checks pass, and the live worker cases are present. A
+disposable PostgreSQL run of the migration/worker suites is still required before
+any privacy requirement can be marked Complete; hosted/provider erasure evidence
+remains separate. HUM-FR-005 and HUM-FR-023 remain Incomplete.
+
 Production-completion Task 1 local checkpoint (2026-09-11): governed export
 previews now expose their non-secret deterministic hash and can create a durable,
 workspace/actor/purpose/case/redaction/expiry-bound approval request. Review is
