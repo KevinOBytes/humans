@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  privacyArtifactVisible,
   privacyResourceKinds,
   retentionDecision,
 } from "@/modules/privacy/retention-service";
@@ -22,6 +23,35 @@ describe("retention decisions", () => {
       "person_web_research_run",
       "person_web_research_source",
     ]);
+  });
+  it("requires private AI artifacts to belong to the actor and person-linked artifacts to be visible", () => {
+    expect(
+      privacyArtifactVisible({
+        actorPrincipalId: "principal-1",
+        threadOwnerId: "principal-2",
+        threadSharing: "private",
+        personVisible: true,
+        requiresPersonVisibility: true,
+      }),
+    ).toBe(false);
+    expect(
+      privacyArtifactVisible({
+        actorPrincipalId: "principal-1",
+        threadOwnerId: "principal-2",
+        threadSharing: "workspace",
+        personVisible: false,
+        requiresPersonVisibility: true,
+      }),
+    ).toBe(false);
+    expect(
+      privacyArtifactVisible({
+        actorPrincipalId: "principal-1",
+        threadOwnerId: "principal-1",
+        threadSharing: "private",
+        personVisible: true,
+        requiresPersonVisibility: true,
+      }),
+    ).toBe(true);
   });
   it("makes an exact due-time decision without deleting anything", () => {
     expect(retentionDecision(base).state).toBe("eligible_for_deletion");

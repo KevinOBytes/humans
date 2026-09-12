@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "@/db/id";
 import {
@@ -39,6 +39,22 @@ export type PrivacyResource = {
   resourceKind: PrivacyResourceKind;
   resourceId: string;
 };
+export function privacyArtifactVisible(input: {
+  actorPrincipalId: string | null;
+  threadOwnerId?: string | null;
+  threadSharing?: string | null;
+  personVisible?: boolean;
+  requiresPersonVisibility: boolean;
+}) {
+  const threadVisible =
+    input.threadSharing !== "private" ||
+    (input.threadOwnerId != null &&
+      input.threadOwnerId === input.actorPrincipalId);
+  return (
+    threadVisible &&
+    (!input.requiresPersonVisibility || input.personVisible === true)
+  );
+}
 function isPrivacyResourceKind(value: unknown): value is PrivacyResourceKind {
   return (
     typeof value === "string" &&
@@ -109,33 +125,195 @@ export async function requirePrivacyResource(
       );
     return row;
   }
-  const artifactTables = {
-    ai_citation: aiCitations,
-    ai_ephemeral_input: aiEphemeralInputs,
-    ai_run: aiRuns,
-    ai_suggestion: aiReviewSuggestions,
-    ai_thread: aiThreads,
-    person_web_research_run: personWebResearchRuns,
-    person_web_research_source: personWebResearchSources,
-  } as const;
-  const table = artifactTables[input.resourceKind];
-  const [row] = await context.database
-    .select({ id: table.id, createdAt: table.createdAt })
-    .from(table)
-    .where(
-      and(
-        eq(table.workspaceId, context.workspaceId),
-        eq(table.id, input.resourceId),
-        "deletedAt" in table ? isNull(table.deletedAt) : undefined,
-      ),
+  const visiblePeople = async (personIds: readonly string[]) => {
+    const ids = [...new Set(personIds)];
+    if (!ids.length) return true;
+    if (!context.permissions.has("person:read")) return false;
+    const rows = await context.database
+      .select({ id: people.id, sensitivity: people.sensitivity })
+      .from(people)
+      .where(
+        and(
+          eq(people.workspaceId, context.workspaceId),
+          inArray(people.id, ids),
+          includeDeleted ? undefined : isNull(people.deletedAt),
+        ),
+      );
+    if (rows.length !== ids.length) return false;
+    for (const person of rows) {
+      if (
+        !(await canAccessResource(context.database, context, {
+          id: person.id,
+          resourceKind: "person",
+          sensitivity: person.sensitivity,
+        }))
+      )
+        return false;
+    }
+    return true;
+  };
+  const visibleThread = async (threadId: string) => {
+    const [thread] = await context.database
+      .select({
+        createdAt: aiThreads.createdAt,
+        ownerId: aiThreads.ownerId,
+        sharing: aiThreads.sharing,
+      })
+      .from(aiThreads)
+      .where(
+        and(
+          eq(aiThreads.workspaceId, context.workspaceId),
+          eq(aiThreads.id, threadId),
+          includeDeleted ? undefined : isNull(aiThreads.deletedAt),
+        ),
+      )
+      .limit(1);
+    return thread ?? null;
+  };
+  const visibleRun = async (runId: string) => {
+    const [run] = await context.database
+      .select({
+        id: aiRuns.id,
+        createdAt: aiRuns.createdAt,
+        reviewPersonIds: aiRuns.reviewPersonIds,
+        threadId: aiRuns.threadId,
+      })
+      .from(aiRuns)
+      .where(
+        and(eq(aiRuns.workspaceId, context.workspaceId), eq(aiRuns.id, runId)),
+      )
+      .limit(1);
+    if (!run) return null;
+    const thread = await visibleThread(run.threadId);
+    const personVisible = await visiblePeople(run.reviewPersonIds);
+    if (
+      !thread ||
+      !privacyArtifactVisible({
+        actorPrincipalId: context.actor.principalId,
+        threadOwnerId: thread.ownerId,
+        threadSharing: thread.sharing,
+        personVisible,
+        requiresPersonVisibility: run.reviewPersonIds.length > 0,
+      })
     )
-    .limit(1);
-  if (!row)
+      return null;
+    return run;
+  };
+  let visible = false;
+  let createdAt: Date | undefined;
+  if (input.resourceKind === "ai_thread") {
+    const thread = await visibleThread(input.resourceId);
+    visible = Boolean(
+      thread &&
+      privacyArtifactVisible({
+        actorPrincipalId: context.actor.principalId,
+        threadOwnerId: thread.ownerId,
+        threadSharing: thread.sharing,
+        requiresPersonVisibility: false,
+      }),
+    );
+    createdAt = thread?.createdAt;
+  } else if (input.resourceKind === "ai_run") {
+    const run = await visibleRun(input.resourceId);
+    visible = Boolean(run);
+    createdAt = run?.createdAt;
+  } else if (input.resourceKind === "ai_ephemeral_input") {
+    const [row] = await context.database
+      .select({ aiRunId: aiEphemeralInputs.aiRunId })
+      .from(aiEphemeralInputs)
+      .where(
+        and(
+          eq(aiEphemeralInputs.workspaceId, context.workspaceId),
+          eq(aiEphemeralInputs.id, input.resourceId),
+        ),
+      )
+      .limit(1);
+    const run = row ? await visibleRun(row.aiRunId) : null;
+    visible = Boolean(run);
+    createdAt = run?.createdAt;
+  } else if (input.resourceKind === "ai_citation") {
+    const [row] = await context.database
+      .select({ aiRunId: aiCitations.aiRunId })
+      .from(aiCitations)
+      .where(
+        and(
+          eq(aiCitations.workspaceId, context.workspaceId),
+          eq(aiCitations.id, input.resourceId),
+        ),
+      )
+      .limit(1);
+    const run = row ? await visibleRun(row.aiRunId) : null;
+    visible = Boolean(run);
+    createdAt = run?.createdAt;
+  } else if (input.resourceKind === "ai_suggestion") {
+    const [row] = await context.database
+      .select({
+        aiRunId: aiReviewSuggestions.aiRunId,
+        createdAt: aiReviewSuggestions.createdAt,
+        personId: aiReviewSuggestions.personId,
+        webRunId: aiReviewSuggestions.webRunId,
+      })
+      .from(aiReviewSuggestions)
+      .where(
+        and(
+          eq(aiReviewSuggestions.workspaceId, context.workspaceId),
+          eq(aiReviewSuggestions.id, input.resourceId),
+        ),
+      )
+      .limit(1);
+    if (row) {
+      const run = row.aiRunId ? await visibleRun(row.aiRunId) : null;
+      const personVisible = await visiblePeople([row.personId]);
+      visible = Boolean(
+        (run || row.webRunId) &&
+        personVisible &&
+        (!row.webRunId ||
+          (
+            await context.database
+              .select({ id: personWebResearchRuns.id })
+              .from(personWebResearchRuns)
+              .where(
+                and(
+                  eq(personWebResearchRuns.workspaceId, context.workspaceId),
+                  eq(personWebResearchRuns.id, row.webRunId),
+                  eq(personWebResearchRuns.personId, row.personId),
+                ),
+              )
+              .limit(1)
+          ).length > 0),
+      );
+      createdAt = row.createdAt;
+    }
+  } else if (
+    input.resourceKind === "person_web_research_run" ||
+    input.resourceKind === "person_web_research_source"
+  ) {
+    const table =
+      input.resourceKind === "person_web_research_run"
+        ? personWebResearchRuns
+        : personWebResearchSources;
+    const [row] = await context.database
+      .select({
+        createdAt: table.createdAt,
+        personId: table.personId,
+      })
+      .from(table)
+      .where(
+        and(
+          eq(table.workspaceId, context.workspaceId),
+          eq(table.id, input.resourceId),
+        ),
+      )
+      .limit(1);
+    visible = Boolean(row && (await visiblePeople(row ? [row.personId] : [])));
+    createdAt = row?.createdAt;
+  }
+  if (!visible)
     throw createGraphQLError(
       "NOT_FOUND",
       "The requested resource was not found.",
     );
-  return row;
+  return { id: input.resourceId, createdAt: createdAt ?? new Date() };
 }
 export async function hasLegalHold(
   context: Pick<ResearchServiceContext, "database" | "workspaceId">,

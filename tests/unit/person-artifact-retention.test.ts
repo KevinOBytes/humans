@@ -16,6 +16,8 @@ describe("person-scoped artifact retention", () => {
       }),
     ).toEqual({
       aiRunIds: [],
+      aiCitationIds: [],
+      aiEphemeralInputIds: [],
       aiSuggestionIds: [],
       webRunIds: ["run-1"],
       webSourceIds: ["source-1"],
@@ -35,10 +37,33 @@ describe("person-scoped artifact retention", () => {
       }),
     ).toEqual({
       aiRunIds: [],
+      aiCitationIds: [],
+      aiEphemeralInputIds: [],
       aiSuggestionIds: ["pending"],
       webRunIds: [],
       webSourceIds: [],
       blocked: false,
+    });
+  });
+
+  it("plans direct AI-run children so a held child blocks the whole deletion", () => {
+    expect(
+      planPersonArtifactDeletion({
+        artifacts: [
+          { id: "run-1", kind: "ai_run" },
+          { id: "input-1", kind: "ai_ephemeral_input" },
+          { id: "citation-1", kind: "ai_citation" },
+        ],
+        heldIds: new Set(["citation-1"]),
+      }),
+    ).toEqual({
+      aiRunIds: ["run-1"],
+      aiCitationIds: [],
+      aiEphemeralInputIds: ["input-1"],
+      aiSuggestionIds: [],
+      webRunIds: [],
+      webSourceIds: [],
+      blocked: true,
     });
   });
 });
