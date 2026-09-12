@@ -37,8 +37,16 @@ query CaseTimeline($caseId: UUID!, $first: Int, $after: String) {
     }
   }
 }
-mutation CreateResearchCase($title: String!, $purpose: String!) {
-  createResearchCase(title: $title, purpose: $purpose) {
+mutation CreateResearchCase(
+  $title: String!
+  $purpose: String!
+  $idempotencyKey: String
+) {
+  createResearchCase(
+    title: $title
+    purpose: $purpose
+    idempotencyKey: $idempotencyKey
+  ) {
     id
     title
     purpose
@@ -46,8 +54,18 @@ mutation CreateResearchCase($title: String!, $purpose: String!) {
     version
   }
 }
-mutation AddCaseMember($caseId: UUID!, $principalId: UUID!, $role: String) {
-  addCaseMember(caseId: $caseId, principalId: $principalId, role: $role) {
+mutation AddCaseMember(
+  $caseId: UUID!
+  $principalId: UUID!
+  $role: String
+  $idempotencyKey: String
+) {
+  addCaseMember(
+    caseId: $caseId
+    principalId: $principalId
+    role: $role
+    idempotencyKey: $idempotencyKey
+  ) {
     id
     principalId
     role
@@ -59,12 +77,16 @@ mutation LinkCaseResource(
   $resourceId: UUID!
   $resourceKind: String!
   $explicitConfirmed: Boolean!
+  $observedAt: DateTime
+  $idempotencyKey: String
 ) {
   linkCaseResource(
     caseId: $caseId
     resourceId: $resourceId
     resourceKind: $resourceKind
     explicitConfirmed: $explicitConfirmed
+    observedAt: $observedAt
+    idempotencyKey: $idempotencyKey
   ) {
     id
     resourceKind
