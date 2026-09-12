@@ -501,6 +501,8 @@ const TagConnection = builder
 
 const CreateSourceInput = builder.inputType("CreateSourceInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     kind: t.string({ required: true }),
     title: t.string({ required: true }),
     publisher: t.string(),
@@ -520,6 +522,8 @@ const CreateSourceInput = builder.inputType("CreateSourceInput", {
 });
 const UpdateSourceInput = builder.inputType("UpdateSourceInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
     title: t.string(),
@@ -537,6 +541,8 @@ const UpdateSourceInput = builder.inputType("UpdateSourceInput", {
 });
 const ArchiveSourceInput = builder.inputType("ArchiveSourceInput", {
   fields: (t) => ({
+    /** Optional; supplied keys are durable and principal-bound. */
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
   }),
@@ -545,6 +551,8 @@ const RecordSourceCustodyEventInput = builder.inputType(
   "RecordSourceCustodyEventInput",
   {
     fields: (t) => ({
+      /** Optional; supplied keys are durable and principal-bound. */
+      idempotencyKey: t.string(),
       sourceId: t.field({ type: "UUID", required: true }),
       eventKind: t.string({ required: true }),
       occurredAt: t.field({ type: "DateTime", required: true }),

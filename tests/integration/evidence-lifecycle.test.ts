@@ -3,7 +3,13 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { evidenceExcerpts, evidenceItems, sources } from "@/db/schema/evidence";
+import {
+  evidenceExcerpts,
+  evidenceItems,
+  sourceCustodyEvents,
+  sources,
+} from "@/db/schema/evidence";
+import { locationMutationIdempotency } from "@/db/schema/locations";
 import { auditEvents } from "@/db/schema/operations";
 import { searchDocuments } from "@/db/schema/search";
 import { createSearchIndexMaintenance } from "@/modules/search/indexer";
@@ -25,6 +31,7 @@ function required<T>(value: T | null | undefined): T {
 const CREATE_SOURCE = /* GraphQL */ `
   mutation CreateSource($input: CreateSourceInput!) {
     createSource(input: $input) {
+      code
       source {
         id
         version
@@ -91,6 +98,18 @@ const UPDATE_SOURCE = /* GraphQL */ `
       source {
         id
         version
+      }
+    }
+  }
+`;
+const RECORD_CUSTODY = /* GraphQL */ `
+  mutation RecordCustody($input: RecordSourceCustodyEventInput!) {
+    recordSourceCustodyEvent(input: $input) {
+      code
+      sourceCustodyEvent {
+        id
+        sourceId
+        eventKind
       }
     }
   }
@@ -696,5 +715,177 @@ liveDescribe("evidence lifecycle GraphQL acceptance", () => {
         .from(evidenceExcerpts)
         .where(eq(evidenceExcerpts.evidenceItemId, createdEvidence.id)),
     ).toEqual([]);
+  });
+
+  it("durably replays source create and custody writes without duplicate effects", async () => {
+    const actor = await fixture.createActor();
+    const input = {
+      kind: "public-record",
+      title: "Idempotent source",
+      canonicalUrl: "https://example.test/idempotent-source",
+      idempotencyKey: "source-create-replay",
+    };
+    const [first, replay] = await Promise.all([
+      fixture.execute<{
+        createSource: {
+          code: string | null;
+          source: { id: string; version: number } | null;
+        };
+      }>({ jar: actor.jar, query: CREATE_SOURCE, variables: { input } }),
+      fixture.execute<{
+        createSource: {
+          code: string | null;
+          source: { id: string; version: number } | null;
+        };
+      }>({ jar: actor.jar, query: CREATE_SOURCE, variables: { input } }),
+    ]);
+    expect(first.body?.errors).toBeUndefined();
+    expect(replay.body?.errors).toBeUndefined();
+    const created = required(first.body?.data?.createSource.source);
+    expect(replay.body?.data?.createSource).toEqual({
+      code: null,
+      source: created,
+    });
+    expect(
+      await fixture.database
+        .select({ id: sources.id })
+        .from(sources)
+        .where(eq(sources.workspaceId, actor.workspaceId)),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: sourceCustodyEvents.id })
+        .from(sourceCustodyEvents)
+        .where(eq(sourceCustodyEvents.workspaceId, actor.workspaceId)),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: locationMutationIdempotency.id })
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.workspaceId, actor.workspaceId)),
+    ).toHaveLength(1);
+
+    const changed = await fixture.execute({
+      jar: actor.jar,
+      query: CREATE_SOURCE,
+      variables: {
+        input: { ...input, title: "Changed material" },
+      },
+    });
+    expectGraphQLError(changed, "CONFLICT");
+
+    const custodyInput = {
+      sourceId: created.id,
+      eventKind: "verified",
+      occurredAt: "2026-09-12T12:00:00.000Z",
+      collector: "reviewer",
+      idempotencyKey: "custody-replay",
+    };
+    const [custodyA, custodyB] = await Promise.all([
+      fixture.execute({
+        jar: actor.jar,
+        query: RECORD_CUSTODY,
+        variables: { input: custodyInput },
+      }),
+      fixture.execute({
+        jar: actor.jar,
+        query: RECORD_CUSTODY,
+        variables: { input: custodyInput },
+      }),
+    ]);
+    expect(custodyA.body?.errors).toBeUndefined();
+    expect(custodyB.body?.errors).toBeUndefined();
+    expect(custodyA.body?.data?.recordSourceCustodyEvent).toEqual(
+      custodyB.body?.data?.recordSourceCustodyEvent,
+    );
+    expect(
+      await fixture.database
+        .select({ id: sourceCustodyEvents.id })
+        .from(sourceCustodyEvents)
+        .where(eq(sourceCustodyEvents.sourceId, created.id)),
+    ).toHaveLength(2);
+    const changedCustody = await fixture.execute({
+      jar: actor.jar,
+      query: RECORD_CUSTODY,
+      variables: {
+        input: { ...custodyInput, notes: "changed material" },
+      },
+    });
+    expectGraphQLError(changedCustody, "CONFLICT");
+
+    const updateInput = {
+      id: created.id,
+      expectedVersion: 1,
+      title: "Updated idempotent source",
+      idempotencyKey: "source-update-replay",
+    };
+    const [updatedA, updatedB] = await Promise.all([
+      fixture.execute<{
+        updateSource: {
+          code: string | null;
+          source: { id: string; version: number } | null;
+        };
+      }>({
+        jar: actor.jar,
+        query: UPDATE_SOURCE,
+        variables: { input: updateInput },
+      }),
+      fixture.execute<{
+        updateSource: {
+          code: string | null;
+          source: { id: string; version: number } | null;
+        };
+      }>({
+        jar: actor.jar,
+        query: UPDATE_SOURCE,
+        variables: { input: updateInput },
+      }),
+    ]);
+    expect(updatedA.body?.errors).toBeUndefined();
+    expect(updatedB.body?.errors).toBeUndefined();
+    expect(updatedA.body?.data?.updateSource).toEqual(
+      updatedB.body?.data?.updateSource,
+    );
+    expect(updatedA.body?.data?.updateSource.source).toEqual({
+      id: created.id,
+      version: 2,
+    });
+
+    const archiveInput = {
+      id: created.id,
+      expectedVersion: 2,
+      idempotencyKey: "source-archive-replay",
+    };
+    const [archivedA, archivedB] = await Promise.all([
+      fixture.execute<{
+        archiveSource: {
+          code: string | null;
+          source: { id: string; version: number } | null;
+        };
+      }>({
+        jar: actor.jar,
+        query: ARCHIVE_SOURCE,
+        variables: { input: archiveInput },
+      }),
+      fixture.execute<{
+        archiveSource: {
+          code: string | null;
+          source: { id: string; version: number } | null;
+        };
+      }>({
+        jar: actor.jar,
+        query: ARCHIVE_SOURCE,
+        variables: { input: archiveInput },
+      }),
+    ]);
+    expect(archivedA.body?.errors).toBeUndefined();
+    expect(archivedB.body?.errors).toBeUndefined();
+    expect(archivedA.body?.data?.archiveSource).toEqual(
+      archivedB.body?.data?.archiveSource,
+    );
+    expect(archivedA.body?.data?.archiveSource.source).toEqual({
+      id: created.id,
+      version: 3,
+    });
   });
 });
