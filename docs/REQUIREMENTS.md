@@ -1,9 +1,9 @@
 # MVP requirements
 
-Latest application runtime checkpoint (2026-09-12): commit `e47efbf`
-passed GitHub Actions run `34719046128` across all 9 checks, including the live
+Latest application runtime checkpoint (2026-09-12): commit `ad0f74f`
+passed GitHub Actions run `34720954335` across all 9 checks, including the live
 PostgreSQL, browser, Compose, generated-drift, security, and production-build
-gates. Vercel deployment `dpl_Dw5WnNQJKRSvpkeYbNXRLG57dVMq` reached `READY`
+gates. Vercel deployment `dpl_HqGhLzzDrBpsDbRhAF2yGPPoK7Zs` reached `READY`
 and serves `humans.kevinbytes.com`. The redacted production smoke passed the
 homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs
 boundaries. Hosted authenticated/provider acceptance and the 24 explicitly
