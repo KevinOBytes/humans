@@ -253,3 +253,9 @@ drift, production build, Compose configuration contracts, and diff checks.
 The local runtime was Node 26.8.1 rather than the required Node 24; disposable
 database lifecycle, hosted authenticated smoke, provider contracts, and full
 browser/performance evidence remain release work.
+
+Live unauthenticated smoke evidence (2026-09-11): the merged `main` passed
+`pnpm production:smoke -- --base-url https://humans.kevinbytes.com` with
+homepage/liveness/readiness 200, unauthenticated GraphQL 401, and invalid jobs
+authorization 401. Authenticated admin/person creation, provider contracts,
+and deployment-identity verification remain open.
