@@ -210,7 +210,7 @@ recovery.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes. A focused live policy-settings matrix now covers owner access-policy success, administrator workspace-default success, viewer/foreign denial, optimistic retries, validation rollback, redacted audit output, and durable `UpdateAccessPolicy` plus `UpdateWorkspaceDefaults` replay/concurrency boundaries; provider and whole-settings coverage remain open.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search/graph envelopes, centralized browser/server GraphQL error contract (including malformed-payload handling, header-authoritative IDs, and known-code secret-message normalization), and representative all-code/redaction matrix. Direct route codes are inventoried in `docs/ARCHITECTURE.md`; the scheduled `/api/jobs/run` route now emits stable `UNAUTHENTICATED`/`INTERNAL` codes with an `x-request-id`, the storage proxy now emits redacted stable upload/download/unmatched-path envelopes with correlated headers, health probes now echo correlation IDs on success, and a typed direct-route client covers invitation handoff/acceptance and two-factor state changes, while adoption across every remaining direct route and the whole-product failure matrix remain open.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks; provider, browser, and interruption coverage remain open.
-- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_8rbBgB8mKSzupo8c15ADuYTN3LxD` is Ready and serves `humans.kevinbytes.com` from the fully green main release; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. The protected route invokes configured administrator bootstrap before jobs, and sign-in requests bootstrap the configured account before credential validation. Authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
+- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_8rbBgB8mKSzupo8c15ADuYTN3LxD` is Ready and serves `humans.kevinbytes.com` from the fully green main release; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. The protected route invokes configured administrator bootstrap before jobs, and sign-in requests bootstrap the configured account before credential validation. The repository now includes a redacted `pnpm production:smoke -- --base-url <selected-deployment>` harness with explicit authenticated/provider opt-ins; authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
 
 ## Non-functional
 
@@ -245,16 +245,3 @@ recovery.
   suggestion, and legal hold. `tests/unit/synthetic-seed-contract.test.ts`
   proves the source contract and rejects the prior real-person fixture; live
   Compose seed/GraphQL verification remains required.
-- [ ] `HUM-FR-023` Verify live immutable web-source snapshot triggers, accepted
-  suggestion provenance through the GraphQL review flow, AI citation retention
-  expiry, and legal-hold fencing with disposable PostgreSQL and a configured
-  provider. The source-level implementation now stores URL/title/snippet,
-  publication and collection timestamps, retrieval hashes, provider/model and
-  reliability metadata; accepted suggestions retain their run/evidence
-  linkage and the retention planner keeps accepted/held artifacts.
-- [ ] `HUM-FR-035` Run `pnpm production:smoke -- --base-url <selected-deployment>`
-  against the exact Ready deployment, then repeat with
-  `PRODUCTION_SMOKE_AUTH=1` and operator-injected admin credentials. Record
-  status/correlation evidence, deployment SHA/alias, authenticated workspace
-  and synthetic-person read, and separately record explicit provider-contract
-  outcomes. The harness is redacted and does not retrieve or persist secrets.
