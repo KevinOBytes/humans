@@ -1,5 +1,15 @@
 # MVP closure and production hardening backlog
 
+Latest verified release checkpoint (2026-09-12): commit `a813d97` passed GitHub
+Actions run `34715018651` across all 9 checks. The exact tree was rebuilt and
+started with the local PostgreSQL/Redis/MinIO Compose stack; `/api/health/ready`
+returned `status: ready` with all four dependencies healthy. Vercel deployment
+`dpl_DL5DrysnSWdiXDU6usswr9SqFaoH` reached `READY` and is the deployment served
+by `humans.kevinbytes.com`. The redacted public smoke passed `/`, liveness,
+readiness, unauthenticated GraphQL, and the protected jobs boundary. This
+supersedes the older deployment IDs below for release evidence; authenticated
+hosted sign-in/create-person and external-provider acceptance remain open.
+
 Current repository gate (2026-09-12): commit `32124fb` passed GitHub Actions
 run `34713181339` across all 9 checks, including the Node 24 PostgreSQL/Redis/
 MinIO integration seam, browser acceptance, production build, generated drift,
