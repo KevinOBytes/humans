@@ -1,5 +1,16 @@
 # MVP requirements
 
+Current production-closeout checkpoint (2026-09-12): `main` is at commit
+`2ee812d` with GitHub Actions run `34698900436` green across all 8 checks,
+including the full PostgreSQL/Redis/MinIO integration seam (31 files, 475
+tests plus 2 skips), browser acceptance, production build, generated drift,
+Compose lifecycle, quality, image security, dependency policy, and secret
+scanning. The preceding Vercel production deployment is Ready with the
+`humans.kevinbytes.com` alias; it is being refreshed after this test-contract
+only change so hosted deployment identity matches `main`. This closes the
+repository/CI gate, not the separately marked hosted authenticated/provider,
+external-erasure-adapter, and measured whole-product requirements below.
+
 Production-completion privacy artifact checkpoint (2026-09-12): commits `bf00b35`,
 `8e3e10e`, `fe71a43`, and `b7c9e6f` extend the governed deletion/retention
 boundary to person-scoped AI runs, assistant-response lineage, ephemeral inputs,
