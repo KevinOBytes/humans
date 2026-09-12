@@ -255,6 +255,13 @@ Compose configuration contracts, and diff checks. Disposable database
 lifecycle, hosted authenticated smoke, provider contracts, and full
 browser/performance evidence remain release work.
 
+Current GitHub Actions gate (2026-09-12): run `34686415372` for commit
+`7b7f2d1` passed all nine checks, including the real PostgreSQL integration
+seam, browser acceptance, isolated Compose lifecycle, production build,
+generated-artifact drift, quality, image security, dependency policy, and
+secret scanning. The commit corrects the cross-workspace relationship fixture
+to use the sandbox tenant's fictional person; it changes no runtime code.
+
 Live unauthenticated smoke evidence (2026-09-11): the merged `main` passed
 `pnpm production:smoke -- --base-url https://humans.kevinbytes.com` with
 homepage/liveness/readiness 200, unauthenticated GraphQL 401, and invalid jobs
