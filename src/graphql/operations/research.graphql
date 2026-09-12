@@ -377,6 +377,9 @@ query PersonRelationships($id: UUID!, $first: Int, $after: String) {
         temporalPrecision
         validFrom
         validUntil
+        observedAt
+        creationMethod
+        reviewState
         version
         createdAt
         updatedAt

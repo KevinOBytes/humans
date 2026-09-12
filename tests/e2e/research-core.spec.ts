@@ -674,15 +674,33 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await page
     .getByLabel("Related person", { exact: true })
     .selectOption({ label: "Grace Collaborator" });
+  await page.getByLabel("Confidence").fill("0.82");
+  await page.getByLabel("Temporal meaning").selectOption("APPROXIMATE");
+  await page.getByLabel("Date precision").selectOption("YEAR");
+  await page.getByLabel("Valid from").fill("1840-01-01");
+  await page.getByLabel("Valid until").fill("1843-12-31");
+  await page.getByLabel("Observed on").fill("2026-09-12");
   await page
     .getByRole("checkbox", { name: /permitted research purpose/i })
     .check();
   await page.getByRole("button", { name: "Add relationship" }).click();
+  const sourceRelationshipRegion = page.getByRole("region", {
+    name: "Relationships",
+  });
   await expect(
-    page.getByRole("region", { name: "Relationships" }).getByText("Knows", {
-      exact: true,
-    }),
+    sourceRelationshipRegion.getByText("Knows", { exact: true }),
   ).toBeVisible();
+  for (const label of [
+    "Manual assertion",
+    "Manual",
+    "Unreviewed",
+    "Confidence 82%",
+    "Approx. 1840–1843",
+  ]) {
+    await expect(
+      sourceRelationshipRegion.getByText(label, { exact: true }),
+    ).toBeVisible();
+  }
   await page.goto(`/people/${relatedPersonId}?view=relationships`);
   const relationshipRegion = page.getByRole("region", {
     name: "Relationships",
@@ -693,6 +711,17 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   await expect(
     relationshipRegion.getByRole("link", { name: "Ada Lovelace" }),
   ).toBeVisible();
+  for (const label of [
+    "Manual assertion",
+    "Manual",
+    "Unreviewed",
+    "Confidence 82%",
+    "Approx. 1840–1843",
+  ]) {
+    await expect(
+      relationshipRegion.getByText(label, { exact: true }),
+    ).toBeVisible();
+  }
   await page.goto(`${personUrl}?view=evidence`);
 
   await page.getByLabel("Source title").fill("Archive register");

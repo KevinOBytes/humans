@@ -99,6 +99,176 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     });
   });
 
+  it("preserves relationship temporal provenance through generated operations and workspace scope", async () => {
+    const owner = await fixture.createActor();
+    const foreign = await fixture.createActor();
+    const source = await fixture.createPerson(owner, {
+      displayName: "Temporal profile source",
+    });
+    const target = await fixture.createPerson(owner, {
+      displayName: "Temporal profile target",
+    });
+    const sourceId = source.body?.data?.createPerson?.person?.id;
+    const targetId = target.body?.data?.createPerson?.person?.id;
+    expect(sourceId).toBeTruthy();
+    expect(targetId).toBeTruthy();
+
+    const governance = createGovernanceService(
+      await caseContext(fixture, owner),
+    );
+    await governance.createPurposePolicy({
+      idempotencyKey: newId(),
+      purpose: "research",
+      lawfulBases: ["consent"],
+      effectiveFrom: new Date(Date.now() - 60_000),
+      state: "active",
+    });
+    for (const personId of [sourceId!, targetId!]) {
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId,
+        purpose: "research",
+        scopes: ["read", "write"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+    }
+
+    const type = dataField<{ relationshipType: { id: string } }>(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateRelationshipType",
+        query: CreateRelationshipTypeDocument,
+        variables: {
+          input: {
+            forwardLabel: "collaborated with",
+            inverseLabel: "collaborated with",
+            key: "temporal_profile_acceptance",
+            namespace: "person",
+          },
+        },
+      }),
+      "createRelationshipType",
+    );
+    const create = (input: Record<string, unknown>) =>
+      fixture.execute<{
+        createRelationship: {
+          relationship: { id: string } | null;
+          code: string | null;
+          issues: Array<{ code: string; path: string[] }>;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "CreateRelationship",
+        query: CreateRelationshipDocument,
+        variables: {
+          input: {
+            explicitConfirmed: true,
+            governancePurpose: "research",
+            relationshipTypeId: type.relationshipType.id,
+            sourcePersonId: sourceId!,
+            targetPersonId: targetId!,
+            ...input,
+          },
+        },
+      });
+    const manual = await create({
+      confidence: 0.8,
+      creationMethod: "manual",
+      observedAt: "2026-09-12T00:00:00.000Z",
+      state: "asserted",
+      temporalPrecision: "YEAR",
+      temporalSemantics: "APPROXIMATE",
+      validFrom: "2012-01-01T00:00:00.000Z",
+      validUntil: "2014-12-31T00:00:00.000Z",
+    });
+    const imported = await create({
+      confidence: 0.6,
+      creationMethod: "import",
+      observedAt: "2026-09-11T00:00:00.000Z",
+      state: "inferred",
+      temporalPrecision: "RANGE",
+      temporalSemantics: "BETWEEN",
+      validFrom: "2020-01-01T00:00:00.000Z",
+      validUntil: "2021-12-31T00:00:00.000Z",
+    });
+    expect(manual.body?.errors).toBeUndefined();
+    expect(imported.body?.errors).toBeUndefined();
+    expect(manual.body?.data?.createRelationship.relationship?.id).toBeTruthy();
+    expect(
+      imported.body?.data?.createRelationship.relationship?.id,
+    ).toBeTruthy();
+
+    type RelationshipNode = {
+      confidence: number;
+      creationMethod: string;
+      id: string;
+      observedAt: string;
+      reviewState: string;
+      state: string;
+      temporalPrecision: string;
+      temporalSemantics: string;
+      validFrom: string;
+      validUntil: string;
+    };
+    const read = async () =>
+      dataField<{ relationships: { nodes: RelationshipNode[] } }>(
+        await fixture.execute({
+          jar: owner.jar,
+          operationName: "PersonRelationships",
+          query: PersonRelationshipsDocument,
+          variables: { first: 10, id: sourceId! },
+        }),
+        "person",
+      ).relationships.nodes;
+    expect(await read()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          confidence: 0.8,
+          creationMethod: "manual",
+          observedAt: "2026-09-12T00:00:00.000Z",
+          reviewState: "unreviewed",
+          state: "asserted",
+          temporalPrecision: "YEAR",
+          temporalSemantics: "APPROXIMATE",
+          validFrom: "2012-01-01T00:00:00.000Z",
+          validUntil: "2014-12-31T00:00:00.000Z",
+        }),
+        expect.objectContaining({
+          confidence: 0.6,
+          creationMethod: "import",
+          observedAt: "2026-09-11T00:00:00.000Z",
+          reviewState: "unreviewed",
+          state: "inferred",
+          temporalPrecision: "RANGE",
+          temporalSemantics: "BETWEEN",
+          validFrom: "2020-01-01T00:00:00.000Z",
+          validUntil: "2021-12-31T00:00:00.000Z",
+        }),
+      ]),
+    );
+    expect(await read()).toHaveLength(2);
+
+    const invalid = await create({
+      creationMethod: "manual",
+      temporalPrecision: "RANGE",
+      temporalSemantics: "BETWEEN",
+      validFrom: "2030-01-01T00:00:00.000Z",
+      validUntil: "2029-01-01T00:00:00.000Z",
+    });
+    expectGraphQLError(invalid, "VALIDATION_FAILED");
+    expect(await read()).toHaveLength(2);
+
+    const foreignRead = await fixture.execute({
+      jar: foreign.jar,
+      operationName: "PersonRelationships",
+      query: PersonRelationshipsDocument,
+      variables: { first: 10, id: sourceId! },
+    });
+    expect(foreignRead.body?.errors).toBeUndefined();
+    expect(foreignRead.body?.data?.person).toBeNull();
+  });
+
   it("gates person web research by permission, workspace visibility, and optional configuration", async () => {
     const owner = await fixture.createActor();
     const foreign = await fixture.createActor();

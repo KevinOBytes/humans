@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { RelationshipForm } from "@/components/relationships/relationship-form";
-import { relationshipPresentation } from "@/components/relationships/relationship-presentation";
+import {
+  relationshipPresentation,
+  relationshipSemanticPresentation,
+} from "@/components/relationships/relationship-presentation";
 import {
   PageControls,
   ResearchList,
@@ -95,6 +98,7 @@ export async function RelationshipsSection({
       type: typeById.get(relationship!.relationshipTypeId ?? ""),
       viewedPersonId: personId,
     }),
+    ...relationshipSemanticPresentation(relationship!),
   }));
   const counterpartIds = [
     ...new Set(
@@ -252,7 +256,14 @@ export async function RelationshipsSection({
                   "Related person unavailable"
                 )}
               </p>
-              <div className="mt-3 flex gap-2">
+              <p className="text-muted-foreground mt-2 text-sm">
+                {item.temporalLabel}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge>{item.claimLabel}</Badge>
+                <Badge>{item.originLabel}</Badge>
+                <Badge>{item.reviewLabel}</Badge>
+                <Badge>{item.confidenceLabel}</Badge>
                 <Badge>{item.relationship.state ?? "active"}</Badge>
                 <Badge>
                   {item.relationship.sensitivity?.toLowerCase() ?? "internal"}
