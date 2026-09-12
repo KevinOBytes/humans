@@ -145,6 +145,16 @@ export async function enqueueExpiredRetentionRequests(input: {
                   eq(people.workspaceId, policy.workspaceId),
                   isNull(people.deletedAt),
                   lte(people.createdAt, cutoff),
+                  // Exclude holds before LIMIT so held rows cannot monopolize
+                  // every bounded batch. The planner rechecks holds below.
+                  sql`not exists (
+                    select 1 from ${legalHolds}
+                    where ${legalHolds.workspaceId} = ${policy.workspaceId}
+                      and ${legalHolds.resourceKind} = 'person'
+                      and ${legalHolds.resourceId} = ${people.id}
+                      and ${legalHolds.state} = 'active'
+                      and ${legalHolds.deletedAt} is null
+                  )`,
                   sql`not exists (
                     select 1 from ${privacyRequests}
                     where ${privacyRequests.workspaceId} = ${policy.workspaceId}
@@ -165,6 +175,14 @@ export async function enqueueExpiredRetentionRequests(input: {
                   eq(files.workspaceId, policy.workspaceId),
                   isNull(files.deletedAt),
                   lte(files.createdAt, cutoff),
+                  sql`not exists (
+                    select 1 from ${legalHolds}
+                    where ${legalHolds.workspaceId} = ${policy.workspaceId}
+                      and ${legalHolds.resourceKind} = 'file'
+                      and ${legalHolds.resourceId} = ${files.id}
+                      and ${legalHolds.state} = 'active'
+                      and ${legalHolds.deletedAt} is null
+                  )`,
                   sql`not exists (
                     select 1 from ${privacyRequests}
                     where ${privacyRequests.workspaceId} = ${policy.workspaceId}
