@@ -1,12 +1,14 @@
 # MVP closure and production hardening backlog
 
-Current production-closeout checkpoint (2026-09-12): `main` is at commit
-`2ee812d`; GitHub Actions run `34698900436` is green across all 8 checks,
+Current production-closeout checkpoint (2026-09-12): application commit
+`2ee812d` (with the documentation-only follow-up on `main`); GitHub Actions run
+`34698900436` is green across all 8 checks,
 including PostgreSQL/Redis/MinIO integration, browser acceptance, production
 build, generated drift, Compose lifecycle, quality, image security, dependency
 policy, and secret scanning. The migration lineage fix and synchronized
-43-migration contract are now verified. Vercel production is being refreshed
-so its Ready deployment identity matches this `main` commit. Keep the remaining
+43-migration contract are now verified. Vercel production deployment
+`dpl_8wZx41FNhQ8R5fyiouWLPcmzEMkZ` is Ready with the
+`humans.kevinbytes.com` alias. Keep the remaining
 hosted authenticated/provider, external-erasure-adapter, and measured
 whole-product rows open until their stated evidence exists.
 

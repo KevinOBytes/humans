@@ -1,13 +1,14 @@
 # MVP requirements
 
-Current production-closeout checkpoint (2026-09-12): `main` is at commit
-`2ee812d` with GitHub Actions run `34698900436` green across all 8 checks,
+Current production-closeout checkpoint (2026-09-12): application commit
+`2ee812d` (with the documentation-only follow-up on `main`) has GitHub Actions
+run `34698900436` green across all 8 checks,
 including the full PostgreSQL/Redis/MinIO integration seam (31 files, 475
 tests plus 2 skips), browser acceptance, production build, generated drift,
 Compose lifecycle, quality, image security, dependency policy, and secret
-scanning. The preceding Vercel production deployment is Ready with the
-`humans.kevinbytes.com` alias; it is being refreshed after this test-contract
-only change so hosted deployment identity matches `main`. This closes the
+scanning. The Vercel production deployment `dpl_8wZx41FNhQ8R5fyiouWLPcmzEMkZ`
+is Ready with aliases including `humans.kevinbytes.com` and was built from the
+final application tree. This closes the
 repository/CI gate, not the separately marked hosted authenticated/provider,
 external-erasure-adapter, and measured whole-product requirements below.
 
