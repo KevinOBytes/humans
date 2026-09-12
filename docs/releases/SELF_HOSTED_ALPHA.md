@@ -191,10 +191,14 @@ for public, dashboard, people, and graph-editor routes. The harness writes
 `graph-api-performance.json`, `graph-render-performance.json`, and
 `graph-route-javascript.json` to the Playwright result for review.
 
-The 2026-09-12 disposable run seeded the exact fixture but measured authenticated
-concurrent graph-read p95 at 699.10 ms against the <=500 ms budget and therefore
-failed before render/route cases. This is recorded as a release gap; thresholds
-were not relaxed and no hosted-performance claim is made.
+The initial 2026-09-12 disposable run seeded the exact fixture but measured
+authenticated concurrent graph-read p95 at 699.10 ms against the <=500 ms
+budget because the visible-person sort lacked a matching index. Migration
+`0044_core.sql` adds the workspace-leading partial expression index used by that
+sort. A subsequent isolated run measured graph-read p95 at 129.96 ms and passed
+all three graph performance tests. This is local evidence, not reference-desktop
+or hosted proof; thresholds were not relaxed and no hosted-performance claim is
+made.
 
 It has not been run here on the documented reference desktop, and it does not
 yet measure upload-path latency, public-route Web Vitals, or an externally
