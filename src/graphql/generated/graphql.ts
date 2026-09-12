@@ -128,6 +128,14 @@ export type ArchiveTagInput = {
   idempotencyKey?: string | null | undefined;
 };
 
+export type AssignResearchAssignmentInput = {
+  assigneePrincipalId?: string | null | undefined;
+  expectedVersion: number;
+  id: string;
+  idempotencyKey: string;
+  reason: string;
+};
+
 export type AttachPersonFileInput = {
   fileId: string;
   idempotencyKey?: string | null | undefined;
@@ -459,6 +467,17 @@ export type CreateRelationshipTypeInput = {
   state?: LifecycleState | null | undefined;
 };
 
+export type CreateResearchAssignmentInput = {
+  assigneePrincipalId?: string | null | undefined;
+  caseId?: string | null | undefined;
+  description?: string | null | undefined;
+  dueAt?: string | null | undefined;
+  idempotencyKey: string;
+  priority?: number | null | undefined;
+  queueKind: ResearchAssignmentQueueKind;
+  title: string;
+};
+
 export type CreateResourceGrantInput = {
   idempotencyKey?: string | null | undefined;
   memberId?: string | null | undefined;
@@ -532,6 +551,13 @@ export type DeletionRequestState =
   | "EXPORTING"
   | "REJECTED"
   | "REVIEWING";
+
+export type EscalateResearchAssignmentInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey: string;
+  reason: string;
+};
 
 export type ExportApprovalDecision = "APPROVED" | "REJECTED";
 
@@ -925,6 +951,16 @@ export type ResearchAnalysisKind =
   | "SOURCE_COMPARISON"
   | "TIMELINE";
 
+export type ResearchAssignmentQueueKind =
+  | "CONSENT_FOLLOW_UP"
+  | "PRIVACY_REQUEST"
+  | "REVIEW"
+  | "SOURCE_RECONCILIATION"
+  | "VERIFICATION";
+
+export type ResearchAssignmentStatus =
+  "BLOCKED" | "CANCELLED" | "COMPLETED" | "IN_PROGRESS" | "OPEN";
+
 export type ReviewDeletionRequestInput = {
   expectedVersion: number;
   id: string;
@@ -1100,6 +1136,14 @@ export type TemporalSemantics =
   | "EXACT"
   | "UNKNOWN"
   | "YEAR_ONLY";
+
+export type TransitionResearchAssignmentInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey: string;
+  reason: string;
+  status: ResearchAssignmentStatus;
+};
 
 export type UnmergePersonInput = {
   expectedVersion: number;
@@ -3562,6 +3606,121 @@ export type ReviewExportApprovalMutation = {
   } | null;
 };
 
+export type ResearchAssignmentFieldsFragment = {
+  id: string | null;
+  caseId: string | null;
+  queueKind: ResearchAssignmentQueueKind | null;
+  title: string | null;
+  description: string | null;
+  priority: number | null;
+  status: ResearchAssignmentStatus | null;
+  assigneePrincipalId: string | null;
+  dueAt: string | null;
+  escalationCount: number | null;
+  version: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+} & { " $fragmentName"?: "ResearchAssignmentFieldsFragment" };
+
+export type ResearchAssignmentsQueryVariables = Exact<{
+  caseId?: string | null | undefined;
+  status?: ResearchAssignmentStatus | null | undefined;
+  queueKind?: ResearchAssignmentQueueKind | null | undefined;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type ResearchAssignmentsQuery = {
+  researchAssignments: {
+    nodes: Array<{
+      " $fragmentRefs"?: {
+        ResearchAssignmentFieldsFragment: ResearchAssignmentFieldsFragment;
+      };
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type ResearchAssignmentQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type ResearchAssignmentQuery = {
+  researchAssignment: {
+    " $fragmentRefs"?: {
+      ResearchAssignmentFieldsFragment: ResearchAssignmentFieldsFragment;
+    };
+  } | null;
+  researchAssignmentEvents: Array<{
+    id: string | null;
+    assignmentId: string | null;
+    eventKind: string | null;
+    fromStatus: string | null;
+    toStatus: string | null;
+    fromAssigneePrincipalId: string | null;
+    toAssigneePrincipalId: string | null;
+    reason: string | null;
+    actorPrincipalId: string | null;
+    occurredAt: string | null;
+  }> | null;
+};
+
+export type CreateResearchAssignmentMutationVariables = Exact<{
+  input: CreateResearchAssignmentInput;
+}>;
+
+export type CreateResearchAssignmentMutation = {
+  createResearchAssignment: {
+    assignment: {
+      " $fragmentRefs"?: {
+        ResearchAssignmentFieldsFragment: ResearchAssignmentFieldsFragment;
+      };
+    } | null;
+  } | null;
+};
+
+export type AssignResearchAssignmentMutationVariables = Exact<{
+  input: AssignResearchAssignmentInput;
+}>;
+
+export type AssignResearchAssignmentMutation = {
+  assignResearchAssignment: {
+    assignment: {
+      " $fragmentRefs"?: {
+        ResearchAssignmentFieldsFragment: ResearchAssignmentFieldsFragment;
+      };
+    } | null;
+  } | null;
+};
+
+export type TransitionResearchAssignmentMutationVariables = Exact<{
+  input: TransitionResearchAssignmentInput;
+}>;
+
+export type TransitionResearchAssignmentMutation = {
+  transitionResearchAssignment: {
+    assignment: {
+      " $fragmentRefs"?: {
+        ResearchAssignmentFieldsFragment: ResearchAssignmentFieldsFragment;
+      };
+    } | null;
+  } | null;
+};
+
+export type EscalateResearchAssignmentMutationVariables = Exact<{
+  input: EscalateResearchAssignmentInput;
+}>;
+
+export type EscalateResearchAssignmentMutation = {
+  escalateResearchAssignment: {
+    assignment: {
+      " $fragmentRefs"?: {
+        ResearchAssignmentFieldsFragment: ResearchAssignmentFieldsFragment;
+      };
+    } | null;
+  } | null;
+};
+
 export type PersonSummaryFragment = {
   id: string;
   displayName: string;
@@ -5891,6 +6050,26 @@ export const PrivacyRequestFieldsFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "PrivacyRequestFields" },
 ) as unknown as TypedDocumentString<PrivacyRequestFieldsFragment, unknown>;
+export const ResearchAssignmentFieldsFragmentDoc = new TypedDocumentString(
+  `
+    fragment ResearchAssignmentFields on ResearchAssignment {
+  id
+  caseId
+  queueKind
+  title
+  description
+  priority
+  status
+  assigneePrincipalId
+  dueAt
+  escalationCount
+  version
+  createdAt
+  updatedAt
+}
+    `,
+  { fragmentName: "ResearchAssignmentFields" },
+) as unknown as TypedDocumentString<ResearchAssignmentFieldsFragment, unknown>;
 export const PersonSummaryFragmentDoc = new TypedDocumentString(
   `
     fragment PersonSummary on Person {
@@ -9240,6 +9419,212 @@ export const ReviewExportApprovalDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ReviewExportApprovalMutation,
   ReviewExportApprovalMutationVariables
+>;
+export const ResearchAssignmentsDocument = new TypedDocumentString(
+  `
+    query ResearchAssignments($caseId: UUID, $status: ResearchAssignmentStatus, $queueKind: ResearchAssignmentQueueKind, $first: Int, $after: String) {
+  researchAssignments(
+    caseId: $caseId
+    status: $status
+    queueKind: $queueKind
+    first: $first
+    after: $after
+  ) {
+    nodes {
+      ...ResearchAssignmentFields
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    fragment ResearchAssignmentFields on ResearchAssignment {
+  id
+  caseId
+  queueKind
+  title
+  description
+  priority
+  status
+  assigneePrincipalId
+  dueAt
+  escalationCount
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:06f624a81d52a1e2aacaa1fd8a1ca4f62df6f1729229cc0201855e18067dfff9",
+  },
+) as unknown as TypedDocumentString<
+  ResearchAssignmentsQuery,
+  ResearchAssignmentsQueryVariables
+>;
+export const ResearchAssignmentDocument = new TypedDocumentString(
+  `
+    query ResearchAssignment($id: UUID!) {
+  researchAssignment(id: $id) {
+    ...ResearchAssignmentFields
+  }
+  researchAssignmentEvents(assignmentId: $id) {
+    id
+    assignmentId
+    eventKind
+    fromStatus
+    toStatus
+    fromAssigneePrincipalId
+    toAssigneePrincipalId
+    reason
+    actorPrincipalId
+    occurredAt
+  }
+}
+    fragment ResearchAssignmentFields on ResearchAssignment {
+  id
+  caseId
+  queueKind
+  title
+  description
+  priority
+  status
+  assigneePrincipalId
+  dueAt
+  escalationCount
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:bf658440079d12ae9bc5bfdcbaa748a6bec75548d0e00a572e5abd7aaf9b8ae2",
+  },
+) as unknown as TypedDocumentString<
+  ResearchAssignmentQuery,
+  ResearchAssignmentQueryVariables
+>;
+export const CreateResearchAssignmentDocument = new TypedDocumentString(
+  `
+    mutation CreateResearchAssignment($input: CreateResearchAssignmentInput!) {
+  createResearchAssignment(input: $input) {
+    assignment {
+      ...ResearchAssignmentFields
+    }
+  }
+}
+    fragment ResearchAssignmentFields on ResearchAssignment {
+  id
+  caseId
+  queueKind
+  title
+  description
+  priority
+  status
+  assigneePrincipalId
+  dueAt
+  escalationCount
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:d728db3174d2884ef3ab7ad11b97c8c04b8fd33781396271fdcb9eccbcd57228",
+  },
+) as unknown as TypedDocumentString<
+  CreateResearchAssignmentMutation,
+  CreateResearchAssignmentMutationVariables
+>;
+export const AssignResearchAssignmentDocument = new TypedDocumentString(
+  `
+    mutation AssignResearchAssignment($input: AssignResearchAssignmentInput!) {
+  assignResearchAssignment(input: $input) {
+    assignment {
+      ...ResearchAssignmentFields
+    }
+  }
+}
+    fragment ResearchAssignmentFields on ResearchAssignment {
+  id
+  caseId
+  queueKind
+  title
+  description
+  priority
+  status
+  assigneePrincipalId
+  dueAt
+  escalationCount
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:e69bb9996b18ab4ab81dce04316b953e29a866b4a074ec6e14fd72f765d120f3",
+  },
+) as unknown as TypedDocumentString<
+  AssignResearchAssignmentMutation,
+  AssignResearchAssignmentMutationVariables
+>;
+export const TransitionResearchAssignmentDocument = new TypedDocumentString(
+  `
+    mutation TransitionResearchAssignment($input: TransitionResearchAssignmentInput!) {
+  transitionResearchAssignment(input: $input) {
+    assignment {
+      ...ResearchAssignmentFields
+    }
+  }
+}
+    fragment ResearchAssignmentFields on ResearchAssignment {
+  id
+  caseId
+  queueKind
+  title
+  description
+  priority
+  status
+  assigneePrincipalId
+  dueAt
+  escalationCount
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:74d6a8754d67246622c9e4fd2d05d3201a39c9bcc182f6cc7eae1992b0943946",
+  },
+) as unknown as TypedDocumentString<
+  TransitionResearchAssignmentMutation,
+  TransitionResearchAssignmentMutationVariables
+>;
+export const EscalateResearchAssignmentDocument = new TypedDocumentString(
+  `
+    mutation EscalateResearchAssignment($input: EscalateResearchAssignmentInput!) {
+  escalateResearchAssignment(input: $input) {
+    assignment {
+      ...ResearchAssignmentFields
+    }
+  }
+}
+    fragment ResearchAssignmentFields on ResearchAssignment {
+  id
+  caseId
+  queueKind
+  title
+  description
+  priority
+  status
+  assigneePrincipalId
+  dueAt
+  escalationCount
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:29aa51fdab9372f6a60d42da526d9d5f38739d5373e92e6909a33f8bcaee9659",
+  },
+) as unknown as TypedDocumentString<
+  EscalateResearchAssignmentMutation,
+  EscalateResearchAssignmentMutationVariables
 >;
 export const ResearchViewerDocument = new TypedDocumentString(
   `

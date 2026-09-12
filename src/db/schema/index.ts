@@ -12,6 +12,7 @@ export * from "./governance";
 export * from "./locations";
 export * from "./operations";
 export * from "./person-research";
+export * from "./research-assignments";
 export * from "./people";
 export * from "./principals";
 export * from "./privacy";
