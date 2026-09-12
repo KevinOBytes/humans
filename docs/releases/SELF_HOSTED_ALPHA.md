@@ -1,9 +1,9 @@
 # Self-hosted alpha and MVP release-candidate boundary
 
-Latest runtime checkpoint (2026-09-12): application tree `ad0f74f` passed
-GitHub Actions run `34720954335` across all 9 checks, including the live
+Latest runtime checkpoint (2026-09-12): application tree `9a34b2b` passed
+GitHub Actions run `34723032149` across all 9 checks, including the live
 PostgreSQL, browser, Compose, generated-drift, security, and production-build
-gates. Vercel deployment `dpl_HqGhLzzDrBpsDbRhAF2yGPPoK7Zs` is `READY` and
+gates. Vercel deployment `dpl_7MQpMMdr9g2vgmZCjwgZQgPVcmAv` is `READY` and
 serves `humans.kevinbytes.com`; the redacted public smoke passes homepage,
 liveness, readiness, unauthenticated GraphQL, and protected jobs. Hosted
 authenticated and external-provider acceptance remain outside this verified
