@@ -44,6 +44,7 @@ const CREATE = /* GraphQL */ `
     createOrganizationApiKey(input: $input) {
       actionId
       code
+      replayed
       requestId
       secret
     }
@@ -55,6 +56,7 @@ const ROTATE = /* GraphQL */ `
     rotateOrganizationApiKey(input: $input) {
       actionId
       code
+      replayed
       requestId
       secret
     }
@@ -272,6 +274,251 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
     );
     expect(JSON.stringify(audit)).not.toContain(first?.secret ?? "");
     expect(JSON.stringify(audit)).not.toContain(replacement?.secret ?? "");
+  });
+
+  it("converges concurrent create retries without persisting or replaying the plaintext secret", async () => {
+    const owner = await fixture.createActor();
+    const input = {
+      name: "Retry-safe export worker",
+      scopes: ["person:read", "fact:read"],
+      expiresInSeconds: 30 * 24 * 60 * 60,
+      idempotencyKey: "api-key-create-concurrent-v1",
+    };
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        fixture.execute<{
+          createOrganizationApiKey?: {
+            actionId: string | null;
+            code: string;
+            replayed: boolean;
+            requestId: string;
+            secret: string | null;
+          };
+        }>({ jar: owner.jar, query: CREATE, variables: { input } }),
+      ),
+    );
+    const payloads = responses.map(
+      (response) => response.body?.data?.createOrganizationApiKey,
+    );
+    expect(responses.map((response) => response.body?.errors)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(payloads.map((payload) => payload?.code)).toEqual([
+      "APPLIED",
+      "APPLIED",
+    ]);
+    expect(new Set(payloads.map((payload) => payload?.actionId))).toHaveLength(
+      1,
+    );
+    expect(payloads.map((payload) => payload?.replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+    const secrets = payloads
+      .map((payload) => payload?.secret)
+      .filter((secret): secret is string => typeof secret === "string");
+    expect(secrets).toHaveLength(1);
+    expect(secrets[0]).toMatch(/^hum_/u);
+
+    const storedKeys = await fixture.database
+      .select({ enabled: apiKeys.enabled, key: apiKeys.key })
+      .from(apiKeys)
+      .where(eq(apiKeys.workspaceId, owner.workspaceId));
+    expect(storedKeys).toHaveLength(1);
+    expect(storedKeys[0]).toMatchObject({ enabled: true });
+    expect(storedKeys[0]?.key).not.toBe(secrets[0]);
+    expect(storedKeys[0]?.key).not.toContain(secrets[0]);
+    expect(
+      (
+        await fixture.execute<{ viewer?: { actorType?: string } }>({
+          apiKey: secrets[0] ?? "",
+          query: VIEWER,
+        })
+      ).body?.data?.viewer?.actorType,
+    ).toBe("API_KEY");
+
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.action, "settings.api_key.create"),
+          ),
+        ),
+    ).toHaveLength(1);
+    const claims = await fixture.database
+      .select({
+        responseReference: locationMutationIdempotency.responseReference,
+      })
+      .from(locationMutationIdempotency)
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+          eq(locationMutationIdempotency.operation, "settings.api_key.create"),
+        ),
+      );
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.responseReference).toEqual({
+      actionId: payloads[0]?.actionId,
+      code: "APPLIED",
+      requestId: payloads[0]?.requestId,
+    });
+    expect(JSON.stringify(claims[0]?.responseReference)).not.toContain(
+      secrets[0] ?? "missing-secret",
+    );
+  });
+
+  it("converges concurrent rotation retries with one replacement and one transient secret", async () => {
+    const owner = await fixture.createActor();
+    const original = await fixture.provisionKey(owner, { person: ["read"] });
+    const listed = await fixture.execute<{
+      settingsOrganizationApiKeys?: { nodes?: Array<{ actionId: string }> };
+    }>({ jar: owner.jar, query: LIST });
+    const originalActionId =
+      listed.body?.data?.settingsOrganizationApiKeys?.nodes?.[0]?.actionId;
+    const input = {
+      actionId: originalActionId,
+      name: "Retry-safe replacement",
+      scopes: ["person:read"],
+      idempotencyKey: "api-key-rotate-concurrent-v1",
+    };
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        fixture.execute<{
+          rotateOrganizationApiKey?: {
+            actionId: string | null;
+            code: string;
+            replayed: boolean;
+            requestId: string;
+            secret: string | null;
+          };
+        }>({ jar: owner.jar, query: ROTATE, variables: { input } }),
+      ),
+    );
+    const payloads = responses.map(
+      (response) => response.body?.data?.rotateOrganizationApiKey,
+    );
+    expect(responses.map((response) => response.body?.errors)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(new Set(payloads.map((payload) => payload?.actionId))).toHaveLength(
+      1,
+    );
+    expect(payloads.map((payload) => payload?.replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+    const secrets = payloads
+      .map((payload) => payload?.secret)
+      .filter((secret): secret is string => typeof secret === "string");
+    expect(secrets).toHaveLength(1);
+    expectGraphQLError(
+      await fixture.execute({ apiKey: original.key, query: VIEWER }),
+      "UNAUTHENTICATED",
+    );
+    expect(
+      (
+        await fixture.execute<{ viewer?: { actorType?: string } }>({
+          apiKey: secrets[0] ?? "",
+          query: VIEWER,
+        })
+      ).body?.data?.viewer?.actorType,
+    ).toBe("API_KEY");
+    const storedKeys = await fixture.database
+      .select({ enabled: apiKeys.enabled })
+      .from(apiKeys)
+      .where(eq(apiKeys.workspaceId, owner.workspaceId));
+    expect(storedKeys).toHaveLength(2);
+    expect(storedKeys).toEqual(
+      expect.arrayContaining([{ enabled: false }, { enabled: true }]),
+    );
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.action, "settings.api_key.rotate"),
+          ),
+        ),
+    ).toHaveLength(1);
+    const claims = await fixture.database
+      .select({
+        responseReference: locationMutationIdempotency.responseReference,
+      })
+      .from(locationMutationIdempotency)
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+          eq(locationMutationIdempotency.operation, "settings.api_key.rotate"),
+        ),
+      );
+    expect(claims).toHaveLength(1);
+    expect(Object.hasOwn(claims[0]?.responseReference ?? {}, "secret")).toBe(
+      false,
+    );
+  });
+
+  it("binds API-key create replay to request material and workspace principal", async () => {
+    const owner = await fixture.createActor();
+    const foreignOwner = await fixture.createActor();
+    const idempotencyKey = "api-key-create-workspace-fence-v1";
+    const first = await fixture.execute({
+      jar: owner.jar,
+      query: CREATE,
+      variables: {
+        input: {
+          idempotencyKey,
+          name: "Bound request",
+          scopes: ["person:read"],
+        },
+      },
+    });
+    expect(first.body?.errors).toBeUndefined();
+
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        query: CREATE,
+        variables: {
+          input: {
+            idempotencyKey,
+            name: "Changed request",
+            scopes: ["person:read"],
+          },
+        },
+      }),
+      "CONFLICT",
+    );
+    const foreign = await fixture.execute({
+      jar: foreignOwner.jar,
+      query: CREATE,
+      variables: {
+        input: {
+          idempotencyKey,
+          name: "Independent request",
+          scopes: ["person:read"],
+        },
+      },
+    });
+    expect(foreign.body?.errors).toBeUndefined();
+    expect(
+      await fixture.database
+        .select({ id: apiKeys.id })
+        .from(apiKeys)
+        .where(eq(apiKeys.workspaceId, owner.workspaceId)),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: apiKeys.id })
+        .from(apiKeys)
+        .where(eq(apiKeys.workspaceId, foreignOwner.workspaceId)),
+    ).toHaveLength(1);
   });
 
   it("durably replays concurrent API-key revocation without duplicate effects", async () => {

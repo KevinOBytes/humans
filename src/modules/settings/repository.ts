@@ -69,7 +69,7 @@ export type WorkspacePolicySummaryReadModel = {
   storageEnabled: boolean;
 };
 
-type TransactionDatabase = Parameters<
+export type TransactionDatabase = Parameters<
   Parameters<Database["transaction"]>[0]
 >[0];
 

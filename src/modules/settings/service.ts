@@ -32,7 +32,10 @@ import {
   type WorkspaceMemberRuntime,
 } from "@/modules/settings/workspace-members";
 
-import { createSettingsRepository } from "./repository";
+import {
+  createSettingsRepository,
+  type TransactionDatabase,
+} from "./repository";
 import { createPolicyMutationService } from "./policy-mutations";
 
 const REQUEST_ID =
@@ -290,6 +293,295 @@ export function createSettingsService(input: {
     } as const;
   }
 
+  function idempotencyContext() {
+    const actor = input.actor;
+    if (actor.type !== "user") lifecycleUnavailable();
+    if (
+      !input.idempotencyHmacKey ||
+      !input.permissions ||
+      !input.searchIndexMaintenance
+    ) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "API-key lifecycle idempotency is unavailable.",
+      );
+    }
+    return {
+      actor,
+      database: input.database,
+      permissions: input.permissions,
+      requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.workspaceId,
+    };
+  }
+
+  function validateLifecycleResponseReference(reference: {
+    readonly [key: string]: boolean | null | number | string;
+  }): {
+    actionId: string | null;
+    code: "APPLIED" | "INVALID";
+    requestId: string;
+  } {
+    const exactKeys = Object.keys(reference).sort().join(":");
+    const validActionId =
+      reference.actionId === null ||
+      (typeof reference.actionId === "string" &&
+        isApiKeyActionId(reference.actionId));
+    const coherentOutcome =
+      (reference.code === "APPLIED" &&
+        typeof reference.actionId === "string") ||
+      (reference.code === "INVALID" && reference.actionId === null);
+    if (
+      exactKeys !== "actionId:code:requestId" ||
+      !validActionId ||
+      !coherentOutcome ||
+      typeof reference.requestId !== "string" ||
+      !REQUEST_ID.test(reference.requestId)
+    ) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored API-key lifecycle result is invalid.",
+      );
+    }
+    return {
+      actionId: reference.actionId as string | null,
+      code: reference.code as "APPLIED" | "INVALID",
+      requestId: reference.requestId,
+    };
+  }
+
+  async function createApiKeyIdempotently(inputValue: {
+    expiresInSeconds?: number | null;
+    idempotencyKey: string;
+    name: string;
+    scopes: readonly string[];
+  }) {
+    const role = await authorizeAdministrator();
+    const actor = input.actor;
+    const runtime = input.runtime;
+    const organizationId = input.organizationId;
+    if (actor.type !== "user" || !input.auth || !runtime || !organizationId) {
+      lifecycleUnavailable();
+    }
+    const validated = lifecycleInput(inputValue);
+    if (!validated || !permittedPermissions(role, validated.permissions)) {
+      return {
+        actionId: null,
+        code: "INVALID",
+        replayed: false,
+        requestId,
+      } as const;
+    }
+    const context = idempotencyContext();
+    const claim = derivePrincipalResearchIdempotency(context, {
+      expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
+      idempotencyKey: inputValue.idempotencyKey,
+      operation: "settings.api_key.create",
+      requestMaterial: {
+        expiresInSeconds: validated.expiresIn ?? null,
+        name: validated.name,
+        scopes: Object.entries(validated.permissions)
+          .flatMap(([resource, actions]) =>
+            actions.map((action) => `${resource}:${action}`),
+          )
+          .sort(),
+      },
+      secret: input.idempotencyHmacKey!,
+    });
+    await runtime.beforeApiKeyLifecycleWrite?.();
+    let transientSecret: string | undefined;
+    const executed = await runPrincipalIdempotentResearchWrite(
+      context,
+      claim,
+      ["apiKey:create"],
+      async (scopedContext) => {
+        // The idempotency runner exposes the narrowed context through the
+        // shared Database interface, but invokes this callback inside its
+        // outermost PostgreSQL transaction.
+        const transaction =
+          scopedContext.database as unknown as TransactionDatabase;
+        const scopedRepository = createSettingsRepository(
+          scopedContext.database,
+        );
+        const created =
+          await scopedRepository.createOrganizationApiKeyInTransaction({
+            expiresInSeconds: validated.expiresIn,
+            name: validated.name,
+            organizationId,
+            permissions: validated.permissions,
+            transaction,
+            workspaceId: input.workspaceId,
+          });
+        await runtime.afterApiKeyLifecycleStep?.("created");
+        await runtime.afterApiKeyLifecycleStep?.("staged");
+        const activated =
+          await scopedRepository.activateCreatedOrganizationApiKey({
+            apiKeyId: created.id,
+            transaction,
+            workspaceId: input.workspaceId,
+          });
+        if (!activated)
+          throw new Error("Created API key could not be activated");
+        await ensureApiKeyPrincipal(
+          scopedContext.database as unknown as Database,
+          { apiKeyId: created.id, workspaceId: input.workspaceId },
+        );
+        await runtime.afterApiKeyLifecycleStep?.("before_audit");
+        await scopedRepository.recordApiKeyLifecycleAudit({
+          action: "settings.api_key.create",
+          actor,
+          changedFields: ["created", "permissions", "expiry"],
+          requestId,
+          transaction,
+          workspaceId: input.workspaceId,
+        });
+        transientSecret = created.key;
+        return {
+          actionId: apiKeyActionId({
+            apiKeyId: created.id,
+            secret: actionSecret,
+            workspaceId: input.workspaceId,
+          }),
+          code: "APPLIED",
+          requestId,
+        } as const;
+      },
+    );
+    const reference = validateLifecycleResponseReference(
+      executed.responseReference,
+    );
+    return {
+      ...reference,
+      replayed: executed.replayed,
+      ...(!executed.replayed && transientSecret
+        ? { secret: transientSecret }
+        : {}),
+    } as const;
+  }
+
+  async function rotateApiKeyIdempotently(inputValue: {
+    actionId: string;
+    expiresInSeconds?: number | null;
+    idempotencyKey: string;
+    name: string;
+    scopes: readonly string[];
+  }) {
+    const role = await authorizeAdministrator();
+    const actor = input.actor;
+    const runtime = input.runtime;
+    const organizationId = input.organizationId;
+    if (actor.type !== "user" || !input.auth || !runtime || !organizationId) {
+      lifecycleUnavailable();
+    }
+    const validated = lifecycleInput(inputValue);
+    if (!validated || !permittedPermissions(role, validated.permissions)) {
+      return {
+        actionId: null,
+        code: "INVALID",
+        replayed: false,
+        requestId,
+      } as const;
+    }
+    const context = idempotencyContext();
+    const claim = derivePrincipalResearchIdempotency(context, {
+      expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
+      idempotencyKey: inputValue.idempotencyKey,
+      operation: "settings.api_key.rotate",
+      requestMaterial: {
+        actionId: inputValue.actionId,
+        expiresInSeconds: validated.expiresIn ?? null,
+        name: validated.name,
+        scopes: Object.entries(validated.permissions)
+          .flatMap(([resource, actions]) =>
+            actions.map((action) => `${resource}:${action}`),
+          )
+          .sort(),
+      },
+      secret: input.idempotencyHmacKey!,
+    });
+    await runtime.beforeApiKeyLifecycleWrite?.();
+    let transientSecret: string | undefined;
+    const executed = await runPrincipalIdempotentResearchWrite(
+      context,
+      claim,
+      ["apiKey:create", "apiKey:delete"],
+      async (scopedContext) => {
+        const transaction =
+          scopedContext.database as unknown as TransactionDatabase;
+        const scopedRepository = createSettingsRepository(
+          scopedContext.database,
+        );
+        const current = await activeApiKeyForAction(
+          inputValue.actionId,
+          scopedRepository,
+        );
+        if (!current) {
+          return { actionId: null, code: "INVALID", requestId } as const;
+        }
+        const created =
+          await scopedRepository.createOrganizationApiKeyInTransaction({
+            expiresInSeconds: validated.expiresIn,
+            name: validated.name,
+            organizationId,
+            permissions: validated.permissions,
+            transaction,
+            workspaceId: input.workspaceId,
+          });
+        await runtime.afterApiKeyLifecycleStep?.("created");
+        await runtime.afterApiKeyLifecycleStep?.("staged");
+        const activated =
+          await scopedRepository.activateCreatedOrganizationApiKey({
+            apiKeyId: created.id,
+            transaction,
+            workspaceId: input.workspaceId,
+          });
+        if (!activated)
+          throw new Error("Created API key could not be activated");
+        await ensureApiKeyPrincipal(
+          scopedContext.database as unknown as Database,
+          { apiKeyId: created.id, workspaceId: input.workspaceId },
+        );
+        await runtime.afterApiKeyLifecycleStep?.("before_rotation_disable");
+        const rotated =
+          await scopedRepository.disableOrganizationApiKeyInAuthorizedTransaction(
+            {
+              action: "settings.api_key.rotate",
+              apiKeyId: current.id,
+              actor,
+              changedFields: ["replacement", "enabled"],
+              requestId,
+              transaction,
+              workspaceId: input.workspaceId,
+            },
+          );
+        if (rotated !== "APPLIED") {
+          throw new Error("Original API key could not be disabled");
+        }
+        transientSecret = created.key;
+        return {
+          actionId: apiKeyActionId({
+            apiKeyId: created.id,
+            secret: actionSecret,
+            workspaceId: input.workspaceId,
+          }),
+          code: "APPLIED",
+          requestId,
+        } as const;
+      },
+    );
+    const reference = validateLifecycleResponseReference(
+      executed.responseReference,
+    );
+    return {
+      ...reference,
+      replayed: executed.replayed,
+      ...(!executed.replayed && transientSecret
+        ? { secret: transientSecret }
+        : {}),
+    } as const;
+  }
+
   return {
     directory: members.directory,
     issueInvitation: members.issueInvitation,
@@ -347,17 +639,31 @@ export function createSettingsService(input: {
     },
     async createOrganizationApiKey(inputValue: {
       expiresInSeconds?: number | null;
+      idempotencyKey?: string | null;
       name: string;
       scopes: readonly string[];
     }) {
+      if (inputValue.idempotencyKey != null) {
+        return createApiKeyIdempotently({
+          ...inputValue,
+          idempotencyKey: inputValue.idempotencyKey,
+        });
+      }
       return createApiKey(inputValue);
     },
     async rotateOrganizationApiKey(inputValue: {
       actionId: string;
       expiresInSeconds?: number | null;
+      idempotencyKey?: string | null;
       name: string;
       scopes: readonly string[];
     }) {
+      if (inputValue.idempotencyKey != null) {
+        return rotateApiKeyIdempotently({
+          ...inputValue,
+          idempotencyKey: inputValue.idempotencyKey,
+        });
+      }
       await authorizeAdministrator();
       const current = await activeApiKeyForAction(inputValue.actionId);
       if (!current) {
