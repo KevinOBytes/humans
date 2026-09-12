@@ -52,7 +52,11 @@ const Cases = builder
   }>("ResearchCaseConnection")
   .implement({
     fields: (t) => ({
-      nodes: t.field({ type: [Case], resolve: (r) => r.nodes }),
+      nodes: t.field({
+        type: [Case],
+        resolve: (r) => r.nodes,
+        complexity: { field: 0, multiplier: 1 },
+      }),
       pageInfo: t.field({ type: Page, resolve: (r) => r.pageInfo }),
     }),
   });
@@ -63,7 +67,11 @@ const Timeline = builder
   }>("CaseTimelineConnection")
   .implement({
     fields: (t) => ({
-      nodes: t.field({ type: [Link], resolve: (r) => r.nodes }),
+      nodes: t.field({
+        type: [Link],
+        resolve: (r) => r.nodes,
+        complexity: { field: 0, multiplier: 1 },
+      }),
       pageInfo: t.field({ type: Page, resolve: (r) => r.pageInfo }),
     }),
   });
