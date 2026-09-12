@@ -3945,6 +3945,19 @@ export type FactDetailQuery = {
             title: string | null;
             citation: string | null;
             canonicalUrl: string | null;
+            publicationDate: string | null;
+            collector: string | null;
+            extractionMethod: string | null;
+            custodyEvents: {
+              nodes: Array<{
+                id: string | null;
+                eventKind: string | null;
+                occurredAt: string | null;
+                collector: string | null;
+                integrityHash: string | null;
+                notes: string | null;
+              }> | null;
+            } | null;
           } | null;
         } | null;
       }> | null;
@@ -4091,7 +4104,20 @@ export type FactEvidenceQuery = {
             publisher: string | null;
             citation: string | null;
             canonicalUrl: string | null;
+            publicationDate: string | null;
+            collector: string | null;
+            extractionMethod: string | null;
             reliability: number | null;
+            custodyEvents: {
+              nodes: Array<{
+                id: string | null;
+                eventKind: string | null;
+                occurredAt: string | null;
+                collector: string | null;
+                integrityHash: string | null;
+                notes: string | null;
+              }> | null;
+            } | null;
           } | null;
         } | null;
       }> | null;
@@ -4784,6 +4810,9 @@ export type CreateSourceMutation = {
       title: string | null;
       canonicalUrl: string | null;
       citation: string | null;
+      publicationDate: string | null;
+      collector: string | null;
+      extractionMethod: string | null;
       version: number | null;
     } | null;
     issues: Array<{
@@ -9744,6 +9773,19 @@ export const FactDetailDocument = new TypedDocumentString(
             title
             citation
             canonicalUrl
+            publicationDate
+            collector
+            extractionMethod
+            custodyEvents {
+              nodes {
+                id
+                eventKind
+                occurredAt
+                collector
+                integrityHash
+                notes
+              }
+            }
           }
         }
       }
@@ -9758,7 +9800,7 @@ export const FactDetailDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:156f8b85199291d08ea7067aee20d1c245fccc0ffea59f595250e2355b6e876e",
+    hash: "sha256:3b82d539482cb41a2439e3926f6e48ff1e5e0e0fefe6b85ed64a0a976d5dd9fa",
   },
 ) as unknown as TypedDocumentString<FactDetailQuery, FactDetailQueryVariables>;
 export const FactCatalogDocument = new TypedDocumentString(
@@ -9925,6 +9967,19 @@ export const FactEvidenceDocument = new TypedDocumentString(
             publisher
             citation
             canonicalUrl
+            publicationDate
+            collector
+            extractionMethod
+            custodyEvents {
+              nodes {
+                id
+                eventKind
+                occurredAt
+                collector
+                integrityHash
+                notes
+              }
+            }
             reliability
           }
         }
@@ -9940,7 +9995,7 @@ export const FactEvidenceDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:5fbae08370c169124b1a05fd55eab143c3135a59b9bd3fa9a8ebc846f3290c5e",
+    hash: "sha256:d1f8ea19a2946be66fa9d13128368067f81460c96e9b06ef147429ae9774a286",
   },
 ) as unknown as TypedDocumentString<
   FactEvidenceQuery,
@@ -11121,6 +11176,9 @@ export const CreateSourceDocument = new TypedDocumentString(
       title
       canonicalUrl
       citation
+      publicationDate
+      collector
+      extractionMethod
       version
     }
     issues {
@@ -11136,7 +11194,7 @@ export const CreateSourceDocument = new TypedDocumentString(
   path
 }`,
   {
-    hash: "sha256:7abe362e8ecdf2d1c722c7940db9d3c12b5ad48cddc4097303a3cbea60e1f42e",
+    hash: "sha256:6d3b3d3734e79c01db5a40e9ea7bde3cfc17bd058bc748dc0f4e0c084bd33d12",
   },
 ) as unknown as TypedDocumentString<
   CreateSourceMutation,
