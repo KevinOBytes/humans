@@ -46,6 +46,9 @@ const sourceSchema = z
     url: z.string().max(2048).refine(publicUrl),
     title: z.string().trim().min(1).max(300),
     snippet: z.string().trim().max(2000),
+    publicationDate: z.coerce.date().nullable().optional(),
+    reliability: z.number().min(0).max(1).nullable().optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 const suggestionSchema = z

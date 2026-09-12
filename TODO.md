@@ -245,3 +245,10 @@ recovery.
   suggestion, and legal hold. `tests/unit/synthetic-seed-contract.test.ts`
   proves the source contract and rejects the prior real-person fixture; live
   Compose seed/GraphQL verification remains required.
+- [ ] `HUM-FR-023` Verify live immutable web-source snapshot triggers, accepted
+  suggestion provenance through the GraphQL review flow, AI citation retention
+  expiry, and legal-hold fencing with disposable PostgreSQL and a configured
+  provider. The source-level implementation now stores URL/title/snippet,
+  publication and collection timestamps, retrieval hashes, provider/model and
+  reliability metadata; accepted suggestions retain their run/evidence
+  linkage and the retention planner keeps accepted/held artifacts.
