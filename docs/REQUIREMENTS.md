@@ -689,6 +689,18 @@ still inherits the matrix status above: a local unit/schema result is not a
 hosted provider, browser, Compose lifecycle, or authenticated-production
 acceptance claim.
 
+Current release evidence (2026-09-12): GitHub Actions run `34688755202` for
+commit `6bb3f11` passed all nine checks: quality, real PostgreSQL integration,
+browser acceptance, isolated Compose lifecycle, production build, image
+security, generated-artifact drift, dependency policy, and secret scanning.
+The linked Vercel project then deployed the same application as
+`dpl_9JRzgRDo9RQaaZvzrF2TX8PXaNhf`, reached `READY`, and retained the
+`humans.kevinbytes.com` alias. The source-custody GraphQL selection is isolated
+behind a bounded five-event operation so the existing 500-point complexity
+ceiling remains effective. This is release/build evidence; hosted authenticated
+sign-in, external-provider contracts, and operator credential recovery remain
+explicitly open in the matrix above.
+
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.
 - Tests should name requirement IDs when practical so CI failures remain traceable.
