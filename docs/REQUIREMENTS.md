@@ -590,6 +590,13 @@ contracts, and `git diff --check`. Disposable PostgreSQL/Redis/MinIO lifecycle,
 authenticated hosted smoke, external provider contracts, and browser/performance
 release evidence remain open and are not marked complete.
 
+Current GitHub Actions gate (2026-09-12): run `34686415372` for commit
+`7b7f2d1` passed all nine checks, including the real PostgreSQL integration
+seam, browser acceptance, isolated Compose lifecycle, production build,
+generated-artifact drift, quality, image security, dependency policy, and
+secret scanning. The commit corrects the cross-workspace relationship fixture
+to use the sandbox tenant's fictional person; it changes no runtime code.
+
 Live unauthenticated smoke evidence (2026-09-11): after the merged `main`
 push, `pnpm production:smoke -- --base-url https://humans.kevinbytes.com`
 returned homepage 200, liveness 200, readiness 200, unauthenticated GraphQL
