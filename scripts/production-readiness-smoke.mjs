@@ -7,6 +7,7 @@ export function parseArgs(argv = []) {
   const options = { baseUrl: null, providerContracts: false };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
+    if (value === "--") continue;
     if (value === "--base-url") options.baseUrl = argv[++index] ?? "";
     else if (value === "--provider-contracts") options.providerContracts = true;
     else if (value === "--help") options.help = true;
