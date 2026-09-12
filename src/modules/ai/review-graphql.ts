@@ -40,6 +40,14 @@ const Suggestion = builder
       acceptedResourceKind: t.exposeString("acceptedResourceKind", {
         nullable: true,
       }),
+      acceptedFromRunId: t.expose("acceptedFromRunId", {
+        type: "UUID",
+        nullable: true,
+      }),
+      acceptedEvidenceReferences: t.expose("acceptedEvidenceReferences", {
+        type: "JSON",
+        nullable: true,
+      }),
       decisionReason: t.exposeString("decisionReason", { nullable: true }),
       reviewedBy: t.expose("reviewedBy", { type: "UUID", nullable: true }),
       reviewedAt: t.field({

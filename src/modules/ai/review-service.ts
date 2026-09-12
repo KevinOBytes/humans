@@ -2,7 +2,10 @@ import "server-only";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { aiReviewSuggestions, aiRuns, aiCitations } from "@/db/schema/ai";
-import { personWebResearchRuns } from "@/db/schema/person-research";
+import {
+  personWebResearchRuns,
+  personWebResearchSources,
+} from "@/db/schema/person-research";
 import { evidenceItems, sources } from "@/db/schema/evidence";
 import { people } from "@/db/schema/people";
 import { createGraphQLError } from "@/graphql/errors";
@@ -28,6 +31,7 @@ import {
   requireAiBatchApproval,
 } from "./review-validation";
 import type { AiSuggestionInput } from "./review-types";
+import { sourceSnapshotHash } from "./source-provenance";
 
 type Row = typeof aiReviewSuggestions.$inferSelect;
 const readPermissions = ["analysis:read", "person:read"];
@@ -166,6 +170,32 @@ async function verifyProvenance(
       snippet: string;
       title: string;
     }>;
+    const persistedSnapshots = await context.database
+      .select()
+      .from(personWebResearchSources)
+      .where(
+        and(
+          eq(personWebResearchSources.workspaceId, context.workspaceId),
+          eq(personWebResearchSources.runId, run.id),
+        ),
+      );
+    const sourcesForVerification = persistedSnapshots.length
+      ? persistedSnapshots
+      : snapshots.map((source) => ({
+          ...source,
+          retrievalHash: sourceSnapshotHash(source),
+          provider: run.provider,
+          model: run.model,
+        }));
+    if (
+      sourcesForVerification.some(
+        (source) =>
+          source.provider !== run.provider ||
+          source.model !== run.model ||
+          source.retrievalHash !== sourceSnapshotHash(source),
+      )
+    )
+      fail();
     if (input.proposedValue.kind !== "profile") fail();
     const value = input.proposedValue.value;
     const original = (
@@ -180,10 +210,13 @@ async function verifyProvenance(
       if (
         reference.kind !== "web" ||
         !original.sourceUrls.includes(reference.url) ||
-        !snapshots.some(
+        !sourcesForVerification.some(
           (source) =>
             source.url === reference.url &&
-            (source.snippet || source.title) === reference.quote,
+            (source.snippet || source.title) === reference.quote &&
+            (!("snapshotHash" in reference) ||
+              !reference.snapshotHash ||
+              source.retrievalHash === reference.snapshotHash),
         )
       )
         fail();
@@ -485,6 +518,10 @@ export function createAiReviewService(context: ResearchServiceContext) {
         decisionReason: input.reason ?? null,
         acceptedResourceId,
         acceptedResourceKind,
+        acceptedFromRunId:
+          input.decision === "accepted" ? (row.aiRunId ?? row.webRunId) : null,
+        acceptedEvidenceReferences:
+          input.decision === "accepted" ? row.evidenceReferences : null,
       })
       .where(
         and(

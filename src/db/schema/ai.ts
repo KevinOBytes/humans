@@ -56,6 +56,8 @@ export const aiReviewSuggestions = pgTable(
     decisionReason: text("decision_reason"),
     acceptedResourceId: uuid("accepted_resource_id"),
     acceptedResourceKind: text("accepted_resource_kind"),
+    acceptedFromRunId: uuid("accepted_from_run_id"),
+    acceptedEvidenceReferences: jsonb("accepted_evidence_references"),
     createdAt: domainTimestamp("created_at").notNull().defaultNow(),
     createdBy: uuid("created_by").notNull(),
     updatedAt: domainTimestamp("updated_at").notNull().defaultNow(),
@@ -130,7 +132,7 @@ export const aiReviewSuggestions = pgTable(
     ),
     check(
       "ai_review_acceptance_check",
-      sql`(${t.status} = 'accepted' AND ${t.acceptedResourceId} IS NOT NULL AND ${t.acceptedResourceKind} IN ('person','fact','relationship')) OR (${t.status} <> 'accepted' AND ${t.acceptedResourceId} IS NULL AND ${t.acceptedResourceKind} IS NULL)`,
+      sql`(${t.status} = 'accepted' AND ${t.acceptedResourceId} IS NOT NULL AND ${t.acceptedResourceKind} IN ('person','fact','relationship') AND ${t.acceptedFromRunId} IS NOT NULL AND ${t.acceptedEvidenceReferences} IS NOT NULL) OR (${t.status} <> 'accepted' AND ${t.acceptedResourceId} IS NULL AND ${t.acceptedResourceKind} IS NULL AND ${t.acceptedFromRunId} IS NULL AND ${t.acceptedEvidenceReferences} IS NULL)`,
     ),
     check(
       "ai_review_rejection_check",

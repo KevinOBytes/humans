@@ -4,32 +4,40 @@ import postgres from "postgres";
 
 import { assertDatabaseSeedAllowed } from "./seed-guard";
 
-const fixtures = [
-  {
-    memberId: "seed-member-alpha",
-    organizationId: "seed-organization-alpha",
-    organizationName: "Research Alpha",
-    organizationSlug: "seed-research-alpha",
-    personId: "01900000-0000-7000-8000-000000000011",
-    principalId: "01900000-0000-7000-8000-000000000003",
-    userEmail: "seed-alpha@localhost.invalid",
-    userId: "seed-user-alpha",
-    workspaceId: "01900000-0000-7000-8000-000000000001",
-    workspaceName: "Alpha Workspace",
-  },
-  {
-    memberId: "seed-member-beta",
-    organizationId: "seed-organization-beta",
-    organizationName: "Research Beta",
-    organizationSlug: "seed-research-beta",
-    personId: "01900000-0000-7000-8000-000000000012",
-    principalId: "01900000-0000-7000-8000-000000000004",
-    userEmail: "seed-beta@localhost.invalid",
-    userId: "seed-user-beta",
-    workspaceId: "01900000-0000-7000-8000-000000000002",
-    workspaceName: "Beta Workspace",
-  },
-] as const;
+/** Fictional, non-routable demo data. Loading is always explicitly guarded.
+ * Operators must set ALLOW_DATABASE_SEED=true for local Compose only. */
+const statements = [
+  `INSERT INTO users (id,name,email,email_verified,created_at,updated_at) VALUES ('01900000-0000-7000-8000-000000000101','Northstar Steward','steward@northstar.example.invalid',true,now(),now()),('01900000-0000-7000-8000-000000000102','Northstar Reviewer','reviewer@northstar.example.invalid',true,now(),now()),('01900000-0000-7000-8000-000000000103','Sandbox Steward','steward@northstar-sandbox.example.invalid',true,now(),now()) ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO organizations (id,name,slug,created_at) VALUES ('01900000-0000-7000-8000-000000000201','Northstar Atlas','northstar-atlas',now()),('01900000-0000-7000-8000-000000000202','Northstar Sandbox','northstar-sandbox',now()) ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO workspaces (id,organization_id,name,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000201','Northstar Atlas','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000002','01900000-0000-7000-8000-000000000202','Northstar Sandbox','01900000-0000-7000-8000-000000000103','01900000-0000-7000-8000-000000000103') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO members (id,organization_id,user_id,role,created_at,workspace_id) VALUES ('01900000-0000-7000-8000-000000000301','01900000-0000-7000-8000-000000000201','01900000-0000-7000-8000-000000000101','owner',now(),'01900000-0000-7000-8000-000000000001'),('01900000-0000-7000-8000-000000000302','01900000-0000-7000-8000-000000000201','01900000-0000-7000-8000-000000000102','admin',now(),'01900000-0000-7000-8000-000000000001'),('01900000-0000-7000-8000-000000000303','01900000-0000-7000-8000-000000000202','01900000-0000-7000-8000-000000000103','owner',now(),'01900000-0000-7000-8000-000000000002') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO workspace_principals (id,workspace_id,principal_type,user_id,member_id_snapshot) VALUES ('01900000-0000-7000-8000-000000000401','01900000-0000-7000-8000-000000000001','user','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000301'),('01900000-0000-7000-8000-000000000402','01900000-0000-7000-8000-000000000001','user','01900000-0000-7000-8000-000000000102','01900000-0000-7000-8000-000000000302'),('01900000-0000-7000-8000-000000000403','01900000-0000-7000-8000-000000000002','user','01900000-0000-7000-8000-000000000103','01900000-0000-7000-8000-000000000303') ON CONFLICT (id) DO NOTHING`,
+  // Four fictional people with aliases, pronouns, biographies, work, education,
+  // languages, organizations, public identifiers, and custom facts below.
+  `INSERT INTO people (id,workspace_id,display_name,sort_name,preferred_name,biography,confidence,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000011','01900000-0000-7000-8000-000000000001','Mira Quill','Quill, Mira','Mira','Fictional systems cartographer at Northstar Commons.',0.96,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000012','01900000-0000-7000-8000-000000000001','Rowan Vale','Vale, Rowan','Rowan','Fictional civic technologist and archivist.',0.91,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000013','01900000-0000-7000-8000-000000000001','Tavi North','North, Tavi','Tavi','Fictional public-data researcher.',0.88,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000014','01900000-0000-7000-8000-000000000001','Sol Ember','Ember, Sol','Sol','Fictional educator and facilitator.',0.84,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000021','01900000-0000-7000-8000-000000000002','Juniper Echo','Echo, Juniper','Juniper','Fictional sandbox-only profile.',0.80,'01900000-0000-7000-8000-000000000103','01900000-0000-7000-8000-000000000103') ON CONFLICT (id) DO UPDATE SET biography=EXCLUDED.biography,confidence=EXCLUDED.confidence,updated_at=now()`,
+  `INSERT INTO person_names (id,workspace_id,person_id,kind,full_name,given_name,family_name,language,confidence,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000501','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','legal','Mira Quill','Mira','Quill','en',0.98,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000502','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','alias','M. Q.','M.','Q.','en',0.72,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000503','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000012','legal','Rowan Vale','Rowan','Vale','en',0.97,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO person_identifiers (id,workspace_id,person_id,namespace,identifier_type,encrypted_raw_value,blind_index,issuer,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000601','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','demo','atlas-id','enc:atlas-mira-001','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','Northstar Atlas','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO contact_points (id,workspace_id,kind,encrypted_display_value,blind_index,label,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000611','01900000-0000-7000-8000-000000000001','email','enc:demo-atlas-mira','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','public demo email','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO person_contact_points (id,workspace_id,person_id,contact_point_id,usage_kind,is_primary,valid_from,confidence,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000612','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','01900000-0000-7000-8000-000000000611','public',true,'2024-01-01',0.9,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO addresses (id,workspace_id,line1,locality,region,postal_code,country_code,normalized_hash,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000621','01900000-0000-7000-8000-000000000001','100 Example Way','Fictional City','EX','00000','ZZ','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO person_addresses (id,workspace_id,person_id,address_id,address_kind,valid_from,valid_until,temporal_precision,is_primary,confidence,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000622','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','01900000-0000-7000-8000-000000000621','residential','2023-01-01','2024-01-01','day',true,0.8,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO person_events (id,workspace_id,person_id,event_kind,title,description,earliest_at,latest_at,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000701','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','education','Fictional Institute fellowship','Synthetic demo education record','2020-09-01','2021-06-01','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000702','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000012','employment','Northstar Commons role','Synthetic demo employment record','2021-03-01',NULL,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO fact_definitions (id,workspace_id,namespace,field_key,label,allowed_value_type,category,searchable,filterable,graphable,state,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000801','01900000-0000-7000-8000-000000000001','demo','pronouns','Pronouns','text','identity',true,true,false,'active','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000802','01900000-0000-7000-8000-000000000001','demo','language','Languages','text','profile',true,true,false,'active','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000803','01900000-0000-7000-8000-000000000001','demo','organization','Organization','text','work',true,true,true,'active','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO facts (id,workspace_id,person_id,fact_definition_id,namespace,field_key,label,value_type,value_text,language,confidence,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000000901','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','01900000-0000-7000-8000-000000000801','demo','pronouns','Pronouns','text','they/them','en',0.92,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000000902','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000012','01900000-0000-7000-8000-000000000802','demo','language','Languages','text','English; French','en',0.87,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO sources (id,workspace_id,kind,title,publisher,canonical_url,citation,collection_method,collected_at,reliability,metadata,content_hash,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000001001','01900000-0000-7000-8000-000000000001','web','Northstar Atlas fictional bulletin','Northstar Commons','https://northstar.example.invalid/bulletin-001','Synthetic bulletin 001','fixture',now(),0.82,'{"publicationDate":"2024-01-15","collector":"fixture","extractionMethod":"manual"}','sha256:demo-source-001','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO evidence_items (id,workspace_id,source_id,external_locator,extracted_text,captured_at,checksum,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000001101','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000001001','https://northstar.example.invalid/bulletin-001#p1','Fictional bulletin supports a collaboration claim.',now(),'sha256:evidence-001','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO evidence_excerpts (id,workspace_id,evidence_item_id,locator,excerpt,checksum,created_by) VALUES ('01900000-0000-7000-8000-000000001201','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000001101','p1','Fictional collaboration excerpt.','sha256:excerpt-001','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO evidence_assertions (id,workspace_id,evidence_id,resource_kind,resource_id,purpose,locator,quote,role,confidence,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000001301','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000001101','relationship','01900000-0000-7000-8000-000000001501','demo provenance','p1','Fictional source supports the documented relationship.','supports',0.84,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000001302','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000001101','relationship','01900000-0000-7000-8000-000000001502','demo contradiction','p2','Fictional source contradicts the hypothesis.','contradicts',0.61,'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO relationship_types (id,workspace_id,key,forward_label,inverse_label,metadata_schema,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000001401','01900000-0000-7000-8000-000000000001','collaborates_with','collaborates with','collaborates with','{"directional":true}','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000001402','01900000-0000-7000-8000-000000000001','mentors','mentors','is mentored by','{"directional":true}','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO relationships (id,workspace_id,source_person_id,target_person_id,relationship_type_id,review_state,strength,confidence,state,temporal_semantics,temporal_precision,valid_from,valid_until,metadata,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000001501','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','01900000-0000-7000-8000-000000000012','01900000-0000-7000-8000-000000001401','approved',0.78,0.84,'asserted','between','day','2023-01-01','2024-12-31','{"evidenceState":"documented"}','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101'),('01900000-0000-7000-8000-000000001502','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000013','01900000-0000-7000-8000-000000000014','01900000-0000-7000-8000-000000001402','unreviewed',0.42,0.48,'asserted','between','month','2024-03-01',NULL,'{"evidenceState":"hypothesis"}','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO relationship_evidence (id,workspace_id,relationship_id,evidence_item_id,locator,support_strength,created_by) VALUES ('01900000-0000-7000-8000-000000001601','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000001501','01900000-0000-7000-8000-000000001101','p1',0.84,'01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO cases (id,workspace_id,title,purpose,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000001701','01900000-0000-7000-8000-000000000001','Northstar Atlas fictional review','Consent-governed synthetic research demo','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO case_members (id,workspace_id,case_id,principal_id,role,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000001801','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000001701','01900000-0000-7000-8000-000000000402','reviewer','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO consent_records (id,workspace_id,person_id,purpose,status,source,effective_from,lawful_basis,withdrawal_effect,withdrawn_at,withdrawn_by,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000001901','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','demo-research','withdrawn','synthetic consent fixture','2024-01-01','consent','stop_processing',now(),'01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO person_web_research_runs (id,workspace_id,person_id,governance_purpose,provider,model,query_hash,source_count,sources,suggestions,consented_at,created_by) VALUES ('01900000-0000-7000-8000-000000002001','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','demo-research','fixture','synthetic-model','cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',1,'[{"url":"https://northstar.example.invalid/bulletin-001"}]','[{"fieldKey":"organization","status":"pending"}]',now(),'01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO ai_review_suggestions (id,workspace_id,person_id,case_id,purpose,field_key,proposed_value,evidence_references,confidence,uncertainty,provider,model,prompt_policy_version,status,web_run_id,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000002101','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','01900000-0000-7000-8000-000000001701','demo-research','organization','{"version":1,"kind":"fact","definitionId":"01900000-0000-7000-8000-000000000803","value":{"text":"Northstar Commons"}}','[{"evidenceId":"01900000-0000-7000-8000-000000001101","locator":"p1"}]',0.74,'Synthetic suggestion requires human review.','fixture','synthetic-model','demo-policy-v1','pending','01900000-0000-7000-8000-000000002001','01900000-0000-7000-8000-000000000401','01900000-0000-7000-8000-000000000401') ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO legal_holds (id,workspace_id,resource_id,resource_kind,reason,authority,state,created_by,updated_by) VALUES ('01900000-0000-7000-8000-000000002201','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000011','person','Synthetic contradiction review hold','Northstar Atlas fixture authority','active','01900000-0000-7000-8000-000000000101','01900000-0000-7000-8000-000000000101') ON CONFLICT (id) DO NOTHING`,
+];
 
 export async function seedDatabase(databaseUrl: string): Promise<void> {
   assertDatabaseSeedAllowed({
@@ -37,73 +45,14 @@ export async function seedDatabase(databaseUrl: string): Promise<void> {
     databaseUrl,
     nodeEnv: process.env.NODE_ENV,
   });
-
   const connection = postgres(databaseUrl, {
     max: 1,
     onnotice: () => undefined,
     prepare: false,
   });
-
   try {
     await connection.begin(async (sql) => {
-      for (const fixture of fixtures) {
-        await sql`
-          INSERT INTO users (id, name, email, email_verified, created_at, updated_at)
-          VALUES (${fixture.userId}, ${fixture.organizationName}, ${fixture.userEmail}, true, now(), now())
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            email = EXCLUDED.email,
-            email_verified = EXCLUDED.email_verified,
-            updated_at = EXCLUDED.updated_at
-        `;
-        await sql`
-          INSERT INTO organizations (id, name, slug, created_at)
-          VALUES (${fixture.organizationId}, ${fixture.organizationName}, ${fixture.organizationSlug}, now())
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            slug = EXCLUDED.slug
-        `;
-        await sql`
-          INSERT INTO workspaces (id, organization_id, name, created_by, updated_by)
-          VALUES (${fixture.workspaceId}, ${fixture.organizationId}, ${fixture.workspaceName}, ${fixture.userId}, ${fixture.userId})
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            updated_at = now(),
-            updated_by = EXCLUDED.updated_by
-        `;
-        await sql`
-          INSERT INTO members (id, organization_id, user_id, role, created_at, workspace_id)
-          VALUES (${fixture.memberId}, ${fixture.organizationId}, ${fixture.userId}, 'owner', now(), ${fixture.workspaceId})
-          ON CONFLICT (id) DO UPDATE SET
-            role = EXCLUDED.role,
-            workspace_id = EXCLUDED.workspace_id
-        `;
-        await sql`
-          INSERT INTO workspace_principals (
-            id,
-            workspace_id,
-            principal_type,
-            user_id,
-            member_id_snapshot
-          ) VALUES (
-            ${fixture.principalId},
-            ${fixture.workspaceId},
-            'user',
-            ${fixture.userId},
-            ${fixture.memberId}
-          )
-          ON CONFLICT (workspace_id, user_id) DO NOTHING
-        `;
-        await sql`
-          INSERT INTO people (id, workspace_id, display_name, sort_name, created_by, updated_by)
-          VALUES (${fixture.personId}, ${fixture.workspaceId}, 'Ada Lovelace', 'Lovelace, Ada', ${fixture.userId}, ${fixture.userId})
-          ON CONFLICT (id) DO UPDATE SET
-            display_name = EXCLUDED.display_name,
-            sort_name = EXCLUDED.sort_name,
-            updated_at = now(),
-            updated_by = EXCLUDED.updated_by
-        `;
-      }
+      for (const statement of statements) await sql.unsafe(statement);
     });
   } finally {
     await connection.end();
@@ -114,9 +63,5 @@ export async function main(): Promise<void> {
   await seedDatabase(process.env.DATABASE_URL ?? "");
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
   void main();
-}

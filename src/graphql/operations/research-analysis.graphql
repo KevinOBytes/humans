@@ -57,8 +57,91 @@ mutation PreviewExport($input: PreviewExportInput!) {
     rows
     fieldCounts
     approvalRequired
+    previewHash
     expiresAt
     commitToken
     provenanceManifest
+  }
+}
+
+mutation CommitExport($input: CommitExportInput!) {
+  commitExport(input: $input) {
+    id
+    fileId
+    caseId
+    purpose
+    redactionProfile
+    format
+    state
+    rowCount
+    fieldCounts
+    expiresAt
+    createdAt
+  }
+}
+
+query PendingExportApprovals($caseId: UUID, $first: Int!) {
+  pendingExportApprovals(caseId: $caseId, first: $first) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
+  }
+}
+
+mutation RequestExportApproval($input: RequestExportApprovalInput!) {
+  requestExportApproval(input: $input) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
+  }
+}
+
+mutation ReviewExportApproval($input: ReviewExportApprovalInput!) {
+  reviewExportApproval(input: $input) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
   }
 }

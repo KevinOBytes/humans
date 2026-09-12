@@ -5,6 +5,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -90,3 +91,81 @@ export const personWebResearchRuns = pgTable(
 );
 
 export type PersonWebResearchRunRow = typeof personWebResearchRuns.$inferSelect;
+
+/**
+ * Immutable, field-level snapshots for public web research. Keeping these in
+ * their own relation avoids treating a provider's later response as an edit
+ * to the evidence that a reviewer saw at the time of the run.
+ */
+export const personWebResearchSources = pgTable(
+  "person_web_research_sources",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    runId: uuid("run_id").notNull(),
+    personId: uuid("person_id").notNull(),
+    url: text("url").notNull(),
+    title: text("title").notNull(),
+    snippet: text("snippet").notNull(),
+    publicationDate: domainTimestamp("publication_date"),
+    collectionTimestamp: domainTimestamp("collection_timestamp")
+      .notNull()
+      .defaultNow(),
+    retrievalHash: text("retrieval_hash").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    reliability: numeric("reliability", { precision: 4, scale: 3 }),
+    metadata: jsonb("metadata").default({}).notNull(),
+    createdAt: domainTimestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("person_web_research_sources_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    unique("person_web_research_sources_run_url_unique").on(
+      table.workspaceId,
+      table.runId,
+      table.url,
+    ),
+    index("person_web_research_sources_run_idx").on(
+      table.workspaceId,
+      table.runId,
+      table.id,
+    ),
+    foreignKey({
+      name: "person_web_research_sources_run_fk",
+      columns: [table.workspaceId, table.runId],
+      foreignColumns: [
+        personWebResearchRuns.workspaceId,
+        personWebResearchRuns.id,
+      ],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "person_web_research_sources_person_fk",
+      columns: [table.workspaceId, table.personId],
+      foreignColumns: [people.workspaceId, people.id],
+    }).onDelete("restrict"),
+    check(
+      "person_web_research_sources_url_check",
+      sql`${table.url} ~ '^https://'`,
+    ),
+    check(
+      "person_web_research_sources_hash_check",
+      sql`${table.retrievalHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "person_web_research_sources_reliability_check",
+      sql`${table.reliability} IS NULL OR ${table.reliability} BETWEEN 0 AND 1`,
+    ),
+    check(
+      "person_web_research_sources_provider_check",
+      sql`octet_length(${table.provider}) BETWEEN 1 AND 100 AND octet_length(${table.model}) BETWEEN 1 AND 200`,
+    ),
+  ],
+);
+
+export type PersonWebResearchSourceRow =
+  typeof personWebResearchSources.$inferSelect;

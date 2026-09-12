@@ -8,6 +8,7 @@ import { calculateSearchWorkCost, searchLexemes } from "./normalization";
 import type { SearchConnection, SearchHit, SearchSnippetPart } from "./types";
 import type { AnalysisResult } from "./analysis";
 import type { ExportPreview } from "@/modules/exports/preview";
+import type { ExportApprovalProjection } from "@/modules/exports/approval-service";
 import type { exportArtifacts } from "@/db/schema/search";
 
 function dateTimeInput(value: unknown): string | undefined {
@@ -147,6 +148,19 @@ const ResearchAnalysisResult = builder
 const ExportRedactionProfile = builder.enumType("ExportRedactionProfile", {
   values: ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] as const,
 });
+const ExportApprovalState = builder.enumType("ExportApprovalState", {
+  values: {
+    REQUESTED: { value: "requested" },
+    APPROVED: { value: "approved" },
+    REJECTED: { value: "rejected" },
+  } as const,
+});
+const ExportApprovalDecision = builder.enumType("ExportApprovalDecision", {
+  values: {
+    APPROVED: { value: "approved" },
+    REJECTED: { value: "rejected" },
+  } as const,
+});
 const PreviewExportInput = builder.inputType("PreviewExportInput", {
   fields: (t) => ({
     query: t.string({ required: true }),
@@ -173,6 +187,7 @@ const ExportPreviewType = builder
         resolve: (value) => value.fieldCounts,
       }),
       approvalRequired: t.exposeBoolean("approvalRequired"),
+      previewHash: t.exposeString("previewHash"),
       expiresAt: t.field({
         type: "DateTime",
         resolve: (value) => value.expiresAt,
@@ -184,6 +199,85 @@ const ExportPreviewType = builder
       }),
     }),
   });
+const ExportApprovalType = builder
+  .objectRef<ExportApprovalProjection>("ExportApproval")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      workspaceId: t.expose("workspaceId", { type: "UUID" }),
+      caseId: t.expose("caseId", { type: "UUID", nullable: true }),
+      purpose: t.exposeString("purpose"),
+      previewHash: t.exposeString("previewHash"),
+      redactionProfile: t.field({
+        type: ExportRedactionProfile,
+        resolve: (value) => value.redactionProfile,
+      }),
+      requestedByPrincipalId: t.expose("requestedByPrincipalId", {
+        type: "UUID",
+      }),
+      reviewedByPrincipalId: t.expose("reviewedByPrincipalId", {
+        type: "UUID",
+        nullable: true,
+      }),
+      state: t.field({
+        type: ExportApprovalState,
+        resolve: (value) => value.state,
+      }),
+      requestReason: t.exposeString("requestReason"),
+      decisionReason: t.exposeString("decisionReason", { nullable: true }),
+      expiresAt: t.field({
+        type: "DateTime",
+        resolve: (value) => value.expiresAt.toISOString(),
+      }),
+      reviewedAt: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (value) => value.reviewedAt?.toISOString() ?? null,
+      }),
+      requestAuditReference: t.expose("requestAuditReference", {
+        type: "UUID",
+      }),
+      reviewAuditReference: t.expose("reviewAuditReference", {
+        type: "UUID",
+        nullable: true,
+      }),
+      version: t.exposeInt("version"),
+      createdAt: t.field({
+        type: "DateTime",
+        resolve: (value) => value.createdAt.toISOString(),
+      }),
+    }),
+  });
+const RequestExportApprovalInput = builder.inputType(
+  "RequestExportApprovalInput",
+  {
+    fields: (t) => ({
+      purpose: t.string({ required: true }),
+      caseId: t.field({ type: "UUID" }),
+      previewHash: t.string({ required: true }),
+      redactionProfile: t.field({
+        type: ExportRedactionProfile,
+        required: true,
+      }),
+      requestReason: t.string({ required: true }),
+      expiresAt: t.field({ type: "DateTime", required: true }),
+      idempotencyKey: t.string({ required: true }),
+    }),
+  },
+);
+const ReviewExportApprovalInput = builder.inputType(
+  "ReviewExportApprovalInput",
+  {
+    fields: (t) => ({
+      id: t.field({ type: "UUID", required: true }),
+      expectedVersion: t.int({ required: true }),
+      expectedPreviewHash: t.string({ required: true }),
+      decision: t.field({ type: ExportApprovalDecision, required: true }),
+      reason: t.string({ required: true }),
+      idempotencyKey: t.string({ required: true }),
+    }),
+  },
+);
 type ExportArtifactRow = typeof exportArtifacts.$inferSelect;
 const ExportArtifactType = builder
   .objectRef<ExportArtifactRow>("ExportArtifact")
@@ -470,6 +564,25 @@ export function registerSearchGraphQL(): void {
         return context.services.search.read(args.id);
       },
     }),
+    pendingExportApprovals: t.field({
+      type: [ExportApprovalType],
+      nullable: false,
+      args: {
+        caseId: t.arg({ type: "UUID" }),
+        first: t.arg.int(),
+      },
+      complexity: (args) => ({
+        field: 10,
+        multiplier: Math.min(Math.max(args.first ?? 25, 1), 50),
+      }),
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "read");
+        return context.services.exportApprovals.listPending({
+          caseId: args.caseId ?? null,
+          first: args.first ?? undefined,
+        });
+      },
+    }),
   }));
 
   builder.mutationFields((t) => ({
@@ -483,6 +596,31 @@ export function registerSearchGraphQL(): void {
           ...args.input,
           first: args.input.first ?? undefined,
         });
+      },
+    }),
+    requestExportApproval: t.field({
+      type: ExportApprovalType,
+      args: {
+        input: t.arg({ type: RequestExportApprovalInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "update");
+        requirePermission(context, "file", "create");
+        requirePermission(context, "search", "read");
+        return context.services.exportApprovals.request({
+          ...args.input,
+          caseId: args.input.caseId ?? null,
+        });
+      },
+    }),
+    reviewExportApproval: t.field({
+      type: ExportApprovalType,
+      args: {
+        input: t.arg({ type: ReviewExportApprovalInput, required: true }),
+      },
+      resolve: (_root, args, context) => {
+        requirePermission(context, "workspace", "read");
+        return context.services.exportApprovals.review(args.input);
       },
     }),
     commitExport: t.field({

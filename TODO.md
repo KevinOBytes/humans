@@ -1,5 +1,21 @@
 # MVP closure and production hardening backlog
 
+Production-completion Task 1 local checkpoint (2026-09-11): durable export
+approval records bind one requester to the exact workspace, purpose, optional case,
+redaction profile, deterministic preview hash, and expiry. Independent owner/admin
+or assigned case review is versioned and replay-safe, and governed commit now
+requires the matching non-expired approved record after validating its signed
+preview token. Current reviewer authority is checked before state/version/expiry
+disclosure and rechecked on idempotent replay. The evidence workspace consumes the
+generated preview/request/review/commit operations and exposes a current-role-scoped
+pending queue; its UI carries the exact preview fingerprint and renders metadata,
+not exported values. Focused unit/component/schema tests pass, including removed,
+inactive, and demoted reviewer scope plus fail-closed commit. The expanded
+PostgreSQL/GraphQL replay and rollback lifecycle suite is present but gated because
+`TEST_DATABASE_URL` is absent. No requirement row is closed. Live migration,
+object-store, browser, and provider proof, stale-artifact reconciliation, retention
+cleanup, bulk alerts, and the remaining whole-product matrix remain open.
+
 Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
 source-comparison, duplicate, contradiction and descriptive graph analysis now
 apply workspace, sensitivity, temporal, reliability, review and relationship
@@ -25,13 +41,14 @@ exports, and retain subject coverage metadata with the generated artifact. Expor
 downloads re-check artifact state/expiry, case membership, legal holds and current
 purpose coverage; governed files are excluded from ordinary file listings. Search
 withholds non-public typed fact values when no purpose-bound approval is available,
-and high-sensitivity export commits fail closed until a reviewed approval workflow
-is wired. Governed export artifacts now retain a durable writing/failed state and
+and high-sensitivity export commits now fail closed against an independent,
+non-expired approval for the exact deterministic preview. Governed export artifacts
+retain a durable writing/failed state and
 the same idempotency-bound commit can safely replay the deterministic
 object-store write after a process crash or provider timeout; concurrent retries
 reconcile to the single ready artifact. These are hardening changes, not closed
-requirement rows: approval records, automated stale-artifact reconciliation,
-retention cleanup, live PostgreSQL/object-store/browser proof and the remaining
+requirement rows: automated stale-artifact reconciliation, retention cleanup, live
+PostgreSQL/object-store/browser proof and the remaining
 whole-product matrix remain open.
 
 Task 5 follow-up: non-public fact values/provenance/temporal context and selection
@@ -193,7 +210,7 @@ recovery.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes. A focused live policy-settings matrix now covers owner access-policy success, administrator workspace-default success, viewer/foreign denial, optimistic retries, validation rollback, redacted audit output, and durable `UpdateAccessPolicy` plus `UpdateWorkspaceDefaults` replay/concurrency boundaries; provider and whole-settings coverage remain open.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search/graph envelopes, centralized browser/server GraphQL error contract (including malformed-payload handling, header-authoritative IDs, and known-code secret-message normalization), and representative all-code/redaction matrix. Direct route codes are inventoried in `docs/ARCHITECTURE.md`; the scheduled `/api/jobs/run` route now emits stable `UNAUTHENTICATED`/`INTERNAL` codes with an `x-request-id`, the storage proxy now emits redacted stable upload/download/unmatched-path envelopes with correlated headers, health probes now echo correlation IDs on success, and a typed direct-route client covers invitation handoff/acceptance and two-factor state changes, while adoption across every remaining direct route and the whole-product failure matrix remain open.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks; provider, browser, and interruption coverage remain open.
-- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_8rbBgB8mKSzupo8c15ADuYTN3LxD` is Ready and serves `humans.kevinbytes.com` from the fully green main release; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. The protected route invokes configured administrator bootstrap before jobs, and sign-in requests bootstrap the configured account before credential validation. Authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
+- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_8rbBgB8mKSzupo8c15ADuYTN3LxD` is Ready and serves `humans.kevinbytes.com` from the fully green main release; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables are present. A fresh bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route after this deployment. The protected route invokes configured administrator bootstrap before jobs, and sign-in requests bootstrap the configured account before credential validation. The repository now includes a redacted `pnpm production:smoke -- --base-url <selected-deployment>` harness with explicit authenticated/provider opt-ins; authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
 
 ## Non-functional
 
@@ -221,3 +238,18 @@ recovery.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage.
 - [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. The current tree now has a fully green Node 24 repository gate (`34298190513`, commit `f1ada49`), 216 test files with 1,349 tests passed and 572 intentional skips locally, lint, typecheck, formatting, generated drift, focused graph/performance checks, and an isolated PostgreSQL/Redis/MinIO Compose smoke with administrator recovery; the full current matrix, hosted authenticated/provider/runtime proof, and all remaining TODO rows are still outstanding.
 - [ ] `HUM-NFR-020` Meet and continuously verify the production latency, concurrency, graph-frame-rate, Web Vitals, and bundle budgets beyond Task 12 bounds and indexed-plan evidence. The disposable Node 24 performance harness now passes the representative 10,000-person/25,000-edge GraphQL read, graph render/FPS/WebGL recovery, and public/dashboard/entities/editor bundle checks; mutation, upload, hosted Web Vitals, and hosted-performance evidence remain open.
+- Bounded synthetic demo dataset evidence (2026-09-11): the guarded seed now
+  creates the fictional Northstar Atlas/Sandbox tenants with four fictional
+  people, rich profile/name/fact records, temporal documented/hypothesis edges,
+  source/evidence contradiction, case reviewer, withdrawn consent, pending AI
+  suggestion, and legal hold. `tests/unit/synthetic-seed-contract.test.ts`
+  proves the source contract and rejects the prior real-person fixture; live
+  Compose seed/GraphQL verification remains required.
+
+Release-candidate gate evidence (2026-09-11): the production-completion
+branch passes the full local Vitest suite (181 files, 1,529 passed, 74
+skipped), formatting, lint, typecheck, Drizzle check/drift, GraphQL codegen
+drift, production build, Compose configuration contracts, and diff checks.
+The local runtime was Node 26.8.1 rather than the required Node 24; disposable
+database lifecycle, hosted authenticated smoke, provider contracts, and full
+browser/performance evidence remain release work.

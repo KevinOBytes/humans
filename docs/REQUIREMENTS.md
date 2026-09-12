@@ -1,5 +1,26 @@
 # MVP requirements
 
+Production-completion Task 1 local checkpoint (2026-09-11): governed export
+previews now expose their non-secret deterministic hash and can create a durable,
+workspace/actor/purpose/case/redaction/expiry-bound approval request. Review is
+optimistically versioned, replay-safe, and limited to an independent workspace
+owner/administrator or assigned active-case owner/reviewer. Current reviewer
+authority is rechecked before state/version/expiry disclosure and after an
+idempotent replay. The evidence workspace now provides a generated-operation-backed
+preview/request/commit flow and a workspace/case-authorized pending review queue;
+the displayed deterministic fingerprint is bound into both request and review.
+Export commit verifies the signed preview token and then requires the exact
+non-expired approved binding; it cannot silently downgrade an approval-required
+export. Approval request/review audits and the review queue retain metadata only and
+never exported values. Focused unit/component/schema tests cover authorization,
+self-review, removed/inactive/demoted reviewer scope, stale versions, binding
+changes, expiry, idempotent replay, generated browser-operation mapping,
+metadata-only rendering, and fail-closed commit. The expanded PostgreSQL/GraphQL
+lifecycle suite, including durable review replay and injected rollback assertions,
+remains gated because `TEST_DATABASE_URL` is absent. This does not close an
+acceptance row: live migration, object-store, browser, retention/reconciliation,
+bulk-alert, and hosted provider evidence remain open.
+
 Task 4 local checkpoint (2026-09-11): the generalized privacy lifecycle covers six request types with workspace/resource/case checks, verification-file evidence, independent reviewer approval, deadlines, optimistic transitions, idempotent creation replay, and completion evidence. Retention evaluation is deterministic and non-destructive; legal holds take precedence, and hard-delete/anonymization policies require review. New deletion fulfillment queues the existing worker instead of deleting synchronously. Processor results remain visible and retryable, with unconfigured external adapters explicitly failed rather than assumed complete. Historical deletion rows are preserved and represented explicitly without manufacturing verification evidence. Unit tests and gated lifecycle tests cover the new boundary. Live PostgreSQL migration/lifecycle proof, external search/cache/email/AI propagation adapters, complete retention enforcement, legacy-settings-path convergence, and browser acceptance remain open; HUM-FR-005 is not closed.
 
 Task 3 local checkpoint (2026-09-11): AI proposals are retained in `ai_review_suggestions` with versioned typed values, source/evidence references, confidence, uncertainty, provider/model, originating run, and prompt-policy version. Explicit human accept/reject/defer and approved batch decisions retain the original proposal and link accepted resources back to that record. Current workspace, case, source visibility and purpose coverage for AI/write are checked before acceptance; fact/relationship writes and Task 2 evidence assertions share the decision transaction. AI-created relationships remain inferred; acceptance is not independent evidence approval or an adverse decision. This supersedes the older web-research description below: the browser no longer sends AI suggestions directly to `UpdatePerson`, and original proposals are not editable in the review queue. Focused validation/queue tests, updated panel tests, and gated `ai-review-lifecycle.test.ts` cover this boundary. Live PostgreSQL/browser/provider verification, retention deletion/expiry for retained provenance, and HUM-FR-023 closure remain open.
@@ -532,15 +553,24 @@ export rows preserve their authorized sensitivity and field provenance; relation
 source and target subjects plus fact field definitions are checked for purpose
 coverage; case exports require a linked case resource; and generated artifact
 downloads re-check state, expiry, case membership, legal holds and current coverage.
-Unapproved high-sensitivity commits fail closed, and non-public typed fact values are
+Unapproved high-sensitivity commits fail closed against a durable, independently
+reviewed, exact preview binding, and non-public typed fact values are
 not exposed through unscoped full-text search. Governed export artifacts retain a
 durable writing/failed state, and the same idempotency-bound commit can replay the
 deterministic object-store write after a process crash or provider timeout;
 concurrent retries reconcile to one ready artifact. Automated stale-artifact
-reconciliation, reviewed approval records, retention cleanup, and live
-database/provider/browser acceptance remain required.
+reconciliation, retention cleanup, and live database/provider/browser acceptance
+remain required.
 
 ### Consent-governed research Task 2 backend checkpoint
+
+The local seed is now a guarded, deterministic synthetic fixture: Northstar
+Atlas and Northstar Sandbox use reserved `.invalid` values and fictional names,
+and cover rich profiles, temporal graph edges, evidence/provenance,
+contradiction, case review, consent withdrawal, pending AI review, and legal
+hold. The source contract is covered by
+`tests/unit/synthetic-seed-contract.test.ts`; no hosted or live-Compose
+acceptance is claimed by this fixture alone.
 
 The branch adds case membership and resource links, shared visibility narrowing,
 versioned evidence assertions with redacted audits, independent relationship
@@ -550,6 +580,37 @@ assertion/link targets are person, fact, and relationship; other resource kinds
 remain outside this backend checkpoint. No acceptance row is closed: disposable
 PostgreSQL lifecycle and whole-product browser/runtime evidence are still required.
 See the Task 2 SDD report for local commands and explicitly skipped live tests.
+
+Release-candidate gate evidence (2026-09-11): the production-completion
+branch passes the full local Vitest suite (181 files, 1,529 passed, 74
+skipped), format, lint, typecheck, Drizzle check/drift, GraphQL codegen drift,
+production build, Compose configuration contracts, and `git diff --check`.
+The local runtime is Node 26.8.1 while the repository contract requires Node
+24, so the gate is a compatibility signal rather than Node-24 release proof.
+Disposable PostgreSQL/Redis/MinIO lifecycle, authenticated hosted smoke,
+external provider contracts, and browser/performance release evidence remain
+open and are not marked complete.
+
+Bounded AI provenance/retention evidence (2026-09-11): public web research
+sources now persist as immutable workspace/person/run snapshots with retrieval
+hashes, publication and collection timestamps, provider/model disclosure,
+reliability metadata, and field-level snapshot hashes on evidence references.
+Accepted suggestions retain the originating research run and evidence
+references; database triggers prevent changing the captured proposal or its
+accepted provenance after review. A deterministic retention planner fences
+accepted suggestions, citations, ephemeral inputs, and active legal holds, and
+the existing worker path continues to purge only private expired AI artifacts.
+Focused provenance/retention tests, schema checks, typecheck, and formatting
+pass; live PostgreSQL trigger/worker execution and external provider acceptance
+remain required.
+
+Bounded production smoke evidence (2026-09-11): `pnpm production:smoke`
+provides a credential-free URL parser and a redacted native-fetch contract for
+homepage, liveness, readiness, unauthenticated GraphQL, protected jobs, and an
+explicitly opt-in authenticated synthetic-person journey. Provider contracts
+remain opt-in and never use ambient credentials unless the operator sets the
+explicit flag. Local and hosted execution against a selected deployment is
+still required; no production result is claimed by the script itself.
 
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.

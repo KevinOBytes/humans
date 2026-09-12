@@ -62,6 +62,10 @@ export const aiEvidenceReferenceSchema = z.discriminatedUnion("kind", [
         .refine((v) => new URL(v).protocol === "https:"),
       locator: text(2000),
       quote: text(4000),
+      snapshotHash: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/)
+        .optional(),
     })
     .strict(),
 ]);

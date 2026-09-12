@@ -55,6 +55,7 @@ const requiredTables = [
   "webhookDeliveries",
   "personWebResearchRuns",
   "aiReviewSuggestions",
+  "exportApprovals",
   "accessApprovals",
   "consentScopes",
   "fieldPolicies",
@@ -129,7 +130,8 @@ describe("approved schema surface", () => {
     );
     expect(seedGuard).toContain("DATABASE_URL is required");
     expect(seedGuard).toContain("ALLOW_DATABASE_SEED=true");
-    expect(seed).toContain("Ada Lovelace");
+    expect(seed).toContain("Northstar Atlas");
+    expect(seed).not.toContain("Ada Lovelace");
     expect(seed).toContain("ON CONFLICT");
     expect(seed).not.toContain("postgresql://humans:humans");
   });
