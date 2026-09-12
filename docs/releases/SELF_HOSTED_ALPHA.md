@@ -12,6 +12,16 @@ complete, including the current release evidence required by `HUM-NFR-018` and
 the Vercel deployment contract in `HUM-FR-035`. `TODO.md` remains the exact
 requirement-linked MVP closure and production-hardening backlog.
 
+Latest runtime evidence (2026-09-12): the application tree at `a813d97` passed
+GitHub Actions run `34715018651` across all nine checks, was rebuilt against
+the local PostgreSQL/Redis/MinIO Compose stack with readiness reporting every
+dependency healthy, and was deployed as Vercel
+`dpl_DL5DrysnSWdiXDU6usswr9SqFaoH` (`READY`) serving
+`humans.kevinbytes.com`. The redacted public smoke passed the homepage,
+liveness, readiness, unauthenticated GraphQL, and protected jobs boundaries.
+The later documentation-only `main` commit `21df109` also passed CI run
+`34715494835`; it does not change the deployed runtime artifact.
+
 ## Current usable capability boundary
 
 The self-hosted alpha includes:
