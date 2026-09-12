@@ -330,16 +330,6 @@ query FactDetail(
             publicationDate
             collector
             extractionMethod
-            custodyEvents(first: 5) {
-              nodes {
-                id
-                eventKind
-                occurredAt
-                collector
-                integrityHash
-                notes
-              }
-            }
           }
         }
       }
@@ -461,22 +451,31 @@ query FactEvidence($id: UUID!, $first: Int, $after: String) {
             publicationDate
             collector
             extractionMethod
-            custodyEvents(first: 5) {
-              nodes {
-                id
-                eventKind
-                occurredAt
-                collector
-                integrityHash
-                notes
-              }
-            }
             reliability
           }
         }
       }
       pageInfo {
         ...PageDetails
+      }
+    }
+  }
+}
+
+query SourceCustodyEvents($id: UUID!) {
+  source(id: $id) {
+    id
+    custodyEvents(first: 5) {
+      nodes {
+        id
+        sourceId
+        eventKind
+        occurredAt
+        collector
+        integrityHash
+        notes
+        metadata
+        createdAt
       }
     }
   }
