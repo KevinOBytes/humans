@@ -1,7 +1,7 @@
 # MVP closure and production hardening backlog
 
-Current repository gate (2026-09-12): commit `1072732` passed GitHub Actions
-run `34708855479` across all 9 checks, including the Node 24 PostgreSQL/Redis/
+Current repository gate (2026-09-12): commit `de0b536` passed GitHub Actions
+run `34711086184` across all 9 checks, including the Node 24 PostgreSQL/Redis/
 MinIO integration seam, browser acceptance, production build, generated drift,
 Compose lifecycle, quality, image security, dependency policy, and secret
 scanning. The gate includes privacy-request, retention/legal-hold,
@@ -10,17 +10,26 @@ Hosted authenticated/provider/runtime proof and the remaining incomplete rows
 below remain open.
 
 Current production-closeout checkpoint (2026-09-12): application commit
-`1072732`; GitHub Actions run `34708855479` is green across all 9 checks,
+`de0b536`; GitHub Actions run `34711086184` is green across all 9 checks,
 including PostgreSQL/Redis/MinIO integration, browser acceptance, production
 build, generated drift, Compose lifecycle, quality, image security, dependency
 policy, and secret scanning. The graph accessibility, retention candidate queue,
-and case idempotency changes are included in this verified tree. Vercel
-production deployment `dpl_4AkTt8LCddA8MiKG8m1GUeqrZCD4` is Ready with the
+case idempotency, provider-boundary, evidence-assertion replay, and storage
+failure-boundary changes are included in this verified tree. Vercel
+production deployment `dpl_3UTQxRdAwzk4ySiDVCv4UyF8NWgp` is Ready with the
 `humans.kevinbytes.com` alias. Fresh public smoke confirms homepage, liveness,
 readiness, PostgreSQL, Redis, storage, unauthenticated GraphQL, and invalid-
-bearer jobs boundaries. Keep the remaining hosted authenticated/provider,
+bearer jobs boundaries. Local Compose migrations, isolated administrator
+bootstrap from the documented `.env`, and app readiness through PostgreSQL,
+Redis, and MinIO were also exercised. Keep the remaining hosted authenticated/provider,
 external-erasure-adapter, and measured whole-product rows open until their
 stated evidence exists.
+
+Integrated hardening in `e91e70e`, `be9dbd9`, and `d64a495` adds provider-safe
+endpoint validation, durable evidence-assertion replay protection, and
+correlated redacted storage initialization failure recovery. These changes are
+covered by the green CI run above; they narrow the remaining gaps but do not
+close hosted provider/authentication or whole-product matrix rows.
 
 Production-completion privacy artifact checkpoint (2026-09-12): commits `bf00b35`,
 `8e3e10e`, `fe71a43`, and `b7c9e6f` now cover person-scoped AI/web-research
