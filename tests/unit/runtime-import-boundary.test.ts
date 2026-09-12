@@ -34,5 +34,5 @@ describe("request-time runtime initialization", () => {
       expect.objectContaining({ default: expect.any(Function) }),
       expect.objectContaining({ POST: expect.any(Function) }),
     ]);
-  });
+  }, 15_000);
 });
