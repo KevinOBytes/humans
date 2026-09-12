@@ -108,6 +108,22 @@ function isProtectedAdministrationRequest(
   return pathname !== undefined && protectedPostPaths.has(pathname);
 }
 
+/**
+ * Better Auth's admin plugin exposes global user/session administration
+ * endpoints (including impersonation, role changes, and user deletion). Humans
+ * deliberately owns those operations in application-scoped services so they
+ * can enforce workspace authorization, redaction, idempotency, and audit
+ * requirements. Keep the plugin for its schema/hooks, but never expose its
+ * generic endpoints through the public auth catch-all.
+ */
+function isDisabledBetterAuthAdministrationRequest(request: Request): boolean {
+  const pathname = normalizedPathname(request);
+  return (
+    pathname === "/api/auth/admin" ||
+    pathname?.startsWith("/api/auth/admin/") === true
+  );
+}
+
 function shouldBootstrapAdministrator(
   method: AuthMethod,
   request: Request,
@@ -292,6 +308,9 @@ function lazyAuthHandler(
         code: "AUTH_API_KEY_INTERACTIVE_FORBIDDEN",
         message: "API credentials cannot authorize account operations.",
       });
+    }
+    if (isDisabledBetterAuthAdministrationRequest(request)) {
+      return administrationDisabledResponse(request);
     }
     if (isProtectedAdministrationRequest(method, request)) {
       return administrationDisabledResponse(request);
