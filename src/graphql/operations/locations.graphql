@@ -16,6 +16,9 @@ fragment AddressDetails on PersonAddress {
   associationId
   addressId
   addressKind
+  validFrom
+  validUntil
+  temporalPrecision
   line1
   line2
   locality

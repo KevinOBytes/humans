@@ -346,6 +346,20 @@ non-disclosure. Identifier create/update/archive controls, source-level
 citations, and the broader reconciliation/conflict and whole-profile matrices
 remain open.
 
+Bounded HUM-FR-028 effective-dated address profile evidence (2026-09-12): the
+generated `PersonAddresses` operation now carries the stored `validFrom`,
+`validUntil`, and `temporalPrecision` association fields into the existing
+authorized profile projection. Address cards identify the association type and
+render a UTC-stable effective-period label without turning year-precision
+records into exact dates. The location service continues to apply the existing
+workspace-scoped person and address visibility policies before returning any
+address projection; browser code receives only the generated GraphQL result.
+Focused component coverage proves the year-precision presentation, while the
+live-when-configured generated GraphQL location matrix covers authorized
+readback and foreign-workspace non-disclosure. Address-source presentation,
+the exhaustive location authorization/browser matrix, and whole-profile
+acceptance remain open.
+
 ## Functional requirements
 
 | ID           | Requirement                                                                                                                                                                                                                                                                                                                                         | Verification                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Status     |

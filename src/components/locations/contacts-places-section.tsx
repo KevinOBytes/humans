@@ -34,6 +34,48 @@ const locationCursor = (search: SearchState, key: string) => {
     : undefined;
 };
 
+function addressKindLabel(value: string): string {
+  return value
+    .split(/[-_\s]+/u)
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join(" ");
+}
+
+function addressDateLabel(value: string, precision: string): string {
+  const date = new Date(value);
+  const normalizedPrecision = precision.toLowerCase();
+  if (normalizedPrecision === "year") return String(date.getUTCFullYear());
+  if (normalizedPrecision === "month") {
+    return new Intl.DateTimeFormat("en", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(date);
+  }
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function effectivePeriodLabel(address: {
+  temporalPrecision: string;
+  validFrom?: string | null;
+  validUntil?: string | null;
+}): string {
+  const from = address.validFrom
+    ? addressDateLabel(address.validFrom, address.temporalPrecision)
+    : null;
+  const until = address.validUntil
+    ? addressDateLabel(address.validUntil, address.temporalPrecision)
+    : null;
+  if (from && until) return `${from} – ${until}`;
+  if (from) return `From ${from}`;
+  if (until) return `Until ${until}`;
+  return "Not recorded";
+}
+
 export async function ContactsPlacesSection(props: {
   canCreateAddress: boolean;
   canCreateContact: boolean;
@@ -198,6 +240,20 @@ export async function ContactsPlacesSection(props: {
                     ) : null}
                   </div>
                 </div>
+                <dl className="border-border mt-4 grid gap-3 border-t pt-4 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-muted-foreground">Address type</dt>
+                    <dd className="mt-1 font-medium">
+                      {addressKindLabel(address.addressKind)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Effective period</dt>
+                    <dd className="mt-1 font-medium">
+                      {effectivePeriodLabel(address)}
+                    </dd>
+                  </div>
+                </dl>
                 {props.canUpdateAddress ? (
                   <AddressEditForm
                     associationId={address.associationId}

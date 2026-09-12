@@ -59,6 +59,8 @@ liveDescribe(
       );
       const phone = "+1 804 555 0171";
       const line1 = "171 Generated Matrix Lane";
+      const validFrom = "2019-01-01T00:00:00.000Z";
+      const validUntil = "2021-12-31T23:59:59.999Z";
 
       const createdContact = await fixture.execute<{
         createPersonContact: {
@@ -151,6 +153,9 @@ liveDescribe(
             postalCode: "23219",
             region: "VA",
             sensitivity: "INTERNAL",
+            temporalPrecision: "year",
+            validFrom,
+            validUntil,
           },
         },
       });
@@ -162,7 +167,15 @@ liveDescribe(
 
       const locations = await fixture.execute<{
         person: {
-          addresses: { nodes: Array<{ associationId: string; line1: string }> };
+          addresses: {
+            nodes: Array<{
+              associationId: string;
+              line1: string;
+              temporalPrecision: string;
+              validFrom: string | null;
+              validUntil: string | null;
+            }>;
+          };
           contacts: {
             nodes: Array<{ associationId: string; displayValue: string }>;
           };
@@ -187,6 +200,9 @@ liveDescribe(
           expect.objectContaining({
             associationId: address.associationId,
             line1,
+            temporalPrecision: "year",
+            validFrom,
+            validUntil,
           }),
         ]),
       );

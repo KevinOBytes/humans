@@ -2783,6 +2783,9 @@ export type AddressDetailsFragment = {
   associationId: string;
   addressId: string;
   addressKind: string;
+  validFrom: string | null;
+  validUntil: string | null;
+  temporalPrecision: string;
   line1: string | null;
   line2: string | null;
   locality: string | null;
@@ -6071,6 +6074,9 @@ export const AddressDetailsFragmentDoc = new TypedDocumentString(
   associationId
   addressId
   addressKind
+  validFrom
+  validUntil
+  temporalPrecision
   line1
   line2
   locality
@@ -8307,6 +8313,9 @@ export const PersonAddressesDocument = new TypedDocumentString(
   associationId
   addressId
   addressKind
+  validFrom
+  validUntil
+  temporalPrecision
   line1
   line2
   locality
@@ -8332,7 +8341,7 @@ fragment PageDetails on PageInfo {
   hasNextPage
 }`,
   {
-    hash: "sha256:e78fc603a72122da7acdcc7fcfb707364dbd86182d618e332e073793fd4ffb54",
+    hash: "sha256:6476b1d4d0370bfd443823b9b927217d85f80031c98b0c9365853d7311b44e62",
   },
 ) as unknown as TypedDocumentString<
   PersonAddressesQuery,
@@ -8471,6 +8480,9 @@ fragment AddressDetails on PersonAddress {
   associationId
   addressId
   addressKind
+  validFrom
+  validUntil
+  temporalPrecision
   line1
   line2
   locality
@@ -8496,7 +8508,7 @@ fragment PageDetails on PageInfo {
   hasNextPage
 }`,
   {
-    hash: "sha256:9915514cd852f1d24eee66ce4ed4042b485c262ba2970e363fca71d6f81c8131",
+    hash: "sha256:1dad937ea808426d63801789f84c31e500047ddfa4fb4f5bfdfc0137242830e8",
   },
 ) as unknown as TypedDocumentString<
   PersonLocationsQuery,
@@ -8856,6 +8868,9 @@ export const CreatePersonAddressDocument = new TypedDocumentString(
   associationId
   addressId
   addressKind
+  validFrom
+  validUntil
+  temporalPrecision
   line1
   line2
   locality
@@ -8882,7 +8897,7 @@ fragment LocationMutationOutcome on ValidationIssue {
   message
 }`,
   {
-    hash: "sha256:e63738f182064f7f9e62aff195300327e0d616e4ca10811127cae8295b55dc06",
+    hash: "sha256:7389868b2e2a1b0f0d0a3e9e113c827632b56363f4461ec9065ae8f78a237da0",
   },
 ) as unknown as TypedDocumentString<
   CreatePersonAddressMutation,
@@ -8906,6 +8921,9 @@ export const UpdatePersonAddressDocument = new TypedDocumentString(
   associationId
   addressId
   addressKind
+  validFrom
+  validUntil
+  temporalPrecision
   line1
   line2
   locality
@@ -8932,7 +8950,7 @@ fragment LocationMutationOutcome on ValidationIssue {
   message
 }`,
   {
-    hash: "sha256:d941c98979aa0f33252b5d0233350631243c902d6a6d09f0f6ce68e76ae670f7",
+    hash: "sha256:3453cc4beb9ebe6015fd1fcc8c348f8d7df0b0220152e8745e6be79faa76254f",
   },
 ) as unknown as TypedDocumentString<
   UpdatePersonAddressMutation,
