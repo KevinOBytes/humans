@@ -213,6 +213,8 @@ Bounded HUM-FR-028/HUM-NFR-009/HUM-NFR-012 graph-to-profile evidence (2026-09-12
 
 Bounded HUM-FR-028/HUM-NFR-009 focus evidence (2026-09-12): person-profile section links and the graph relationship/time filter disclosure now expose the same visible `:focus-visible` ring used by primary controls, while retaining semantic links and native disclosure keyboard activation. Focused Chromium assertions verify keyboard focus, the rendered focus ring, accessible checkbox labels after Enter activation, and the existing profile/graph RTL and 200%/400% no-overflow journey. Whole-product responsive and primary-journey acceptance remains open.
 
+Bounded HUM-FR-032/HUM-NFR-009 invitation failure evidence (2026-09-12): the invitation acceptance page now carries the typed direct-route `requestId` into its assertive `AuthStatus` alert for acceptance and workspace-activation failures, rendering a non-sensitive request reference that support can correlate without exposing provider or session details. Focused React coverage proves a 503 response's header/body correlation ID is announced in the accessible alert; whole-product direct-route and interruption coverage remains open.
+
 Historical bounded release evidence (2026-09-07): the Node 24 webpack production build completed, the non-host-dependent suite passed 146 files/1,313 tests, and the isolated Docker Compose smoke passed with PostgreSQL, Redis, MinIO, migrations, explicit administrator recovery, app, worker, protected CRUD, tenant/sensitivity denials, Redis recovery, and leakage controls. The current evidence superseding that snapshot is recorded below.
 
 Latest bounded release evidence (2026-09-08): GitHub Actions run `34241537402`

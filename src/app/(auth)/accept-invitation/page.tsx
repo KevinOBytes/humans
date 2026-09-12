@@ -29,6 +29,7 @@ export default function AcceptInvitationPage() {
   const [invitation, setInvitation] = useState<InvitationPreview | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requestReference, setRequestReference] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [invitationId, setInvitationId] = useState<string | null>(null);
   const [handoffReady, setHandoffReady] = useState(false);
@@ -121,6 +122,7 @@ export default function AcceptInvitationPage() {
 
     setAccepting(true);
     setError(null);
+    setRequestReference(null);
     try {
       const response = await requestDirectRoute<{ status?: boolean }>({
         body: { invitationId },
@@ -128,6 +130,7 @@ export default function AcceptInvitationPage() {
         url: "/api/account/invitations/accept",
       });
       if (!response.ok) {
+        setRequestReference(response.requestId);
         setError(
           "We couldn't accept this invitation. Sign in with the verified email address that was invited and try again.",
         );
@@ -138,6 +141,7 @@ export default function AcceptInvitationPage() {
         organizationId: invitation.organizationId,
       });
       if (activeResponse.error || !activeResponse.data) {
+        setRequestReference(response.requestId);
         setError(
           "Your invitation was accepted, but we couldn't activate the workspace. Return home and select the workspace before continuing.",
         );
@@ -251,7 +255,9 @@ export default function AcceptInvitationPage() {
         <AuthStatus kind="info">Loading invitation details…</AuthStatus>
       ) : error ? (
         <div className="space-y-5">
-          <AuthStatus kind="error">{error}</AuthStatus>
+          <AuthStatus kind="error" requestId={requestReference}>
+            {error}
+          </AuthStatus>
           <Link href="/" className={primaryButtonClassName}>
             Return home
           </Link>
