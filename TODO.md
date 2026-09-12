@@ -261,8 +261,8 @@ homepage/liveness/readiness 200, unauthenticated GraphQL 401, and invalid jobs
 authorization 401. Authenticated admin/person creation, provider contracts,
 and deployment-identity verification remain open.
 
-Updated production deployment evidence (2026-09-12): commit `fabef4b` is
-deployed as Vercel `dpl_AMQhXZ6pssWLsbvH17QXDwxwcC22` (`READY`, Node 24,
+Updated production deployment evidence (2026-09-12): commit `d1652fb` is
+deployed as Vercel `dpl_G1pdWAst4uvVkxmeXTnf3ufutjjC` (`READY`, Node 24,
 aliases include `humans.kevinbytes.com`), and the public smoke passes against
 the custom hostname. The four administrator values from the operator-
 restricted local `.env` were synchronized to Vercel Preview and Production
