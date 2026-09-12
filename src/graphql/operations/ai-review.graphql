@@ -17,6 +17,8 @@ fragment AiReviewFields on AiReviewSuggestion {
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt

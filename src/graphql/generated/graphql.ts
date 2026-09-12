@@ -1381,6 +1381,8 @@ export type AiReviewFieldsFragment = {
   version: number;
   acceptedResourceId: string | null;
   acceptedResourceKind: string | null;
+  acceptedFromRunId: string | null;
+  acceptedEvidenceReferences: unknown;
   decisionReason: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
@@ -5665,6 +5667,8 @@ export const AiReviewFieldsFragmentDoc = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
@@ -6065,12 +6069,14 @@ export const PendingAiSuggestionsDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:e4e36ac98f6ddb6458e479e3b110580da947ad959a4942bb4830af64ec5b6c3d",
+    hash: "sha256:227cb2c5eae055f6f8ca6b0e448f1e5feb99bf0d6453a2d9967ca897e656b58b",
   },
 ) as unknown as TypedDocumentString<
   PendingAiSuggestionsQuery,
@@ -6102,12 +6108,14 @@ export const AcceptAiSuggestionDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:b4e049d257028a85bea19302b73abb714efb80d34891722d055e3d76675f414b",
+    hash: "sha256:874a97b03ea139e519047f7d874a1bf091fd7abd88b336eb82a2ac5155760675",
   },
 ) as unknown as TypedDocumentString<
   AcceptAiSuggestionMutation,
@@ -6139,12 +6147,14 @@ export const RejectAiSuggestionDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:0e7b09e72322863ac287f935dc846be17db6fbecd085bb4dc5b695b3d13fd9aa",
+    hash: "sha256:8dec5e654bb6ebcbc9182780971498ce41744a1d51662d4d1cbafcf0658b4ff3",
   },
 ) as unknown as TypedDocumentString<
   RejectAiSuggestionMutation,
@@ -6176,12 +6186,14 @@ export const DeferAiSuggestionDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:6a39281a6df2092047f4a87abec388307843ccd3701ecf132d64153c1f5e3bb4",
+    hash: "sha256:dc506d2952e8004b90d0f6e5451c6d96a9aa1e7da466007273f344fb14d90320",
   },
 ) as unknown as TypedDocumentString<
   DeferAiSuggestionMutation,
@@ -6213,12 +6225,14 @@ export const ReviewAiBatchDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:b896e82c2e8260a9821016acad5676b828d3af0c546396d8760cc9d178a5aa91",
+    hash: "sha256:d265bc565ca28f998ea007a4a45b815fb010a012392ea8cffbada6812581b712",
   },
 ) as unknown as TypedDocumentString<
   ReviewAiBatchMutation,

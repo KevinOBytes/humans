@@ -581,6 +581,19 @@ remain outside this backend checkpoint. No acceptance row is closed: disposable
 PostgreSQL lifecycle and whole-product browser/runtime evidence are still required.
 See the Task 2 SDD report for local commands and explicitly skipped live tests.
 
+Bounded AI provenance/retention evidence (2026-09-11): public web research
+sources now persist as immutable workspace/person/run snapshots with retrieval
+hashes, publication and collection timestamps, provider/model disclosure,
+reliability metadata, and field-level snapshot hashes on evidence references.
+Accepted suggestions retain the originating research run and evidence
+references; database triggers prevent changing the captured proposal or its
+accepted provenance after review. A deterministic retention planner fences
+accepted suggestions, citations, ephemeral inputs, and active legal holds, and
+the existing worker path continues to purge only private expired AI artifacts.
+Focused provenance/retention tests, schema checks, typecheck, and formatting
+pass; live PostgreSQL trigger/worker execution and external provider acceptance
+remain required.
+
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.
 - Tests should name requirement IDs when practical so CI failures remain traceable.
