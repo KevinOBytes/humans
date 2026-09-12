@@ -65,6 +65,10 @@ function idempotencyKey() {
   return crypto.randomUUID();
 }
 
+function assigneePrincipalId(value: string | null | undefined) {
+  return value?.trim() || null;
+}
+
 export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
   const [rows, setRows] = useState<ResearchAssignmentFieldsFragment[]>([]);
   const [page, setPage] = useState<{
@@ -441,8 +445,9 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
                       input: {
                         id: row.id!,
                         expectedVersion: row.version!,
-                        assigneePrincipalId:
-                          assignee[row.id!] ?? row.assigneePrincipalId ?? null,
+                        assigneePrincipalId: assigneePrincipalId(
+                          assignee[row.id!] ?? row.assigneePrincipalId,
+                        ),
                         reason: reason[row.id!]!,
                         idempotencyKey: idempotencyKey(),
                       },

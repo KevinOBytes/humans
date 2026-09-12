@@ -172,6 +172,49 @@ describe("ResearchAssignmentQueue", () => {
         expect.objectContaining({
           input: expect.objectContaining({
             assigneePrincipalId: assigned.assigneePrincipalId,
+            expectedVersion: assigned.version,
+            reason: "Reconfirm",
+            idempotencyKey: expect.any(String),
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("normalizes an explicitly cleared assignee to null", async () => {
+    const user = userEvent.setup();
+    const assigned = {
+      ...assignment,
+      assigneePrincipalId: "018f0000-0000-7000-8000-000000000099",
+    };
+    execute
+      .mockResolvedValueOnce(listResult([assigned]))
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { assignResearchAssignment: { assignment: assigned } },
+      })
+      .mockResolvedValueOnce(listResult([assigned]));
+    render(<ResearchAssignmentQueue caseId="case-a" />);
+    const input = await screen.findByLabelText(
+      "Assignee principal ID (clear to unassign)",
+    );
+    await user.clear(input);
+    await user.type(
+      screen.getByLabelText("Reason for Check source"),
+      "Remove assignment",
+    );
+    await user.click(screen.getByRole("button", { name: "Save assignee" }));
+
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith(
+        AssignResearchAssignmentDocument,
+        expect.objectContaining({
+          input: expect.objectContaining({
+            id: assigned.id,
+            expectedVersion: assigned.version,
+            assigneePrincipalId: null,
+            reason: "Remove assignment",
+            idempotencyKey: expect.any(String),
           }),
         }),
       ),
