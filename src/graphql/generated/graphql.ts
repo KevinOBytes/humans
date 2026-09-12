@@ -1621,6 +1621,7 @@ export type CaseTimelineQuery = {
 export type CreateResearchCaseMutationVariables = Exact<{
   title: string;
   purpose: string;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type CreateResearchCaseMutation = {
@@ -1637,6 +1638,7 @@ export type AddCaseMemberMutationVariables = Exact<{
   caseId: string;
   principalId: string;
   role?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type AddCaseMemberMutation = {
@@ -1653,6 +1655,8 @@ export type LinkCaseResourceMutationVariables = Exact<{
   resourceId: string;
   resourceKind: string;
   explicitConfirmed: boolean;
+  observedAt?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type LinkCaseResourceMutation = {
@@ -6699,8 +6703,12 @@ export const CaseTimelineDocument = new TypedDocumentString(
 >;
 export const CreateResearchCaseDocument = new TypedDocumentString(
   `
-    mutation CreateResearchCase($title: String!, $purpose: String!) {
-  createResearchCase(title: $title, purpose: $purpose) {
+    mutation CreateResearchCase($title: String!, $purpose: String!, $idempotencyKey: String) {
+  createResearchCase(
+    title: $title
+    purpose: $purpose
+    idempotencyKey: $idempotencyKey
+  ) {
     id
     title
     purpose
@@ -6710,7 +6718,7 @@ export const CreateResearchCaseDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:e553d66ef51cc990718f7c29e82e5627109b42ca89b1f12d5f8c8f7c82529462",
+    hash: "sha256:5fa8f4670f53e5e8eb6fc592caa43773350e846d69586a06af5e1e237399d915",
   },
 ) as unknown as TypedDocumentString<
   CreateResearchCaseMutation,
@@ -6718,8 +6726,13 @@ export const CreateResearchCaseDocument = new TypedDocumentString(
 >;
 export const AddCaseMemberDocument = new TypedDocumentString(
   `
-    mutation AddCaseMember($caseId: UUID!, $principalId: UUID!, $role: String) {
-  addCaseMember(caseId: $caseId, principalId: $principalId, role: $role) {
+    mutation AddCaseMember($caseId: UUID!, $principalId: UUID!, $role: String, $idempotencyKey: String) {
+  addCaseMember(
+    caseId: $caseId
+    principalId: $principalId
+    role: $role
+    idempotencyKey: $idempotencyKey
+  ) {
     id
     principalId
     role
@@ -6728,7 +6741,7 @@ export const AddCaseMemberDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:8f3eeff6e26ba3d230164bfecca9c895f487671bc9f92bf9fd465cc75672efca",
+    hash: "sha256:2ff197bac911a9ba3316d63b53fa3ad25207fb419530e970ed71ca2eddb79463",
   },
 ) as unknown as TypedDocumentString<
   AddCaseMemberMutation,
@@ -6736,12 +6749,14 @@ export const AddCaseMemberDocument = new TypedDocumentString(
 >;
 export const LinkCaseResourceDocument = new TypedDocumentString(
   `
-    mutation LinkCaseResource($caseId: UUID!, $resourceId: UUID!, $resourceKind: String!, $explicitConfirmed: Boolean!) {
+    mutation LinkCaseResource($caseId: UUID!, $resourceId: UUID!, $resourceKind: String!, $explicitConfirmed: Boolean!, $observedAt: DateTime, $idempotencyKey: String) {
   linkCaseResource(
     caseId: $caseId
     resourceId: $resourceId
     resourceKind: $resourceKind
     explicitConfirmed: $explicitConfirmed
+    observedAt: $observedAt
+    idempotencyKey: $idempotencyKey
   ) {
     id
     resourceKind
@@ -6751,7 +6766,7 @@ export const LinkCaseResourceDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:e716b3dfe854691d7b582b2701a72a6a212eca6e54529f97afcd9df13dbe4916",
+    hash: "sha256:fa51d0cc4746d5100f2a018ac60c5d469c4805863c1b3e73a3cb355760a07c03",
   },
 ) as unknown as TypedDocumentString<
   LinkCaseResourceMutation,

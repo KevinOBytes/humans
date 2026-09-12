@@ -145,6 +145,7 @@ export function registerCasesGraphQL() {
       args: {
         title: t.arg.string({ required: true }),
         purpose: t.arg.string({ required: true }),
+        idempotencyKey: t.arg.string(),
       },
       resolve: (_r, a, c) => c.services.cases.createCase(a),
     }),
@@ -154,6 +155,7 @@ export function registerCasesGraphQL() {
         caseId: t.arg({ type: "UUID", required: true }),
         principalId: t.arg({ type: "UUID", required: true }),
         role: t.arg.string(),
+        idempotencyKey: t.arg.string(),
       },
       resolve: (_r, a, c) => c.services.cases.addMember(a),
     }),
@@ -165,6 +167,7 @@ export function registerCasesGraphQL() {
         resourceKind: t.arg.string({ required: true }),
         explicitConfirmed: t.arg.boolean({ required: true }),
         observedAt: t.arg({ type: "DateTime" }),
+        idempotencyKey: t.arg.string(),
       },
       resolve: async (_r, a, c) => {
         const result = await c.services.cases.linkResource(a);
