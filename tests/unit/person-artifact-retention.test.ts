@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { planPersonArtifactDeletion } from "@/modules/privacy/artifact-retention";
+import { hasAmbiguousAiMessageLineage } from "@/modules/privacy/deletion-executor";
 
 describe("person-scoped artifact retention", () => {
   it("plans every descendant for subject deletion but never crosses a hold", () => {
@@ -65,5 +66,20 @@ describe("person-scoped artifact retention", () => {
       webSourceIds: [],
       blocked: true,
     });
+  });
+
+  it("fails closed when a legacy assistant message has no run lineage", () => {
+    expect(
+      hasAmbiguousAiMessageLineage([
+        { role: "assistant", aiRunId: null },
+        { role: "user", aiRunId: null },
+      ]),
+    ).toBe(true);
+    expect(
+      hasAmbiguousAiMessageLineage([
+        { role: "assistant", aiRunId: "run-1" },
+        { role: "user", aiRunId: null },
+      ]),
+    ).toBe(false);
   });
 });

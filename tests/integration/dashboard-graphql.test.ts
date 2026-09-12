@@ -839,6 +839,7 @@ liveDescribe("dashboard GraphQL summaries", () => {
           id: newId(),
           workspaceId: row.actor.workspaceId,
           threadId,
+          aiRunId: row.id,
           role: "assistant",
           encryptedContent: "not-a-sealed-answer",
           contentHash: `sha256:${"74".repeat(32)}`,

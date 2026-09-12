@@ -257,6 +257,10 @@ export const aiMessages = pgTable(
       foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
     }).onDelete("restrict"),
     check(
+      "ai_messages_assistant_run_check",
+      sql`${table.role} <> 'assistant' OR ${table.aiRunId} IS NOT NULL`,
+    ),
+    check(
       "ai_messages_role_check",
       sql`${table.role} IN ('system', 'user', 'assistant', 'tool')`,
     ),
