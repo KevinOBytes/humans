@@ -598,8 +598,8 @@ correlation metadata. Authenticated credentials, provider contracts, and exact
 deployment-identity verification remain separate release evidence.
 
 Updated production release evidence (2026-09-12): the verified `main` commit
-`fabef4b` was deployed through the linked Vercel project as
-`dpl_AMQhXZ6pssWLsbvH17QXDwxwcC22`, reached `READY`, uses Node 24/runtime
+`d1652fb` was deployed through the linked Vercel project as
+`dpl_G1pdWAst4uvVkxmeXTnf3ufutjjC`, reached `READY`, uses Node 24/runtime
 `nodejs24.x`, and aliases `humans.kevinbytes.com`. The custom hostname passed
 the redacted public smoke after this deployment. Vercel environment-variable
 names confirm production configuration for Neon/PostgreSQL, Redis, R2,
