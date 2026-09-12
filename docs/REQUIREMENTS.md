@@ -598,6 +598,17 @@ returned homepage 200, liveness 200, readiness 200, unauthenticated GraphQL
 correlation metadata. Authenticated credentials, provider contracts, and exact
 deployment-identity verification remain separate release evidence.
 
+Updated production release evidence (2026-09-12): the verified `main` commit
+`fc0eaa4` was deployed through the linked Vercel project as
+`dpl_FMyDthp5dxq8Eua1B1aRuYd9yoiT`, reached `READY`, uses Node 24/runtime
+`nodejs24.x`, and aliases `humans.kevinbytes.com`. The custom hostname passed
+the redacted public smoke after this deployment. Vercel environment-variable
+names confirm production configuration for Neon/PostgreSQL, Redis, R2,
+Resend, AI, and administrator bootstrap without exposing values. The
+authenticated credential path returned a generic 403 with the locally
+available credential set; no secret was printed or retrieved, so authenticated
+sign-in/person creation remains unverified.
+
 Bounded AI provenance/retention evidence (2026-09-11): public web research
 sources now persist as immutable workspace/person/run snapshots with retrieval
 hashes, publication and collection timestamps, provider/model disclosure,
