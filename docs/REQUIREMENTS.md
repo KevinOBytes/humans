@@ -591,6 +591,13 @@ Disposable PostgreSQL/Redis/MinIO lifecycle, authenticated hosted smoke,
 external provider contracts, and browser/performance release evidence remain
 open and are not marked complete.
 
+Live unauthenticated smoke evidence (2026-09-11): after the merged `main`
+push, `pnpm production:smoke -- --base-url https://humans.kevinbytes.com`
+returned homepage 200, liveness 200, readiness 200, unauthenticated GraphQL
+401, and invalid jobs authorization 401. The command emitted only status and
+correlation metadata. Authenticated credentials, provider contracts, and exact
+deployment-identity verification remain separate release evidence.
+
 Bounded AI provenance/retention evidence (2026-09-11): public web research
 sources now persist as immutable workspace/person/run snapshots with retrieval
 hashes, publication and collection timestamps, provider/model disclosure,
