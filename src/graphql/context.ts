@@ -483,9 +483,12 @@ function createServices(input: {
       actor: input.context.actor,
       auth: input.auth,
       database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
       organizationId: input.context.workspace.organizationId,
+      permissions: input.context.permissions,
       requestId: input.context.requestId,
       runtime: input.settingsRuntime,
+      searchIndexMaintenance: input.searchIndexMaintenance,
       workspaceId: input.context.workspaceId,
     }),
     locations: createLocationsService(

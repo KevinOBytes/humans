@@ -4,7 +4,9 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { apiKeys, members } from "@/db/schema/auth";
+import { locationMutationIdempotency } from "@/db/schema/locations";
 import { auditEvents } from "@/db/schema/operations";
+import { RevokeOrganizationApiKeyDocument } from "@/graphql/generated/graphql";
 
 import { TestEmailSender, testAdminEnv } from "../support/auth";
 import { expectGraphQLError } from "../support/graphql";
@@ -270,6 +272,197 @@ liveDescribe("HUM-FR-006 API-key lifecycle", () => {
     );
     expect(JSON.stringify(audit)).not.toContain(first?.secret ?? "");
     expect(JSON.stringify(audit)).not.toContain(replacement?.secret ?? "");
+  });
+
+  it("durably replays concurrent API-key revocation without duplicate effects", async () => {
+    const owner = await fixture.createActor();
+    await fixture.provisionKey(owner, { person: ["read"] });
+    const listed = await fixture.execute<{
+      settingsOrganizationApiKeys?: { nodes?: Array<{ actionId: string }> };
+    }>({ jar: owner.jar, query: LIST });
+    const actionId =
+      listed.body?.data?.settingsOrganizationApiKeys?.nodes?.[0]?.actionId;
+    expect(actionId).toBeTruthy();
+
+    const input = {
+      actionId,
+      idempotencyKey: "api-key-revoke-concurrent-v1",
+    };
+    const [first, replay] = await Promise.all([
+      fixture.execute<{
+        revokeOrganizationApiKey?: {
+          actionId: string | null;
+          code: string;
+          requestId: string;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "RevokeOrganizationApiKey",
+        query: RevokeOrganizationApiKeyDocument,
+        variables: { input },
+      }),
+      fixture.execute<{
+        revokeOrganizationApiKey?: {
+          actionId: string | null;
+          code: string;
+          requestId: string;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "RevokeOrganizationApiKey",
+        query: RevokeOrganizationApiKeyDocument,
+        variables: { input },
+      }),
+    ]);
+
+    expect(first.body?.errors).toBeUndefined();
+    expect(replay.body?.errors).toBeUndefined();
+    expect(first.body?.data?.revokeOrganizationApiKey).toEqual(
+      replay.body?.data?.revokeOrganizationApiKey,
+    );
+    expect(first.body?.data?.revokeOrganizationApiKey).toMatchObject({
+      actionId,
+      code: "APPLIED",
+    });
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.action, "settings.api_key.revoke"),
+          ),
+        ),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: locationMutationIdempotency.id })
+        .from(locationMutationIdempotency)
+        .where(
+          and(
+            eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+            eq(
+              locationMutationIdempotency.operation,
+              "settings.api_key.revoke",
+            ),
+          ),
+        ),
+    ).toHaveLength(1);
+  });
+
+  it("binds API-key revocation replay to request material and workspace principal", async () => {
+    const owner = await fixture.createActor();
+    const foreignOwner = await fixture.createActor();
+    await fixture.provisionKey(owner, { person: ["read"] });
+    await fixture.provisionKey(owner, { fact: ["read"] });
+    await fixture.provisionKey(foreignOwner, { person: ["read"] });
+    const ownerList = await fixture.execute<{
+      settingsOrganizationApiKeys?: {
+        nodes?: Array<{ actionId: string; name: string }>;
+      };
+    }>({ jar: owner.jar, query: LIST });
+    const foreignList = await fixture.execute<{
+      settingsOrganizationApiKeys?: {
+        nodes?: Array<{ actionId: string; name: string }>;
+      };
+    }>({ jar: foreignOwner.jar, query: LIST });
+    const firstActionId =
+      ownerList.body?.data?.settingsOrganizationApiKeys?.nodes?.[0]?.actionId;
+    const secondActionId =
+      ownerList.body?.data?.settingsOrganizationApiKeys?.nodes?.[1]?.actionId;
+    const foreignActionId =
+      foreignList.body?.data?.settingsOrganizationApiKeys?.nodes?.[0]?.actionId;
+    expect(firstActionId).toBeTruthy();
+    expect(secondActionId).toBeTruthy();
+    expect(secondActionId).not.toBe(firstActionId);
+    expect(foreignActionId).toBeTruthy();
+    const idempotencyKey = "api-key-revoke-workspace-fence-v1";
+
+    const first = await fixture.execute({
+      jar: owner.jar,
+      operationName: "RevokeOrganizationApiKey",
+      query: RevokeOrganizationApiKeyDocument,
+      variables: {
+        input: { actionId: firstActionId, idempotencyKey },
+      },
+    });
+    expect(first.body?.errors).toBeUndefined();
+
+    const changed = await fixture.execute({
+      jar: owner.jar,
+      operationName: "RevokeOrganizationApiKey",
+      query: RevokeOrganizationApiKeyDocument,
+      variables: {
+        input: { actionId: secondActionId, idempotencyKey },
+      },
+    });
+    expectGraphQLError(changed, "CONFLICT");
+    const ownerKeys = await fixture.database
+      .select({ enabled: apiKeys.enabled })
+      .from(apiKeys)
+      .where(eq(apiKeys.workspaceId, owner.workspaceId));
+    expect(ownerKeys.map((row) => row.enabled).sort()).toEqual([false, true]);
+
+    const foreign = await fixture.execute({
+      jar: foreignOwner.jar,
+      operationName: "RevokeOrganizationApiKey",
+      query: RevokeOrganizationApiKeyDocument,
+      variables: {
+        input: { actionId: foreignActionId, idempotencyKey },
+      },
+    });
+    expect(foreign.body?.errors).toBeUndefined();
+    expect(foreign.body?.data?.revokeOrganizationApiKey).toMatchObject({
+      actionId: foreignActionId,
+      code: "APPLIED",
+    });
+  });
+
+  it("fails closed when an API-key revocation replay reference is malformed", async () => {
+    const owner = await fixture.createActor();
+    await fixture.provisionKey(owner, { person: ["read"] });
+    const listed = await fixture.execute<{
+      settingsOrganizationApiKeys?: { nodes?: Array<{ actionId: string }> };
+    }>({ jar: owner.jar, query: LIST });
+    const actionId =
+      listed.body?.data?.settingsOrganizationApiKeys?.nodes?.[0]?.actionId;
+    const input = {
+      actionId,
+      idempotencyKey: "api-key-revoke-malformed-reference-v1",
+    };
+    const revoked = await fixture.execute({
+      jar: owner.jar,
+      operationName: "RevokeOrganizationApiKey",
+      query: RevokeOrganizationApiKeyDocument,
+      variables: { input },
+    });
+    expect(revoked.body?.errors).toBeUndefined();
+
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({
+        responseReference: {
+          actionId: null,
+          code: "APPLIED",
+          requestId: "not-a-request-id",
+        },
+      })
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+          eq(locationMutationIdempotency.operation, "settings.api_key.revoke"),
+        ),
+      );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "RevokeOrganizationApiKey",
+        query: RevokeOrganizationApiKeyDocument,
+        variables: { input },
+      }),
+      "PRECONDITION_FAILED",
+    );
   });
 
   it("fails closed for lower roles, API-key principals, invalid inputs, and foreign action IDs", async () => {

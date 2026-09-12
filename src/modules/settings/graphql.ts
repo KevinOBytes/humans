@@ -231,7 +231,10 @@ const RotateOrganizationApiKeyInput = builder.inputType(
 const RevokeOrganizationApiKeyInput = builder.inputType(
   "RevokeOrganizationApiKeyInput",
   {
-    fields: (t) => ({ actionId: t.string({ required: true }) }),
+    fields: (t) => ({
+      actionId: t.string({ required: true }),
+      idempotencyKey: t.string(),
+    }),
   },
 );
 
@@ -734,6 +737,7 @@ export function registerSettingsGraphQL(): void {
         requireSessionAdministration(context.actor.type, () =>
           context.services.settings.revokeOrganizationApiKey(
             args.input.actionId,
+            args.input.idempotencyKey,
           ),
         ),
     }),

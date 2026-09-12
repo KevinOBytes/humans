@@ -1011,6 +1011,7 @@ export type ReviseFactInput = {
 
 export type RevokeOrganizationApiKeyInput = {
   actionId: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type RotateOrganizationApiKeyInput = {

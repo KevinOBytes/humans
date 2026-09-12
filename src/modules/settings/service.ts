@@ -6,10 +6,16 @@ import { ensureApiKeyPrincipal } from "@/modules/auth/workspaces";
 import {
   authorize,
   parsePermissionKey,
+  type PermissionKey,
   type PermissionAction,
   type PermissionResource,
   type WorkspaceRole,
 } from "@/modules/auth/permissions";
+import {
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
+} from "@/modules/audit/transactions";
+import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import {
   SETTINGS_PAGE_SIZE,
   buildSafeSettingsPage,
@@ -29,13 +35,19 @@ import {
 import { createSettingsRepository } from "./repository";
 import { createPolicyMutationService } from "./policy-mutations";
 
+const REQUEST_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
 export function createSettingsService(input: {
   actor: GraphQLActor;
   auth?: BetterAuthRuntime;
   database: Database;
   organizationId?: string;
+  idempotencyHmacKey?: string;
+  permissions?: ReadonlySet<PermissionKey>;
   requestId?: string;
   runtime?: WorkspaceMemberRuntime;
+  searchIndexMaintenance?: SearchIndexMaintenance;
   workspaceId: string;
 }) {
   const repository = createSettingsRepository(input.database);
@@ -145,9 +157,12 @@ export function createSettingsService(input: {
     );
   }
 
-  async function activeApiKeyForAction(actionId: string) {
+  async function activeApiKeyForAction(
+    actionId: string,
+    scopedRepository = repository,
+  ) {
     if (!isApiKeyActionId(actionId)) return null;
-    const candidates = await repository.findOrganizationApiKeyCandidates(
+    const candidates = await scopedRepository.findOrganizationApiKeyCandidates(
       input.workspaceId,
     );
     const candidate = candidates.find((row) =>
@@ -394,14 +409,103 @@ export function createSettingsService(input: {
       }
       return replacement;
     },
-    async revokeOrganizationApiKey(actionId: string) {
+    async revokeOrganizationApiKey(
+      actionId: string,
+      idempotencyKey?: string | null,
+    ) {
       await authorizeAdministrator();
-      const current = await activeApiKeyForAction(actionId);
       const actor = input.actor;
+      if (actor.type !== "user") lifecycleUnavailable();
+      if (idempotencyKey != null) {
+        if (
+          !input.idempotencyHmacKey ||
+          !input.permissions ||
+          !input.searchIndexMaintenance
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "API-key revocation idempotency is unavailable.",
+          );
+        }
+        const context = {
+          actor,
+          database: input.database,
+          permissions: input.permissions,
+          requestId,
+          searchIndexMaintenance: input.searchIndexMaintenance,
+          workspaceId: input.workspaceId,
+        };
+        const claim = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
+          idempotencyKey,
+          operation: "settings.api_key.revoke",
+          requestMaterial: { actionId },
+          secret: input.idempotencyHmacKey,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          claim,
+          ["apiKey:delete"],
+          async (scopedContext) => {
+            const scopedRepository = createSettingsRepository(
+              scopedContext.database,
+            );
+            const current = await activeApiKeyForAction(
+              actionId,
+              scopedRepository,
+            );
+            if (!current) {
+              return { actionId: null, code: "INVALID", requestId };
+            }
+            const revoked =
+              await scopedRepository.disableOrganizationApiKeyInAuthorizedTransaction(
+                {
+                  action: "settings.api_key.revoke",
+                  apiKeyId: current.id,
+                  actor,
+                  changedFields: ["enabled"],
+                  requestId,
+                  transaction: scopedContext.database,
+                  workspaceId: input.workspaceId,
+                },
+              );
+            return {
+              actionId: revoked === "APPLIED" ? actionId : null,
+              code: revoked === "APPLIED" ? "APPLIED" : "INVALID",
+              requestId,
+            };
+          },
+        );
+        const reference = executed.responseReference;
+        const validActionId =
+          reference.actionId === null ||
+          (typeof reference.actionId === "string" &&
+            isApiKeyActionId(reference.actionId));
+        const coherentOutcome =
+          (reference.code === "APPLIED" &&
+            typeof reference.actionId === "string") ||
+          (reference.code === "INVALID" && reference.actionId === null);
+        if (
+          !validActionId ||
+          !coherentOutcome ||
+          typeof reference.requestId !== "string" ||
+          !REQUEST_ID.test(reference.requestId)
+        ) {
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored API-key revocation result is invalid.",
+          );
+        }
+        return {
+          actionId: reference.actionId,
+          code: reference.code as "APPLIED" | "INVALID",
+          requestId: reference.requestId,
+        } as const;
+      }
+      const current = await activeApiKeyForAction(actionId);
       if (!current) {
         return { actionId: null, code: "INVALID", requestId } as const;
       }
-      if (actor.type !== "user") lifecycleUnavailable();
       try {
         await input.runtime?.beforeApiKeyLifecycleWrite?.();
         const revoked = await repository.disableOrganizationApiKeyWithAudit({

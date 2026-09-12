@@ -114,6 +114,44 @@ async function lockAndRevalidateAdministrativeActor(input: {
 }
 
 export function createSettingsRepository(database: Database) {
+  async function disableOrganizationApiKeyInTransaction(input: {
+    action: "settings.api_key.revoke" | "settings.api_key.rotate";
+    apiKeyId: string;
+    actor: { id: string; sessionId: string };
+    changedFields: readonly string[];
+    requestId: string;
+    transaction: Database | TransactionDatabase;
+    workspaceId: string;
+  }): Promise<"APPLIED" | "INVALID"> {
+    const updated = await input.transaction
+      .update(apiKeys)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(apiKeys.id, input.apiKeyId),
+          eq(apiKeys.workspaceId, input.workspaceId),
+          eq(apiKeys.configId, "organization"),
+          eq(apiKeys.enabled, true),
+          or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date())),
+        ),
+      )
+      .returning({ id: apiKeys.id });
+    if (updated.length !== 1) return "INVALID";
+    await input.transaction.insert(auditEvents).values({
+      id: newId(),
+      workspaceId: input.workspaceId,
+      actorUserId: input.actor.id,
+      sessionId: input.actor.sessionId,
+      action: input.action,
+      resourceKind: "api_key",
+      resourceId: null,
+      requestId: input.requestId,
+      redactedDiff: { changedFields: [...input.changedFields] },
+      outcome: "success",
+    });
+    return "APPLIED";
+  }
+
   return {
     /**
      * Inserts an organization API key in the caller's transaction in the
@@ -362,43 +400,33 @@ export function createSettingsRepository(database: Database) {
       actor: { id: string; memberId: string; sessionId: string };
       changedFields: readonly string[];
       requestId: string;
+      transaction?: TransactionDatabase;
       workspaceId: string;
     }): Promise<"APPLIED" | "FORBIDDEN" | "INVALID"> {
-      return database.transaction(async (transaction) => {
+      const execute = async (transaction: TransactionDatabase) => {
         const role = await lockAndRevalidateAdministrativeActor({
           actor: input.actor,
           transaction,
           workspaceId: input.workspaceId,
         });
         if (!role) return "FORBIDDEN";
-        const updated = await transaction
-          .update(apiKeys)
-          .set({ enabled: false, updatedAt: new Date() })
-          .where(
-            and(
-              eq(apiKeys.id, input.apiKeyId),
-              eq(apiKeys.workspaceId, input.workspaceId),
-              eq(apiKeys.configId, "organization"),
-              eq(apiKeys.enabled, true),
-              or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date())),
-            ),
-          )
-          .returning({ id: apiKeys.id });
-        if (updated.length !== 1) return "INVALID";
-        await transaction.insert(auditEvents).values({
-          id: newId(),
-          workspaceId: input.workspaceId,
-          actorUserId: input.actor.id,
-          sessionId: input.actor.sessionId,
-          action: input.action,
-          resourceKind: "api_key",
-          resourceId: null,
-          requestId: input.requestId,
-          redactedDiff: { changedFields: [...input.changedFields] },
-          outcome: "success",
+        return disableOrganizationApiKeyInTransaction({
+          ...input,
+          transaction,
         });
-        return "APPLIED";
-      });
+      };
+      return input.transaction
+        ? execute(input.transaction)
+        : database.transaction(execute);
+    },
+    /**
+     * Completes a disable after the calling service has revalidated the live
+     * principal and apiKey:delete permission in this same transaction.
+     */
+    disableOrganizationApiKeyInAuthorizedTransaction(
+      input: Parameters<typeof disableOrganizationApiKeyInTransaction>[0],
+    ) {
+      return disableOrganizationApiKeyInTransaction(input);
     },
     async recordApiKeyLifecycleAudit(input: {
       action: "settings.api_key.create";
