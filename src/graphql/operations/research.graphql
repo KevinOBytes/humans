@@ -330,7 +330,7 @@ query FactDetail(
             publicationDate
             collector
             extractionMethod
-            custodyEvents {
+            custodyEvents(first: 5) {
               nodes {
                 id
                 eventKind
@@ -461,7 +461,7 @@ query FactEvidence($id: UUID!, $first: Int, $after: String) {
             publicationDate
             collector
             extractionMethod
-            custodyEvents {
+            custodyEvents(first: 5) {
               nodes {
                 id
                 eventKind

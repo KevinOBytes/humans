@@ -9776,7 +9776,7 @@ export const FactDetailDocument = new TypedDocumentString(
             publicationDate
             collector
             extractionMethod
-            custodyEvents {
+            custodyEvents(first: 5) {
               nodes {
                 id
                 eventKind
@@ -9800,7 +9800,7 @@ export const FactDetailDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:3b82d539482cb41a2439e3926f6e48ff1e5e0e0fefe6b85ed64a0a976d5dd9fa",
+    hash: "sha256:3b2876605c2734db3c31fc28160509373674b602a46069014282b386fe485aca",
   },
 ) as unknown as TypedDocumentString<FactDetailQuery, FactDetailQueryVariables>;
 export const FactCatalogDocument = new TypedDocumentString(
@@ -9970,7 +9970,7 @@ export const FactEvidenceDocument = new TypedDocumentString(
             publicationDate
             collector
             extractionMethod
-            custodyEvents {
+            custodyEvents(first: 5) {
               nodes {
                 id
                 eventKind
@@ -9995,7 +9995,7 @@ export const FactEvidenceDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:d1f8ea19a2946be66fa9d13128368067f81460c96e9b06ef147429ae9774a286",
+    hash: "sha256:e07677d360aa2eb67caf1b5b31cc7cd0c7445896aed168fda33125d44d35802f",
   },
 ) as unknown as TypedDocumentString<
   FactEvidenceQuery,
