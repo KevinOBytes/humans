@@ -268,9 +268,11 @@ export function Field({
 
 export function AuthStatus({
   kind,
+  requestId,
   children,
 }: {
   kind: "error" | "success" | "info";
+  requestId?: string | null;
   children: ReactNode;
 }) {
   const styles = {
@@ -286,6 +288,11 @@ export function AuthStatus({
       className={`rounded-xl border px-3.5 py-3 text-sm leading-5 ${styles[kind]}`}
     >
       {children}
+      {requestId && requestId !== "unknown" ? (
+        <p className="mt-2 text-xs opacity-80">
+          Request reference: <span className="font-mono">{requestId}</span>
+        </p>
+      ) : null}
     </div>
   );
 }

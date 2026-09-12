@@ -105,6 +105,32 @@ describe("invitation acceptance", () => {
     });
   });
 
+  it("announces the direct-route request reference when acceptance fails", async () => {
+    const requestId = "018f0000-0000-7000-8000-000000000099";
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/account/invitations/accept")) {
+        return new Response(
+          JSON.stringify({ code: "INVITATION_UNAVAILABLE", requestId }),
+          {
+            status: 503,
+            headers: { "x-request-id": requestId },
+          },
+        );
+      }
+      return new Response(JSON.stringify({ status: true }));
+    });
+    render(<AcceptInvitationPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Accept invitation" }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(requestId);
+    expect(alert).toHaveTextContent(/request reference/i);
+  });
+
   it("stores the fragment credential only in a sealed server handoff before use", async () => {
     render(<AcceptInvitationPage />);
     await screen.findByRole("button", { name: "Accept invitation" });
