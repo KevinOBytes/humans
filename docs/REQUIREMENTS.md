@@ -674,15 +674,6 @@ concurrent retries reconcile to one ready artifact. Automated stale-artifact
 reconciliation, retention cleanup, and live database/provider/browser acceptance
 remain required.
 
-Import staging recovery checkpoint (2026-09-12): storage read failures during
-preparation now atomically clear staged rows, persist only a stable failure code
-in the redacted `import.staging_failed` audit event, and return a generic
-provider-unavailable error. A later request with the same principal/workspace
-preparation key can reclaim the failed staging record after the object store
-recovers, with an auditable `import.staging_recovered` event. Focused live
-PostgreSQL coverage passes in `tests/integration/imports-api.test.ts`; this does
-not close durable import/export, provider, browser, or whole-product acceptance.
-
 ### Consent-governed research Task 2 backend checkpoint
 
 The local seed is now a guarded, deterministic synthetic fixture: Northstar
