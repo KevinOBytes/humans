@@ -65,6 +65,20 @@ export function createEvidenceRepository(database: Database) {
         .limit(1);
       return row ?? null;
     },
+    /** Replay lookup intentionally includes archived rows; caller rechecks visibility. */
+    async getSourceForReplay(input: { workspaceId: string; id: string }) {
+      const [row] = await database
+        .select()
+        .from(sources)
+        .where(
+          and(
+            eq(sources.workspaceId, input.workspaceId),
+            eq(sources.id, input.id),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    },
     async getSourceForUpdate(input: { workspaceId: string; id: string }) {
       const [row] = await database
         .select()
@@ -173,6 +187,24 @@ export function createEvidenceRepository(database: Database) {
         .returning();
       if (!row) throw new Error("Source custody event insert failed");
       return row;
+    },
+    async getSourceCustodyEvent(input: {
+      workspaceId: string;
+      id: string;
+      sourceId: string;
+    }) {
+      const [row] = await database
+        .select()
+        .from(sourceCustodyEvents)
+        .where(
+          and(
+            eq(sourceCustodyEvents.workspaceId, input.workspaceId),
+            eq(sourceCustodyEvents.id, input.id),
+            eq(sourceCustodyEvents.sourceId, input.sourceId),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
     },
     async updateSource(input: {
       workspaceId: string;

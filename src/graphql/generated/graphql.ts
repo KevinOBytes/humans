@@ -504,6 +504,7 @@ export type CreateSourceInput = {
   collector?: string | null | undefined;
   contentHash?: string | null | undefined;
   extractionMethod?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
   kind: string;
   metadata?: unknown;
   publicationDate?: string | null | undefined;

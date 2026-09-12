@@ -114,6 +114,8 @@ const TAG_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const TAG_REFERENCE_UUID = EVIDENCE_REFERENCE_UUID;
 const NOTE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
 const NOTE_REFERENCE_UUID = EVIDENCE_REFERENCE_UUID;
+const SOURCE_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const SOURCE_REFERENCE_UUID = EVIDENCE_REFERENCE_UUID;
 
 function fieldMaterial(
   value: CanonicalRequestMaterial | undefined,
@@ -166,6 +168,14 @@ type TagAssociationResponseReference = ResearchResponseReference & {
 type NoteResponseReference = ResearchResponseReference & {
   readonly noteId: string;
   readonly version: number;
+};
+type SourceResponseReference = ResearchResponseReference & {
+  readonly sourceId: string;
+  readonly version: number;
+};
+type SourceCustodyResponseReference = ResearchResponseReference & {
+  readonly sourceId: string;
+  readonly custodyEventId: string;
 };
 
 function encodeTagMutationOutcome<T>(result: TagMutationOutcome<T>): string {
@@ -383,6 +393,74 @@ export function createEvidenceService(context: ResearchServiceContext) {
       resourceKind: kind,
       sensitivity: row.sensitivity,
     });
+  }
+
+  async function replaySource(
+    responseReference: ResearchResponseReference,
+  ): Promise<SourceRow> {
+    const sourceId = responseReference.sourceId;
+    const version = responseReference.version;
+    if (
+      typeof sourceId !== "string" ||
+      !SOURCE_REFERENCE_UUID.test(sourceId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored source mutation result is invalid.",
+      );
+    }
+    const row = await repository.getSourceForReplay({
+      workspaceId: context.workspaceId,
+      id: sourceId,
+    });
+    if (!row || !(await visible("source", row)))
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    if (row.version !== version)
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    return row;
+  }
+
+  async function replaySourceCustodyEvent(
+    responseReference: ResearchResponseReference,
+  ): Promise<SourceCustodyEventRow> {
+    const sourceId = responseReference.sourceId;
+    const custodyEventId = responseReference.custodyEventId;
+    if (
+      typeof sourceId !== "string" ||
+      !SOURCE_REFERENCE_UUID.test(sourceId) ||
+      typeof custodyEventId !== "string" ||
+      !SOURCE_REFERENCE_UUID.test(custodyEventId)
+    ) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored source custody mutation result is invalid.",
+      );
+    }
+    const source = await repository.getSource({
+      workspaceId: context.workspaceId,
+      id: sourceId,
+      visibility: sourceVisibility,
+    });
+    const event = await repository.getSourceCustodyEvent({
+      workspaceId: context.workspaceId,
+      id: custodyEventId,
+      sourceId,
+    });
+    if (!source || !event)
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    return event;
   }
 
   async function requireSource(id: string): Promise<SourceRow> {
@@ -649,8 +727,8 @@ export function createEvidenceService(context: ResearchServiceContext) {
       integrityHash?: string | null;
       notes?: string | null;
       metadata?: unknown;
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<SourceCustodyEventRow>> {
-      const source = await requireSource(input.sourceId);
       const eventKinds = [
         "collected",
         "verified",
@@ -693,6 +771,54 @@ export function createEvidenceService(context: ResearchServiceContext) {
           message: "Custody notes are too long.",
         });
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Source custody idempotency is not configured.",
+          );
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + SOURCE_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "source.custody.record.graphql",
+          requestMaterial: {
+            collector,
+            eventKind,
+            integrityHash,
+            metadata: metadata.value as CanonicalRequestMaterial,
+            notes,
+            occurredAt: occurredAt.toISOString(),
+            sourceId: input.sourceId,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["source:update"],
+          async (scopedContext): Promise<SourceCustodyResponseReference> => {
+            const result = await createEvidenceService(
+              scopedContext,
+            ).recordSourceCustodyEvent({ ...input, idempotencyKey: null });
+            if (!result.resource)
+              throw createGraphQLError(
+                "VALIDATION_FAILED",
+                "The source custody event could not be recorded.",
+              );
+            return {
+              sourceId: result.resource.sourceId,
+              custodyEventId: result.resource.id,
+            };
+          },
+        );
+        return {
+          resource: await replaySourceCustodyEvent(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
+      const source = await requireSource(input.sourceId);
       const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
@@ -739,6 +865,8 @@ export function createEvidenceService(context: ResearchServiceContext) {
       sensitivity?: string | null;
       metadata?: unknown;
       contentHash?: string | null;
+      /** Optional; supplied keys are durable and principal-bound. */
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<SourceRow>> {
       const kind = normalizeHumanText(input.kind, {
         path: ["kind"],
@@ -788,6 +916,63 @@ export function createEvidenceService(context: ResearchServiceContext) {
           message: "Collection timestamp is invalid.",
         });
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Source creation idempotency is not configured.",
+          );
+        const createInput = { ...input };
+        delete createInput.idempotencyKey;
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + SOURCE_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "source.create.graphql",
+          requestMaterial: {
+            kind: kind.value!,
+            title: title.value!,
+            publisher: input.publisher?.trim() || null,
+            author: input.author?.trim() || null,
+            canonicalUrl: url.value ?? null,
+            citation: input.citation?.trim() || null,
+            publicationDate: publicationDate?.toISOString() ?? null,
+            collector: input.collector?.trim() || null,
+            extractionMethod: input.extractionMethod?.trim() || null,
+            collectionMethod: input.collectionMethod?.trim() || null,
+            collectedAt: collectedAt?.toISOString() ?? null,
+            reliability: reliability.value ?? null,
+            sensitivity: access.value!,
+            metadata: metadata.value as CanonicalRequestMaterial,
+            contentHash: input.contentHash?.trim() || null,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["source:create"],
+          async (scopedContext): Promise<SourceResponseReference> => {
+            const result = await createEvidenceService(
+              scopedContext,
+            ).createSource({ ...createInput, idempotencyKey: null });
+            if (!result.resource)
+              throw createGraphQLError(
+                "VALIDATION_FAILED",
+                "The source could not be created.",
+              );
+            return {
+              sourceId: result.resource.id,
+              version: result.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replaySource(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
       const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
@@ -873,8 +1058,9 @@ export function createEvidenceService(context: ResearchServiceContext) {
       reliability?: number | null;
       sensitivity?: string | null;
       metadata?: unknown;
+      /** Optional; supplied keys are durable and principal-bound. */
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<SourceRow>> {
-      const current = await requireSource(input.id);
       const issues = versionIssue(input.expectedVersion);
       const patch: Record<string, unknown> = {
         updatedAt: new Date(),
@@ -946,6 +1132,66 @@ export function createEvidenceService(context: ResearchServiceContext) {
         changed.push("metadata");
       }
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Source update idempotency is not configured.",
+          );
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + SOURCE_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "source.update.graphql",
+          requestMaterial: {
+            id: input.id,
+            expectedVersion: input.expectedVersion,
+            title: fieldMaterial(input.title),
+            publisher: fieldMaterial(input.publisher),
+            author: fieldMaterial(input.author),
+            canonicalUrl: fieldMaterial(input.canonicalUrl),
+            citation: fieldMaterial(input.citation),
+            publicationDate: fieldMaterial(input.publicationDate),
+            collector: fieldMaterial(input.collector),
+            extractionMethod: fieldMaterial(input.extractionMethod),
+            reliability: fieldMaterial(input.reliability),
+            sensitivity: fieldMaterial(
+              input.sensitivity === undefined
+                ? undefined
+                : sensitivity(input.sensitivity).value,
+            ),
+            metadata: fieldMaterial(
+              input.metadata as CanonicalRequestMaterial | undefined,
+            ),
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["source:update"],
+          async (scopedContext): Promise<SourceResponseReference> => {
+            const result = await createEvidenceService(
+              scopedContext,
+            ).updateSource({ ...input, idempotencyKey: null });
+            if (!result.resource)
+              throw createGraphQLError(
+                result.code === "CONFLICT" ? "CONFLICT" : "VALIDATION_FAILED",
+                "The source could not be updated.",
+              );
+            return {
+              sourceId: result.resource.id,
+              version: result.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replaySource(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
+      const current = await requireSource(input.id);
       const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
@@ -983,10 +1229,54 @@ export function createEvidenceService(context: ResearchServiceContext) {
     async archiveSource(input: {
       id: string;
       expectedVersion: number;
+      /** Optional; supplied keys are durable and principal-bound. */
+      idempotencyKey?: string | null;
     }): Promise<MutationOutcome<SourceRow>> {
-      const current = await requireSource(input.id);
       const issues = versionIssue(input.expectedVersion);
       if (issues.length) return invalid(issues);
+      if (input.idempotencyKey != null) {
+        const secret = context.idempotencyHmacKey;
+        if (!secret)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Source archive idempotency is not configured.",
+          );
+        const derived = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + SOURCE_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "source.archive.graphql",
+          requestMaterial: {
+            id: input.id,
+            expectedVersion: input.expectedVersion,
+          },
+          secret,
+        });
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          derived,
+          ["source:delete"],
+          async (scopedContext): Promise<SourceResponseReference> => {
+            const result = await createEvidenceService(
+              scopedContext,
+            ).archiveSource({ ...input, idempotencyKey: null });
+            if (!result.resource)
+              throw createGraphQLError(
+                result.code === "CONFLICT" ? "CONFLICT" : "PRECONDITION_FAILED",
+                "The source could not be archived.",
+              );
+            return {
+              sourceId: result.resource.id,
+              version: result.resource.version,
+            };
+          },
+        );
+        return {
+          resource: await replaySource(executed.responseReference),
+          issues: [],
+          code: null,
+        };
+      }
+      const current = await requireSource(input.id);
       const row = await withResearchWriteTransaction(context, async (tx) => {
         const scoped = createEvidenceRepository(
           tx as unknown as typeof context.database,
