@@ -252,3 +252,9 @@ recovery.
   publication and collection timestamps, retrieval hashes, provider/model and
   reliability metadata; accepted suggestions retain their run/evidence
   linkage and the retention planner keeps accepted/held artifacts.
+- [ ] `HUM-FR-035` Run `pnpm production:smoke -- --base-url <selected-deployment>`
+  against the exact Ready deployment, then repeat with
+  `PRODUCTION_SMOKE_AUTH=1` and operator-injected admin credentials. Record
+  status/correlation evidence, deployment SHA/alias, authenticated workspace
+  and synthetic-person read, and separately record explicit provider-contract
+  outcomes. The harness is redacted and does not retrieve or persist secrets.

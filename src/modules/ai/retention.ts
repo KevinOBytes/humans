@@ -113,6 +113,14 @@ export async function purgeExpiredAiEphemeralInputs(input: {
           select ${aiEphemeralInputs.id}
           from ${aiEphemeralInputs}
           where ${aiEphemeralInputs.expiresAt} <= ${now.toISOString()}::timestamptz
+            and not exists (
+              select 1 from ${legalHolds}
+              where ${legalHolds.workspaceId} = ${aiEphemeralInputs.workspaceId}
+                and ${legalHolds.resourceId} in (${aiEphemeralInputs.id}, ${aiEphemeralInputs.aiRunId})
+                and ${legalHolds.resourceKind} in ('ai_ephemeral_input', 'ai_run')
+                and ${legalHolds.state} = 'active'
+                and ${legalHolds.deletedAt} is null
+            )
           order by ${aiEphemeralInputs.expiresAt}, ${aiEphemeralInputs.id}
           limit ${limit}
         )

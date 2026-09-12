@@ -594,6 +594,14 @@ Focused provenance/retention tests, schema checks, typecheck, and formatting
 pass; live PostgreSQL trigger/worker execution and external provider acceptance
 remain required.
 
+Bounded production smoke evidence (2026-09-11): `pnpm production:smoke`
+provides a credential-free URL parser and a redacted native-fetch contract for
+homepage, liveness, readiness, unauthenticated GraphQL, protected jobs, and an
+explicitly opt-in authenticated synthetic-person journey. Provider contracts
+remain opt-in and never use ambient credentials unless the operator sets the
+explicit flag. Local and hosted execution against a selected deployment is
+still required; no production result is claimed by the script itself.
+
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.
 - Tests should name requirement IDs when practical so CI failures remain traceable.
