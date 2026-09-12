@@ -1,6 +1,12 @@
-import { and, eq, isNull, not, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, not, sql } from "drizzle-orm";
 
-import { aiEphemeralInputs, aiRuns, aiThreads } from "@/db/schema/ai";
+import {
+  aiCitations,
+  aiEphemeralInputs,
+  aiReviewSuggestions,
+  aiRuns,
+  aiThreads,
+} from "@/db/schema/ai";
 import { auditEvents } from "@/db/schema/operations";
 import { legalHolds, workspaceSettings } from "@/db/schema/workspaces";
 import { newId } from "@/db/id";
@@ -180,6 +186,73 @@ export async function purgeExpiredAiThreads(input: {
       .for("update");
 
     for (const candidate of candidates) {
+      const runs = await transaction
+        .select({ id: aiRuns.id })
+        .from(aiRuns)
+        .where(
+          and(
+            eq(aiRuns.workspaceId, candidate.workspaceId),
+            eq(aiRuns.threadId, candidate.id),
+          ),
+        );
+      const runIds = runs.map((run) => run.id);
+      const suggestions = runIds.length
+        ? await transaction
+            .select({
+              id: aiReviewSuggestions.id,
+              status: aiReviewSuggestions.status,
+            })
+            .from(aiReviewSuggestions)
+            .where(
+              and(
+                eq(aiReviewSuggestions.workspaceId, candidate.workspaceId),
+                inArray(aiReviewSuggestions.aiRunId, runIds),
+              ),
+            )
+        : [];
+      if (suggestions.some((suggestion) => suggestion.status === "accepted"))
+        continue;
+      const citations = runIds.length
+        ? await transaction
+            .select({ id: aiCitations.id })
+            .from(aiCitations)
+            .where(
+              and(
+                eq(aiCitations.workspaceId, candidate.workspaceId),
+                inArray(aiCitations.aiRunId, runIds),
+              ),
+            )
+        : [];
+      const heldArtifactIds = [
+        candidate.id,
+        ...runIds,
+        ...suggestions.map((suggestion) => suggestion.id),
+        ...citations.map((citation) => citation.id),
+      ];
+      const artifactHolds = await transaction
+        .select({ id: legalHolds.id })
+        .from(legalHolds)
+        .where(
+          and(
+            eq(legalHolds.workspaceId, candidate.workspaceId),
+            eq(legalHolds.state, "active"),
+            isNull(legalHolds.deletedAt),
+            inArray(legalHolds.resourceId, heldArtifactIds),
+            sql`${legalHolds.resourceKind} in ('ai_thread', 'ai_run', 'ai_suggestion', 'ai_citation')`,
+          ),
+        );
+      if (artifactHolds.length) continue;
+      if (suggestions.length) {
+        await transaction.delete(aiReviewSuggestions).where(
+          and(
+            eq(aiReviewSuggestions.workspaceId, candidate.workspaceId),
+            inArray(
+              aiReviewSuggestions.id,
+              suggestions.map((suggestion) => suggestion.id),
+            ),
+          ),
+        );
+      }
       const [deleted] = await transaction
         .delete(aiThreads)
         .where(
