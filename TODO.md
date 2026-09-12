@@ -255,6 +255,14 @@ recovery.
   proves the source contract and rejects the prior real-person fixture; live
   Compose seed/GraphQL verification remains required.
 
+- Release evidence (2026-09-12): GitHub Actions run `34688755202` passed all
+  nine required checks for `6bb3f11`, including database, browser, Compose,
+  build, image, generated-artifact, quality, dependency, and secret gates.
+  Vercel deployment `dpl_9JRzgRDo9RQaaZvzrF2TX8PXaNhf` is `READY` with the
+  `humans.kevinbytes.com` alias. The release is not treated as full MVP
+  closure: hosted authenticated credentials, external provider contracts,
+  and the remaining rows below still require operator/runtime evidence.
+
 Release-candidate gate evidence (2026-09-12): under the required Node
 24.19.0 runtime, the production-completion branch passes the full local
 Vitest suite with bounded local worker pressure (`vitest run --pool=forks
