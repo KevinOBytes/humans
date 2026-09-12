@@ -1,7 +1,7 @@
 # MVP closure and production hardening backlog
 
-Current repository gate (2026-09-12): commit `de0b536` passed GitHub Actions
-run `34711086184` across all 9 checks, including the Node 24 PostgreSQL/Redis/
+Current repository gate (2026-09-12): commit `32124fb` passed GitHub Actions
+run `34713181339` across all 9 checks, including the Node 24 PostgreSQL/Redis/
 MinIO integration seam, browser acceptance, production build, generated drift,
 Compose lifecycle, quality, image security, dependency policy, and secret
 scanning. The gate includes privacy-request, retention/legal-hold,
@@ -10,13 +10,13 @@ Hosted authenticated/provider/runtime proof and the remaining incomplete rows
 below remain open.
 
 Current production-closeout checkpoint (2026-09-12): application commit
-`de0b536`; GitHub Actions run `34711086184` is green across all 9 checks,
+`32124fb`; GitHub Actions run `34713181339` is green across all 9 checks,
 including PostgreSQL/Redis/MinIO integration, browser acceptance, production
 build, generated drift, Compose lifecycle, quality, image security, dependency
 policy, and secret scanning. The graph accessibility, retention candidate queue,
 case idempotency, provider-boundary, evidence-assertion replay, and storage
 failure-boundary changes are included in this verified tree. Vercel
-production deployment `dpl_3UTQxRdAwzk4ySiDVCv4UyF8NWgp` is Ready with the
+production deployment `dpl_6dHVPJX5k44mG2mdPGecnoKtjHaj` is Ready with the
 `humans.kevinbytes.com` alias. Fresh public smoke confirms homepage, liveness,
 readiness, PostgreSQL, Redis, storage, unauthenticated GraphQL, and invalid-
 bearer jobs boundaries. Local Compose migrations, isolated administrator
@@ -285,7 +285,7 @@ recovery.
 - Bounded HUM-FR-031 integrations-settings evidence (2026-09-12): the administrator-only integrations read model now identifies local Redis versus Upstash REST and OpenAI/Ollama/OpenAI-compatible backends using static labels only; endpoints, credentials, and provider responses remain absent, and focused tests prove the page-level projection performs no network probes. Mutable provider settings and whole-settings acceptance remain open.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search/graph envelopes, centralized browser/server GraphQL error contract (including malformed-payload handling, header-authoritative IDs, and known-code secret-message normalization), and representative all-code/redaction matrix. Direct route codes are inventoried in `docs/ARCHITECTURE.md`; the scheduled `/api/jobs/run` route now emits stable `UNAUTHENTICATED`/`INTERNAL` codes with an `x-request-id`, the storage proxy now emits redacted stable upload/download/unmatched-path envelopes with correlated headers, storage route initialization/provider failures now use the same correlated redacted `INTERNAL` response and allowlisted `storage.infrastructure.failure` event, health probes now echo correlation IDs on success, and a typed direct-route client covers invitation handoff/acceptance and two-factor state changes. `tests/unit/storage-route-boundary.test.ts` proves secret-free initialization failure and retry recovery; adoption across every remaining direct route and the whole-product failure matrix remain open.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks. Storage route initialization/provider failures now fail closed with a correlated redacted response and retryable loader recovery (`tests/unit/storage-route-boundary.test.ts`); provider, browser, and interruption coverage remain open.
-- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_3UTQxRdAwzk4ySiDVCv4UyF8NWgp` is Ready and serves `humans.kevinbytes.com` from the final application tree; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables remain managed by Vercel. A fresh public smoke against this deployment passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route; authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected route invokes configured administrator bootstrap before jobs; ordinary request-time sign-in and jobs bootstrap are deliberately non-rotating, with password rotation available only through the attended operator command. The repository includes a redacted `pnpm production:smoke -- --base-url <selected-deployment>` harness with explicit authenticated/provider opt-ins; the protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
+- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_6dHVPJX5k44mG2mdPGecnoKtjHaj` is Ready and serves `humans.kevinbytes.com` from the final application tree; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables remain managed by Vercel. A fresh public smoke against this deployment passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route; authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected route invokes configured administrator bootstrap before jobs; ordinary request-time sign-in and jobs bootstrap are deliberately non-rotating, with password rotation available only through the attended operator command. The repository includes a redacted `pnpm production:smoke -- --base-url <selected-deployment>` harness with explicit authenticated/provider opt-ins; the protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
 
 ## Non-functional
 
