@@ -82,6 +82,11 @@ describe("remaining workspace constraints", () => {
     [schema.notes, "notes_workspace_fact_fk", "cascade"],
     [schema.notes, "notes_workspace_relationship_fk", "cascade"],
     [schema.notes, "notes_workspace_evidence_fk", "cascade"],
+    [
+      schema.sourceCustodyEvents,
+      "source_custody_events_workspace_source_fk",
+      "restrict",
+    ],
   ] as const)("uses %s delete action on %s", (table, constraint, action) => {
     expect(onDeleteAction(table, constraint)).toBe(action);
   });
@@ -141,6 +146,7 @@ describe("remaining workspace constraints", () => {
     ["personAddresses", "person_addresses_workspace_person_fk"],
     ["relationships", "relationships_workspace_source_person_fk"],
     ["relationships", "relationships_workspace_target_person_fk"],
+    ["sourceCustodyEvents", "source_custody_events_workspace_source_fk"],
     ["factEvidence", "fact_evidence_workspace_fact_fk"],
     ["factEvidence", "fact_evidence_workspace_evidence_fk"],
     ["relationshipEvidence", "relationship_evidence_workspace_relationship_fk"],
