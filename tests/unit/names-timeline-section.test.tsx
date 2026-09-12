@@ -89,6 +89,10 @@ function response() {
         ],
         pageInfo: pageInfo(nextEventCursor),
       },
+      identifiers: {
+        nodes: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
     },
   };
 }
@@ -100,6 +104,7 @@ describe("NamesTimelineSection", () => {
 
   it("keeps names and timeline as independent semantic sections", async () => {
     executeServer
+      .mockResolvedValueOnce(response())
       .mockResolvedValueOnce(response())
       .mockResolvedValueOnce(response());
 
@@ -122,6 +127,7 @@ describe("NamesTimelineSection", () => {
 
   it("preserves each pagination cursor while advancing the other list", async () => {
     executeServer
+      .mockResolvedValueOnce(response())
       .mockResolvedValueOnce(response())
       .mockResolvedValueOnce(response());
 
@@ -158,7 +164,10 @@ describe("NamesTimelineSection", () => {
       temporalSemantics: "YEAR_ONLY",
     });
 
-    executeServer.mockResolvedValueOnce(payload).mockResolvedValueOnce(payload);
+    executeServer
+      .mockResolvedValueOnce(payload)
+      .mockResolvedValueOnce(payload)
+      .mockResolvedValueOnce(payload);
     render(
       await NamesTimelineSection({
         personId,
