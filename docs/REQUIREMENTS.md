@@ -15,7 +15,7 @@ Current production-closeout checkpoint (2026-09-12): application commit
 including the full PostgreSQL/Redis/MinIO integration seam (35 files, 490
 tests plus 2 skips), browser acceptance, production build, generated drift,
 Compose lifecycle, quality, image security, dependency policy, and secret
-scanning. The Vercel production deployment `dpl_8wZx41FNhQ8R5fyiouWLPcmzEMkZ`
+scanning. The Vercel production deployment `dpl_3YiLfPTWbDEeS2HietXG8PBJwT6H`
 is Ready with aliases including `humans.kevinbytes.com` and was built from the
 final application tree. This closes the
 repository/CI gate, not the separately marked hosted authenticated/provider,

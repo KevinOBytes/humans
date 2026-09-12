@@ -12,9 +12,9 @@ Current production-closeout checkpoint (2026-09-12): application commit
 `0ae78d2`; GitHub Actions run `34702263344` is green across all 9 checks,
 including PostgreSQL/Redis/MinIO integration, browser acceptance, production
 build, generated drift, Compose lifecycle, quality, image security, dependency
-policy, and secret scanning. The migration lineage fix and synchronized
-43-migration contract are now verified. Vercel production deployment
-`dpl_8wZx41FNhQ8R5fyiouWLPcmzEMkZ` is Ready with the
+policy, and secret scanning. The graph refresh serialization fix and the
+privacy/retention matrix are now verified. Vercel production deployment
+`dpl_3YiLfPTWbDEeS2HietXG8PBJwT6H` is Ready with the
 `humans.kevinbytes.com` alias. Keep the remaining
 hosted authenticated/provider, external-erasure-adapter, and measured
 whole-product rows open until their stated evidence exists.
