@@ -327,6 +327,19 @@ query FactDetail(
             title
             citation
             canonicalUrl
+            publicationDate
+            collector
+            extractionMethod
+            custodyEvents {
+              nodes {
+                id
+                eventKind
+                occurredAt
+                collector
+                integrityHash
+                notes
+              }
+            }
           }
         }
       }
@@ -445,6 +458,19 @@ query FactEvidence($id: UUID!, $first: Int, $after: String) {
             publisher
             citation
             canonicalUrl
+            publicationDate
+            collector
+            extractionMethod
+            custodyEvents {
+              nodes {
+                id
+                eventKind
+                occurredAt
+                collector
+                integrityHash
+                notes
+              }
+            }
             reliability
           }
         }
@@ -1026,6 +1052,9 @@ mutation CreateSource($input: CreateSourceInput!) {
       title
       canonicalUrl
       citation
+      publicationDate
+      collector
+      extractionMethod
       version
     }
     issues {
