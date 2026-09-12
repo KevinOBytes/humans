@@ -2,6 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { caseMembers, cases } from "@/db/schema/cases";
+import { members } from "@/db/schema/auth";
 import { workspacePrincipals } from "@/db/schema/principals";
 import {
   researchAssignmentEvents,
@@ -230,13 +231,22 @@ export function createResearchAssignmentsService(
     const [principal] = await database
       .select({ id: workspacePrincipals.id })
       .from(workspacePrincipals)
+      .innerJoin(
+        members,
+        and(
+          eq(members.workspaceId, workspacePrincipals.workspaceId),
+          eq(members.id, workspacePrincipals.memberIdSnapshot!),
+        ),
+      )
       .where(
         and(
           eq(workspacePrincipals.workspaceId, context.workspaceId),
           eq(workspacePrincipals.id, assigneePrincipalId),
+          eq(workspacePrincipals.principalType, "user"),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!principal)
       throw createGraphQLError(
         "NOT_FOUND",
@@ -254,7 +264,8 @@ export function createResearchAssignmentsService(
             isNull(caseMembers.deletedAt),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!member)
         throw createGraphQLError(
           "FORBIDDEN",
@@ -290,7 +301,8 @@ export function createResearchAssignmentsService(
           eq(cases.state, "active"),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!authority || !["owner", "reviewer"].includes(authority.role))
       throw createGraphQLError(
         "FORBIDDEN",
