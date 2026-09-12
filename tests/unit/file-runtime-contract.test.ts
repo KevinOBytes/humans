@@ -8,7 +8,7 @@ describe("file upload runtime wiring", () => {
   it("threads deployment mode into the production file runtime and server UI limits", () => {
     const route = readFileSync("src/app/api/graphql/route.ts", "utf8");
     const storageRoute = readFileSync(
-      "src/app/api/storage/objects/route.ts",
+      "src/app/api/storage/objects/handlers.ts",
       "utf8",
     );
     const evidence = readFileSync("src/app/(app)/evidence/page.tsx", "utf8");
