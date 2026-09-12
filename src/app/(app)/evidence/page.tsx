@@ -5,6 +5,7 @@ import {
   FileDownloadButton,
   UploadPanel,
 } from "@/components/files/upload-panel";
+import { BrowserExportApprovalWorkflow } from "@/components/exports/export-approval-browser";
 import {
   ArchiveFileControl,
   PendingUploadRecoveryList,
@@ -24,6 +25,7 @@ import { useFragment as readFragment } from "@/graphql/generated/fragment-maskin
 import {
   EvidenceFileRowFragmentDoc,
   EvidenceFilesDocument,
+  PendingExportApprovalsDocument,
   PendingWorkspaceUploadsDocument,
 } from "@/graphql/generated/graphql";
 import { executeServerGraphQL } from "@/graphql/server-client";
@@ -43,10 +45,15 @@ export default async function EvidencePage({
   const canCreate = context.viewer.permissions.includes("file:create");
   const canDelete = context.viewer.permissions.includes("file:delete");
   const canUpdate = context.viewer.permissions.includes("file:update");
+  const canRequestExport = [
+    "workspace:update",
+    "file:create",
+    "search:read",
+  ].every((permission) => context.viewer!.permissions.includes(permission));
   const uploadMaxBytes = canCreate
     ? uploadMaxBytesForDeployment("EVIDENCE", getServerEnv().DEPLOYMENT_MODE)
     : null;
-  const [data, pendingData] = await Promise.all([
+  const [data, pendingData, approvalData] = await Promise.all([
     executeServerGraphQL(EvidenceFilesDocument, {
       first: 20,
       after,
@@ -54,6 +61,7 @@ export default async function EvidencePage({
     canCreate
       ? executeServerGraphQL(PendingWorkspaceUploadsDocument, {})
       : Promise.resolve(null),
+    executeServerGraphQL(PendingExportApprovalsDocument, { first: 50 }),
   ]);
   const files =
     readFragment(EvidenceFileRowFragmentDoc, data.files?.nodes) ?? [];
@@ -96,6 +104,12 @@ export default async function EvidencePage({
       {canCreate ? (
         <PendingUploadRecoveryList sessions={pendingUploads} />
       ) : null}
+
+      <BrowserExportApprovalWorkflow
+        canRequest={canRequestExport}
+        pendingApprovals={approvalData.pendingExportApprovals}
+        workspaceIdentity={context.viewer.workspace.id}
+      />
 
       <section aria-labelledby="workspace-files-heading">
         <div className="mb-4">

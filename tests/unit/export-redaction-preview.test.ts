@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { createGraphQLError } from "@/graphql/errors";
+import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
+import { createSearchService } from "@/modules/search/service";
 import {
   exportArtifactStorageKey,
   isExportArtifactRecoverable,
@@ -7,6 +10,22 @@ import {
   serializeRedactedExport,
   verifyExportCommitToken,
 } from "@/modules/exports/preview";
+
+const approval = vi.hoisted(() => ({
+  bindings: [] as Record<string, unknown>[],
+}));
+
+vi.mock("@/modules/exports/approval-service", () => ({
+  createExportApprovalService: () => ({
+    requireApproved: async (input: Record<string, unknown>) => {
+      approval.bindings.push(input);
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "Synthetic approval denial.",
+      );
+    },
+  }),
+}));
 
 const key = "22".repeat(32);
 describe("governed export previews", () => {
@@ -42,6 +61,7 @@ describe("governed export previews", () => {
     });
     expect(preview.rows[0].values).toEqual({ name: "Alice", phone: null });
     expect(preview.approvalRequired).toBe(true);
+    expect(preview.previewHash).toMatch(/^[0-9a-f]{64}$/u);
     expect(preview.governanceSubjects).toEqual([
       { personId: "person-1", fieldDefinitionId: "field-1" },
     ]);
@@ -103,6 +123,29 @@ describe("governed export previews", () => {
     ).toThrow("scope does not match");
   });
 
+  it("changes the approval binding when governed scope changes", () => {
+    const base = {
+      workspaceId: "w",
+      actorPrincipalId: "p",
+      purpose: "review",
+      redactionProfile: "CONFIDENTIAL" as const,
+      rows: [{ id: "1", values: { name: "Alice" } }],
+      hmacKey: key,
+    };
+
+    const preview = previewExport(base);
+    expect(
+      previewExport({ ...base, purpose: "different" }).previewHash,
+    ).not.toBe(preview.previewHash);
+    expect(previewExport({ ...base, caseId: "case" }).previewHash).not.toBe(
+      preview.previewHash,
+    );
+    expect(
+      previewExport({ ...base, rows: [{ id: "1", values: { name: "Bob" } }] })
+        .previewHash,
+    ).not.toBe(preview.previewHash);
+  });
+
   it("serializes spreadsheet-looking values as inert CSV cells", () => {
     const preview = previewExport({
       workspaceId: "w",
@@ -120,5 +163,80 @@ describe("governed export previews", () => {
     });
 
     expect(serializeRedactedExport(preview, "CSV")).toContain("'=HYPERLINK");
+  });
+
+  it("requires approval against the exact deterministic governed preview", async () => {
+    approval.bindings.length = 0;
+    const service = createSearchService(
+      {
+        actor: {
+          type: "user",
+          id: "user",
+          principalId: "principal",
+          memberId: "member",
+          sessionId: "session",
+          role: "owner",
+        },
+        database: {} as never,
+        idempotencyHmacKey: "33".repeat(32),
+        metrics: {
+          searchRequest: () => undefined,
+          searchIndexMutation: () => undefined,
+          searchLatency: () => undefined,
+        } as never,
+        operationLimiter: { consume: async () => undefined } as never,
+        permissions: new Set([
+          "workspace:update",
+          "file:create",
+          "search:read",
+        ]),
+        requestId: "request",
+        searchIndexMaintenance: disabledSearchIndexMaintenance,
+        workspaceId: "workspace",
+      },
+      {
+        cursorHmacKey: key,
+        protectedLookupHmacKey: "44".repeat(32),
+        exportArtifacts: {
+          objectStore: { putInternal: async () => undefined } as never,
+          storageBucket: "synthetic",
+          storageProvider: "s3",
+        },
+      },
+    );
+    const preview = previewExport({
+      workspaceId: "workspace",
+      actorPrincipalId: "principal",
+      purpose: "review",
+      caseId: "case",
+      redactionProfile: "CONFIDENTIAL",
+      rows: [],
+      hmacKey: key,
+    });
+    service.previewExport = async () => preview;
+
+    await expect(
+      service.commitExport({
+        query: "synthetic",
+        purpose: "review",
+        caseId: "case",
+        redactionProfile: "CONFIDENTIAL",
+        first: 10,
+        format: "JSON",
+        commitToken: preview.commitToken,
+        idempotencyKey: "commit",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+    expect(approval.bindings).toEqual([
+      {
+        workspaceId: "workspace",
+        actorPrincipalId: "principal",
+        purpose: "review",
+        caseId: "case",
+        redactionProfile: "CONFIDENTIAL",
+        previewHash: preview.previewHash,
+        now: expect.any(Date),
+      },
+    ]);
   });
 });

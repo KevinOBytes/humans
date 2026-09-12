@@ -2,7 +2,10 @@ import { getSessionCookie } from "better-auth/cookies";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { apiKeys, members } from "@/db/schema/auth";
-import { personWebResearchRuns } from "@/db/schema/person-research";
+import {
+  personWebResearchRuns,
+  personWebResearchSources,
+} from "@/db/schema/person-research";
 import { workspaces } from "@/db/schema/workspaces";
 import { newId } from "@/db/id";
 import {
@@ -63,11 +66,13 @@ import { createCasesService } from "@/modules/cases/service";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
 import { createRetentionService } from "@/modules/privacy/retention-service";
 import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
+import { createExportApprovalService } from "@/modules/exports/approval-service";
 import {
   createAiReviewService,
   authorizeAiReviewScope,
   recordAiSuggestion,
 } from "@/modules/ai/review-service";
+import { sourceSnapshotHash } from "@/modules/ai/source-provenance";
 import { runResearchTransaction } from "@/modules/audit/transactions";
 
 import { createGraphQLError } from "./errors";
@@ -285,6 +290,28 @@ function createServices(input: {
               consentedAt: research.consentedAt,
               createdBy: input.context.actor.principalId,
             });
+            const collectedAt = new Date();
+            for (const source of research.sources) {
+              await scoped.database.insert(personWebResearchSources).values({
+                id: newId(),
+                workspaceId: input.context.workspaceId,
+                runId,
+                personId: research.personId,
+                url: source.url,
+                title: source.title,
+                snippet: source.snippet,
+                publicationDate: source.publicationDate ?? null,
+                collectionTimestamp: collectedAt,
+                retrievalHash: sourceSnapshotHash(source),
+                provider: research.provider,
+                model: research.model,
+                reliability:
+                  source.reliability == null
+                    ? null
+                    : String(source.reliability),
+                metadata: source.metadata ?? {},
+              });
+            }
             for (const suggestion of research.suggestions)
               await recordAiSuggestion(scoped, {
                 personId: research.personId,
@@ -306,6 +333,7 @@ function createServices(input: {
                     url,
                     locator: source.title,
                     quote: source.snippet || source.title,
+                    snapshotHash: sourceSnapshotHash(source),
                   };
                 }),
                 provider: research.provider,
@@ -419,6 +447,7 @@ function createServices(input: {
       {
         ...input.context,
         database: input.database,
+        idempotencyHmacKey: input.searchRuntime.protectedLookupHmacKey,
         operationLimiter: input.operationLimiter,
         searchIndexMaintenance: input.searchIndexMaintenance,
       },
@@ -435,6 +464,15 @@ function createServices(input: {
           : {}),
       },
     ),
+    exportApprovals: createExportApprovalService({
+      actor: input.context.actor,
+      database: input.database,
+      idempotencyHmacKey: input.searchRuntime.protectedLookupHmacKey,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
     settings: createSettingsService({
       actor: input.context.actor,
       auth: input.auth,

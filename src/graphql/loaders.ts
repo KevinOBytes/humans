@@ -43,6 +43,7 @@ import type { createWebhooksService } from "@/modules/webhooks/service";
 import type { GovernanceService } from "@/modules/governance/service";
 import type { CasesService } from "@/modules/cases/service";
 import type { EvidenceAssertionsService } from "@/modules/evidence/assertions";
+import type { ExportApprovalService } from "@/modules/exports/approval-service";
 
 export type SafeWorkspace = {
   id: string;
@@ -81,6 +82,7 @@ export type GraphQLServices = {
     typeof import("@/modules/privacy/retention-service").createRetentionService
   >;
   evidenceAssertions: EvidenceAssertionsService;
+  exportApprovals: ExportApprovalService;
 };
 
 export type GraphQLLoaders = {

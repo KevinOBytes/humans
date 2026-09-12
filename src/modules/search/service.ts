@@ -58,6 +58,7 @@ import {
   verifyExportCommitToken,
   type ExportRedactionProfile,
 } from "@/modules/exports/preview";
+import { createExportApprovalService } from "@/modules/exports/approval-service";
 
 const SEARCH_POLICY = {
   capacity: 2_000,
@@ -741,12 +742,7 @@ export function createSearchService(
         redactionProfile: input.redactionProfile,
         first: input.first,
       });
-      if (preview.approvalRequired) {
-        throw createGraphQLError(
-          "PRECONDITION_FAILED",
-          "A reviewed export approval is required before committing this artifact.",
-        );
-      }
+      const now = new Date();
       verifyExportCommitToken({
         token: input.commitToken,
         workspaceId: context.workspaceId,
@@ -756,7 +752,19 @@ export function createSearchService(
         redactionProfile: preview.redactionProfile,
         previewHash: preview.previewHash,
         hmacKey: protectionKey,
+        now,
       });
+      if (preview.approvalRequired) {
+        await createExportApprovalService(context).requireApproved({
+          workspaceId: context.workspaceId,
+          actorPrincipalId: actor.principalId,
+          purpose: preview.purpose,
+          caseId: preview.caseId,
+          redactionProfile: preview.redactionProfile,
+          previewHash: preview.previewHash,
+          now,
+        });
+      }
       const idempotencyHash = hmac(
         protectionKey,
         "export-artifact-idempotency",
@@ -782,7 +790,6 @@ export function createSearchService(
         "utf8",
       );
       const checksum = createHash("sha256").update(content).digest("hex");
-      const now = new Date();
       let artifactId = newId();
       let fileId = newId();
       const extension = input.format === "JSON" ? "json" : "csv";

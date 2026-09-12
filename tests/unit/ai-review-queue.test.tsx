@@ -32,6 +32,8 @@ const suggestion = {
   version: 1,
   acceptedResourceId: null,
   acceptedResourceKind: null,
+  acceptedFromRunId: null,
+  acceptedEvidenceReferences: null,
   decisionReason: null,
 };
 describe("AI human review queue", () => {

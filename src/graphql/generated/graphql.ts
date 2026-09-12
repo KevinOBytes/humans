@@ -146,6 +146,17 @@ export type AuditEventFilterInput = {
 
 export type AuditOutcome = "FAILURE" | "SUCCESS";
 
+export type CommitExportInput = {
+  caseId?: string | null | undefined;
+  commitToken: string;
+  first?: number | null | undefined;
+  format: string;
+  idempotencyKey: string;
+  purpose: string;
+  query: string;
+  redactionProfile: ExportRedactionProfile;
+};
+
 export type ConsentCoverageReason =
   | "CASE_NOT_PERMITTED"
   | "COVERED"
@@ -519,6 +530,10 @@ export type DeletionRequestState =
   | "REJECTED"
   | "REVIEWING";
 
+export type ExportApprovalDecision = "APPROVED" | "REJECTED";
+
+export type ExportApprovalState = "APPROVED" | "REJECTED" | "REQUESTED";
+
 export type ExportRedactionProfile =
   "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
 
@@ -871,6 +886,16 @@ export type ReplayGraphSnapshotInput = {
   snapshotId: string;
 };
 
+export type RequestExportApprovalInput = {
+  caseId?: string | null | undefined;
+  expiresAt: string;
+  idempotencyKey: string;
+  previewHash: string;
+  purpose: string;
+  redactionProfile: ExportRedactionProfile;
+  requestReason: string;
+};
+
 export type RerunGraphAnalysisInput = {
   algorithm: GraphAnalysisAlgorithm;
   snapshotId: string;
@@ -903,6 +928,15 @@ export type ReviewDeletionRequestInput = {
   idempotencyKey?: string | null | undefined;
   notes?: string | null | undefined;
   state: DeletionRequestState;
+};
+
+export type ReviewExportApprovalInput = {
+  decision: ExportApprovalDecision;
+  expectedPreviewHash: string;
+  expectedVersion: number;
+  id: string;
+  idempotencyKey: string;
+  reason: string;
 };
 
 export type ReviewIdentityCandidateInput = {
@@ -1347,6 +1381,8 @@ export type AiReviewFieldsFragment = {
   version: number;
   acceptedResourceId: string | null;
   acceptedResourceKind: string | null;
+  acceptedFromRunId: string | null;
+  acceptedEvidenceReferences: unknown;
   decisionReason: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
@@ -3417,9 +3453,109 @@ export type PreviewExportMutation = {
     rows: unknown;
     fieldCounts: unknown;
     approvalRequired: boolean | null;
+    previewHash: string | null;
     expiresAt: string | null;
     commitToken: string | null;
     provenanceManifest: unknown;
+  } | null;
+};
+
+export type CommitExportMutationVariables = Exact<{
+  input: CommitExportInput;
+}>;
+
+export type CommitExportMutation = {
+  commitExport: {
+    id: string | null;
+    fileId: string | null;
+    caseId: string | null;
+    purpose: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    format: string | null;
+    state: string | null;
+    rowCount: number | null;
+    fieldCounts: unknown;
+    expiresAt: string | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type PendingExportApprovalsQueryVariables = Exact<{
+  caseId?: string | null | undefined;
+  first: number;
+}>;
+
+export type PendingExportApprovalsQuery = {
+  pendingExportApprovals: Array<{
+    id: string | null;
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    previewHash: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    requestedByPrincipalId: string | null;
+    reviewedByPrincipalId: string | null;
+    state: ExportApprovalState | null;
+    requestReason: string | null;
+    decisionReason: string | null;
+    expiresAt: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+    requestAuditReference: string | null;
+    reviewAuditReference: string | null;
+    createdAt: string | null;
+  }>;
+};
+
+export type RequestExportApprovalMutationVariables = Exact<{
+  input: RequestExportApprovalInput;
+}>;
+
+export type RequestExportApprovalMutation = {
+  requestExportApproval: {
+    id: string | null;
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    previewHash: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    requestedByPrincipalId: string | null;
+    reviewedByPrincipalId: string | null;
+    state: ExportApprovalState | null;
+    requestReason: string | null;
+    decisionReason: string | null;
+    expiresAt: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+    requestAuditReference: string | null;
+    reviewAuditReference: string | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type ReviewExportApprovalMutationVariables = Exact<{
+  input: ReviewExportApprovalInput;
+}>;
+
+export type ReviewExportApprovalMutation = {
+  reviewExportApproval: {
+    id: string | null;
+    workspaceId: string | null;
+    purpose: string | null;
+    caseId: string | null;
+    previewHash: string | null;
+    redactionProfile: ExportRedactionProfile | null;
+    requestedByPrincipalId: string | null;
+    reviewedByPrincipalId: string | null;
+    state: ExportApprovalState | null;
+    requestReason: string | null;
+    decisionReason: string | null;
+    expiresAt: string | null;
+    reviewedAt: string | null;
+    version: number | null;
+    requestAuditReference: string | null;
+    reviewAuditReference: string | null;
+    createdAt: string | null;
   } | null;
 };
 
@@ -5531,6 +5667,8 @@ export const AiReviewFieldsFragmentDoc = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
@@ -5931,12 +6069,14 @@ export const PendingAiSuggestionsDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:e4e36ac98f6ddb6458e479e3b110580da947ad959a4942bb4830af64ec5b6c3d",
+    hash: "sha256:227cb2c5eae055f6f8ca6b0e448f1e5feb99bf0d6453a2d9967ca897e656b58b",
   },
 ) as unknown as TypedDocumentString<
   PendingAiSuggestionsQuery,
@@ -5968,12 +6108,14 @@ export const AcceptAiSuggestionDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:b4e049d257028a85bea19302b73abb714efb80d34891722d055e3d76675f414b",
+    hash: "sha256:874a97b03ea139e519047f7d874a1bf091fd7abd88b336eb82a2ac5155760675",
   },
 ) as unknown as TypedDocumentString<
   AcceptAiSuggestionMutation,
@@ -6005,12 +6147,14 @@ export const RejectAiSuggestionDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:0e7b09e72322863ac287f935dc846be17db6fbecd085bb4dc5b695b3d13fd9aa",
+    hash: "sha256:8dec5e654bb6ebcbc9182780971498ce41744a1d51662d4d1cbafcf0658b4ff3",
   },
 ) as unknown as TypedDocumentString<
   RejectAiSuggestionMutation,
@@ -6042,12 +6186,14 @@ export const DeferAiSuggestionDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:6a39281a6df2092047f4a87abec388307843ccd3701ecf132d64153c1f5e3bb4",
+    hash: "sha256:dc506d2952e8004b90d0f6e5451c6d96a9aa1e7da466007273f344fb14d90320",
   },
 ) as unknown as TypedDocumentString<
   DeferAiSuggestionMutation,
@@ -6079,12 +6225,14 @@ export const ReviewAiBatchDocument = new TypedDocumentString(
   version
   acceptedResourceId
   acceptedResourceKind
+  acceptedFromRunId
+  acceptedEvidenceReferences
   decisionReason
   reviewedBy
   reviewedAt
 }`,
   {
-    hash: "sha256:b896e82c2e8260a9821016acad5676b828d3af0c546396d8760cc9d178a5aa91",
+    hash: "sha256:d265bc565ca28f998ea007a4a45b815fb010a012392ea8cffbada6812581b712",
   },
 ) as unknown as TypedDocumentString<
   ReviewAiBatchMutation,
@@ -8926,6 +9074,7 @@ export const PreviewExportDocument = new TypedDocumentString(
     rows
     fieldCounts
     approvalRequired
+    previewHash
     expiresAt
     commitToken
     provenanceManifest
@@ -8933,11 +9082,129 @@ export const PreviewExportDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:dcffb7283a793499f0835280a9dfa9fdbd071945a770d08520360cc422c19a6c",
+    hash: "sha256:6038de4825cc3ae734bdb0c2ca2d64a52c932cb1beb80802b45e6e2a84817611",
   },
 ) as unknown as TypedDocumentString<
   PreviewExportMutation,
   PreviewExportMutationVariables
+>;
+export const CommitExportDocument = new TypedDocumentString(
+  `
+    mutation CommitExport($input: CommitExportInput!) {
+  commitExport(input: $input) {
+    id
+    fileId
+    caseId
+    purpose
+    redactionProfile
+    format
+    state
+    rowCount
+    fieldCounts
+    expiresAt
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:f82b5a81f2669d4e935cd53a5ba6828007377eb4c5978c03eaaf6ec5c37e08d9",
+  },
+) as unknown as TypedDocumentString<
+  CommitExportMutation,
+  CommitExportMutationVariables
+>;
+export const PendingExportApprovalsDocument = new TypedDocumentString(
+  `
+    query PendingExportApprovals($caseId: UUID, $first: Int!) {
+  pendingExportApprovals(caseId: $caseId, first: $first) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:72c8362d2e8cad19df4d5bf8a6a68210cdb9a67a7f7c4f029fdc010eb74cb9dd",
+  },
+) as unknown as TypedDocumentString<
+  PendingExportApprovalsQuery,
+  PendingExportApprovalsQueryVariables
+>;
+export const RequestExportApprovalDocument = new TypedDocumentString(
+  `
+    mutation RequestExportApproval($input: RequestExportApprovalInput!) {
+  requestExportApproval(input: $input) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:f6a67fd3fa3ddd0e5aefc28cd66a0eea98674c0b40253734558aadae5736e3c1",
+  },
+) as unknown as TypedDocumentString<
+  RequestExportApprovalMutation,
+  RequestExportApprovalMutationVariables
+>;
+export const ReviewExportApprovalDocument = new TypedDocumentString(
+  `
+    mutation ReviewExportApproval($input: ReviewExportApprovalInput!) {
+  reviewExportApproval(input: $input) {
+    id
+    workspaceId
+    purpose
+    caseId
+    previewHash
+    redactionProfile
+    requestedByPrincipalId
+    reviewedByPrincipalId
+    state
+    requestReason
+    decisionReason
+    expiresAt
+    reviewedAt
+    version
+    requestAuditReference
+    reviewAuditReference
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:236bf510e091c055cc5adc408a28d06a9435cd52f63cf6faec9dddca7495fe4e",
+  },
+) as unknown as TypedDocumentString<
+  ReviewExportApprovalMutation,
+  ReviewExportApprovalMutationVariables
 >;
 export const ResearchViewerDocument = new TypedDocumentString(
   `

@@ -398,6 +398,25 @@ MinIO volume formats also require their upstream compatibility procedure.
 
 ## Release checks
 
+### Fictional demo dataset
+
+The local Compose stack can be populated with the guarded Northstar Atlas
+fixture. It is deliberately fictional and uses reserved `.invalid` contact and
+source domains; it is not a surveillance dataset and must not be replaced with
+real-person records.
+
+```sh
+ALLOW_DATABASE_SEED=true NODE_ENV=development \
+  pnpm db:seed
+```
+
+The seed is transactional and repeatable (`ON CONFLICT` is used throughout).
+It creates the Atlas and Sandbox tenants, four fictional profiles, temporal
+relationships, source/evidence assertions (including a contradiction), a
+reviewer case, withdrawn consent, a pending human-reviewed AI suggestion, and an
+active legal hold. Keep the seed guard enabled in every shared or production
+environment.
+
 Before a self-host release, run exact Node 24 formatting, linting, type checking,
 unit/integration suites, schema/codegen drift checks, the production build, the
 rendered Compose contracts, and the isolated lifecycle drill. Review the staged

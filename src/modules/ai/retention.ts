@@ -8,6 +8,91 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 
 const MAX_RETENTION_BATCH = 500;
 
+export type AiRetentionCandidateInput = {
+  now: Date;
+  retentionDays: number;
+  runs: readonly {
+    id: string;
+    createdAt: Date;
+    hasAcceptedSuggestion: boolean;
+  }[];
+  suggestions: readonly {
+    id: string;
+    runId: string;
+    status: string;
+  }[];
+  citations: readonly { id: string; runId: string }[];
+  ephemeralInputs: readonly {
+    id: string;
+    runId: string;
+    expiresAt: Date;
+  }[];
+  legalHoldResourceIds: ReadonlySet<string>;
+};
+
+export type AiRetentionCandidates = {
+  runs: string[];
+  suggestions: string[];
+  citations: string[];
+  ephemeralInputs: string[];
+};
+
+/**
+ * Pure planner used by the worker and tests. It is intentionally separate
+ * from deletion: accepted domain resources and anything under a legal hold
+ * remain available for provenance and audit review.
+ */
+export function evaluateAiRetention(
+  input: AiRetentionCandidateInput,
+): AiRetentionCandidates {
+  if (
+    !Number.isSafeInteger(input.retentionDays) ||
+    input.retentionDays < 0 ||
+    Number.isNaN(input.now.getTime())
+  )
+    throw new TypeError("Invalid AI retention inputs");
+  const cutoff = input.now.getTime() - input.retentionDays * 86_400_000;
+  const expiredRuns = new Set(
+    input.runs
+      .filter(
+        (run) =>
+          run.createdAt.getTime() <= cutoff &&
+          !run.hasAcceptedSuggestion &&
+          !input.legalHoldResourceIds.has(run.id),
+      )
+      .map((run) => run.id),
+  );
+  return {
+    runs: [...expiredRuns].sort(),
+    suggestions: input.suggestions
+      .filter(
+        (suggestion) =>
+          expiredRuns.has(suggestion.runId) &&
+          suggestion.status !== "accepted" &&
+          !input.legalHoldResourceIds.has(suggestion.id),
+      )
+      .map((suggestion) => suggestion.id)
+      .sort(),
+    citations: input.citations
+      .filter(
+        (citation) =>
+          expiredRuns.has(citation.runId) &&
+          !input.legalHoldResourceIds.has(citation.id),
+      )
+      .map((citation) => citation.id)
+      .sort(),
+    ephemeralInputs: input.ephemeralInputs
+      .filter(
+        (ephemeral) =>
+          ephemeral.expiresAt.getTime() <= input.now.getTime() &&
+          !input.legalHoldResourceIds.has(ephemeral.id) &&
+          !input.legalHoldResourceIds.has(ephemeral.runId),
+      )
+      .map((ephemeral) => ephemeral.id)
+      .sort(),
+  };
+}
+
 export async function purgeExpiredAiEphemeralInputs(input: {
   database: Database;
   limit?: number;
@@ -28,6 +113,14 @@ export async function purgeExpiredAiEphemeralInputs(input: {
           select ${aiEphemeralInputs.id}
           from ${aiEphemeralInputs}
           where ${aiEphemeralInputs.expiresAt} <= ${now.toISOString()}::timestamptz
+            and not exists (
+              select 1 from ${legalHolds}
+              where ${legalHolds.workspaceId} = ${aiEphemeralInputs.workspaceId}
+                and ${legalHolds.resourceId} in (${aiEphemeralInputs.id}, ${aiEphemeralInputs.aiRunId})
+                and ${legalHolds.resourceKind} in ('ai_ephemeral_input', 'ai_run')
+                and ${legalHolds.state} = 'active'
+                and ${legalHolds.deletedAt} is null
+            )
           order by ${aiEphemeralInputs.expiresAt}, ${aiEphemeralInputs.id}
           limit ${limit}
         )
