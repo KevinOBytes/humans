@@ -159,14 +159,14 @@ describe("public repository contract", () => {
     };
     const readme = read("README.md");
 
-    expect(readme).toContain("cp .env.example .env.local");
+    expect(readme).toContain("cp .env.example .env");
     for (const script of [
       "db:migrate",
       "admin:bootstrap",
       "admin:rotate-password",
     ]) {
       expect(packageJson.scripts[script]).toMatch(
-        /^node --env-file-if-exists=\.env\.local /u,
+        /^node --env-file=\.env --env-file-if-exists=\.env\.local /u,
       );
       expect(packageJson.scripts[script]).not.toContain("ADMIN_PASSWORD=");
     }
