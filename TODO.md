@@ -1,25 +1,26 @@
 # MVP closure and production hardening backlog
 
-Current repository gate (2026-09-12): commit `546a2d7` passed GitHub Actions
-run `34704695100` across all 9 checks. The Node 24 database job ran 35 files
-with 490 tests passed and 2 skipped, including privacy-request, retention/legal-
-hold, assignment, relationship-provenance, AI-review, and the guarded rich
-synthetic-seed contracts. Browser acceptance also passed after the graph editor
-refresh-serialization fix. Hosted authenticated/provider/runtime proof and the
-remaining incomplete rows below remain open.
+Current repository gate (2026-09-12): commit `4b0aa0b` passed GitHub Actions
+run `34707951090` across all 9 checks, including the Node 24 PostgreSQL/Redis/
+MinIO integration seam, browser acceptance, production build, generated drift,
+Compose lifecycle, quality, image security, dependency policy, and secret
+scanning. The gate includes privacy-request, retention/legal-hold,
+relationship-provenance, AI-review, and guarded rich synthetic-seed contracts.
+Hosted authenticated/provider/runtime proof and the remaining incomplete rows
+below remain open.
 
 Current production-closeout checkpoint (2026-09-12): application commit
-`546a2d7`; GitHub Actions run `34704695100` is green across all 9 checks,
+`4b0aa0b`; GitHub Actions run `34707951090` is green across all 9 checks,
 including PostgreSQL/Redis/MinIO integration, browser acceptance, production
 build, generated drift, Compose lifecycle, quality, image security, dependency
-policy, and secret scanning. The graph refresh serialization fix and the
-privacy/retention matrix are now verified. Vercel production deployment
-`dpl_66ReDy6ARv6G5DuXckCn6Ei3MFuZ` is Ready with the
+policy, and secret scanning. The graph accessibility, retention candidate queue,
+and case idempotency changes are included in this verified tree. Vercel
+production deployment `dpl_8YZUVE3GXpChFj8QCvRPRsodkoZk` is Ready with the
 `humans.kevinbytes.com` alias. Fresh public smoke confirms homepage, liveness,
 readiness, PostgreSQL, Redis, storage, unauthenticated GraphQL, and invalid-
-bearer jobs boundaries. Keep the remaining
-hosted authenticated/provider, external-erasure-adapter, and measured
-whole-product rows open until their stated evidence exists.
+bearer jobs boundaries. Keep the remaining hosted authenticated/provider,
+external-erasure-adapter, and measured whole-product rows open until their
+stated evidence exists.
 
 Production-completion privacy artifact checkpoint (2026-09-12): commits `bf00b35`,
 `8e3e10e`, `fe71a43`, and `b7c9e6f` now cover person-scoped AI/web-research
@@ -262,7 +263,7 @@ recovery.
 - [ ] `HUM-FR-031` Complete mutable/provider administration beyond the Task 14A responsive read-only account, security, members, keys, policies, audit, and integrations settings routes. A focused live policy-settings matrix now covers owner access-policy success, administrator workspace-default success, viewer/foreign denial, optimistic retries, validation rollback, redacted audit output, and durable `UpdateAccessPolicy` plus `UpdateWorkspaceDefaults` replay/concurrency boundaries; provider and whole-settings coverage remain open.
 - [ ] `HUM-FR-032` Complete stable errors and request-correlation coverage across the whole MVP beyond the implemented Task 12 search/graph envelopes, centralized browser/server GraphQL error contract (including malformed-payload handling, header-authoritative IDs, and known-code secret-message normalization), and representative all-code/redaction matrix. Direct route codes are inventoried in `docs/ARCHITECTURE.md`; the scheduled `/api/jobs/run` route now emits stable `UNAUTHENTICATED`/`INTERNAL` codes with an `x-request-id`, the storage proxy now emits redacted stable upload/download/unmatched-path envelopes with correlated headers, health probes now echo correlation IDs on success, and a typed direct-route client covers invitation handoff/acceptance and two-factor state changes, while adoption across every remaining direct route and the whole-product failure matrix remain open.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks; provider, browser, and interruption coverage remain open.
-- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_66ReDy6ARv6G5DuXckCn6Ei3MFuZ` is Ready and serves `humans.kevinbytes.com` from the final application tree; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables remain managed by Vercel. Prior bounded hosted smoke passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route; a fresh smoke against this deployment, authenticated sign-in/create-person acceptance, and the full hosted provider matrix remain release work. The protected route invokes configured administrator bootstrap before jobs, and sign-in requests bootstrap the configured account before credential validation. The repository includes a redacted `pnpm production:smoke -- --base-url <selected-deployment>` harness with explicit authenticated/provider opt-ins; the protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
+- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_8YZUVE3GXpChFj8QCvRPRsodkoZk` is Ready and serves `humans.kevinbytes.com` from the final application tree; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables remain managed by Vercel. A fresh public smoke against this deployment passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route; authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected route invokes configured administrator bootstrap before jobs, and sign-in requests bootstrap the configured account before credential validation. The repository includes a redacted `pnpm production:smoke -- --base-url <selected-deployment>` harness with explicit authenticated/provider opt-ins; the protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
 
 ## Non-functional
 
@@ -290,7 +291,7 @@ recovery.
 - [ ] `HUM-NFR-009` Complete responsive and whole-product accessibility acceptance beyond the tested Task 12 search and graph-analysis controls/results. Profile semantic sections, keyboard tab activation, RTL/200% zoom no-overflow/axe evidence, and the keyboard-tested graph-relationship-to-profile transition are bounded additions; full responsive primary-journey coverage remains open.
 - [ ] `HUM-NFR-011` Complete the remaining whole-product PostgreSQL, Redis, storage, GraphQL, browser, and CI matrix beyond the Task 12 foundation and Task 18 live upgrade/concurrency/browser/Compose suite. Consent-governed research Task 2 adds case/assertion/relationship-review backend tests and migration 0033; its live PostgreSQL cases/provenance/GraphQL tests remain unverified without disposable `TEST_DATABASE_URL`, and browser/runtime acceptance remains open.
 - [ ] `HUM-NFR-012` Complete tenant, auth, security, and deterministic-AI primary journeys beyond the Task 12 search/saved-query/graph browser coverage. The graph-to-profile relationship transition reuses only the already-authorized generated graph result and the profile's existing authorized generated GraphQL reads; cross-workspace and redaction behavior remain owned by those server boundaries.
-- [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. GitHub Actions run `34705235281` for commit `d6c14c1` is green across all 9 checks, including the Node 24 database matrix (35 files, 490 passed, 2 skipped), browser, build, Compose, generated drift, quality, image, dependency, and secret gates. Hosted authenticated/provider/runtime proof and the remaining TODO rows are still outstanding.
+- [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. GitHub Actions run `34707951090` for commit `4b0aa0b` is green across all 9 checks, including the Node 24 PostgreSQL/Redis/MinIO integration seam, browser, build, Compose, generated drift, quality, image, dependency, and secret gates. Hosted authenticated/provider/runtime proof and the remaining TODO rows are still outstanding.
 - [ ] `HUM-NFR-020` Meet and continuously verify the production latency, concurrency, graph-frame-rate, Web Vitals, and bundle budgets beyond Task 12 bounds and indexed-plan evidence. The disposable Node 24 performance harness now passes the representative 10,000-person/25,000-edge GraphQL read, graph render/FPS/WebGL recovery, and public/dashboard/entities/editor bundle checks; mutation, upload, hosted Web Vitals, and hosted-performance evidence remain open.
 - Bounded synthetic demo dataset evidence (2026-09-11): the guarded seed now
   creates the fictional Northstar Atlas/Sandbox tenants with four fictional
