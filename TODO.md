@@ -246,12 +246,12 @@ recovery.
   proves the source contract and rejects the prior real-person fixture; live
   Compose seed/GraphQL verification remains required.
 
-Release-candidate gate evidence (2026-09-11): the production-completion
-branch passes the full local Vitest suite (181 files, 1,529 passed, 74
-skipped), formatting, lint, typecheck, Drizzle check/drift, GraphQL codegen
-drift, production build, Compose configuration contracts, and diff checks.
-The local runtime was Node 26.8.1 rather than the required Node 24; disposable
-database lifecycle, hosted authenticated smoke, provider contracts, and full
+Release-candidate gate evidence (2026-09-12): under the required Node
+24.19.0 runtime, the production-completion branch passes the full local
+Vitest suite (181 files, 1,529 passed, 74 skipped), formatting, lint,
+typecheck, Drizzle check/drift, GraphQL codegen drift, production build,
+Compose configuration contracts, and diff checks. Disposable database
+lifecycle, hosted authenticated smoke, provider contracts, and full
 browser/performance evidence remain release work.
 
 Live unauthenticated smoke evidence (2026-09-11): the merged `main` passed
@@ -260,10 +260,23 @@ homepage/liveness/readiness 200, unauthenticated GraphQL 401, and invalid jobs
 authorization 401. Authenticated admin/person creation, provider contracts,
 and deployment-identity verification remain open.
 
-Updated production deployment evidence (2026-09-12): commit `fc0eaa4` is
-deployed as Vercel `dpl_FMyDthp5dxq8Eua1B1aRuYd9yoiT` (`READY`, Node 24,
+Updated production deployment evidence (2026-09-12): commit `fabef4b` is
+deployed as Vercel `dpl_AMQhXZ6pssWLsbvH17QXDwxwcC22` (`READY`, Node 24,
 aliases include `humans.kevinbytes.com`), and the public smoke passes against
-the custom hostname. Vercel production variable names are present for the
-configured services and admin bootstrap. The authenticated smoke still
-returns a generic 403 with the available local credential set; no hidden
-values were retrieved, so hosted sign-in/person creation remains open.
+the custom hostname. The four administrator values from the operator-
+restricted local `.env` were synchronized to Vercel Preview and Production
+without printing them. The authenticated smoke still returns a generic 403;
+because bootstrap is intentionally idempotent and does not rotate an existing
+credential, hosted sign-in/person creation remains open until an operator runs
+the explicit `pnpm admin:rotate-password` procedure against the hosted
+database. No hidden values were retrieved.
+
+Original product-contract closeout (2026-09-12): the requirements document
+now explicitly tracks rich person profiles, temporal documented/hypothesis
+edges, field-level provenance, case/workspace governance, privacy and legal
+holds, immutable auditability, human-reviewed AI suggestions, GraphQL search
+and controlled import/export, scoped API keys/2FA/session controls, and a
+fictional synthetic demo dataset. The implementation has local schema,
+generated-operation, service, and test seams for each; remaining TODO rows
+continue to cover hosted credentials, provider contracts, browser/accessibility
+coverage, external storage/email/AI acceptance, and live Compose evidence.

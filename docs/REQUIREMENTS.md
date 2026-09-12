@@ -581,15 +581,13 @@ remain outside this backend checkpoint. No acceptance row is closed: disposable
 PostgreSQL lifecycle and whole-product browser/runtime evidence are still required.
 See the Task 2 SDD report for local commands and explicitly skipped live tests.
 
-Release-candidate gate evidence (2026-09-11): the production-completion
-branch passes the full local Vitest suite (181 files, 1,529 passed, 74
-skipped), format, lint, typecheck, Drizzle check/drift, GraphQL codegen drift,
-production build, Compose configuration contracts, and `git diff --check`.
-The local runtime is Node 26.8.1 while the repository contract requires Node
-24, so the gate is a compatibility signal rather than Node-24 release proof.
-Disposable PostgreSQL/Redis/MinIO lifecycle, authenticated hosted smoke,
-external provider contracts, and browser/performance release evidence remain
-open and are not marked complete.
+Release-candidate gate evidence (2026-09-12): under the required Node
+24.19.0 runtime, the production-completion branch passes the full local Vitest
+suite (181 files, 1,529 passed, 74 skipped), format, lint, typecheck, Drizzle
+check/drift, GraphQL codegen drift, production build, Compose configuration
+contracts, and `git diff --check`. Disposable PostgreSQL/Redis/MinIO lifecycle,
+authenticated hosted smoke, external provider contracts, and browser/performance
+release evidence remain open and are not marked complete.
 
 Live unauthenticated smoke evidence (2026-09-11): after the merged `main`
 push, `pnpm production:smoke -- --base-url https://humans.kevinbytes.com`
@@ -599,15 +597,18 @@ correlation metadata. Authenticated credentials, provider contracts, and exact
 deployment-identity verification remain separate release evidence.
 
 Updated production release evidence (2026-09-12): the verified `main` commit
-`fc0eaa4` was deployed through the linked Vercel project as
-`dpl_FMyDthp5dxq8Eua1B1aRuYd9yoiT`, reached `READY`, uses Node 24/runtime
+`fabef4b` was deployed through the linked Vercel project as
+`dpl_AMQhXZ6pssWLsbvH17QXDwxwcC22`, reached `READY`, uses Node 24/runtime
 `nodejs24.x`, and aliases `humans.kevinbytes.com`. The custom hostname passed
 the redacted public smoke after this deployment. Vercel environment-variable
 names confirm production configuration for Neon/PostgreSQL, Redis, R2,
-Resend, AI, and administrator bootstrap without exposing values. The
-authenticated credential path returned a generic 403 with the locally
-available credential set; no secret was printed or retrieved, so authenticated
-sign-in/person creation remains unverified.
+Resend, AI, and administrator bootstrap without exposing values. The four
+administrator values from the operator-restricted local `.env` were
+synchronized to Vercel Preview and Production without printing them. The
+authenticated credential path still returned a generic 403, which is
+consistent with an existing hosted credential that requires the explicit
+`pnpm admin:rotate-password` operator procedure; no secret was printed or
+retrieved, so authenticated sign-in/person creation remains unverified.
 
 Bounded AI provenance/retention evidence (2026-09-11): public web research
 sources now persist as immutable workspace/person/run snapshots with retrieval
@@ -629,6 +630,46 @@ explicitly opt-in authenticated synthetic-person journey. Provider contracts
 remain opt-in and never use ambient credentials unless the operator sets the
 explicit flag. Local and hosted execution against a selected deployment is
 still required; no production result is claimed by the script itself.
+
+Original product contract coverage (2026-09-12): the requirements include the
+following ten first-class capabilities and their safety boundaries:
+
+1. Rich, workspace-scoped person profiles with names and aliases, pronouns,
+   biographies, employment, education, public contact points, effective-dated
+   addresses, languages, organizations, public identifiers, notes, custom
+   fields, multiple typed facts, and a stable person UUID.
+2. Temporal graph edges that are typed and directional, carry start/end dates,
+   strength, confidence, source citations, corroboration state, and explicitly
+   distinguish documented assertions from analyst hypotheses.
+3. Evidence/provenance records with URL or document, publication and
+   collection timestamps, collector, extraction method, content hash,
+   reliability/confidence, chain-of-custody metadata, and field-level
+   citations.
+4. Separate workspaces, cases, investigations, teams, roles, least-privilege
+   access, review/assignment queues, and information-sharing boundaries.
+5. Privacy/governance controls for purpose limitation, lawful basis/consent,
+   sensitive-data classification, field redaction, encryption, retention,
+   deletion, legal holds, export controls, and subject-access/deletion support.
+6. Immutable auditability for access and mutation, bulk-query/export alerts,
+   approvals, break-glass justification, and administrator review.
+7. AI-assisted research that is suggestion-only: every proposed fact or edge
+   exposes evidence, confidence, uncertainty, source/provider/model and a
+   human accept/reject control; accepted values retain the original run and
+   provenance. Autonomous adverse decisions and threat scoring are forbidden.
+8. GraphQL-backed faceted search, timeline/source comparison, duplicate and
+   contradiction detection, explainable graph metrics, plus validated CSV,
+   JSON, and document import/export with mapping and redaction previews.
+9. API-key scopes/revocation, rate limits, tenant isolation, encrypted
+   secrets, 2FA and backup codes, session controls, and mandatory audit logs.
+10. A deterministic fictional synthetic demo dataset for development and
+    testing; production never requires real-person surveillance data.
+
+The schema, generated GraphQL operations, authorization services, privacy
+ledger, AI review queue, provenance snapshots, and guarded synthetic seed
+provide local implementation seams for these capabilities. Each capability
+still inherits the matrix status above: a local unit/schema result is not a
+hosted provider, browser, Compose lifecycle, or authenticated-production
+acceptance claim.
 
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.
