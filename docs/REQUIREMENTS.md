@@ -1,7 +1,7 @@
 # MVP requirements
 
-Current repository gate (2026-09-12): commit `1072732` passed GitHub Actions
-run `34708855479` across all 9 checks, including the Node 24 PostgreSQL/Redis/
+Current repository gate (2026-09-12): commit `de0b536` passed GitHub Actions
+run `34711086184` across all 9 checks, including the Node 24 PostgreSQL/Redis/
 MinIO integration seam, guarded rich synthetic seed, relationship-provenance/
 AI-review lifecycle suites, privacy-request plus retention/legal-hold lifecycle
 suites, browser acceptance, production build, generated drift, Compose lifecycle,
@@ -10,27 +10,30 @@ the repository/CI boundary only; hosted authenticated/provider/runtime and the
 remaining explicitly incomplete requirements remain open.
 
 Current production-closeout checkpoint (2026-09-12): application commit
-`1072732` has GitHub Actions run `34708855479` green across all 9 checks,
+`de0b536` has GitHub Actions run `34711086184` green across all 9 checks,
 including the PostgreSQL/Redis/MinIO integration seam, browser acceptance,
 production build, generated drift, Compose lifecycle, quality, image security,
 dependency policy, and secret scanning. The Vercel production deployment
-`dpl_4AkTt8LCddA8MiKG8m1GUeqrZCD4` is Ready with aliases including
+`dpl_3UTQxRdAwzk4ySiDVCv4UyF8NWgp` is Ready with aliases including
 `humans.kevinbytes.com` and was built from the verified `main` tree after the
 green CI run. A fresh public smoke confirmed the homepage, liveness, readiness,
 PostgreSQL, Redis, storage, unauthenticated GraphQL, and invalid-bearer jobs
-boundaries; authenticated/provider acceptance remains explicitly open. This
+boundaries; authenticated/provider acceptance remains explicitly open. Local
+Compose migration, administrator bootstrap from the ignored `.env`, and app
+readiness through PostgreSQL, Redis, and MinIO were also exercised. This
 closes the repository/CI/deployment smoke gate, not the separately marked hosted
 authenticated/provider, external-erasure-adapter, and measured whole-product
 requirements below.
 
 Integrated production-hardening checkpoint (2026-09-12): commits `c1d6638`,
-`77b151e`, and `7b43bba` add deterministic, workspace-scoped retention
-candidate queueing with legal-hold fencing, accessible authorized relationship
-profile workflows, and principal-bound replay protection for case creation,
-membership, and resource linking. Focused unit tests and the full local suite
-pass; the GitHub database seam validates the merged tree. Live hosted
-authenticated/provider acceptance and the remaining explicitly incomplete
-requirements are still open.
+`77b151e`, `7b43bba`, `e91e70e`, `be9dbd9`, and `d64a495` add deterministic,
+workspace-scoped retention candidate queueing with legal-hold fencing,
+accessible authorized relationship profile workflows, principal-bound replay
+protection for case and evidence mutations, provider endpoint validation, and
+correlated redacted storage failure recovery. Focused unit tests and the full
+local suite pass; the GitHub database seam validates the merged tree. Live
+hosted authenticated/provider acceptance and the remaining explicitly
+incomplete requirements are still open.
 
 Production-completion privacy artifact checkpoint (2026-09-12): commits `bf00b35`,
 `8e3e10e`, `fe71a43`, and `b7c9e6f` extend the governed deletion/retention
