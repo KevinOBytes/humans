@@ -1,12 +1,10 @@
 # MVP closure and production hardening backlog
 
-Latest application runtime checkpoint (2026-09-12): corrected tree
-`bfc83c2` passed GitHub Actions run `34717862746` across all 9 checks,
-including the live PostgreSQL migration and identifier-projection acceptance.
-The Docker Compose app/worker image was rebuilt with migration `0043` applied;
-local readiness reported configuration, PostgreSQL, Redis, and storage healthy.
-Vercel deployment `dpl_BMqkFtju5aNuRk4fehtfBf88aLos` reached `READY` and is
-serving `humans.kevinbytes.com`. The redacted production smoke passed the
+Latest application runtime checkpoint (2026-09-12): commit `e47efbf`
+passed GitHub Actions run `34719046128` across all 9 checks, including the live
+PostgreSQL, browser, Compose, generated-drift, security, and production-build
+gates. Vercel deployment `dpl_Dw5WnNQJKRSvpkeYbNXRLG57dVMq` reached `READY`
+and serves `humans.kevinbytes.com`. The redacted production smoke passed the
 homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs
 boundaries. Hosted authenticated/provider acceptance and the 24 rows below
 remain open.
