@@ -3643,6 +3643,8 @@ export type ResearchAssignmentsQuery = {
 
 export type ResearchAssignmentQueryVariables = Exact<{
   id: string;
+  eventsFirst?: number | null | undefined;
+  eventsAfter?: string | null | undefined;
 }>;
 
 export type ResearchAssignmentQuery = {
@@ -3651,18 +3653,23 @@ export type ResearchAssignmentQuery = {
       ResearchAssignmentFieldsFragment: ResearchAssignmentFieldsFragment;
     };
   } | null;
-  researchAssignmentEvents: Array<{
-    id: string | null;
-    assignmentId: string | null;
-    eventKind: string | null;
-    fromStatus: string | null;
-    toStatus: string | null;
-    fromAssigneePrincipalId: string | null;
-    toAssigneePrincipalId: string | null;
-    reason: string | null;
-    actorPrincipalId: string | null;
-    occurredAt: string | null;
-  }> | null;
+  researchAssignmentEvents: {
+    nodes: Array<{
+      id: string | null;
+      assignmentId: string | null;
+      eventKind: string | null;
+      fromStatus: string | null;
+      toStatus: string | null;
+      fromAssigneePrincipalId: string | null;
+      toAssigneePrincipalId: string | null;
+      fromEscalationCount: number | null;
+      toEscalationCount: number | null;
+      reason: string | null;
+      actorPrincipalId: string | null;
+      occurredAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
 };
 
 export type CreateResearchAssignmentMutationVariables = Exact<{
@@ -9463,21 +9470,33 @@ export const ResearchAssignmentsDocument = new TypedDocumentString(
 >;
 export const ResearchAssignmentDocument = new TypedDocumentString(
   `
-    query ResearchAssignment($id: UUID!) {
+    query ResearchAssignment($id: UUID!, $eventsFirst: Int, $eventsAfter: String) {
   researchAssignment(id: $id) {
     ...ResearchAssignmentFields
   }
-  researchAssignmentEvents(assignmentId: $id) {
-    id
-    assignmentId
-    eventKind
-    fromStatus
-    toStatus
-    fromAssigneePrincipalId
-    toAssigneePrincipalId
-    reason
-    actorPrincipalId
-    occurredAt
+  researchAssignmentEvents(
+    assignmentId: $id
+    first: $eventsFirst
+    after: $eventsAfter
+  ) {
+    nodes {
+      id
+      assignmentId
+      eventKind
+      fromStatus
+      toStatus
+      fromAssigneePrincipalId
+      toAssigneePrincipalId
+      fromEscalationCount
+      toEscalationCount
+      reason
+      actorPrincipalId
+      occurredAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
   }
 }
     fragment ResearchAssignmentFields on ResearchAssignment {
@@ -9496,7 +9515,7 @@ export const ResearchAssignmentDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:bf658440079d12ae9bc5bfdcbaa748a6bec75548d0e00a572e5abd7aaf9b8ae2",
+    hash: "sha256:94ea1052c0608ddaa2b0b9247c6fb38329decc6b860dcb33391424ebf9b6c2af",
   },
 ) as unknown as TypedDocumentString<
   ResearchAssignmentQuery,

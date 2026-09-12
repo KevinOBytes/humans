@@ -99,6 +99,8 @@ const workspaceTableNames = [
   "retentionPolicies",
   "workspaceSettings",
   "workspaceUsage",
+  "researchAssignmentItems",
+  "researchAssignmentEvents",
 ] as const satisfies readonly (keyof typeof schema)[];
 
 const versionedTableNames = [
@@ -153,6 +155,7 @@ const versionedTableNames = [
   "webhooks",
   "workspaceSettings",
   "workspaceUsage",
+  "researchAssignmentItems",
   "workspaces",
 ] as const satisfies readonly (keyof typeof schema)[];
 

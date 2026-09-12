@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 
 import {
   researchAssignmentEvents,
@@ -16,6 +16,7 @@ export function createResearchAssignmentsRepository(database: Database) {
           and(
             eq(researchAssignmentItems.workspaceId, workspaceId),
             eq(researchAssignmentItems.id, id),
+            isNull(researchAssignmentItems.deletedAt),
           ),
         )
         .limit(1);
@@ -39,6 +40,7 @@ export function createResearchAssignmentsRepository(database: Database) {
         .where(
           and(
             eq(researchAssignmentItems.workspaceId, workspaceId),
+            isNull(researchAssignmentItems.deletedAt),
             or(
               isNull(researchAssignmentItems.caseId),
               sql`exists (
@@ -79,7 +81,11 @@ export function createResearchAssignmentsRepository(database: Database) {
         )
         .limit(input.first);
     },
-    async events(workspaceId: string, assignmentId: string) {
+    async events(
+      workspaceId: string,
+      assignmentId: string,
+      input: { first: number; after?: { at: Date; id: string } | null },
+    ) {
       return database
         .select()
         .from(researchAssignmentEvents)
@@ -87,12 +93,28 @@ export function createResearchAssignmentsRepository(database: Database) {
           and(
             eq(researchAssignmentEvents.workspaceId, workspaceId),
             eq(researchAssignmentEvents.assignmentId, assignmentId),
+            sql`exists (
+              select 1 from research_assignment_items rai
+              where rai.workspace_id = ${workspaceId}::uuid
+                and rai.id = ${assignmentId}::uuid
+                and rai.deleted_at is null
+            )`,
+            input.after
+              ? or(
+                  gt(researchAssignmentEvents.occurredAt, input.after.at),
+                  and(
+                    eq(researchAssignmentEvents.occurredAt, input.after.at),
+                    gt(researchAssignmentEvents.id, input.after.id),
+                  ),
+                )
+              : undefined,
           ),
         )
         .orderBy(
           researchAssignmentEvents.occurredAt,
           researchAssignmentEvents.id,
-        );
+        )
+        .limit(input.first);
     },
   };
 }
