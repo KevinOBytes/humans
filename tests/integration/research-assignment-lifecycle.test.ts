@@ -51,6 +51,7 @@ liveDescribe("research assignment queue lifecycle", () => {
       caseId,
       queueKind: "verification",
       title: "Verify source",
+      description: "Compare the source against the retained record.",
       priority: 10,
       idempotencyKey: "create-queue-item",
     });
@@ -59,6 +60,17 @@ liveDescribe("research assignment queue lifecycle", () => {
       "Compare the source against the retained record.",
     );
     expect((await service.list({ caseId })).nodes).toHaveLength(1);
+    await expect(
+      service.transition({
+        id: created.id,
+        expectedVersion: 1,
+        status: "completed",
+        reason: "Skip required review",
+        idempotencyKey: "transition-invalid",
+      }),
+    ).rejects.toMatchObject({
+      extensions: { code: "PRECONDITION_FAILED" },
+    });
     await expect(
       service.transition({
         id: created.id,
@@ -82,6 +94,35 @@ liveDescribe("research assignment queue lifecycle", () => {
       idempotencyKey: "escalate-ok",
     });
     expect(escalated.escalationCount).toBe(1);
+    const completed = await service.transition({
+      id: escalated.id,
+      expectedVersion: 3,
+      status: "completed",
+      reason: "Verification complete",
+      idempotencyKey: "transition-complete",
+    });
+    expect(completed.status).toBe("completed");
+    await expect(
+      service.assign({
+        id: completed.id,
+        expectedVersion: 4,
+        assigneePrincipalId: null,
+        reason: "Closed items cannot be reassigned",
+        idempotencyKey: "assign-closed",
+      }),
+    ).rejects.toMatchObject({
+      extensions: { code: "PRECONDITION_FAILED" },
+    });
+    await expect(
+      service.escalate({
+        id: completed.id,
+        expectedVersion: 4,
+        reason: "Closed items cannot be escalated",
+        idempotencyKey: "escalate-closed",
+      }),
+    ).rejects.toMatchObject({
+      extensions: { code: "PRECONDITION_FAILED" },
+    });
     await expect(
       fixture.database
         .update(researchAssignmentEvents)
@@ -248,6 +289,23 @@ liveDescribe("research assignment queue lifecycle", () => {
         idempotencyKey: "closed-case-transition",
       }),
     ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+    await expect(
+      service.assign({
+        id: created.id,
+        expectedVersion: 1,
+        assigneePrincipalId: null,
+        reason: "Closed case cannot be assigned",
+        idempotencyKey: "closed-case-assign",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+    await expect(
+      service.escalate({
+        id: created.id,
+        expectedVersion: 1,
+        reason: "Closed case cannot escalate",
+        idempotencyKey: "closed-case-escalate",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
   });
 
   it("fences idempotency material, principal, and concurrent creates", async () => {
@@ -278,9 +336,17 @@ liveDescribe("research assignment queue lifecycle", () => {
     ]);
     expect(concurrent[0].id).toBe(concurrent[1].id);
     const principal = await fixture.createWorkspaceMember(owner, "analyst");
+    await createCasesService(context).addMember({
+      caseId,
+      principalId: principal.principalId,
+      role: "reviewer",
+    });
     const principalContext = await caseContext(fixture, principal);
+    principalContext.actor.role = "analyst";
+    principalContext.permissions = new Set(rolePermissionKeys("analyst"));
     const principalService = createResearchAssignmentsService(principalContext);
     const other = await principalService.create({
+      caseId,
       queueKind: "review",
       title: "Same raw key, different principal",
       idempotencyKey: "idempotency-principal",

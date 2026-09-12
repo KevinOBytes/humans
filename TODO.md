@@ -315,5 +315,5 @@ coverage, external storage/email/AI acceptance, and live Compose evidence.
       (including material, principal, and concurrency cases), no case-resource
       grant side effects, and redacted audit output. The queue schema,
       repository, service, GraphQL operations, migration, and generated-document
-      contract are present; live lifecycle and hosted/browser evidence remain
-      open.
+      contract are present; a local disposable PostgreSQL 18.3 run passed all 7
+      lifecycle tests, but Node 24 CI and hosted/browser evidence remain open.
