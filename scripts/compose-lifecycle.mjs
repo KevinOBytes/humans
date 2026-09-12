@@ -387,6 +387,22 @@ async function runSmoke() {
   await compose(["build", "--no-cache", "app"]);
   await compose(["up", "--detach", "postgres", "minio"]);
 
+  const rejectedSeed = await compose(
+    ["run", "--rm", "--env", "ALLOW_DATABASE_SEED=", "seed"],
+    { allowFailure: true, capture: true },
+  );
+  const rejectedSeedDiagnostics = Buffer.concat([
+    rejectedSeed.stdout,
+    rejectedSeed.stderr,
+  ]).toString("utf8");
+  assert(
+    rejectedSeed.code !== 0 &&
+      rejectedSeedDiagnostics.includes("ALLOW_DATABASE_SEED=true"),
+    "Compose seed did not reject an invocation without its explicit guard",
+  );
+  await compose(["run", "--rm", "seed"]);
+  await compose(["run", "--rm", "seed"]);
+
   // Exercise the explicit bootstrap contract before the application starts:
   // the first call creates the administrator, the second is a no-op replay,
   // and the third proves that a missing credential is recoverable without
@@ -441,10 +457,124 @@ async function runSmoke() {
     "Built app bounded jobs route returned an invalid summary",
   );
   await compose(["run", "--rm", "smoke"]);
+  await runSyntheticSeedAcceptance();
   await assertRuntimeState();
   await assertProcessTree("app", "server.js");
   await assertProcessTree("worker", "runtime/worker.mjs");
   await assertNoLeakage();
+}
+
+async function runSyntheticSeedAcceptance() {
+  const atlas = {
+    organizationId: "01900000-0000-7000-8000-000000000201",
+    personIds: [
+      "01900000-0000-7000-8000-000000000011",
+      "01900000-0000-7000-8000-000000000012",
+      "01900000-0000-7000-8000-000000000013",
+      "01900000-0000-7000-8000-000000000014",
+    ],
+    workspaceId: "01900000-0000-7000-8000-000000000001",
+  };
+  const sandboxPersonId = "01900000-0000-7000-8000-000000000021";
+  const jar = new CookieJar();
+  const signIn = await appRequest("/api/auth/sign-in/email", {
+    body: {
+      email: environment.ADMIN_EMAIL,
+      password: environment.ADMIN_PASSWORD,
+    },
+    jar,
+  });
+  assert(
+    signIn.ok,
+    `Built app seed verifier sign-in failed (${signIn.status})`,
+  );
+  const adminId = await databaseValue(
+    `select id from users where email = ${sqlLiteral(environment.ADMIN_EMAIL)}`,
+  );
+  const memberId = randomUUID();
+  const principalId = randomUUID();
+  await databaseValue(`
+    begin;
+    insert into members
+      (id, organization_id, user_id, role, created_at, workspace_id)
+      values (${sqlLiteral(memberId)}, ${sqlLiteral(atlas.organizationId)},
+        ${sqlLiteral(adminId)}, 'viewer', clock_timestamp(),
+        ${sqlLiteral(atlas.workspaceId)});
+    insert into workspace_principals
+      (id, workspace_id, principal_type, user_id, member_id_snapshot)
+      values (${sqlLiteral(principalId)}, ${sqlLiteral(atlas.workspaceId)},
+        'user', ${sqlLiteral(adminId)}, ${sqlLiteral(memberId)});
+    commit;
+  `);
+  const activeWorkspace = await appRequest(
+    "/api/auth/organization/set-active",
+    { body: { organizationId: atlas.organizationId }, jar },
+  );
+  assert(
+    activeWorkspace.ok,
+    `Built app seed workspace selection failed (${activeWorkspace.status})`,
+  );
+
+  const people = await graphqlRequest(
+    `query PeopleList($first: Int) {
+      people(first: $first) {
+        nodes { id displayName }
+      }
+    }`,
+    { first: 10 },
+    jar,
+  );
+  const nodes = people?.people?.nodes ?? [];
+  assert(
+    nodes.length === 4,
+    "Seeded Atlas GraphQL result was not bounded to 4 people",
+  );
+  const personIds = new Set(nodes.map((node) => node.id));
+  const displayNames = new Set(nodes.map((node) => node.displayName));
+  assert(
+    atlas.personIds.every((id) => personIds.has(id)),
+    "Seeded Atlas GraphQL result omitted a fictional person",
+  );
+  assert(
+    ["Mira Quill", "Rowan Vale", "Sol Ember", "Tavi North"].every((name) =>
+      displayNames.has(name),
+    ),
+    "Seeded Atlas GraphQL result did not contain only the expected fictional profiles",
+  );
+  const sandbox = await graphqlRequest(
+    `query PersonHeader($id: UUID!) {
+      person(id: $id) { id displayName }
+    }`,
+    { id: sandboxPersonId },
+    jar,
+  );
+  assert(
+    sandbox?.person === null,
+    "Atlas viewer could read the seeded Sandbox person",
+  );
+
+  const seedCounts = JSON.parse(
+    await databaseValue(`
+      select json_build_object(
+        'atlasPeople', (select count(*) from people where workspace_id = ${sqlLiteral(atlas.workspaceId)}),
+        'sandboxPeople', (select count(*) from people where workspace_id = '01900000-0000-7000-8000-000000000002'),
+        'facts', (select count(*) from facts where id between '01900000-0000-7000-8000-000000000901' and '01900000-0000-7000-8000-000000000912'),
+        'relationships', (select count(*) from relationships where id in ('01900000-0000-7000-8000-000000001501', '01900000-0000-7000-8000-000000001502')),
+        'sources', (select count(*) from sources where id = '01900000-0000-7000-8000-000000001001')
+      )::text
+    `),
+  );
+  assert(
+    seedCounts.atlasPeople === 4 &&
+      seedCounts.sandboxPeople === 1 &&
+      seedCounts.facts === 12 &&
+      seedCounts.relationships === 2 &&
+      seedCounts.sources === 1,
+    `Compose seed replay changed deterministic fixture counts: ${JSON.stringify(seedCounts)}`,
+  );
+  process.stdout.write(
+    `Guarded synthetic seed replay and authorized Atlas/Sandbox GraphQL isolation passed for ${project}.\n`,
+  );
 }
 
 async function runFileLifecycleAcceptance() {

@@ -782,8 +782,17 @@ Atlas and Northstar Sandbox use reserved `.invalid` values and fictional names,
 and cover rich profiles, temporal graph edges, evidence/provenance,
 contradiction, case review, consent withdrawal, pending AI review, and legal
 hold. The source contract is covered by
-`tests/unit/synthetic-seed-contract.test.ts`; no hosted or live-Compose
-acceptance is claimed by this fixture alone.
+`tests/unit/synthetic-seed-contract.test.ts`. The 2026-09-13 isolated
+production-image Compose lifecycle additionally rejected a seed invocation
+without `ALLOW_DATABASE_SEED=true`, ran the explicit guarded service twice,
+preserved the deterministic five-person/twelve-fact/two-relationship/one-source
+fixture, returned exactly the four Atlas profiles through an authenticated
+GraphQL query, and hid the Sandbox profile. The matching generated-operation
+PostgreSQL test is part of the CI database command, whose job provisions
+PostgreSQL, Redis, and MinIO; the production-image assertions run in the
+separate existing Compose lifecycle job. This is local/disposable evidence
+only; hosted seeding remains intentionally unsupported and external-provider
+acceptance is unchanged.
 
 The branch adds case membership and resource links, shared visibility narrowing,
 versioned evidence assertions with redacted audits, independent relationship
