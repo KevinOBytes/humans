@@ -192,11 +192,25 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       validFrom: "2020-01-01T00:00:00.000Z",
       validUntil: "2021-12-31T00:00:00.000Z",
     });
+    const yearOnly = await create({
+      confidence: 0.9,
+      creationMethod: "manual",
+      observedAt: "2026-09-10T00:00:00.000Z",
+      state: "asserted",
+      temporalPrecision: "YEAR",
+      temporalSemantics: "YEAR_ONLY",
+      validFrom: "1840-01-01T00:00:00.000Z",
+      validUntil: "1840-12-31T23:59:59.999Z",
+    });
     expect(manual.body?.errors).toBeUndefined();
     expect(imported.body?.errors).toBeUndefined();
+    expect(yearOnly.body?.errors).toBeUndefined();
     expect(manual.body?.data?.createRelationship.relationship?.id).toBeTruthy();
     expect(
       imported.body?.data?.createRelationship.relationship?.id,
+    ).toBeTruthy();
+    expect(
+      yearOnly.body?.data?.createRelationship.relationship?.id,
     ).toBeTruthy();
 
     type RelationshipNode = {
@@ -245,9 +259,20 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
           validFrom: "2020-01-01T00:00:00.000Z",
           validUntil: "2021-12-31T00:00:00.000Z",
         }),
+        expect.objectContaining({
+          confidence: 0.9,
+          creationMethod: "manual",
+          observedAt: "2026-09-10T00:00:00.000Z",
+          reviewState: "unreviewed",
+          state: "asserted",
+          temporalPrecision: "YEAR",
+          temporalSemantics: "YEAR_ONLY",
+          validFrom: "1840-01-01T00:00:00.000Z",
+          validUntil: "1840-12-31T23:59:59.999Z",
+        }),
       ]),
     );
-    expect(await read()).toHaveLength(2);
+    expect(await read()).toHaveLength(3);
 
     const invalid = await create({
       creationMethod: "manual",
@@ -257,7 +282,7 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       validUntil: "2029-01-01T00:00:00.000Z",
     });
     expectGraphQLError(invalid, "VALIDATION_FAILED");
-    expect(await read()).toHaveLength(2);
+    expect(await read()).toHaveLength(3);
 
     const foreignRead = await fixture.execute({
       jar: foreign.jar,

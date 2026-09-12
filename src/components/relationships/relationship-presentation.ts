@@ -102,7 +102,10 @@ export function relationshipSemanticPresentation(input: {
   const semantics = input.temporalSemantics?.toLowerCase();
   let temporalLabel = "Time not specified";
   if (from && until) {
-    temporalLabel = `${semantics === "approximate" ? "Approx. " : ""}${from}–${until}`;
+    temporalLabel =
+      semantics === "year_only" && from === until
+        ? from
+        : `${semantics === "approximate" ? "Approx. " : ""}${from}–${until}`;
   } else if (from) {
     temporalLabel =
       semantics === "after"

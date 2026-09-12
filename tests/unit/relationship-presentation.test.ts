@@ -66,14 +66,14 @@ describe("relationshipPresentation", () => {
         temporalPrecision: "YEAR",
         temporalSemantics: "YEAR_ONLY",
         validFrom: "1999-12-31T23:30:00.000-08:00",
-        validUntil: null,
+        validUntil: "2000-12-31T23:59:59.999Z",
       }),
     ).toEqual({
       claimLabel: "Manual assertion",
       confidenceLabel: "Confidence 100%",
       originLabel: "Manual",
       reviewLabel: "Unreviewed",
-      temporalLabel: "From 2000",
+      temporalLabel: "2000",
     });
   });
 

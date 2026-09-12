@@ -675,10 +675,10 @@ test("authenticated research core preserves tenant and claim boundaries", async 
     .getByLabel("Related person", { exact: true })
     .selectOption({ label: "Grace Collaborator" });
   await page.getByLabel("Confidence").fill("0.82");
-  await page.getByLabel("Temporal meaning").selectOption("APPROXIMATE");
+  await page.getByLabel("Temporal meaning").selectOption("YEAR_ONLY");
   await page.getByLabel("Date precision").selectOption("YEAR");
   await page.getByLabel("Valid from").fill("1840-01-01");
-  await page.getByLabel("Valid until").fill("1843-12-31");
+  await page.getByLabel("Valid until").fill("1840-12-31");
   await page.getByLabel("Observed on").fill("2026-09-12");
   await page
     .getByRole("checkbox", { name: /permitted research purpose/i })
@@ -695,7 +695,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
     "Manual",
     "Unreviewed",
     "Confidence 82%",
-    "Approx. 1840–1843",
+    "1840",
   ]) {
     await expect(
       sourceRelationshipRegion.getByText(label, { exact: true }),
@@ -716,7 +716,7 @@ test("authenticated research core preserves tenant and claim boundaries", async 
     "Manual",
     "Unreviewed",
     "Confidence 82%",
-    "Approx. 1840–1843",
+    "1840",
   ]) {
     await expect(
       relationshipRegion.getByText(label, { exact: true }),
