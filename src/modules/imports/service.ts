@@ -912,20 +912,63 @@ export function createImportsService(
       if (claim.status !== "claimed") {
         throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
       }
+      if (claim.recovered) {
+        await audit.write(context.database, {
+          action: "import.staging_recovered",
+          changedFields: [
+            "acceptedRows",
+            "completedAt",
+            "executionJobId",
+            "rejectedRows",
+            "stagingGeneration",
+            "state",
+            "totalRows",
+            "version",
+          ],
+          resourceId: claim.import.id,
+          resourceKind: "import",
+          metadata: { mappingId: mappingRow.id, mode },
+        });
+      }
       const stagedImport = claim.import;
       const stagingGeneration = claim.generation;
-      const object = await store
-        .openRead(
+      const failStaging = async (
+        failureCode: "IMPORT_SOURCE_UNAVAILABLE" | "IMPORT_PREPARE_INVALID",
+      ) => {
+        const failed = await runResearchTransaction(
+          context,
+          { requiredPermissions: ["import:create"] },
+          async (scopedContext) =>
+            createImportsRepository(scopedContext.database).failPrepare({
+              actorId: context.actor.id,
+              failureCode,
+              generation: stagingGeneration,
+              importId: stagedImport.id,
+              owner: stagingOwner,
+              requestId: context.requestId,
+              sessionId: context.actor.sessionId,
+              workspaceId: context.workspaceId,
+            }),
+        );
+        if (!failed) {
+          throw createGraphQLError("CONFLICT", publicErrorMessage("CONFLICT"));
+        }
+      };
+      let object;
+      try {
+        object = await store.openRead(
           { workspaceId: context.workspaceId, key: file.file.storageKey },
           { maxBytes: file.file.byteSize },
-        )
-        .catch(() => {
-          throw createGraphQLError(
-            "PROVIDER_UNAVAILABLE",
-            publicErrorMessage("PROVIDER_UNAVAILABLE"),
-          );
-        });
+        );
+      } catch {
+        await failStaging("IMPORT_SOURCE_UNAVAILABLE");
+        throw createGraphQLError(
+          "PROVIDER_UNAVAILABLE",
+          publicErrorMessage("PROVIDER_UNAVAILABLE"),
+        );
+      }
       if (!object) {
+        await failStaging("IMPORT_SOURCE_UNAVAILABLE");
         throw createGraphQLError(
           "PROVIDER_UNAVAILABLE",
           publicErrorMessage("PROVIDER_UNAVAILABLE"),
@@ -1026,9 +1069,12 @@ export function createImportsService(
           async (scopedContext) =>
             createImportsRepository(scopedContext.database).failPrepare({
               actorId: context.actor.id,
+              failureCode: "IMPORT_PREPARE_INVALID",
               generation: stagingGeneration,
               importId: stagedImport.id,
               owner: stagingOwner,
+              requestId: context.requestId,
+              sessionId: context.actor.sessionId,
               workspaceId: context.workspaceId,
             }),
         );

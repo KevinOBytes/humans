@@ -14,7 +14,7 @@ import {
   importRows,
   imports as importsTable,
 } from "@/db/schema/files";
-import { jobs } from "@/db/schema/operations";
+import { auditEvents, jobs } from "@/db/schema/operations";
 import { people } from "@/db/schema/people";
 import { relationshipTypes } from "@/db/schema/relationships";
 import {
@@ -152,6 +152,15 @@ class MemoryStore implements ObjectStore {
   }
   async delete(input: { workspaceId: string; key: string }) {
     this.objects.delete(`${input.workspaceId}:${input.key}`);
+  }
+}
+
+class FailingImportStore extends MemoryStore {
+  failReads = true;
+
+  override async openRead(input: { workspaceId: string; key: string }) {
+    if (this.failReads) throw new Error("upstream credential must not leak");
+    return super.openRead(input);
   }
 }
 
@@ -371,6 +380,115 @@ liveDescribe("import staging and durable start", () => {
   });
   beforeEach(async () => fixture.reset());
   afterAll(async () => fixture.close());
+
+  it("records a redacted staging failure and reclaims the same key after storage recovers", async () => {
+    const actor = await fixture.createActor("owner");
+    const context = await serviceContext(fixture, actor);
+    const store = new FailingImportStore();
+    const fileService = createFilesService(context, {
+      deploymentMode: "docker",
+      encryptionKey,
+      objectStore: store,
+      storageBucket: "private",
+      storageProvider: "minio",
+    });
+    const body = new TextEncoder().encode(
+      "external_id,name\nstorage-recovery,Storage Recovery\n",
+    );
+    const upload = await fileService.createUploadSession({
+      originalName: "storage-recovery.csv",
+      claimedMediaType: "text/csv",
+      byteSize: body.byteLength,
+      checksumSha256: createHash("sha256").update(body).digest("hex"),
+      purpose: "CSV_IMPORT",
+    });
+    store.objects.set(`${actor.workspaceId}:${upload.session.objectKey}`, body);
+    store.failReads = false;
+    const completed = await fileService.completeUpload(upload.session.id);
+    store.failReads = true;
+    const service = createImportsService(context, {
+      encryptionKey,
+      objectStore: store,
+    });
+    const mapping = await service.saveMapping({
+      name: "Storage recovery",
+      format: "CSV",
+      definition: {
+        version: 1,
+        recordKind: "PERSON",
+        rowKeySource: "external_id",
+        person: {
+          displayNameSource: "name",
+          primaryNameKind: "legal",
+          fields: [],
+        },
+        facts: [],
+        defaults: {},
+      },
+    });
+    const input = {
+      fileId: completed.file.id,
+      mappingId: mapping.mapping.id,
+      idempotencyKey: "prepare-storage-recovery-v1",
+      mode: "COMMIT" as const,
+    };
+
+    await expect(service.prepareImport(input)).rejects.toMatchObject({
+      extensions: { code: "PROVIDER_UNAVAILABLE" },
+    });
+    const [failed] = await fixture.database
+      .select()
+      .from(importsTable)
+      .where(eq(importsTable.workspaceId, actor.workspaceId));
+    expect(failed).toMatchObject({
+      state: "failed",
+      executionJobId: null,
+      stagingOwner: null,
+      stagingLeaseExpiresAt: null,
+    });
+    const [failureAudit] = await fixture.database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, actor.workspaceId),
+          eq(auditEvents.action, "import.staging_failed"),
+        ),
+      );
+    expect(failureAudit).toMatchObject({
+      resourceId: failed!.id,
+      resourceKind: "import",
+      outcome: "failure",
+      redactedDiff: { errorCode: "IMPORT_SOURCE_UNAVAILABLE" },
+    });
+    expect(JSON.stringify(failureAudit)).not.toContain("upstream credential");
+
+    store.failReads = false;
+    const recovered = await service.prepareImport(input);
+    expect(recovered.import).toMatchObject({
+      id: failed!.id,
+      state: "preview_ready",
+      totalRows: 1,
+    });
+    expect(recovered.preview[0]).toMatchObject({
+      rowNumber: 1,
+      normalizedPayload: {
+        kind: "PERSON",
+        rowKey: "storage-recovery",
+      },
+    });
+    expect(
+      await fixture.database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, actor.workspaceId),
+            eq(auditEvents.action, "import.staging_recovered"),
+          ),
+        ),
+    ).toHaveLength(1);
+  });
 
   it("uploads, replays, queues, and executes a mixed JSON import", async () => {
     const actor = await fixture.createActor("owner");
