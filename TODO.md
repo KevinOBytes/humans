@@ -373,13 +373,18 @@ recovery.
 - [ ] `HUM-NFR-018` Produce current full-matrix MVP release evidence. GitHub Actions run `34724759703` for runtime commit `46c70c7` is the current verification run across all 9 checks, including the Node 24 PostgreSQL/Redis/MinIO integration seam, browser, build, Compose, generated drift, quality, image, dependency, and secret gates; all 9 checks completed successfully. Documentation commit `3d892e5` also passed all 9 checks in run `34725180690`. Hosted authenticated/provider/runtime proof and the remaining TODO rows are still outstanding.
 - [ ] `HUM-NFR-020` Meet and continuously verify the production latency, concurrency, graph-frame-rate, Web Vitals, and bundle budgets beyond Task 12 bounds and indexed-plan evidence. The disposable Node 24 performance harness exercises the representative 10,000-person/25,000-edge GraphQL read, graph render/FPS/WebGL recovery, and public/dashboard/entities/editor bundle checks, but mutation/upload latency, hosted Web Vitals, hosted-performance, and reference-machine evidence remain open.
   - Performance-gap/remediation evidence (2026-09-12): the initial disposable run seeded 10,000 people and 25,000 relationships but measured authenticated concurrent graph-read p95 at 699.10 ms against the required <=500 ms because the visible-person sort lacked a matching index. Migration `0044_core.sql` adds the workspace-leading partial expression index used by that sort; a subsequent isolated run measured graph-read p95 at 129.96 ms and passed all three graph performance tests. Thresholds were not relaxed. Mutation/upload latency, public Web Vitals, hosted performance, and a passing documented reference-machine run remain required.
-- Bounded synthetic demo dataset evidence (2026-09-11): the guarded seed now
+- Bounded synthetic demo dataset evidence (2026-09-13): the guarded seed now
   creates the fictional Northstar Atlas/Sandbox tenants with four fictional
   people, rich profile/name/fact records, temporal documented/hypothesis edges,
   source/evidence contradiction, case reviewer, withdrawn consent, pending AI
-  suggestion, and legal hold. `tests/unit/synthetic-seed-contract.test.ts`
-  proves the source contract and rejects the prior real-person fixture; live
-  Compose seed/GraphQL verification remains required.
+  suggestion, and legal hold. The isolated production-image Compose lifecycle
+  now proves an absent-guard rejection, two successful guarded seed runs,
+  deterministic record counts, an authenticated four-person Atlas GraphQL
+  result, and denial of the Sandbox person. That production-image check runs in
+  the existing Compose lifecycle CI job. The matching generated-operation test
+  is also part of the PostgreSQL/Redis/MinIO database job through
+  `tests/integration/synthetic-seed-lifecycle.test.ts`. Hosted seeding remains
+  intentionally unsupported and no external-provider claim is made.
 
 - Release evidence (2026-09-12): GitHub Actions run `34688755202` passed all
   nine required checks for `6bb3f11`, including database, browser, Compose,
