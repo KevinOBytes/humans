@@ -259,3 +259,11 @@ Live unauthenticated smoke evidence (2026-09-11): the merged `main` passed
 homepage/liveness/readiness 200, unauthenticated GraphQL 401, and invalid jobs
 authorization 401. Authenticated admin/person creation, provider contracts,
 and deployment-identity verification remain open.
+
+Updated production deployment evidence (2026-09-12): commit `fc0eaa4` is
+deployed as Vercel `dpl_FMyDthp5dxq8Eua1B1aRuYd9yoiT` (`READY`, Node 24,
+aliases include `humans.kevinbytes.com`), and the public smoke passes against
+the custom hostname. Vercel production variable names are present for the
+configured services and admin bootstrap. The authenticated smoke still
+returns a generic 403 with the available local credential set; no hidden
+values were retrieved, so hosted sign-in/person creation remains open.
