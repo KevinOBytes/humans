@@ -1,0 +1,17 @@
+# Never upload local credentials or environment files to Vercel.
+.env*
+!.env.example
+
+# Local build, test, and agent state.
+.next
+coverage
+playwright-report
+test-results
+.worktrees
+.superpowers
+.codex
+.agents
+node_modules
+*.log
+*.dump
+*.sql
