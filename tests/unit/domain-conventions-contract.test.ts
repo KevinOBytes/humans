@@ -75,6 +75,7 @@ const workspaceTableNames = [
   "webhookDeliveries",
   "webhooks",
   "personWebResearchRuns",
+  "personWebResearchSources",
   "externalRecords",
   "identityCandidates",
   "mergeDecisions",
