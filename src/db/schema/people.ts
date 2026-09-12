@@ -286,7 +286,7 @@ export const personIdentifiers = pgTable(
     ),
     check(
       "person_identifiers_blind_index_v1_check",
-      sql`${table.blindIndexVersion} IS NULL OR (${table.blindIndexVersion} = 1 AND ${table.encryptedRawValue} IS NOT NULL AND ${table.blindIndex} IS NOT NULL AND ${table.normalizedValue} IS NULL AND ${table.blindIndex} ~ '^[0-9a-f]{64}$')`,
+      sql`${table.blindIndexVersion} IS NULL OR (${table.blindIndexVersion} = 1 AND ((${table.encryptedRawValue} IS NOT NULL AND ${table.blindIndex} IS NOT NULL AND ${table.normalizedValue} IS NULL AND ${table.blindIndex} ~ '^[0-9a-f]{64}$') OR (${table.encryptedRawValue} IS NULL AND ${table.blindIndex} IS NULL AND ${table.normalizedValue} IS NOT NULL)))`,
     ),
     check(
       "person_identifiers_validity_check",
