@@ -10,11 +10,12 @@ type DiagnosticEnvironment = Pick<
   | "EMAIL_FROM"
   | "REDIS_URL"
   | "RESEND_API_KEY"
+  | "REDIS_TOKEN"
   | "STORAGE_PROVIDER"
 >;
 
 type DiagnosticEnvironmentWithAi = DiagnosticEnvironment & {
-  AI_PROVIDER?: string;
+  AI_PROVIDER?: "openai" | "ollama" | "compatible";
 };
 
 export function readIntegrationDiagnostics(
@@ -26,8 +27,10 @@ export function readIntegrationDiagnostics(
     emailConfigured: Boolean(env.RESEND_API_KEY && env.EMAIL_FROM),
     databaseConfigured: Boolean(env.DATABASE_URL),
     redisConfigured: Boolean(env.REDIS_URL),
+    redisProvider: env.REDIS_TOKEN ? "upstash" : "local",
     storageProvider: env.STORAGE_PROVIDER,
     providerBackendAvailable: Boolean(env.AI_PROVIDER),
+    aiProvider: env.AI_PROVIDER,
   });
 }
 

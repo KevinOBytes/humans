@@ -20,7 +20,14 @@ type Fetch = typeof fetch;
 
 function emailsEndpoint(baseUrl: string): URL {
   const url = new URL(baseUrl);
-  if (url.username || url.password || url.search || url.hash) {
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    !url.hostname ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
     throw new Error("Invalid email provider endpoint");
   }
   url.pathname = `${url.pathname.replace(/\/+$/u, "")}/emails`;

@@ -178,9 +178,21 @@ export function buildIntegrationDiagnostics(input: {
   emailConfigured: boolean;
   databaseConfigured: boolean;
   redisConfigured: boolean;
+  redisProvider?: "local" | "upstash";
   storageProvider: "minio" | "r2" | "s3";
   providerBackendAvailable: boolean;
+  aiProvider?: "openai" | "ollama" | "compatible";
 }): readonly IntegrationDiagnostic[] {
+  const redisLabel =
+    input.redisProvider === "upstash" ? "Upstash REST" : "Redis";
+  const aiLabel =
+    input.aiProvider === "openai"
+      ? "OpenAI"
+      : input.aiProvider === "ollama"
+        ? "Ollama"
+        : input.aiProvider === "compatible"
+          ? "OpenAI-compatible"
+          : "AI";
   const storageLabel =
     input.storageProvider === "minio"
       ? "MinIO"
@@ -206,8 +218,8 @@ export function buildIntegrationDiagnostics(input: {
       name: "Redis",
       status: input.redisConfigured ? "configured" : "unavailable",
       detail: input.redisConfigured
-        ? "Redis configured"
-        : "Redis not configured",
+        ? `${redisLabel} configured`
+        : `${redisLabel} not configured`,
     },
     {
       name: "Object storage",
@@ -218,7 +230,7 @@ export function buildIntegrationDiagnostics(input: {
       name: "AI provider",
       status: input.providerBackendAvailable ? "configured" : "unavailable",
       detail: input.providerBackendAvailable
-        ? "Provider backend available"
+        ? `${aiLabel} backend configured`
         : "Unavailable until Task 13",
     },
   ];
