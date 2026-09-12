@@ -211,7 +211,7 @@ export function ApiKeyAdministration({
     const result = await executeBrowserGraphQL(
       RevokeOrganizationApiKeyDocument,
       {
-        input: { actionId: key.actionId },
+        input: { actionId: key.actionId, idempotencyKey: crypto.randomUUID() },
       },
     );
     setBusy(false);

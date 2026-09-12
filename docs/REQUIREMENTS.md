@@ -537,6 +537,13 @@ initial activation protocol:
   together. Injected failures immediately after insert, staging, or before
   audit roll back the key row entirely, so no enabled or orphaned credential
   can survive a failed initial activation.
+- The settings revoke control now supplies a fresh UUID idempotency key to the
+  generated GraphQL mutation. This connects browser retries to the existing
+  durable, workspace- and principal-bound response-reference ledger without
+  persisting or transmitting key material; the focused component test proves
+  the opaque action ID and UUID are sent while the one-time secret remains
+  absent. Create/rotate replay design and whole-settings acceptance remain
+  open.
 
 ## Current Task 12 implementation evidence
 
