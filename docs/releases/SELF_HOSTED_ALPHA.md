@@ -191,6 +191,11 @@ for public, dashboard, people, and graph-editor routes. The harness writes
 `graph-api-performance.json`, `graph-render-performance.json`, and
 `graph-route-javascript.json` to the Playwright result for review.
 
+The 2026-09-12 disposable run seeded the exact fixture but measured authenticated
+concurrent graph-read p95 at 699.10 ms against the <=500 ms budget and therefore
+failed before render/route cases. This is recorded as a release gap; thresholds
+were not relaxed and no hosted-performance claim is made.
+
 It has not been run here on the documented reference desktop, and it does not
 yet measure upload-path latency, public-route Web Vitals, or an externally
 hosted deployment. `HUM-NFR-020` remains incomplete until those measured
