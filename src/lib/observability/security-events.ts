@@ -49,6 +49,11 @@ export type SecurityEvent =
       event: "graphql.operation_limiter.unavailable";
       requestId: string;
       severity: "error";
+    }
+  | {
+      event: "storage.infrastructure.failure";
+      requestId: string;
+      severity: "error";
     };
 
 export type SecurityEventLogger = {
@@ -114,6 +119,7 @@ export function redactSecurityEvent(input: unknown): SecurityEvent {
       case "graphql.initialization.internal":
       case "graphql.request.internal":
       case "graphql.operation_limiter.unavailable":
+      case "storage.infrastructure.failure":
         return {
           event: eventName,
           requestId: safeRequestId ?? "redacted",
