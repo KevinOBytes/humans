@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { ResearchAssignmentQueue } from "@/components/cases/research-assignment-queue";
 import { executeBrowserGraphQL } from "@/graphql/client";
 import {
   CaseTimelineDocument,
@@ -143,6 +144,7 @@ export function CaseWorkspace({
           ) : null}
         </>
       ) : null}
+      {selected?.id ? <ResearchAssignmentQueue caseId={selected.id} /> : null}
     </section>
   );
 }

@@ -920,4 +920,15 @@ GraphQL operations and a schema/generated-document contract test are present;
 live PostgreSQL isolation, transition, immutable-event, replay, and audit
 lifecycle evidence plus browser/hosted acceptance remain open.
 
+Bounded research assignment browser evidence (2026-09-12): the protected case
+workspace now exposes a case-scoped, keyboard-operable assignment panel using
+only generated queue operations. It fixes list pages at 25 rows, supports
+server-filtered status/kind selection, creation, assignment, only the known
+valid next-state controls, and escalation with optimistic versions and fresh
+idempotency inputs. The component deliberately renders no case-resource
+content from a queue row and relies on the existing server-side case/mutation
+authorization boundary. Focused component tests cover generated bounded
+listing, creation, and transition inputs; authenticated browser and hosted
+acceptance remain open.
+
 - Out-of-scope capabilities in `HUM-NFR-019` may have extension seams but must not become deployment prerequisites.
