@@ -298,6 +298,17 @@ describe("remaining workspace constraints", () => {
     expect(schema.aiCitations.legacyMessageId.notNull).toBe(false);
   });
 
+  it("backfills only unambiguous legacy assistant lineage and fails closed for the rest", () => {
+    const migration = readFileSync(
+      "drizzle/0042_ai-message-run-link.sql",
+      "utf8",
+    );
+    expect(migration).toContain("HAVING count(r.id) = 1");
+    expect(migration).toContain("role = 'assistant'");
+    expect(migration).toContain("NOT VALID");
+    expect(migration).toContain("ai_messages_assistant_run_check");
+  });
+
   it("defines a PostgreSQL GIN index for workspace-filtered full-text search", () => {
     const ginIndex = getTableConfig(schema.searchDocuments).indexes.find(
       (candidate) =>

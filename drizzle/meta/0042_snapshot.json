@@ -451,6 +451,10 @@
       },
       "policies": {},
       "checkConstraints": {
+        "ai_messages_assistant_run_check": {
+          "name": "ai_messages_assistant_run_check",
+          "value": "\"ai_messages\".\"role\" <> 'assistant' OR \"ai_messages\".\"ai_run_id\" IS NOT NULL"
+        },
         "ai_messages_role_check": {
           "name": "ai_messages_role_check",
           "value": "\"ai_messages\".\"role\" IN ('system', 'user', 'assistant', 'tool')"

@@ -33,6 +33,12 @@ type DeletionScope = {
   fileIds: readonly string[];
 };
 
+export function hasAmbiguousAiMessageLineage(
+  rows: readonly { role: string; aiRunId: string | null }[],
+) {
+  return rows.some((row) => row.role === "assistant" && row.aiRunId == null);
+}
+
 function parseScope(value: unknown): DeletionScope | null {
   if (value == null || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -297,6 +303,19 @@ export async function executeApprovedDeletionRequests(input: {
             )
         : [];
       const aiThreadIds = [...new Set(aiRunRows.map((row) => row.threadId))];
+      const ambiguousAssistantRows = aiThreadIds.length
+        ? await transaction
+            .select({ role: aiMessages.role, aiRunId: aiMessages.aiRunId })
+            .from(aiMessages)
+            .where(
+              and(
+                eq(aiMessages.workspaceId, request.workspaceId),
+                inArray(aiMessages.threadId, aiThreadIds),
+                eq(aiMessages.role, "assistant"),
+                isNull(aiMessages.aiRunId),
+              ),
+            )
+        : [];
       const webSourceRows = scope.personIds.length
         ? await transaction
             .select({ id: personWebResearchSources.id })
@@ -484,6 +503,39 @@ export async function executeApprovedDeletionRequests(input: {
           redactedDiff: { reason: "scope_unavailable" },
           outcome: "failure",
         });
+        return;
+      }
+
+      if (hasAmbiguousAiMessageLineage(ambiguousAssistantRows)) {
+        const blockedMarker =
+          "Deletion requires AI message lineage review before execution.";
+        if (request.reviewNotes !== blockedMarker) {
+          await transaction
+            .update(deletionRequests)
+            .set({
+              reviewNotes: blockedMarker,
+              updatedAt: now,
+              updatedBy: WORKER_ACTOR,
+              version: sql`${deletionRequests.version} + 1`,
+            })
+            .where(
+              and(
+                eq(deletionRequests.workspaceId, request.workspaceId),
+                eq(deletionRequests.id, request.id),
+                eq(deletionRequests.state, "approved"),
+                eq(deletionRequests.version, request.version),
+              ),
+            );
+          await auditRequest({
+            database: transaction as unknown as Database,
+            action: "deletion_request.blocked",
+            requestId,
+            resourceId: request.id,
+            workspaceId: request.workspaceId,
+            redactedDiff: { reason: "ambiguous_ai_message_lineage" },
+            outcome: "failure",
+          });
+        }
         return;
       }
 
