@@ -1,7 +1,7 @@
 # MVP closure and production hardening backlog
 
-Current repository gate (2026-09-12): commit `0ae78d2` passed GitHub Actions
-run `34702263344` across all 9 checks. The Node 24 database job ran 35 files
+Current repository gate (2026-09-12): commit `20cff61` passed GitHub Actions
+run `34703224229` across all 9 checks. The Node 24 database job ran 35 files
 with 490 tests passed and 2 skipped, including privacy-request, retention/legal-
 hold, assignment, relationship-provenance, AI-review, and the guarded rich
 synthetic-seed contracts. Browser acceptance also passed after the graph editor
@@ -9,7 +9,7 @@ refresh-serialization fix. Hosted authenticated/provider/runtime proof and the
 remaining incomplete rows below remain open.
 
 Current production-closeout checkpoint (2026-09-12): application commit
-`0ae78d2`; GitHub Actions run `34702263344` is green across all 9 checks,
+`20cff61`; GitHub Actions run `34703224229` is green across all 9 checks,
 including PostgreSQL/Redis/MinIO integration, browser acceptance, production
 build, generated drift, Compose lifecycle, quality, image security, dependency
 policy, and secret scanning. The graph refresh serialization fix and the

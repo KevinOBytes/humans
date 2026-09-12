@@ -1,7 +1,7 @@
 # MVP requirements
 
-Current repository gate (2026-09-12): commit `0ae78d2` passed GitHub Actions
-run `34702263344` across all 9 checks, including the expanded Node 24 database
+Current repository gate (2026-09-12): commit `20cff61` passed GitHub Actions
+run `34703224229` across all 9 checks, including the expanded Node 24 database
 matrix (35 files, 490 passed, 2 skipped), browser acceptance, production build,
 generated drift, Compose lifecycle, quality, image security, dependency policy,
 and secret scanning. The gate includes the guarded rich synthetic seed,
@@ -11,7 +11,7 @@ only; hosted authenticated/provider/runtime and the remaining explicitly
 incomplete requirements remain open.
 
 Current production-closeout checkpoint (2026-09-12): application commit
-`0ae78d2` has GitHub Actions run `34702263344` green across all 9 checks,
+`20cff61` has GitHub Actions run `34703224229` green across all 9 checks,
 including the full PostgreSQL/Redis/MinIO integration seam (35 files, 490
 tests plus 2 skips), browser acceptance, production build, generated drift,
 Compose lifecycle, quality, image security, dependency policy, and secret
