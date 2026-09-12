@@ -354,7 +354,10 @@ const liveClient = databaseUrl
 const workspaceA = "01900000-0000-7000-8000-000000000001";
 const workspaceB = "01900000-0000-7000-8000-000000000002";
 const personA = "01900000-0000-7000-8000-000000000011";
-const personB = "01900000-0000-7000-8000-000000000012";
+// Use the sandbox workspace person for cross-tenant FK assertions. The Atlas
+// workspace also has a second person, but that would make this test a same-
+// workspace relationship and would not exercise the composite FK boundary.
+const personB = "01900000-0000-7000-8000-000000000021";
 const actorA = "01900000-0000-7000-8000-000000000101";
 const actorB = "01900000-0000-7000-8000-000000000103";
 const principalA = "01900000-0000-7000-8000-000000000401";
