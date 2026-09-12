@@ -41,6 +41,7 @@ const workspaceTableNames = [
   "personTags",
   "relationshipEvidence",
   "relationshipTags",
+  "sourceCustodyEvents",
   "sources",
   "tags",
   "factDefinitions",

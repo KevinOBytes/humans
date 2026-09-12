@@ -24,6 +24,7 @@ import {
   relationshipEvidence,
   relationshipTags,
   sources,
+  sourceCustodyEvents,
   tags,
 } from "@/db/schema/evidence";
 import { facts } from "@/db/schema/facts";
@@ -32,6 +33,7 @@ import { relationships } from "@/db/schema/relationships";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 
 export type SourceRow = typeof sources.$inferSelect;
+export type SourceCustodyEventRow = typeof sourceCustodyEvents.$inferSelect;
 export type EvidenceItemRow = typeof evidenceItems.$inferSelect;
 export type EvidenceExcerptRow = typeof evidenceExcerpts.$inferSelect;
 export type FactEvidenceRow = typeof factEvidence.$inferSelect;
@@ -139,6 +141,37 @@ export function createEvidenceRepository(database: Database) {
         .values({ ...input.value, workspaceId: input.workspaceId })
         .returning();
       if (!row) throw new Error("Source insert failed");
+      return row;
+    },
+    async listSourceCustodyEvents(input: {
+      workspaceId: string;
+      sourceId: string;
+      limit: number;
+    }) {
+      return database
+        .select()
+        .from(sourceCustodyEvents)
+        .where(
+          and(
+            eq(sourceCustodyEvents.workspaceId, input.workspaceId),
+            eq(sourceCustodyEvents.sourceId, input.sourceId),
+          ),
+        )
+        .orderBy(
+          asc(sourceCustodyEvents.occurredAt),
+          asc(sourceCustodyEvents.id),
+        )
+        .limit(input.limit);
+    },
+    async createSourceCustodyEvent(input: {
+      workspaceId: string;
+      value: Omit<typeof sourceCustodyEvents.$inferInsert, "workspaceId">;
+    }) {
+      const [row] = await database
+        .insert(sourceCustodyEvents)
+        .values({ ...input.value, workspaceId: input.workspaceId })
+        .returning();
+      if (!row) throw new Error("Source custody event insert failed");
       return row;
     },
     async updateSource(input: {

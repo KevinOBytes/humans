@@ -151,6 +151,9 @@ export const sources = pgTable(
     author: text("author"),
     canonicalUrl: text("canonical_url"),
     citation: text("citation"),
+    publicationDate: domainTimestamp("publication_date"),
+    collector: text("collector"),
+    extractionMethod: text("extraction_method"),
     collectionMethod: text("collection_method"),
     collectedAt: domainTimestamp("collected_at"),
     reliability: numeric("reliability", { precision: 4, scale: 3 }),
@@ -176,6 +179,54 @@ export const sources = pgTable(
       sql`${table.reliability} IS NULL OR ${table.reliability} BETWEEN 0 AND 1`,
     ),
     check("sources_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+/**
+ * Append-only custody checkpoints for a source. A source's creator is not
+ * sufficient chain-of-custody evidence: collection, verification, transfer,
+ * and redaction events need their own timestamped, workspace-scoped records.
+ */
+export const sourceCustodyEvents = pgTable(
+  "source_custody_events",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id").notNull(),
+    eventKind: text("event_kind").notNull(),
+    occurredAt: domainTimestamp("occurred_at").notNull(),
+    collector: text("collector"),
+    integrityHash: text("integrity_hash"),
+    notes: text("notes"),
+    metadata: jsonb("metadata").default({}).notNull(),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+    createdBy: text("created_by").notNull(),
+  },
+  (table) => [
+    unique("source_custody_events_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("source_custody_events_workspace_source_idx").on(
+      table.workspaceId,
+      table.sourceId,
+      table.occurredAt,
+    ),
+    foreignKey({
+      name: "source_custody_events_workspace_source_fk",
+      columns: [table.workspaceId, table.sourceId],
+      foreignColumns: [sources.workspaceId, sources.id],
+    }).onDelete("restrict"),
+    check(
+      "source_custody_events_kind_check",
+      sql`${table.eventKind} IN ('collected', 'verified', 'transferred', 'accessed', 'redacted')`,
+    ),
+    check(
+      "source_custody_events_text_check",
+      sql`${table.eventKind} <> '' AND (${table.collector} IS NULL OR length(${table.collector}) BETWEEN 1 AND 300) AND (${table.notes} IS NULL OR length(${table.notes}) BETWEEN 1 AND 4000)`,
+    ),
   ],
 );
 

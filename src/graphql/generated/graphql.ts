@@ -482,9 +482,12 @@ export type CreateSourceInput = {
   citation?: string | null | undefined;
   collectedAt?: string | null | undefined;
   collectionMethod?: string | null | undefined;
+  collector?: string | null | undefined;
   contentHash?: string | null | undefined;
+  extractionMethod?: string | null | undefined;
   kind: string;
   metadata?: unknown;
+  publicationDate?: string | null | undefined;
   publisher?: string | null | undefined;
   reliability?: number | null | undefined;
   sensitivity?: Sensitivity | null | undefined;
