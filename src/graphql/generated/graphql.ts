@@ -802,6 +802,9 @@ export type PersonFilterInput = {
   status?: PersonStatus | null | undefined;
 };
 
+export type PersonIdentifierVerificationState =
+  "DISPUTED" | "REVOKED" | "UNKNOWN" | "UNVERIFIED" | "VERIFIED";
+
 export type PersonNameKind =
   | "ALIAS"
   | "BIRTH"
@@ -3888,6 +3891,23 @@ export type PersonNameSummaryFragment = {
   updatedAt: string;
 } & { " $fragmentName"?: "PersonNameSummaryFragment" };
 
+export type PersonIdentifierSummaryFragment = {
+  id: string;
+  personId: string;
+  namespace: string;
+  identifierType: string;
+  issuer: string | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  verificationState: PersonIdentifierVerificationState;
+  sensitivity: Sensitivity;
+  value: string | null;
+  redacted: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+} & { " $fragmentName"?: "PersonIdentifierSummaryFragment" };
+
 export type PersonEventSummaryFragment = {
   id: string;
   personId: string;
@@ -3932,6 +3952,28 @@ export type PersonNamesAndEventsQuery = {
       nodes: Array<{
         " $fragmentRefs"?: {
           PersonEventSummaryFragment: PersonEventSummaryFragment;
+        };
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      };
+    } | null;
+  } | null;
+};
+
+export type PersonIdentifiersQueryVariables = Exact<{
+  id: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type PersonIdentifiersQuery = {
+  person: {
+    id: string;
+    identifiers: {
+      nodes: Array<{
+        " $fragmentRefs"?: {
+          PersonIdentifierSummaryFragment: PersonIdentifierSummaryFragment;
         };
       }> | null;
       pageInfo: {
@@ -6205,6 +6247,27 @@ export const PersonNameSummaryFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "PersonNameSummary" },
 ) as unknown as TypedDocumentString<PersonNameSummaryFragment, unknown>;
+export const PersonIdentifierSummaryFragmentDoc = new TypedDocumentString(
+  `
+    fragment PersonIdentifierSummary on PersonIdentifier {
+  id
+  personId
+  namespace
+  identifierType
+  issuer
+  validFrom
+  validUntil
+  verificationState
+  sensitivity
+  value
+  redacted
+  version
+  createdAt
+  updatedAt
+}
+    `,
+  { fragmentName: "PersonIdentifierSummary" },
+) as unknown as TypedDocumentString<PersonIdentifierSummaryFragment, unknown>;
 export const PersonEventSummaryFragmentDoc = new TypedDocumentString(
   `
     fragment PersonEventSummary on PersonEvent {
@@ -9883,6 +9946,48 @@ fragment PersonEventSummary on PersonEvent {
 ) as unknown as TypedDocumentString<
   PersonNamesAndEventsQuery,
   PersonNamesAndEventsQueryVariables
+>;
+export const PersonIdentifiersDocument = new TypedDocumentString(
+  `
+    query PersonIdentifiers($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    identifiers(first: $first, after: $after) {
+      nodes {
+        ...PersonIdentifierSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+    fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}
+fragment PersonIdentifierSummary on PersonIdentifier {
+  id
+  personId
+  namespace
+  identifierType
+  issuer
+  validFrom
+  validUntil
+  verificationState
+  sensitivity
+  value
+  redacted
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:dcc7eae2ffa26450272ee87f4a86f6c71895368ff5715c1a652bb48418df4fc4",
+  },
+) as unknown as TypedDocumentString<
+  PersonIdentifiersQuery,
+  PersonIdentifiersQueryVariables
 >;
 export const PersonNamesDocument = new TypedDocumentString(
   `

@@ -63,6 +63,7 @@ import {
   type PersonEventRow,
   type PersonFileAttachmentRow,
   type PersonFileRow,
+  type PersonIdentifierRow,
   type PersonNameRow,
   type PersonRow,
 } from "./repository";
@@ -119,6 +120,7 @@ function sortValue(row: PersonRow): string {
 const RECENT_PEOPLE_CURSOR_ORDER = "dashboard-people-updated-desc";
 const PERSON_NAMES_CURSOR_ORDER = "person-names-created-desc";
 const PERSON_EVENTS_CURSOR_ORDER = "person-events-created-desc";
+const PERSON_IDENTIFIERS_CURSOR_ORDER = "person-identifiers-created-desc";
 const PERSON_FILES_CURSOR_ORDER = "person-files-created-desc";
 const CONTRADICTORY_FACTS_CURSOR_ORDER = "contradictory-facts-asserted-desc";
 const PERSON_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -127,6 +129,55 @@ const PERSON_REFERENCE_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 const IDENTITY_CANDIDATE_LIMIT = 100;
+
+/**
+ * Safe profile projection for an imported/public identifier.
+ *
+ * The database row deliberately is not exposed to GraphQL: encrypted values,
+ * blind indexes, and normalized search values are implementation details. A
+ * value is only returned when the record is explicitly classified public;
+ * protected identifiers remain useful as provenance metadata while their
+ * value stays redacted at the field boundary.
+ */
+export type PersonIdentifierView = Readonly<{
+  id: string;
+  personId: string;
+  namespace: string;
+  identifierType: string;
+  issuer: string | null;
+  validFrom: Date | null;
+  validUntil: Date | null;
+  verificationState: PersonIdentifierRow["verificationState"];
+  sensitivity: PersonIdentifierRow["sensitivity"];
+  value: string | null;
+  redacted: boolean;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+}>;
+
+export function projectPersonIdentifier(
+  row: PersonIdentifierRow,
+): PersonIdentifierView {
+  const isPublic = row.sensitivity === "public";
+  const hasPublicValue = isPublic && row.normalizedValue !== null;
+  return Object.freeze({
+    id: row.id,
+    personId: row.personId,
+    namespace: row.namespace,
+    identifierType: row.identifierType,
+    issuer: row.issuer,
+    validFrom: row.validFrom,
+    validUntil: row.validUntil,
+    verificationState: row.verificationState,
+    sensitivity: row.sensitivity,
+    value: hasPublicValue ? row.normalizedValue : null,
+    redacted: !hasPublicValue,
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+}
 
 function normalizeIdentityName(value: string | null | undefined): string {
   return (value ?? "")
@@ -915,6 +966,44 @@ export function createPeopleService(context: ResearchServiceContext) {
           hasNextPage: rows.length > page.first,
           endCursor: last
             ? encodeDateCursor(PERSON_EVENTS_CURSOR_ORDER, last)
+            : null,
+        },
+      };
+    },
+
+    async listIdentifiers(input: {
+      personId: string;
+      first?: number | null;
+      after?: string | null;
+    }): Promise<Connection<PersonIdentifierView>> {
+      const page = normalizePagination(input);
+      const decoded = decodeResearchCursor(
+        page.after,
+        PERSON_IDENTIFIERS_CURSOR_ORDER,
+      );
+      const cursor = decoded
+        ? { createdAt: new Date(String(decoded.t)), id: String(decoded.i) }
+        : null;
+      const rows = await repository.listIdentifiers({
+        workspaceId: context.workspaceId,
+        personId: input.personId,
+        cursor,
+        limit: page.first + 1,
+        visibility: resourceVisibilitySql(context, {
+          resourceKind: "personIdentifier",
+          id: personIdentifiers.id,
+          sensitivity: personIdentifiers.sensitivity,
+        }),
+        personVisibility: visibility,
+      });
+      const nodes = rows.slice(0, page.first).map(projectPersonIdentifier);
+      const last = rows[page.first - 1];
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > page.first,
+          endCursor: last
+            ? encodeDateCursor(PERSON_IDENTIFIERS_CURSOR_ORDER, last)
             : null,
         },
       };

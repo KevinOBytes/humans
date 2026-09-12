@@ -129,6 +129,23 @@ fragment PersonNameSummary on PersonName {
   updatedAt
 }
 
+fragment PersonIdentifierSummary on PersonIdentifier {
+  id
+  personId
+  namespace
+  identifierType
+  issuer
+  validFrom
+  validUntil
+  verificationState
+  sensitivity
+  value
+  redacted
+  version
+  createdAt
+  updatedAt
+}
+
 fragment PersonEventSummary on PersonEvent {
   id
   personId
@@ -168,6 +185,20 @@ query PersonNamesAndEvents(
     events(first: $eventsFirst, after: $eventsAfter) {
       nodes {
         ...PersonEventSummary
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query PersonIdentifiers($id: UUID!, $first: Int, $after: String) {
+  person(id: $id) {
+    id
+    identifiers(first: $first, after: $after) {
+      nodes {
+        ...PersonIdentifierSummary
       }
       pageInfo {
         ...PageDetails

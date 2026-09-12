@@ -313,6 +313,19 @@ without replacing the first view's accepted database state; this newly added
 case still requires CI execution before it is treated as release evidence.
 Broader conflict-matrix and hosted acceptance remain unverified.
 
+Bounded HUM-FR-010/HUM-FR-028 public-identifier profile evidence (2026-09-12):
+generated `PersonIdentifiers` now exposes a paginated, workspace-scoped
+identifier projection on the person profile. The domain service applies the
+existing person and `personIdentifier` visibility policies, returns
+issuer/type/validity/verification metadata, and only returns a normalized value
+for records explicitly classified `public`; encrypted values, blind indexes,
+and protected normalized values are never part of the GraphQL projection.
+Focused projection tests and a live-when-configured GraphQL acceptance cover
+public-value display, protected-value redaction, and foreign-workspace
+non-disclosure. Identifier create/update/archive controls, source-level
+citations, and the broader reconciliation/conflict and whole-profile matrices
+remain open.
+
 ## Functional requirements
 
 | ID           | Requirement                                                                                                                                                                                                                                                                                                                                         | Verification                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Status     |

@@ -19,7 +19,11 @@ import type {
 } from "./repository";
 import type { InferSelectModel } from "drizzle-orm";
 import { identityCandidates } from "@/db/schema/people";
-import type { MutationOutcome, PageInfo as PageInfoShape } from "./service";
+import type {
+  MutationOutcome,
+  PageInfo as PageInfoShape,
+  PersonIdentifierView,
+} from "./service";
 
 const PersonResearchSourceObject = builder
   .objectRef<PersonResearchSource>("PersonResearchSource")
@@ -191,6 +195,63 @@ const PersonName = builder.objectRef<PersonNameRow>("PersonName").implement({
     }),
   }),
 });
+
+const PersonIdentifierVerificationState = builder.enumType(
+  "PersonIdentifierVerificationState",
+  {
+    values: {
+      UNVERIFIED: { value: "unverified" },
+      VERIFIED: { value: "verified" },
+      DISPUTED: { value: "disputed" },
+      REVOKED: { value: "revoked" },
+      UNKNOWN: { value: "unknown" },
+    } as const,
+  },
+);
+
+const PersonIdentifier = builder
+  .objectRef<PersonIdentifierView>("PersonIdentifier")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID", nullable: false }),
+      personId: t.expose("personId", { type: "UUID", nullable: false }),
+      namespace: t.exposeString("namespace", { nullable: false }),
+      identifierType: t.exposeString("identifierType", { nullable: false }),
+      issuer: t.exposeString("issuer", { nullable: true }),
+      validFrom: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.validFrom?.toISOString() ?? null,
+      }),
+      validUntil: t.field({
+        type: "DateTime",
+        nullable: true,
+        resolve: (row) => row.validUntil?.toISOString() ?? null,
+      }),
+      verificationState: t.field({
+        type: PersonIdentifierVerificationState,
+        nullable: false,
+        resolve: (row) => row.verificationState,
+      }),
+      sensitivity: t.expose("sensitivity", {
+        type: Sensitivity,
+        nullable: false,
+      }),
+      value: t.exposeString("value", { nullable: true }),
+      redacted: t.exposeBoolean("redacted", { nullable: false }),
+      version: t.exposeInt("version", { nullable: false }),
+      createdAt: t.field({
+        type: "DateTime",
+        nullable: false,
+        resolve: (row) => row.createdAt.toISOString(),
+      }),
+      updatedAt: t.field({
+        type: "DateTime",
+        nullable: false,
+        resolve: (row) => row.updatedAt.toISOString(),
+      }),
+    }),
+  });
 
 const PersonEvent = builder.objectRef<PersonEventRow>("PersonEvent").implement({
   fields: (t) => ({
@@ -389,6 +450,20 @@ const PersonNameConnection = builder
     fields: (t) => ({
       nodes: t.expose("nodes", {
         type: [PersonName],
+        complexity: { field: 0, multiplier: 1 },
+      }),
+      pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
+    }),
+  });
+
+const PersonIdentifierConnection = builder
+  .objectRef<{ nodes: PersonIdentifierView[]; pageInfo: PageInfoShape }>(
+    "PersonIdentifierConnection",
+  )
+  .implement({
+    fields: (t) => ({
+      nodes: t.expose("nodes", {
+        type: [PersonIdentifier],
         complexity: { field: 0, multiplier: 1 },
       }),
       pageInfo: t.expose("pageInfo", { type: PageInfo, nullable: false }),
@@ -892,6 +967,20 @@ export function registerPeopleGraphQL(): void {
         requirePermission(context, "person", "read");
         normalizePagination(args);
         return context.services.people.listNames({
+          personId: person.id,
+          first: args.first,
+          after: args.after,
+        });
+      },
+    }),
+    identifiers: t.field({
+      type: PersonIdentifierConnection,
+      args: { first: t.arg.int(), after: t.arg.string() },
+      complexity: (args) => connectionComplexity(args.first),
+      resolve: (person, args, context) => {
+        requirePermission(context, "person", "read");
+        normalizePagination(args);
+        return context.services.people.listIdentifiers({
           personId: person.id,
           first: args.first,
           after: args.after,
