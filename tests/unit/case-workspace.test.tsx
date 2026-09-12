@@ -5,6 +5,9 @@ import { CaseWorkspace } from "@/components/cases/case-workspace";
 import { CaseTimelineDocument } from "@/graphql/generated/graphql";
 const execute = vi.hoisted(() => vi.fn());
 vi.mock("@/graphql/client", () => ({ executeBrowserGraphQL: execute }));
+vi.mock("@/components/cases/research-assignment-queue", () => ({
+  ResearchAssignmentQueue: () => null,
+}));
 it("loads only the selected authorized case and clears links when a later request fails", async () => {
   const user = userEvent.setup();
   execute

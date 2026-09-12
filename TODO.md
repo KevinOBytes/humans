@@ -436,4 +436,7 @@ coverage, external storage/email/AI acceptance, and live Compose evidence.
       repository, service, GraphQL operations, migration, and generated-document
       contract are present. The Node 24 disposable PostgreSQL matrix now passes
       all 7 assignment lifecycle tests as part of `pnpm test:db` (35 files,
-      490 passed, 2 skipped in CI); hosted/browser evidence remains open.
+      490 passed, 2 skipped in CI). The protected case workspace also has a
+      bounded 25-row generated-GraphQL queue panel with focused component
+      coverage for listing, creation, and valid transition inputs; authenticated
+      browser and hosted acceptance remain open.
