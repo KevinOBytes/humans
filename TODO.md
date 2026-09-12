@@ -94,12 +94,23 @@ PostgreSQL/object-store/browser proof and the remaining
 whole-product matrix remain open.
 
 Task 5 follow-up: non-public fact values/provenance/temporal context and selection
-actions are withheld until request-bound field disclosure is implemented. The new
-read-only Privacy Requests panel shows person retention/hold metadata and authorized
-request-ID lookup; full CRUD and a person-filtered request API remain pending.
+actions are withheld until request-bound field disclosure is implemented. The Privacy
+Requests panel shows person retention/hold metadata and authorized request-ID lookup,
+and now provides person-scoped request creation with an explicit type, purpose, due
+date, generated idempotency key, and safe success/error states through the existing
+authorized GraphQL mutation. Full CRUD, person-filtered request listing, and
+request-bound field disclosure remain pending.
 The remaining HUM-FR-005/HUM-NFR-011/HUM-NFR-012 work still requires a complete audit
 of overview/contact/file/graph and other surfaces, field-scoped disclosure tests,
 and authenticated backend/hosted evidence. No acceptance row is closed.
+
+Task 5 person-request UI checkpoint (2026-09-12):
+`tests/unit/person-privacy-panel.test.tsx` passes four focused tests covering
+person-scoped variables, purpose/deadline capture, opaque idempotency-key generation,
+and secret-free creation failure handling alongside the existing posture and lookup
+tests. The UI does not approve, fulfill, lift holds, or claim processor completion;
+the server remains authoritative for workspace scope, deadlines, purpose coverage,
+and audited lifecycle transitions. No privacy requirement row is closed.
 
 Task 5 bounded UI checkpoint (2026-09-11): explicit-purpose person consent checks,
 authorized case timelines, fact sensitivity/review context and graph evidence-state

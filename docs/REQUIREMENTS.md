@@ -594,10 +594,23 @@ See `docs/operations/consent-governance.md` for verification limits.
 Task 5 follow-up: non-public fact values/provenance/temporal context are withheld in
 server-built profile and contradiction projections until request-bound field
 disclosure exists. Sensitive fact detail queries and selection controls are also
-withheld. A read-only Privacy Requests panel exposes person retention/hold metadata
-and authorized request lookup without asserting person association or processor
-completion. Fourteen focused tests pass; complete person-surface governance remains
-open, including overview/contacts/files and authenticated field-disclosure proof.
+withheld. The Privacy Requests panel exposes person retention/hold metadata and
+authorized request lookup without asserting person association or processor
+completion, and now provides person-scoped request creation through the existing
+authorized GraphQL mutation. The creation form requires an explicit type, purpose,
+and due date, generates an opaque idempotency key, and renders only safe success or
+generic failure states. Four focused tests cover the creation and existing read-only
+boundaries; complete person-surface governance remains open, including overview,
+contacts, files, person-filtered request listing, request-bound field disclosure,
+and authenticated field-disclosure proof.
+
+Task 5 person-request UI checkpoint (2026-09-12):
+`tests/unit/person-privacy-panel.test.tsx` passes four focused tests covering
+person-scoped variables, purpose/deadline capture, idempotency-key generation, and
+secret-free creation failure handling alongside the existing posture and lookup
+tests. The UI does not approve, fulfill, lift holds, or claim processor completion;
+workspace scope, deadline and purpose validation, authorization, and audited
+lifecycle transitions remain server-enforced. No privacy requirement row is closed.
 
 ### Consent-governed research Task 6 bounded analysis/import/export checkpoint
 
