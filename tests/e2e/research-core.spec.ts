@@ -570,6 +570,12 @@ test("authenticated research core preserves tenant and claim boundaries", async 
   });
   await expect(namesTimelineLink).not.toHaveAttribute("aria-current", "page");
   await namesTimelineLink.focus();
+  await expect(namesTimelineLink).toBeFocused();
+  expect(
+    await namesTimelineLink.evaluate(
+      (element) => getComputedStyle(element).boxShadow,
+    ),
+  ).not.toBe("none");
   await page.keyboard.press("Enter");
   await expect(namesTimelineLink).toHaveAttribute("aria-current", "page");
   await expect(

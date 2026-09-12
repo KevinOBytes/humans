@@ -532,6 +532,19 @@ test("graph keyboard access, reduced motion, system dark mode, and narrow zoom r
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Zoom in" })).toBeFocused();
 
+  const filterDisclosure = page.getByText("Relationship and time filters", {
+    exact: true,
+  });
+  await filterDisclosure.focus();
+  await expect(filterDisclosure).toBeFocused();
+  expect(
+    await filterDisclosure.evaluate(
+      (element) => getComputedStyle(element).boxShadow,
+    ),
+  ).not.toBe("none");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("checkbox", { name: "asserted" })).toBeVisible();
+
   await page.getByRole("button", { name: "Run ForceAtlas2 layout" }).click();
   await expect(
     page.getByRole("status", { name: "Graph explorer status" }),

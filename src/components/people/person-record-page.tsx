@@ -137,7 +137,7 @@ export async function PersonRecordPage({
               <Link
                 href={profilePageHref(personId, candidate)}
                 aria-current={view === candidate ? "page" : undefined}
-                className="text-muted-foreground hover:text-foreground aria-[current=page]:border-primary aria-[current=page]:text-primary block min-h-11 rounded-t-lg border-b-2 border-transparent px-4 py-3 text-sm font-semibold capitalize"
+                className="text-muted-foreground hover:text-foreground focus-visible:ring-ring focus-visible:ring-offset-background aria-[current=page]:border-primary aria-[current=page]:text-primary block min-h-11 rounded-t-lg border-b-2 border-transparent px-4 py-3 text-sm font-semibold capitalize focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 {candidate === "privacy"
                   ? "Privacy Requests"
