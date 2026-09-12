@@ -270,6 +270,33 @@ export async function executeApprovedDeletionRequests(input: {
               ),
             )
         : [];
+      const aiRunIds = aiRunRows.map((row) => row.id);
+      const aiEphemeralInputRows = aiRunIds.length
+        ? await transaction
+            .select({
+              id: aiEphemeralInputs.id,
+              aiRunId: aiEphemeralInputs.aiRunId,
+            })
+            .from(aiEphemeralInputs)
+            .where(
+              and(
+                eq(aiEphemeralInputs.workspaceId, request.workspaceId),
+                inArray(aiEphemeralInputs.aiRunId, aiRunIds),
+              ),
+            )
+        : [];
+      const aiCitationRows = aiRunIds.length
+        ? await transaction
+            .select({ id: aiCitations.id, aiRunId: aiCitations.aiRunId })
+            .from(aiCitations)
+            .where(
+              and(
+                eq(aiCitations.workspaceId, request.workspaceId),
+                inArray(aiCitations.aiRunId, aiRunIds),
+              ),
+            )
+        : [];
+      const aiThreadIds = [...new Set(aiRunRows.map((row) => row.threadId))];
       const webSourceRows = scope.personIds.length
         ? await transaction
             .select({ id: personWebResearchSources.id })
@@ -298,6 +325,14 @@ export async function executeApprovedDeletionRequests(input: {
         : [];
       const artifacts = [
         ...aiRunRows.map((row) => ({ id: row.id, kind: "ai_run" as const })),
+        ...aiEphemeralInputRows.map((row) => ({
+          id: row.id,
+          kind: "ai_ephemeral_input" as const,
+        })),
+        ...aiCitationRows.map((row) => ({
+          id: row.id,
+          kind: "ai_citation" as const,
+        })),
         ...webRunRows.map((row) => ({ id: row.id, kind: "web_run" as const })),
         ...webSourceRows.map((row) => ({
           id: row.id,
@@ -310,6 +345,14 @@ export async function executeApprovedDeletionRequests(input: {
         })),
       ];
       const holdArtifactPredicates = [
+        ...(aiThreadIds.length
+          ? [
+              and(
+                eq(legalHolds.resourceKind, "ai_thread"),
+                inArray(legalHolds.resourceId, aiThreadIds),
+              ),
+            ]
+          : []),
         ...(aiRunRows.length
           ? [
               and(
@@ -317,6 +360,28 @@ export async function executeApprovedDeletionRequests(input: {
                 inArray(
                   legalHolds.resourceId,
                   aiRunRows.map((row) => row.id),
+                ),
+              ),
+            ]
+          : []),
+        ...(aiEphemeralInputRows.length
+          ? [
+              and(
+                eq(legalHolds.resourceKind, "ai_ephemeral_input"),
+                inArray(
+                  legalHolds.resourceId,
+                  aiEphemeralInputRows.map((row) => row.id),
+                ),
+              ),
+            ]
+          : []),
+        ...(aiCitationRows.length
+          ? [
+              and(
+                eq(legalHolds.resourceKind, "ai_citation"),
+                inArray(
+                  legalHolds.resourceId,
+                  aiCitationRows.map((row) => row.id),
                 ),
               ),
             ]
@@ -580,7 +645,31 @@ export async function executeApprovedDeletionRequests(input: {
               inArray(aiRuns.id, runIds),
             ),
           );
-        if (messageIds.length) {
+        const remainingRunThreads = aiThreadIds.length
+          ? await transaction
+              .select({ threadId: aiRuns.threadId })
+              .from(aiRuns)
+              .where(
+                and(
+                  eq(aiRuns.workspaceId, request.workspaceId),
+                  inArray(aiRuns.threadId, aiThreadIds),
+                ),
+              )
+          : [];
+        const threadsWithoutRuns = aiThreadIds.filter(
+          (threadId) =>
+            !remainingRunThreads.some((row) => row.threadId === threadId),
+        );
+        if (threadsWithoutRuns.length) {
+          await transaction
+            .delete(aiMessages)
+            .where(
+              and(
+                eq(aiMessages.workspaceId, request.workspaceId),
+                inArray(aiMessages.threadId, threadsWithoutRuns),
+              ),
+            );
+        } else if (messageIds.length) {
           await transaction
             .delete(aiMessages)
             .where(

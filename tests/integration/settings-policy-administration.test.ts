@@ -31,6 +31,7 @@ import {
 } from "@/graphql/generated/graphql";
 import { auditEvents, idempotencyKeys, jobs } from "@/db/schema/operations";
 import {
+  aiEphemeralInputs,
   aiMessages,
   aiReviewSuggestions,
   aiRuns,
@@ -1486,6 +1487,64 @@ liveDescribe("settings policy administration", () => {
       createdBy: owner.principalId,
       updatedBy: owner.principalId,
     });
+    const aiThreadId = newId();
+    const aiInputMessageId = newId();
+    const aiAssistantMessageId = newId();
+    const aiRunId = newId();
+    const aiCreatedAt = new Date();
+    await fixture.database.insert(aiThreads).values({
+      id: aiThreadId,
+      workspaceId: owner.workspaceId,
+      ownerId: owner.principalId,
+      title: "Deletion AI thread",
+      sharing: "private",
+      createdAt: aiCreatedAt,
+      createdBy: owner.principalId,
+      updatedAt: aiCreatedAt,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(aiMessages).values([
+      {
+        id: aiInputMessageId,
+        workspaceId: owner.workspaceId,
+        threadId: aiThreadId,
+        role: "user",
+        encryptedContent: "sealed:subject-input",
+        contentHash: "sha256:subject-input",
+        createdAt: aiCreatedAt,
+        createdBy: owner.principalId,
+        updatedAt: aiCreatedAt,
+        updatedBy: owner.principalId,
+      },
+      {
+        id: aiAssistantMessageId,
+        workspaceId: owner.workspaceId,
+        threadId: aiThreadId,
+        role: "assistant",
+        encryptedContent: "sealed:subject-response",
+        contentHash: "sha256:subject-response",
+        createdAt: aiCreatedAt,
+        createdBy: owner.principalId,
+        updatedAt: aiCreatedAt,
+        updatedBy: owner.principalId,
+      },
+    ]);
+    await fixture.database.insert(aiRuns).values({
+      id: aiRunId,
+      workspaceId: owner.workspaceId,
+      threadId: aiThreadId,
+      reviewPersonIds: [personId],
+      messageId: aiInputMessageId,
+      provider: "COMPATIBLE",
+      baseUrlFingerprint: "a".repeat(64),
+      model: "test-model",
+      capabilityProfile: { version: 1 },
+      promptHash: "sha256:subject-prompt",
+      configurationHash: "sha256:subject-config",
+      state: "completed",
+      createdAt: aiCreatedAt,
+      createdBy: owner.principalId,
+    });
 
     const request = await fixture.execute<{
       createDeletionRequest: { id: string | null };
@@ -1554,6 +1613,21 @@ liveDescribe("settings policy administration", () => {
         .select({ id: aiReviewSuggestions.id })
         .from(aiReviewSuggestions)
         .where(eq(aiReviewSuggestions.id, suggestionId)),
+    ).toHaveLength(0);
+    expect(
+      await fixture.database
+        .select({ id: aiRuns.id })
+        .from(aiRuns)
+        .where(eq(aiRuns.id, aiRunId)),
+    ).toHaveLength(0);
+    expect(
+      await fixture.database
+        .select({
+          id: aiMessages.id,
+          encryptedContent: aiMessages.encryptedContent,
+        })
+        .from(aiMessages)
+        .where(eq(aiMessages.threadId, aiThreadId)),
     ).toHaveLength(0);
     const [completedRequest] = await fixture.database
       .select({ state: deletionRequests.state })
@@ -1703,7 +1777,7 @@ liveDescribe("settings policy administration", () => {
     expect(rejectedForeignScope?.state).toBe("rejected");
   });
 
-  it("blocks a person deletion when a linked AI run is held without a suggestion", async () => {
+  it("blocks a person deletion when a linked AI child is held without a suggestion", async () => {
     const owner = await fixture.createActor();
     const created = await fixture.execute<{
       createPerson: { person: { id: string } | null };
@@ -1758,11 +1832,22 @@ liveDescribe("settings policy administration", () => {
       createdAt: now,
       createdBy: owner.principalId,
     });
+    const ephemeralInputId = newId();
+    await fixture.database.insert(aiEphemeralInputs).values({
+      id: ephemeralInputId,
+      workspaceId: owner.workspaceId,
+      threadId,
+      aiRunId: runId,
+      encryptedContent: "sealed:ephemeral-subject-input",
+      contentHash: "sha256:ephemeral-subject-input",
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 60_000),
+    });
     await fixture.database.insert(legalHolds).values({
       id: newId(),
       workspaceId: owner.workspaceId,
-      resourceId: runId,
-      resourceKind: "ai_run",
+      resourceId: ephemeralInputId,
+      resourceKind: "ai_ephemeral_input",
       reason: "Preserve AI provenance",
       authority: "Privacy officer",
       createdBy: owner.principalId,
@@ -1797,6 +1882,12 @@ liveDescribe("settings policy administration", () => {
         .select({ id: aiRuns.id })
         .from(aiRuns)
         .where(eq(aiRuns.id, runId)),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: aiEphemeralInputs.id })
+        .from(aiEphemeralInputs)
+        .where(eq(aiEphemeralInputs.id, ephemeralInputId)),
     ).toHaveLength(1);
   });
 
