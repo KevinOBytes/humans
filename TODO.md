@@ -93,6 +93,16 @@ requirement rows: automated stale-artifact reconciliation, retention cleanup, li
 PostgreSQL/object-store/browser proof and the remaining
 whole-product matrix remain open.
 
+Import staging recovery checkpoint (2026-09-12): a storage read failure during
+preparation now atomically removes staged rows, records a redacted
+`import.staging_failed` audit event with a stable failure code, and returns the
+existing provider-unavailable error without persisting provider details. The
+same principal/workspace-bound preparation key can reclaim that failed staging
+record after storage recovers; the recovery is auditable as
+`import.staging_recovered`. Focused live PostgreSQL coverage passes in
+`tests/integration/imports-api.test.ts`; external object-store, browser, and
+whole import/export acceptance remain open.
+
 Task 5 follow-up: non-public fact values/provenance/temporal context and selection
 actions are withheld until request-bound field disclosure is implemented. The Privacy
 Requests panel shows person retention/hold metadata and authorized request-ID lookup,

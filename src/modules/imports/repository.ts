@@ -314,13 +314,22 @@ export function createImportsRepository(database: Database) {
         ) {
           return { status: "conflict" as const, import: row, created };
         }
-        if (row.state !== "staging") {
+        const recoverableFailure =
+          row.state === "failed" && row.executionJobId === null;
+        if (row.state !== "staging" && !recoverableFailure) {
           return { status: "conflict" as const, import: row, created };
         }
         if (!created) {
           const [claimed] = await transaction
             .update(importsTable)
             .set({
+              state: "staging",
+              totalRows: 0,
+              acceptedRows: 0,
+              rejectedRows: 0,
+              startedAt: null,
+              completedAt: null,
+              executionJobId: null,
               stagingGeneration: sql`${importsTable.stagingGeneration} + 1`,
               stagingOwner: input.owner,
               stagingLeaseExpiresAt: sql<Date>`clock_timestamp() + (${input.leaseMs} * interval '1 millisecond')`,
@@ -331,14 +340,21 @@ export function createImportsRepository(database: Database) {
               and(
                 eq(importsTable.workspaceId, input.workspaceId),
                 eq(importsTable.id, row.id),
-                eq(importsTable.state, "staging"),
-                or(
-                  isNull(importsTable.stagingOwner),
-                  lte(
-                    importsTable.stagingLeaseExpiresAt,
-                    sql`clock_timestamp()`,
-                  ),
-                ),
+                recoverableFailure
+                  ? and(
+                      eq(importsTable.state, "failed"),
+                      isNull(importsTable.executionJobId),
+                    )
+                  : and(
+                      eq(importsTable.state, "staging"),
+                      or(
+                        isNull(importsTable.stagingOwner),
+                        lte(
+                          importsTable.stagingLeaseExpiresAt,
+                          sql`clock_timestamp()`,
+                        ),
+                      ),
+                    ),
               ),
             )
             .returning();
@@ -350,6 +366,7 @@ export function createImportsRepository(database: Database) {
           status: "claimed" as const,
           import: row,
           created,
+          recovered: recoverableFailure,
           generation: row.stagingGeneration,
         };
       });
@@ -393,6 +410,9 @@ export function createImportsRepository(database: Database) {
       generation: number;
       importId: string;
       owner: string;
+      requestId: string;
+      sessionId: string;
+      failureCode: "IMPORT_SOURCE_UNAVAILABLE" | "IMPORT_PREPARE_INVALID";
       workspaceId: string;
     }): Promise<boolean> {
       return database.transaction(async (transaction) => {
@@ -432,6 +452,21 @@ export function createImportsRepository(database: Database) {
           })
           .where(eq(importsTable.id, input.importId))
           .returning({ id: importsTable.id });
+        if (failed) {
+          await transaction.insert(auditEvents).values({
+            id: newId(),
+            workspaceId: input.workspaceId,
+            actorUserId: input.actorId,
+            sessionId: input.sessionId,
+            apiKeyId: null,
+            action: "import.staging_failed",
+            resourceKind: "import",
+            resourceId: failed.id,
+            requestId: input.requestId,
+            outcome: "failure",
+            redactedDiff: { errorCode: input.failureCode },
+          });
+        }
         return Boolean(failed);
       });
     },
