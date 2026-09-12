@@ -67,6 +67,7 @@ import { createPrivacyRequestService } from "@/modules/privacy/request-service";
 import { createRetentionService } from "@/modules/privacy/retention-service";
 import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
 import { createExportApprovalService } from "@/modules/exports/approval-service";
+import { createResearchAssignmentsService } from "@/modules/research-assignments/service";
 import {
   createAiReviewService,
   authorizeAiReviewScope,
@@ -472,6 +473,11 @@ function createServices(input: {
       requestId: input.context.requestId,
       searchIndexMaintenance: input.searchIndexMaintenance,
       workspaceId: input.context.workspaceId,
+    }),
+    researchAssignments: createResearchAssignmentsService({
+      ...input.context,
+      database: input.database,
+      searchIndexMaintenance: input.searchIndexMaintenance,
     }),
     settings: createSettingsService({
       actor: input.context.actor,

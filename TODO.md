@@ -305,3 +305,10 @@ fictional synthetic demo dataset. The implementation has local schema,
 generated-operation, service, and test seams for each; remaining TODO rows
 continue to cover hosted credentials, provider contracts, browser/accessibility
 coverage, external storage/email/AI acceptance, and live Compose evidence.
+
+- [ ] `HUM-FR-038` Run the research-assignment queue lifecycle against disposable
+      PostgreSQL: prove workspace/case isolation, valid and invalid transitions,
+      optimistic conflicts, append-only event protection, principal-bound
+      idempotent replay, and redacted audit output. The queue schema, repository,
+      service, GraphQL operations, migration, and generated-document contract are
+      present; live lifecycle and hosted/browser evidence remain open.

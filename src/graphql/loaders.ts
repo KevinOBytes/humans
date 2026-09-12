@@ -44,6 +44,7 @@ import type { GovernanceService } from "@/modules/governance/service";
 import type { CasesService } from "@/modules/cases/service";
 import type { EvidenceAssertionsService } from "@/modules/evidence/assertions";
 import type { ExportApprovalService } from "@/modules/exports/approval-service";
+import type { ResearchAssignmentsService } from "@/modules/research-assignments/service";
 
 export type SafeWorkspace = {
   id: string;
@@ -83,6 +84,7 @@ export type GraphQLServices = {
   >;
   evidenceAssertions: EvidenceAssertionsService;
   exportApprovals: ExportApprovalService;
+  researchAssignments: ResearchAssignmentsService;
 };
 
 export type GraphQLLoaders = {

@@ -704,4 +704,14 @@ explicitly open in the matrix above.
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.
 - Tests should name requirement IDs when practical so CI failures remain traceable.
+
+Bounded research assignment queue evidence (2026-09-12): the schema now
+provides workspace/case-scoped review, verification, consent follow-up, source
+reconciliation, and privacy-request queue items with assignees, priorities,
+due dates, bounded transitions, escalation counts, immutable event history,
+optimistic versions, principal-bound idempotency, and redacted audit writes.
+GraphQL operations and a schema/generated-document contract test are present;
+live PostgreSQL isolation, transition, immutable-event, replay, and audit
+lifecycle evidence plus browser/hosted acceptance remain open.
+
 - Out-of-scope capabilities in `HUM-NFR-019` may have extension seams but must not become deployment prerequisites.

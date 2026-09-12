@@ -1,0 +1,46 @@
+fragment ResearchAssignmentFields on ResearchAssignment {
+  id
+  caseId
+  queueKind
+  title
+  description
+  priority
+  status
+  assigneePrincipalId
+  dueAt
+  escalationCount
+  version
+  createdAt
+  updatedAt
+}
+
+query ResearchAssignments($caseId: UUID, $status: ResearchAssignmentStatus, $queueKind: ResearchAssignmentQueueKind, $first: Int, $after: String) {
+  researchAssignments(caseId: $caseId, status: $status, queueKind: $queueKind, first: $first, after: $after) {
+    nodes { ...ResearchAssignmentFields }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+query ResearchAssignment($id: UUID!) {
+  researchAssignment(id: $id) { ...ResearchAssignmentFields }
+  researchAssignmentEvents(assignmentId: $id) {
+    id assignmentId eventKind fromStatus toStatus fromAssigneePrincipalId
+    toAssigneePrincipalId reason actorPrincipalId occurredAt
+  }
+}
+
+mutation CreateResearchAssignment($input: CreateResearchAssignmentInput!) {
+  createResearchAssignment(input: $input) { assignment { ...ResearchAssignmentFields } }
+}
+
+mutation AssignResearchAssignment($input: AssignResearchAssignmentInput!) {
+  assignResearchAssignment(input: $input) { assignment { ...ResearchAssignmentFields } }
+}
+
+mutation TransitionResearchAssignment($input: TransitionResearchAssignmentInput!) {
+  transitionResearchAssignment(input: $input) { assignment { ...ResearchAssignmentFields } }
+}
+
+mutation EscalateResearchAssignment($input: EscalateResearchAssignmentInput!) {
+  escalateResearchAssignment(input: $input) { assignment { ...ResearchAssignmentFields } }
+}

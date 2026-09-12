@@ -56,6 +56,8 @@ const requiredTables = [
   "personWebResearchRuns",
   "aiReviewSuggestions",
   "exportApprovals",
+  "researchAssignmentItems",
+  "researchAssignmentEvents",
   "accessApprovals",
   "consentScopes",
   "fieldPolicies",
