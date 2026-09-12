@@ -279,6 +279,7 @@ liveDescribe("authorized durable AI execution handler", () => {
       }),
     ]);
     expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0]?.aiRunId).toBe(claimed.run.id);
     expect(provider.generate).toHaveBeenCalledTimes(2);
     expect(
       provider.generate.mock.calls[0]?.[0].tools.map((tool) => tool.name),

@@ -70,6 +70,7 @@ describe("remaining workspace constraints", () => {
     [schema.fileVariants, "file_variants_workspace_parent_file_fk", "cascade"],
     [schema.relationships, "relationships_workspace_type_fk", "restrict"],
     [schema.aiMessages, "ai_messages_workspace_thread_fk", "cascade"],
+    [schema.aiMessages, "ai_messages_workspace_run_fk", "cascade"],
     [
       schema.webhookDeliveries,
       "webhook_deliveries_workspace_webhook_fk",
@@ -262,6 +263,13 @@ describe("remaining workspace constraints", () => {
   });
 
   it("keeps AI run inputs and citations within one thread", () => {
+    expect(
+      foreignKeyContract(schema.aiMessages, "ai_messages_workspace_run_fk"),
+    ).toEqual({
+      columns: ["workspace_id", "thread_id", "ai_run_id"],
+      foreignColumns: ["workspace_id", "thread_id", "id"],
+      foreignTable: "ai_runs",
+    });
     expect(
       foreignKeyContract(schema.aiRuns, "ai_runs_workspace_input_message_fk"),
     ).toEqual({

@@ -11,6 +11,7 @@ import {
   timestamp,
   unique,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 import { evidenceItems } from "./evidence";
@@ -26,6 +27,16 @@ import type {
 
 const domainTimestamp = (name: string) =>
   timestamp(name, { mode: "date", precision: 3, withTimezone: true });
+
+type WorkspaceThreadColumns = {
+  workspaceId: AnyPgColumn;
+  threadId: AnyPgColumn;
+  id: AnyPgColumn;
+};
+
+function aiMessageForeignColumns(): WorkspaceThreadColumns {
+  return aiMessages as unknown as WorkspaceThreadColumns;
+}
 
 export const aiReviewSuggestions = pgTable(
   "ai_review_suggestions",
@@ -203,6 +214,7 @@ export const aiMessages = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id").notNull(),
+    aiRunId: uuid("ai_run_id"),
     role: text("role").notNull(),
     encryptedContent: text("encrypted_content").notNull(),
     contentHash: text("content_hash").notNull(),
@@ -228,6 +240,11 @@ export const aiMessages = pgTable(
       name: "ai_messages_workspace_thread_fk",
       columns: [table.workspaceId, table.threadId],
       foreignColumns: [aiThreads.workspaceId, aiThreads.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "ai_messages_workspace_run_fk",
+      columns: [table.workspaceId, table.threadId, table.aiRunId],
+      foreignColumns: [aiRuns.workspaceId, aiRuns.threadId, aiRuns.id],
     }).onDelete("cascade"),
     foreignKey({
       name: "ai_messages_workspace_actor_fk",
@@ -299,9 +316,9 @@ export const aiRuns = pgTable(
       name: "ai_runs_workspace_input_message_fk",
       columns: [table.workspaceId, table.threadId, table.messageId],
       foreignColumns: [
-        aiMessages.workspaceId,
-        aiMessages.threadId,
-        aiMessages.id,
+        aiMessageForeignColumns().workspaceId,
+        aiMessageForeignColumns().threadId,
+        aiMessageForeignColumns().id,
       ],
     }).onDelete("restrict"),
     foreignKey({

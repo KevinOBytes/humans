@@ -1503,32 +1503,18 @@ liveDescribe("settings policy administration", () => {
       updatedAt: aiCreatedAt,
       updatedBy: owner.principalId,
     });
-    await fixture.database.insert(aiMessages).values([
-      {
-        id: aiInputMessageId,
-        workspaceId: owner.workspaceId,
-        threadId: aiThreadId,
-        role: "user",
-        encryptedContent: "sealed:subject-input",
-        contentHash: "sha256:subject-input",
-        createdAt: aiCreatedAt,
-        createdBy: owner.principalId,
-        updatedAt: aiCreatedAt,
-        updatedBy: owner.principalId,
-      },
-      {
-        id: aiAssistantMessageId,
-        workspaceId: owner.workspaceId,
-        threadId: aiThreadId,
-        role: "assistant",
-        encryptedContent: "sealed:subject-response",
-        contentHash: "sha256:subject-response",
-        createdAt: aiCreatedAt,
-        createdBy: owner.principalId,
-        updatedAt: aiCreatedAt,
-        updatedBy: owner.principalId,
-      },
-    ]);
+    await fixture.database.insert(aiMessages).values({
+      id: aiInputMessageId,
+      workspaceId: owner.workspaceId,
+      threadId: aiThreadId,
+      role: "user",
+      encryptedContent: "sealed:subject-input",
+      contentHash: "sha256:subject-input",
+      createdAt: aiCreatedAt,
+      createdBy: owner.principalId,
+      updatedAt: aiCreatedAt,
+      updatedBy: owner.principalId,
+    });
     await fixture.database.insert(aiRuns).values({
       id: aiRunId,
       workspaceId: owner.workspaceId,
@@ -1544,6 +1530,63 @@ liveDescribe("settings policy administration", () => {
       state: "completed",
       createdAt: aiCreatedAt,
       createdBy: owner.principalId,
+    });
+    await fixture.database.insert(aiMessages).values({
+      id: aiAssistantMessageId,
+      workspaceId: owner.workspaceId,
+      threadId: aiThreadId,
+      aiRunId,
+      role: "assistant",
+      encryptedContent: "sealed:subject-response",
+      contentHash: "sha256:subject-response",
+      createdAt: aiCreatedAt,
+      createdBy: owner.principalId,
+      updatedAt: aiCreatedAt,
+      updatedBy: owner.principalId,
+    });
+    const sharedInputMessageId = newId();
+    const sharedAssistantMessageId = newId();
+    const sharedRunId = newId();
+    await fixture.database.insert(aiMessages).values({
+      id: sharedInputMessageId,
+      workspaceId: owner.workspaceId,
+      threadId: aiThreadId,
+      role: "user",
+      encryptedContent: "sealed:shared-input",
+      contentHash: "sha256:shared-input",
+      createdAt: aiCreatedAt,
+      createdBy: owner.principalId,
+      updatedAt: aiCreatedAt,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(aiRuns).values({
+      id: sharedRunId,
+      workspaceId: owner.workspaceId,
+      threadId: aiThreadId,
+      reviewPersonIds: [],
+      messageId: sharedInputMessageId,
+      provider: "COMPATIBLE",
+      baseUrlFingerprint: "b".repeat(64),
+      model: "test-model",
+      capabilityProfile: { version: 1 },
+      promptHash: "sha256:shared-prompt",
+      configurationHash: "sha256:shared-config",
+      state: "completed",
+      createdAt: aiCreatedAt,
+      createdBy: owner.principalId,
+    });
+    await fixture.database.insert(aiMessages).values({
+      id: sharedAssistantMessageId,
+      workspaceId: owner.workspaceId,
+      threadId: aiThreadId,
+      aiRunId: sharedRunId,
+      role: "assistant",
+      encryptedContent: "sealed:shared-response",
+      contentHash: "sha256:shared-response",
+      createdAt: aiCreatedAt,
+      createdBy: owner.principalId,
+      updatedAt: aiCreatedAt,
+      updatedBy: owner.principalId,
     });
 
     const request = await fixture.execute<{
@@ -1628,7 +1671,15 @@ liveDescribe("settings policy administration", () => {
         })
         .from(aiMessages)
         .where(eq(aiMessages.threadId, aiThreadId)),
-    ).toHaveLength(0);
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: sharedAssistantMessageId,
+          encryptedContent: "sealed:shared-response",
+        }),
+        expect.objectContaining({ id: sharedInputMessageId }),
+      ]),
+    );
     const [completedRequest] = await fixture.database
       .select({ state: deletionRequests.state })
       .from(deletionRequests)

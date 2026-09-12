@@ -1,0 +1,2 @@
+ALTER TABLE "ai_messages" ADD COLUMN "ai_run_id" uuid;--> statement-breakpoint
+ALTER TABLE "ai_messages" ADD CONSTRAINT "ai_messages_workspace_run_fk" FOREIGN KEY ("workspace_id","thread_id","ai_run_id") REFERENCES "public"."ai_runs"("workspace_id","thread_id","id") ON DELETE cascade ON UPDATE no action;
