@@ -3,7 +3,7 @@
 Latest application runtime checkpoint (2026-09-12): commit `46c70c7`
 passed GitHub Actions run `34724759703` across all 9 checks, including the live
 PostgreSQL, browser, Compose, generated-drift, security, and production-build
-gates. Vercel deployment `dpl_7MQpMMdr9g2vgmZCjwgZQgPVcmAv` reached `READY`
+gates. Vercel deployment `dpl_8vezgh3i9Fk84tUBbBvTkKs1xeGv` reached `READY`
 and serves `humans.kevinbytes.com`. The redacted production smoke passed the
 homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs
 boundaries. Hosted authenticated/provider acceptance and the 24 rows below
