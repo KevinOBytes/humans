@@ -632,6 +632,7 @@ function createServices(input: {
     evidenceAssertions: createEvidenceAssertionsService({
       actor: input.context.actor,
       database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
       permissions: input.context.permissions,
       requestId: input.context.requestId,
       searchIndexMaintenance: input.searchIndexMaintenance,

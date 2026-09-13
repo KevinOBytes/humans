@@ -5,6 +5,24 @@ import {
   type CaseResourceKind,
 } from "@/modules/cases/types";
 
+/** A citation identifies the authored version, never a mutable current value. */
+export function parseIdentifierCitationPath(
+  resourceKind: string,
+  fieldPath: string | null,
+) {
+  if (!fieldPath || !/^identifiers\b/iu.test(fieldPath)) return null;
+  const match =
+    /^identifiers\.([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.v([1-9][0-9]*)\.(value|namespace|identifierType|issuer|validFrom|validUntil|verificationState)$/u.exec(
+      fieldPath,
+    );
+  if (resourceKind !== "person" || !match || Number(match[2]) > 2_147_483_647)
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "The identifier citation path is invalid.",
+    );
+  return { identifierId: match[1]!, version: Number(match[2]) };
+}
+
 export function normalizeEvidenceAssertion(input: {
   resourceKind: string;
   fieldPath?: unknown;
@@ -28,6 +46,7 @@ export function normalizeEvidenceAssertion(input: {
       "VALIDATION_FAILED",
       "The field path contains a control character.",
     );
+  parseIdentifierCitationPath(input.resourceKind, fieldPath);
   return {
     resourceKind: input.resourceKind as CaseResourceKind,
     fieldPath,
