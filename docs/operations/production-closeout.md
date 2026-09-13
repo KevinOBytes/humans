@@ -87,8 +87,8 @@ unauthenticated GraphQL, and protected jobs checks. The opt-in authenticated
 smoke returned `403 AUTH_REQUEST_FAILED`; Vercel marks the production
 `DATABASE_URL` sensitive and the CLI will not retrieve it, so the documented
 attended rotation has not been run. Keep hosted authentication and provider
-acceptance open until an authorized operator supplies that URL directly to the
-temporary mode-0600 rotation environment and reruns the authenticated smoke.
+acceptance open until an authorized operator injects that URL from the approved
+secret manager for the attended rotation and reruns the authenticated smoke.
 
 The repository includes a redacted smoke harness for a deliberately selected
 deployment. It is safe to run against a local Compose URL, a Vercel preview,
@@ -98,48 +98,84 @@ or the production hostname only when the operator has chosen that target:
 pnpm production:smoke -- --base-url https://humans.kevinbytes.com
 ```
 
-The harness checks the homepage, liveness, readiness, unauthenticated
-GraphQL, and the protected jobs route. It prints status codes, workspace IDs,
-and correlation IDs only; response bodies, credentials, cookies, provider
-payloads, and person values are never printed. Authenticated synthetic-person
-coverage is opt-in and requires process-injected values:
+The harness checks the homepage, liveness, readiness, unauthenticated GraphQL,
+and the protected jobs route. A successful readiness probe must identify
+configuration, PostgreSQL, Redis, and object storage as healthy; a bare
+`status=ready` response is not accepted. It prints status codes, dependency
+names, provider labels, and correlation IDs only. Response bodies, account or
+workspace identifiers, credentials, cookies, provider payloads, person values,
+TOTP values, and backup codes are never printed.
+
+For production authentication, use a secret manager to inject values only into
+the child process. The repository includes a reference-only 1Password template;
+copy it to an ignored file and edit only its `op://` references:
 
 ```sh
-PRODUCTION_SMOKE_AUTH=1 \
-  ADMIN_EMAIL='operator-provided-value' \
-  ADMIN_USERNAME='operator-provided-value' \
-  ADMIN_PASSWORD='operator-provided-value' \
-  pnpm production:smoke -- --base-url https://humans.kevinbytes.com
+cp docs/operations/production-operator.op.env.example .env.operator.op.tpl
+$EDITOR .env.operator.op.tpl
+op run --env-file .env.operator.op.tpl -- \
+  pnpm production:smoke -- --base-url https://humans.kevinbytes.com --two-factor
 ```
 
-The authenticated smoke signs in separately through both the configured email
-and username endpoints before creating the synthetic person. All three
-administrator values are required so a successful smoke proves the same
-identifier paths exposed by the sign-in page; it does not rotate the password
-or claim provider acceptance.
+The private template contains references, not rendered values. `op run` resolves
+them only in the child environment and masks resolved secrets in child output;
+never use `--no-masking`. Do not use `op inject`, `vercel env pull`, shell
+assignments, command substitutions, or a populated temporary environment file
+for this acceptance procedure. Use a narrowly scoped 1Password account or
+service account with access only to the required items.
 
-Provider contracts are separately opt-in with
-`--provider-contracts` and `RUN_EXTERNAL_PROVIDER_CONTRACTS=true`; missing
-provider credentials skip the external portion rather than making an
-unexpected request. Do not place these values in the repository or paste them
-into logs. The harness is evidence collection, not a deployment command: an
-operator must record the exact Ready deployment SHA, aliases, provider
-configuration, and authenticated result in the release record after running
-it.
+The authenticated smoke checks password acceptance through both the email and
+username endpoints. With `--two-factor`, it requires the same account policy on
+both identifiers, completes one email-session challenge through exactly one
+process-injected TOTP or backup code, then proves the authenticated GraphQL
+viewer and creates/reads a fictional smoke-test person. A backup code is
+consumed; use a disposable current code approved for this check. TOTP and backup
+values are mutually exclusive, and a requested 2FA check fails before making a
+network request when neither or both are injected.
+
+Provider lifecycle contracts are separately opt-in. Add
+`--provider-contracts` to the same `op run` command only when
+`RUN_EXTERNAL_PROVIDER_CONTRACTS=true` and at least one complete Upstash REST or
+S3-compatible test credential group is injected. Partial credential groups fail
+closed before any provider request. No complete group produces an explicit
+`unavailable` result and no request. When enabled, the child provider suite
+round-trips disposable, namespaced Redis and private object-storage fixtures,
+deletes them, suppresses all child output, and reports provider labels only.
+This is destructive only to the generated test keys/objects and must use an
+approved test bucket/database rather than irreplaceable data.
+
+The readiness endpoint and these lifecycle checks cover PostgreSQL, Redis, and
+object storage. They do not prove Resend delivery, OpenAI-compatible/Ollama
+generation, or web-search results; keep those provider rows unverified until
+their dedicated attended acceptance is recorded. The harness is evidence
+collection, not a deployment command. Record only the exact Ready deployment
+SHA/ID, aliases, timestamp, redacted outcomes, and provider labels.
 
 ## Hosted administrator recovery
 
 Administrator bootstrap is deliberately idempotent: changing `ADMIN_PASSWORD`
 does not silently overwrite an existing credential. If the configured hosted
 credential is unknown or stale, an operator with approved database-secret
-access must place the hosted `DATABASE_URL` and the four `ADMIN_*` values in a
-temporary, mode-0600 `.env.local`, run:
+access must use the same reference-only template to inject the hosted
+`DATABASE_URL` and four `ADMIN_*` values into the explicit recovery command:
 
 ```sh
-pnpm admin:rotate-password
+op run --env-file .env.operator.op.tpl -- \
+  pnpm operator:rotate-admin-password
 ```
 
-Then remove the temporary file and rerun the authenticated smoke with the same
-operator-injected email/password. Vercel's protected secret values must not be
-exported into the repository, shell history, logs, or a browser. This explicit
-procedure is required before marking hosted sign-in/person creation complete.
+The operator command intentionally does not load `.env` or `.env.local`. It
+parses only the injected database URL and administrator fields, takes the
+database advisory lock, rotates the selected credential, and emits only
+`created`, `reconciled`, and `passwordRotated` booleans. It does not emit the
+administrator UUID or any secret material. Delete the reference-only private
+template after the window if local policy requires it; it never contains
+rendered secrets.
+
+After rotation, run the authenticated 2FA smoke in a new `op run` invocation so
+1Password supplies a current TOTP. Vercel's protected values are not a recovery
+transport and must not be retrieved or copied into the repository, shell
+history, logs, tickets, screenshots, or a browser. If an approved database URL,
+replacement password, and current second factor are unavailable, report the
+corresponding acceptance step as **unverified**; do not disable 2FA, weaken
+authentication, or infer success from public readiness.
