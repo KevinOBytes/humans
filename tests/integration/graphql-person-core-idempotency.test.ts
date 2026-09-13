@@ -4,14 +4,22 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { locationMutationIdempotency } from "@/db/schema/locations";
-import { auditEvents } from "@/db/schema/operations";
+import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
 import {
   ArchivePersonDocument,
   CreatePersonDocument,
   UpdatePersonDocument,
 } from "@/graphql/generated/graphql";
+import {
+  deriveResearchIdempotency,
+  runIdempotentResearchWrite,
+  type CanonicalRequestMaterial,
+  type ResearchResponseReference,
+} from "@/modules/audit/transactions";
+import { createPeopleService } from "@/modules/people/service";
 
 import { expectGraphQLError, type SessionActor } from "../support/graphql";
+import { caseContext } from "../support/cases";
 import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -73,6 +81,37 @@ liveDescribe("generated core-person mutation idempotency", () => {
           )
       )[0],
       `${operation} claim`,
+    );
+  }
+
+  async function legacyCorePersonClaim(
+    actor: SessionActor,
+    input: {
+      operation: "person.create" | "person.update" | "person.archive";
+      idempotencyKey: string;
+      requestMaterial: Readonly<Record<string, CanonicalRequestMaterial>>;
+      responseReference: ResearchResponseReference;
+    },
+  ) {
+    const context = {
+      ...(await caseContext(fixture, actor)),
+      // GraphQL core-person mutations use the test AI runtime's HMAC key.
+      idempotencyHmacKey: "42".repeat(32),
+    };
+    const idempotency = deriveResearchIdempotency(context, {
+      expiresAt: new Date(Date.now() + 60_000),
+      idempotencyKey: input.idempotencyKey,
+      operation: input.operation,
+      requestMaterial: input.requestMaterial,
+      secret: context.idempotencyHmacKey,
+    });
+    await runIdempotentResearchWrite(
+      context,
+      idempotency,
+      input.operation === "person.create"
+        ? ["person:create"]
+        : ["person:update"],
+      async () => input.responseReference,
     );
   }
 
@@ -210,5 +249,128 @@ liveDescribe("generated core-person mutation idempotency", () => {
     expect(foreignResult.body?.data?.createPerson.person?.id).not.toBe(
       first.id,
     );
+  });
+
+  it("replays unexpired pre-principal core-person claims without creating principal claims or duplicate effects", async () => {
+    const actor = await fixture.createActor();
+    const createKey = "legacy-core-create-v1";
+    const created = required(
+      (await fixture.createPerson(actor, { displayName: "Legacy create" })).body
+        ?.data?.createPerson?.person,
+      "legacy-created person",
+    );
+    await legacyCorePersonClaim(actor, {
+      operation: "person.create",
+      idempotencyKey: createKey,
+      requestMaterial: {
+        biography: null,
+        confidence: "1",
+        confidenceExplanation: null,
+        displayName: "Legacy create",
+        preferredName: null,
+        sensitivity: "internal",
+        sortName: null,
+        status: "active",
+      },
+      // This is the exact old create contract: no version was persisted.
+      responseReference: { personId: created.id },
+    });
+    const createReplay = await create(actor, {
+      displayName: "Legacy create",
+      idempotencyKey: createKey,
+    });
+    expect(createReplay.body?.errors).toBeUndefined();
+    expect(createReplay.body?.data?.createPerson.person?.id).toBe(created.id);
+
+    const updateContext = await caseContext(fixture, actor);
+    const updated = required(
+      (
+        await createPeopleService(updateContext).update({
+          id: created.id,
+          expectedVersion: created.version,
+          displayName: "Legacy updated",
+        })
+      ).resource,
+      "legacy-updated person",
+    );
+    const updateKey = "legacy-core-update-v1";
+    await legacyCorePersonClaim(actor, {
+      operation: "person.update",
+      idempotencyKey: updateKey,
+      requestMaterial: {
+        biography: { present: false, value: null },
+        displayName: { present: true, value: "Legacy updated" },
+        expectedVersion: created.version,
+        id: created.id,
+        preferredName: { present: false, value: null },
+        sensitivity: { present: false, value: null },
+        sortName: { present: false, value: null },
+        status: { present: false, value: null },
+      },
+      responseReference: { personId: updated.id, version: updated.version },
+    });
+    const updateReplay = await update(actor, {
+      id: created.id,
+      expectedVersion: created.version,
+      displayName: "Legacy updated",
+      idempotencyKey: updateKey,
+    });
+    expect(updateReplay.body?.errors).toBeUndefined();
+    expect(updateReplay.body?.data?.updatePerson.person).toMatchObject({
+      displayName: updated.displayName,
+      id: updated.id,
+      version: updated.version,
+    });
+
+    const archiveContext = await caseContext(fixture, actor);
+    const archived = required(
+      (
+        await createPeopleService(archiveContext).archive({
+          id: updated.id,
+          expectedVersion: updated.version,
+        })
+      ).resource,
+      "legacy-archived person",
+    );
+    const archiveKey = "legacy-core-archive-v1";
+    await legacyCorePersonClaim(actor, {
+      operation: "person.archive",
+      idempotencyKey: archiveKey,
+      requestMaterial: { expectedVersion: updated.version, id: updated.id },
+      responseReference: { personId: archived.id, version: archived.version },
+    });
+    const archiveReplay = await archive(actor, {
+      id: updated.id,
+      expectedVersion: updated.version,
+      idempotencyKey: archiveKey,
+    });
+    expect(archiveReplay.body?.errors).toBeUndefined();
+    expect(archiveReplay.body?.data?.archivePerson.person).toMatchObject({
+      id: archived.id,
+      version: archived.version,
+    });
+
+    expect(
+      await fixture.database
+        .select({ id: locationMutationIdempotency.id })
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.workspaceId, actor.workspaceId)),
+    ).toEqual([]);
+    expect(
+      (
+        await fixture.database
+          .select({ operation: idempotencyKeys.operation })
+          .from(idempotencyKeys)
+          .where(eq(idempotencyKeys.workspaceId, actor.workspaceId))
+      )
+        .map(({ operation }) => operation)
+        .sort(),
+    ).toEqual(["person.archive", "person.create", "person.update"]);
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(eq(auditEvents.workspaceId, actor.workspaceId)),
+    ).toHaveLength(3);
   });
 });
