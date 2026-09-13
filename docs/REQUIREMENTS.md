@@ -1,5 +1,16 @@
 # MVP requirements
 
+Rich-profile definition catalog checkpoint (2026-09-13): newly provisioned
+workspaces receive active, workspace-scoped fact-definition templates for
+pronouns, employment, education, languages, organizations, birth dates, and
+custom JSON fields. The definitions are not person data and do not bypass the
+fact service's provenance, temporal, confidence, sensitivity, review,
+contradiction, authorization, or audit controls. The focused unit catalog
+test passes, and `tests/integration/workspace-profile-definitions.test.ts`
+provides generated GraphQL/PostgreSQL acceptance when the live database seam
+is configured. A controlled backfill for workspaces created before this
+checkpoint remains open, as does the broader hosted and whole-profile matrix.
+
 Current release evidence (2026-09-13, latest runtime): commit `47ab7c0` is
 pushed to `main` and deployed as Vercel `dpl_5Zv4gEptiHqQNytSHEeuzAJ8bDwF`
 (`READY`) with the configured custom-domain aliases. Public smoke passed
