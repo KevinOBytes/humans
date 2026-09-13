@@ -33,6 +33,8 @@ export const permissionStatements = {
   audit: ["read"],
   breakGlass: ["create", "read", "update", "delete"],
   webhook: ["create", "read", "update", "delete"],
+  team: ["create", "read", "update", "delete"],
+  investigation: ["create", "read", "update", "delete"],
   graphql: ["introspect"],
 } as const;
 
@@ -119,6 +121,8 @@ const researchReads = {
   savedQuery: ["read"],
   graphView: ["read"],
   analysis: ["read"],
+  team: ["read"],
+  investigation: ["read"],
 } as const;
 
 const researchWrites = {
@@ -157,6 +161,8 @@ const adminStatements = {
   audit: ["read"],
   breakGlass: ["create", "read", "update", "delete"],
   webhook: ["create", "read", "update", "delete"],
+  team: ["create", "read", "update", "delete"],
+  investigation: ["create", "read", "update", "delete"],
   graphql: ["introspect"],
 } as const;
 
@@ -167,6 +173,8 @@ export const workspaceRoles = {
     ...researchReads,
     ...analysisOperations,
     breakGlass: ["create", "read"],
+    team: ["read"],
+    investigation: ["read"],
   }),
   contributor: accessControl.newRole({
     workspace: ["read"],
@@ -177,6 +185,8 @@ export const workspaceRoles = {
     graphView: ["read"],
     analysis: ["read"],
     breakGlass: ["create", "read"],
+    team: ["read"],
+    investigation: ["read"],
   }),
   viewer: accessControl.newRole({
     ...researchReads,

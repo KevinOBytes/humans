@@ -19,6 +19,8 @@ import { registerBreakGlassGraphQL } from "@/modules/governance/break-glass-grap
 import { registerCasesGraphQL } from "@/modules/cases/graphql";
 import { registerPrivacyGraphQL } from "@/modules/privacy/graphql";
 import { registerResearchAssignmentsGraphQL } from "@/modules/research-assignments/graphql";
+import { registerTeamsGraphQL } from "@/modules/teams/graphql";
+import { registerInvestigationsGraphQL } from "@/modules/investigations/graphql";
 
 const Workspace = builder.objectRef<SafeWorkspace>("Workspace").implement({
   fields: (t) => ({
@@ -91,5 +93,7 @@ registerBreakGlassGraphQL();
 registerCasesGraphQL();
 registerPrivacyGraphQL();
 registerResearchAssignmentsGraphQL();
+registerTeamsGraphQL();
+registerInvestigationsGraphQL();
 
 export const schema = builder.toSchema();

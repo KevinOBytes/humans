@@ -1,5 +1,19 @@
 # MVP requirements
 
+Collaboration hierarchy checkpoint (2026-09-13): first-class
+workspace-scoped `teams`, `teamMembers`, and `caseTeamLinks` now provide
+reusable team membership plus an explicit case-sharing grant. First-class
+`investigations` and `investigationCaseLinks` now provide stable per-workspace
+numbers/slugs, objective/purpose, sensitivity, lifecycle dates/state, lead
+principal, and investigation-to-case grouping. Generated GraphQL queries and
+mutations are authorized by workspace/team/case membership, use principal-bound
+idempotency for retryable writes, and emit redacted audit events. Schema,
+migration, authorization, and GraphQL contract tests pass locally. This is a
+local implementation checkpoint only: dedicated administration/detail UI,
+live PostgreSQL migration execution, hosted authentication/provider checks,
+and the full cross-role/browser/accessibility matrix remain incomplete and are
+still tracked below.
+
 Rich-profile definition catalog checkpoint (2026-09-13): newly provisioned
 workspaces receive active, workspace-scoped fact-definition templates for
 pronouns, employment, education, languages, organizations, birth dates, and

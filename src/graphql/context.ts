@@ -72,6 +72,8 @@ import { createRetentionService } from "@/modules/privacy/retention-service";
 import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
 import { createExportApprovalService } from "@/modules/exports/approval-service";
 import { createResearchAssignmentsService } from "@/modules/research-assignments/service";
+import { createTeamsService } from "@/modules/teams/service";
+import { createInvestigationsService } from "@/modules/investigations/service";
 import {
   createAiReviewService,
   authorizeAiReviewScope,
@@ -485,6 +487,24 @@ function createServices(input: {
       database: input.database,
       idempotencyHmacKey: input.aiRuntime.hmacKey,
       searchIndexMaintenance: input.searchIndexMaintenance,
+    }),
+    teams: createTeamsService({
+      actor: input.context.actor,
+      database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
+    investigations: createInvestigationsService({
+      actor: input.context.actor,
+      database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
     }),
     settings: createSettingsService({
       actor: input.context.actor,

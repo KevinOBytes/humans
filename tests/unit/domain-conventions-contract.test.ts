@@ -55,6 +55,9 @@ const workspaceTableNames = [
   "importMappings",
   "importRows",
   "imports",
+  "investigationCaseLinks",
+  "investigationSequences",
+  "investigations",
   "uploadSessions",
   "analysisResults",
   "analysisRuns",
@@ -80,6 +83,9 @@ const workspaceTableNames = [
   "externalRecords",
   "identityCandidates",
   "mergeDecisions",
+  "teams",
+  "teamMembers",
+  "caseTeamLinks",
   "people",
   "personEvents",
   "personIdentifiers",
@@ -134,6 +140,8 @@ const versionedTableNames = [
   "identityCandidates",
   "importMappings",
   "imports",
+  "investigationCaseLinks",
+  "investigations",
   "legalHolds",
   "mergeDecisions",
   "notes",
@@ -158,6 +166,9 @@ const versionedTableNames = [
   "workspaceSettings",
   "workspaceUsage",
   "researchAssignmentItems",
+  "teams",
+  "teamMembers",
+  "caseTeamLinks",
   "workspaces",
   "breakGlassAccessRequests",
 ] as const satisfies readonly (keyof typeof schema)[];
@@ -193,7 +204,9 @@ describe("HUM-NFR-003 complete domain schema conventions", () => {
       expect(columns.workspaceId?.notNull, `${name}.workspaceId`).toBe(true);
       expect(columns.id?.default, `${name}.id`).toBeUndefined();
       expect(
-        identityUnique || name === "aiEphemeralInputs",
+        identityUnique ||
+          name === "aiEphemeralInputs" ||
+          name === "investigationSequences",
         `${name} needs a workspace-leading identity constraint`,
       ).toBe(true);
 
