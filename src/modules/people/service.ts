@@ -467,15 +467,18 @@ export function createPeopleService(context: ResearchServiceContext) {
     responseReference: Readonly<
       Record<string, string | number | boolean | null>
     >,
+    allowLegacyCreateReference = false,
   ): Promise<PersonRow> {
     const personId = responseReference.personId;
     const version = responseReference.version;
     if (
       typeof personId !== "string" ||
       !PERSON_REFERENCE_UUID.test(personId) ||
-      typeof version !== "number" ||
-      !Number.isSafeInteger(version) ||
-      version < 1
+      (version === undefined && !allowLegacyCreateReference) ||
+      (version !== undefined &&
+        (typeof version !== "number" ||
+          !Number.isSafeInteger(version) ||
+          version < 1))
     ) {
       throw createGraphQLError(
         "VALIDATION_FAILED",
@@ -499,7 +502,7 @@ export function createPeopleService(context: ResearchServiceContext) {
         "The requested resource was not found.",
       );
     }
-    if (row.version !== version) {
+    if (version !== undefined && row.version !== version) {
       throw createGraphQLError(
         "CONFLICT",
         "The idempotent operation response is no longer current.",
@@ -2606,22 +2609,33 @@ export function createPeopleService(context: ResearchServiceContext) {
             "Idempotent person creation is not configured.",
           );
         }
+        const requestMaterial = {
+          biography: biography.value ?? null,
+          confidence: confidence.value ?? "1",
+          confidenceExplanation: input.confidenceExplanation?.trim() || null,
+          displayName: displayName.value ?? "",
+          preferredName: preferredName.value ?? null,
+          sensitivity,
+          sortName: sortName.value ?? null,
+          status,
+        } satisfies Readonly<Record<string, CanonicalRequestMaterial>>;
         const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey,
           operation: "person.create.graphql",
-          requestMaterial: {
-            biography: biography.value ?? null,
-            confidence: confidence.value ?? "1",
-            confidenceExplanation: input.confidenceExplanation?.trim() || null,
-            displayName: displayName.value ?? "",
-            preferredName: preferredName.value ?? null,
-            sensitivity,
-            sortName: sortName.value ?? null,
-            status,
-          },
+          requestMaterial,
           secret,
         });
+        const legacyIdempotency =
+          context.actor.type === "user"
+            ? deriveResearchIdempotency(context, {
+                expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+                idempotencyKey,
+                operation: "person.create",
+                requestMaterial,
+                secret,
+              })
+            : undefined;
         const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
@@ -2633,8 +2647,12 @@ export function createPeopleService(context: ResearchServiceContext) {
             );
             return { personId: created.id, version: created.version };
           },
+          legacyIdempotency,
         );
-        const replayed = await replayPerson(result.responseReference);
+        const replayed = await replayPerson(
+          result.responseReference,
+          result.legacyReplayed,
+        );
         return { resource: replayed, issues: [], code: null };
       }
       const row = await writeTransaction(context, async (transaction) =>
@@ -2773,58 +2791,69 @@ export function createPeopleService(context: ResearchServiceContext) {
             "Idempotent person updates are not configured.",
           );
         }
+        const requestMaterial = {
+          biography: {
+            present: input.biography !== undefined,
+            value:
+              patch.biography === undefined
+                ? null
+                : (patch.biography as string | null),
+          },
+          displayName: {
+            present: input.displayName !== undefined,
+            value:
+              patch.displayName === undefined
+                ? null
+                : (patch.displayName as string | null),
+          },
+          expectedVersion: input.expectedVersion,
+          id: input.id,
+          preferredName: {
+            present: input.preferredName !== undefined,
+            value:
+              patch.preferredName === undefined
+                ? null
+                : (patch.preferredName as string | null),
+          },
+          sensitivity: {
+            present: input.sensitivity !== undefined,
+            value:
+              patch.sensitivity === undefined
+                ? null
+                : (patch.sensitivity as string | null),
+          },
+          sortName: {
+            present: input.sortName !== undefined,
+            value:
+              patch.sortName === undefined
+                ? null
+                : (patch.sortName as string | null),
+          },
+          status: {
+            present: input.status !== undefined,
+            value:
+              patch.status === undefined
+                ? null
+                : (patch.status as string | null),
+          },
+        } satisfies Readonly<Record<string, CanonicalRequestMaterial>>;
         const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey: input.idempotencyKey,
           operation: "person.update.graphql",
-          requestMaterial: {
-            biography: {
-              present: input.biography !== undefined,
-              value:
-                patch.biography === undefined
-                  ? null
-                  : (patch.biography as string | null),
-            },
-            displayName: {
-              present: input.displayName !== undefined,
-              value:
-                patch.displayName === undefined
-                  ? null
-                  : (patch.displayName as string | null),
-            },
-            expectedVersion: input.expectedVersion,
-            id: input.id,
-            preferredName: {
-              present: input.preferredName !== undefined,
-              value:
-                patch.preferredName === undefined
-                  ? null
-                  : (patch.preferredName as string | null),
-            },
-            sensitivity: {
-              present: input.sensitivity !== undefined,
-              value:
-                patch.sensitivity === undefined
-                  ? null
-                  : (patch.sensitivity as string | null),
-            },
-            sortName: {
-              present: input.sortName !== undefined,
-              value:
-                patch.sortName === undefined
-                  ? null
-                  : (patch.sortName as string | null),
-            },
-            status: {
-              present: input.status !== undefined,
-              value:
-                patch.status === undefined
-                  ? null
-                  : (patch.status as string | null),
-            },
-          },
+          requestMaterial,
           secret,
         });
+        const legacyIdempotency =
+          context.actor.type === "user"
+            ? deriveResearchIdempotency(context, {
+                expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+                idempotencyKey: input.idempotencyKey,
+                operation: "person.update",
+                requestMaterial,
+                secret,
+              })
+            : undefined;
         const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
@@ -2839,6 +2868,7 @@ export function createPeopleService(context: ResearchServiceContext) {
             }
             return { personId: row.id, version: row.version };
           },
+          legacyIdempotency,
         );
         const replayed = await replayPerson(result.responseReference);
         return { resource: replayed, issues: [], code: null };
@@ -2944,16 +2974,27 @@ export function createPeopleService(context: ResearchServiceContext) {
             "Idempotent person archives are not configured.",
           );
         }
+        const requestMaterial = {
+          expectedVersion: input.expectedVersion,
+          id: input.id,
+        } satisfies Readonly<Record<string, CanonicalRequestMaterial>>;
         const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey: input.idempotencyKey,
           operation: "person.archive.graphql",
-          requestMaterial: {
-            expectedVersion: input.expectedVersion,
-            id: input.id,
-          },
+          requestMaterial,
           secret,
         });
+        const legacyIdempotency =
+          context.actor.type === "user"
+            ? deriveResearchIdempotency(context, {
+                expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+                idempotencyKey: input.idempotencyKey,
+                operation: "person.archive",
+                requestMaterial,
+                secret,
+              })
+            : undefined;
         const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
@@ -2977,6 +3018,7 @@ export function createPeopleService(context: ResearchServiceContext) {
             }
             return { personId: row.id, version: row.version };
           },
+          legacyIdempotency,
         );
         const replayed = await replayPerson(result.responseReference);
         return { resource: replayed, issues: [], code: null };

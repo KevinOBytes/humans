@@ -1675,7 +1675,12 @@ export async function runPrincipalIdempotentResearchWrite<
   input: DerivedPrincipalIdempotency,
   requiredPermissions: readonly string[],
   write: (context: ResearchServiceContext) => Promise<T>,
-): Promise<{ replayed: boolean; responseReference: T }> {
+  legacyCorePersonIdempotency?: DerivedResearchIdempotency,
+): Promise<{
+  legacyReplayed: boolean;
+  replayed: boolean;
+  responseReference: T;
+}> {
   if (context.actor.type !== "user" && context.actor.type !== "apiKey") {
     return forbidden();
   }
@@ -1697,6 +1702,26 @@ export async function runPrincipalIdempotentResearchWrite<
   ) {
     return invalidIdempotency();
   }
+  const legacyMetadata = legacyCorePersonIdempotency
+    ? derivedIdempotencyInputs.get(legacyCorePersonIdempotency)
+    : undefined;
+  const legacyOperation = {
+    "person.archive.graphql": "person.archive",
+    "person.create.graphql": "person.create",
+    "person.update.graphql": "person.update",
+  }[metadata.operation];
+  if (
+    legacyCorePersonIdempotency &&
+    (!legacyMetadata ||
+      context.actor.type !== "user" ||
+      legacyOperation === undefined ||
+      legacyMetadata.actorId !== context.actor.id ||
+      legacyMetadata.operation !== legacyOperation ||
+      legacyMetadata.workspaceId !== context.workspaceId ||
+      legacyMetadata.expiresAtMs <= Date.now())
+  ) {
+    return invalidIdempotency();
+  }
   return runResearchTransaction(
     context,
     {
@@ -1711,6 +1736,44 @@ export async function runPrincipalIdempotentResearchWrite<
       await database.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${lockIdentity}, 0))`,
       );
+      const now = new Date();
+      if (legacyMetadata) {
+        const legacyIdentity = and(
+          eq(idempotencyKeys.workspaceId, legacyMetadata.workspaceId),
+          eq(idempotencyKeys.actorId, legacyMetadata.actorId),
+          eq(idempotencyKeys.operation, legacyMetadata.operation),
+          eq(idempotencyKeys.keyHash, legacyMetadata.keyHash),
+        );
+        const [legacyClaim] = await database
+          .select()
+          .from(idempotencyKeys)
+          .where(and(legacyIdentity, gt(idempotencyKeys.expiresAt, now)))
+          .for("update");
+        if (legacyClaim) {
+          if (legacyClaim.requestHash !== legacyMetadata.requestHash) {
+            throw createGraphQLError(
+              "CONFLICT",
+              "The idempotency key is already bound to another request.",
+            );
+          }
+          if (
+            legacyClaim.status !== "completed" ||
+            legacyClaim.responseReference == null
+          ) {
+            throw createGraphQLError(
+              "CONFLICT",
+              "The idempotent operation is not replayable.",
+            );
+          }
+          return {
+            legacyReplayed: true,
+            replayed: true,
+            responseReference: validateResponseReference(
+              legacyClaim.responseReference,
+            ) as T,
+          };
+        }
+      }
       const identity = and(
         eq(locationMutationIdempotency.workspaceId, metadata.workspaceId),
         eq(
@@ -1725,7 +1788,6 @@ export async function runPrincipalIdempotentResearchWrite<
         .from(locationMutationIdempotency)
         .where(identity)
         .for("update");
-      const now = new Date();
       let claim: typeof locationMutationIdempotency.$inferSelect | null =
         prior ?? null;
       if (claim && claim.expiresAt <= now) {
@@ -1754,6 +1816,7 @@ export async function runPrincipalIdempotentResearchWrite<
           );
         }
         return {
+          legacyReplayed: false,
           replayed: true,
           responseReference: validateResponseReference(
             claim.responseReference,
@@ -1805,7 +1868,7 @@ export async function runPrincipalIdempotentResearchWrite<
           "The idempotent operation could not be completed.",
         );
       }
-      return { replayed: false, responseReference };
+      return { legacyReplayed: false, replayed: false, responseReference };
     },
   );
 }
