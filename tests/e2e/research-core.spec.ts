@@ -1,5 +1,9 @@
-import { personWebResearchRuns } from "@/db/schema/person-research";
+import {
+  personWebResearchRuns,
+  personWebResearchSources,
+} from "@/db/schema/person-research";
 import { recordAiSuggestion } from "@/modules/ai/review-service";
+import { sourceSnapshotHash } from "@/modules/ai/source-provenance";
 import { createGovernanceService } from "@/modules/governance/service";
 import { caseContext } from "../support/cases";
 import AxeBuilder from "@axe-core/playwright";
@@ -177,6 +181,7 @@ test("person research loads governed proposals and applies only the reviewed fie
     url: "https://example.org/profile",
     title: "Synthetic profile",
     snippet: "Synthetic public profile excerpt",
+    reliability: 0.8,
   };
   const proposals = [
     { field: "displayName", value: "Proposed name", sourceUrls: [source.url] },
@@ -199,6 +204,21 @@ test("person research loads governed proposals and applies only the reviewed fie
     sourceCount: 1,
     consentedAt: new Date(),
     createdBy: actor.principalId,
+  });
+  await fixture.database.insert(personWebResearchSources).values({
+    id: newId(),
+    workspaceId: actor.workspaceId,
+    runId,
+    personId,
+    url: source.url,
+    title: source.title,
+    snippet: source.snippet,
+    collectionTimestamp: new Date("2026-09-13T12:00:00.000Z"),
+    retrievalHash: sourceSnapshotHash(source),
+    provider: "COMPATIBLE",
+    model: "synthetic",
+    reliability: String(source.reliability),
+    metadata: { fixture: "research-core" },
   });
   for (const proposal of proposals)
     await recordAiSuggestion(serviceContext, {
