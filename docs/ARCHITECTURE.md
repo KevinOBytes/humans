@@ -110,8 +110,28 @@ The storage proxy uses its own redacted `INVALID_INPUT`, `UNAUTHORIZED`,
 unmatched-path failures, with a validated `x-request-id` echoed in both the
 body and response headers. Health probes now echo a validated request ID in
 both success bodies and headers while preserving their dependency-safe
-operational envelopes. The remaining cross-surface error matrix and adoption
-across every direct route are tracked in `TODO.md`. Health probes and the cron
+operational envelopes. Readiness failures additionally expose the stable
+`PROVIDER_UNAVAILABLE` code without exception or connection details. Health
+and cron responses use `private, no-store`, as do account and storage responses.
+
+Every current `src/app/api/**/route.ts` is inventoried by
+`tests/unit/direct-route-method-contract.test.ts`: invitation acceptance,
+invitation handoff, 2FA disable, auth catch-all, GraphQL, liveness, readiness,
+scheduled jobs, storage objects, and unmatched storage object paths. Explicit
+method denials replace Next.js's automatic empty 405 with a stable
+`METHOD_NOT_ALLOWED` code, a validated request ID in the body/header, an `Allow`
+header, and `private, no-store`. GraphQL retains its `VALIDATION_FAILED` error
+extension shape; supported auth methods retain their `AUTH_METHOD_NOT_ALLOWED`
+boundary. HEAD denials are bodyless as required by HTTP. Existing GET-to-HEAD
+behavior is unchanged. Explicit non-GraphQL OPTIONS handlers preserve 204 and
+allowed-method discovery without initializing dependencies or granting CORS;
+GraphQL retains its existing origin-aware preflight boundary. The route
+inventory test fails when a new route is added without coverage. Focused input
+tests also exercise malformed JSON, invalid schemas, untrusted origins, and API
+keys on the three direct account JSON handlers without executing mutations.
+
+The remaining cross-surface/provider failure matrix is tracked in `TODO.md`.
+Health probes and the cron
 job trigger use separate operational envelopes and headers (including
 service-specific success/error behavior); they are not represented by the
 account/auth inventory above.

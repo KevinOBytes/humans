@@ -12,6 +12,21 @@ function response(body: unknown, status = 200) {
 }
 
 describe("direct route client", () => {
+  it("retains explicit method denial codes without server details", async () => {
+    const result = await requestDirectRoute({
+      fetcher: async () =>
+        response(
+          { code: "METHOD_NOT_ALLOWED", message: "private-secret" },
+          405,
+        ),
+      url: "/api/account/invitations/accept",
+    });
+    expect(result).toEqual({
+      ok: false,
+      code: "METHOD_NOT_ALLOWED",
+      requestId,
+    });
+  });
   it("returns typed JSON success and sends same-origin credentials", async () => {
     let init: RequestInit | undefined;
     const result = await requestDirectRoute<{ status: boolean }>({

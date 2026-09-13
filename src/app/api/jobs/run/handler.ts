@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { createMethodBoundary } from "@/lib/api/method-boundary";
 
 import type { JobRunSummary } from "@/worker/run-once";
 
@@ -25,7 +26,7 @@ function json(body: object, status: number, correlationId: string): Response {
   return Response.json(body, {
     status,
     headers: {
-      "cache-control": "no-store",
+      "cache-control": "private, no-store",
       "x-request-id": correlationId,
     },
   });
@@ -124,14 +125,4 @@ export const GET = createJobsRunHandler({
   run: runDefaultBatch,
 });
 
-export function POST(request: Request): Response {
-  const correlationId = requestId(request);
-  return new Response(null, {
-    status: 405,
-    headers: {
-      allow: "GET",
-      "cache-control": "no-store",
-      "x-request-id": correlationId,
-    },
-  });
-}
+export const POST = createMethodBoundary(["GET", "HEAD", "OPTIONS"]).deny;

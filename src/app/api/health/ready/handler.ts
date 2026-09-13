@@ -89,6 +89,7 @@ export function createReadinessHandler(
 
     return Response.json(
       {
+        ...(!ready ? { code: "PROVIDER_UNAVAILABLE" } : {}),
         status: ready ? "ready" : "unavailable",
         service: "humans",
         dependencies,
