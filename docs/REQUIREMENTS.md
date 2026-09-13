@@ -5,7 +5,7 @@ Latest collaboration/runtime release evidence (2026-09-13): commits `4b55c33`,
 GitHub Actions runs `34767480893` and `34768072841` passed all nine required
 jobs, including real PostgreSQL integration and browser
 acceptance. The current runtime tree is Vercel deployment
-`dpl_DxhPnSN55zXxKGY1rCvCEo7B8LCQ` (`READY`) with aliases
+`dpl_F4MjcikAGaGnh1AEgKBgxyEyvQhk` (`READY`) with aliases
 `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`. Redacted production smoke passed homepage,
 liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL,
