@@ -73,6 +73,8 @@ const SEARCH_CLIENT_POLICY = {
   ttlMs: 60_000,
 } as const;
 
+export const BULK_EXPORT_ALERT_ROW_THRESHOLD = 100;
+
 export type SearchRuntime = Readonly<{
   cursorHmacKey: string;
   encryptionKey?: string;
@@ -1034,6 +1036,20 @@ export function createSearchService(
               metadata: { rowCount: artifact.rowCount },
             },
           );
+          if (artifact.rowCount >= BULK_EXPORT_ALERT_ROW_THRESHOLD) {
+            await createAuditService(scoped).write(scoped.database, {
+              action: "export.bulk_alert",
+              resourceKind: "export_artifact",
+              resourceId: artifact.id,
+              changedFields: ["state"],
+              metadata: {
+                caseScoped: artifact.caseId !== null,
+                redactionProfile: artifact.redactionProfile,
+                rowCount: artifact.rowCount,
+                threshold: BULK_EXPORT_ALERT_ROW_THRESHOLD,
+              },
+            });
+          }
           const [audited] = await scoped.database
             .update(exportArtifacts)
             .set({

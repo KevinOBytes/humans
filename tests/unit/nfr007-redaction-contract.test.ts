@@ -72,6 +72,37 @@ describe("NFR-007 redaction boundaries", () => {
     });
   });
 
+  it("retains only bounded bulk-export alert metadata", () => {
+    const redacted = redactAuditDiff({
+      changedFields: ["state"],
+      metadata: {
+        rowCount: 100,
+        threshold: 100,
+        redactionProfile: "RESTRICTED",
+        caseScoped: true,
+        query: "private identity search",
+        personId: "019d0000-0000-7000-8000-000000000001",
+        sourceIds: ["019d0000-0000-7000-8000-000000000002"],
+        storageKey: "exports/private/governed-export.json",
+        bytes: "private export bytes",
+      },
+      sensitivity: "internal",
+    });
+
+    expect(redacted).toEqual({
+      changedFields: ["state"],
+      metadata: {
+        caseScoped: true,
+        redactionProfile: "RESTRICTED",
+        rowCount: 100,
+        threshold: 100,
+      },
+    });
+    expect(JSON.stringify(redacted)).not.toMatch(
+      /private identity search|019d0000|sourceIds|storageKey|private export bytes/u,
+    );
+  });
+
   it("drops accidental logger fields before console serialization", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const unsafe = {
