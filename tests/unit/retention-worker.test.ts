@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   planRetentionCandidates,
+  retentionPolicyMatchesSnapshot,
   type RetentionResourceCandidate,
 } from "@/modules/privacy/retention-worker";
 
@@ -22,6 +23,42 @@ const resource = (
 });
 
 describe("retention worker candidate planning", () => {
+  it("accepts only an unchanged, active policy snapshot", () => {
+    const snapshot = {
+      id: policy.id,
+      version: 1,
+      resourceKind: "person",
+      retentionDays: policy.retentionDays,
+      deletionBehavior: policy.deletionBehavior,
+      deletedAt: null,
+    } as const;
+
+    expect(retentionPolicyMatchesSnapshot(snapshot, { ...snapshot })).toBe(
+      true,
+    );
+    expect(
+      retentionPolicyMatchesSnapshot(snapshot, { ...snapshot, version: 2 }),
+    ).toBe(false);
+    expect(
+      retentionPolicyMatchesSnapshot(snapshot, {
+        ...snapshot,
+        deletionBehavior: "review",
+      }),
+    ).toBe(false);
+    expect(
+      retentionPolicyMatchesSnapshot(snapshot, {
+        ...snapshot,
+        retentionDays: 31,
+      }),
+    ).toBe(false);
+    expect(
+      retentionPolicyMatchesSnapshot(snapshot, {
+        ...snapshot,
+        deletedAt: new Date("2026-09-12T00:00:00.000Z"),
+      }),
+    ).toBe(false);
+  });
+
   it("selects only due, unheld resources and leaves deletion for review", () => {
     expect(
       planRetentionCandidates({

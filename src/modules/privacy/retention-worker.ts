@@ -32,6 +32,32 @@ type RetentionPolicy = {
   deletionBehavior: string;
 };
 
+type RetentionPolicySnapshot = RetentionPolicy & {
+  version: number;
+  resourceKind: string;
+  deletedAt: Date | null;
+};
+
+/**
+ * A policy selected before a workspace transaction is only a candidate. The
+ * worker compares it with the row read after taking the workspace lock so a
+ * concurrent policy edit cannot enqueue a request under stale semantics.
+ */
+export function retentionPolicyMatchesSnapshot(
+  snapshot: RetentionPolicySnapshot,
+  current: RetentionPolicySnapshot,
+) {
+  return (
+    snapshot.deletedAt === null &&
+    current.deletedAt === null &&
+    snapshot.id === current.id &&
+    snapshot.version === current.version &&
+    snapshot.resourceKind === current.resourceKind &&
+    snapshot.retentionDays === current.retentionDays &&
+    snapshot.deletionBehavior === current.deletionBehavior
+  );
+}
+
 function retentionPurpose(
   policy: Pick<RetentionPolicy, "id"> & { version: number },
 ) {
@@ -112,6 +138,7 @@ export async function enqueueExpiredRetentionRequests(input: {
       retentionDays: retentionPolicies.retentionDays,
       deletionBehavior: retentionPolicies.deletionBehavior,
       version: retentionPolicies.version,
+      deletedAt: retentionPolicies.deletedAt,
     })
     .from(retentionPolicies)
     .where(
@@ -132,11 +159,39 @@ export async function enqueueExpiredRetentionRequests(input: {
         sql`select pg_advisory_xact_lock(hashtextextended(${policy.workspaceId}, 0))`,
       );
 
+      // Policy settings use this same workspace lock. Re-read the policy
+      // after taking it, because the initial cross-workspace list can become
+      // stale while this worker is waiting for the lock.
+      const [currentPolicy] = await transaction
+        .select({
+          id: retentionPolicies.id,
+          resourceKind: retentionPolicies.resourceKind,
+          retentionDays: retentionPolicies.retentionDays,
+          deletionBehavior: retentionPolicies.deletionBehavior,
+          version: retentionPolicies.version,
+          deletedAt: retentionPolicies.deletedAt,
+        })
+        .from(retentionPolicies)
+        .where(
+          and(
+            eq(retentionPolicies.workspaceId, policy.workspaceId),
+            eq(retentionPolicies.id, policy.id),
+            isNull(retentionPolicies.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (
+        !currentPolicy ||
+        !retentionPolicyMatchesSnapshot(policy, currentPolicy)
+      )
+        return;
+
       const cutoff = new Date(
-        now.getTime() - policy.retentionDays * 86_400_000,
+        now.getTime() - currentPolicy.retentionDays * 86_400_000,
       );
       const resourceRows =
-        policy.resourceKind === "person"
+        currentPolicy.resourceKind === "person"
           ? await transaction
               .select({ id: people.id, createdAt: people.createdAt })
               .from(people)

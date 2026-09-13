@@ -202,6 +202,17 @@ execution gap; no overall privacy requirement is checked. The complete
 retention-policy matrix, concurrent policy-update revalidation, external
 processor erasure, and hosted/browser acceptance remain open.
 
+Task 1 retention-policy revalidation checkpoint (2026-09-13): after taking the
+same workspace advisory lock used by policy mutations, the retention worker
+re-reads and row-locks the policy and compares its version, resource kind,
+interval, deletion behavior, and active state with the initial snapshot. A
+stale, changed, or deleted policy is skipped so it cannot enqueue a request
+under obsolete semantics. Focused unit coverage proves unchanged snapshots are
+accepted and version/configuration/deletion changes fail closed. This is a
+local race hardening measure, not live PostgreSQL/worker, external processor,
+hosted, or browser evidence; HUM-FR-005 and the complete retention matrix
+remain open.
+
 Task 3 local checkpoint (2026-09-11): the AI review ledger preserves typed proposals, evidence or validated web-source snapshots, confidence/uncertainty, run/provider/model/prompt-policy attribution, and explicit accept/reject/defer decisions. The person research panel uses generated review mutations instead of direct AI-driven profile updates. Acceptance requires current AI/write purpose coverage, case/resource visibility, human confirmation, and an owned completed source run; fact/relationship acceptance uses domain services and evidence assertions in one transaction. Batch acceptance is explicitly approved and atomic; AI-created relationships remain inferred until the existing independent assertion review permits promotion. Local unit/build/schema gates are required before commit. Live PostgreSQL lifecycle, browser and provider verification remain pending when the test database/provider is unavailable; this does not close HUM-FR-023 or the overall MVP.
 
 Source provenance checkpoint (2026-09-12): source records now expose first-class
