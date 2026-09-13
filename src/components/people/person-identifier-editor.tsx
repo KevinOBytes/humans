@@ -270,7 +270,7 @@ export function PersonIdentifierEditor({
               <select
                 id={`${id}-sensitivity`}
                 name="sensitivity"
-                defaultValue={identifier?.sensitivity ?? "CONFIDENTIAL"}
+                defaultValue={identifier?.sensitivity ?? "INTERNAL"}
                 className="border-input bg-background mt-2 min-h-11 w-full rounded-xl border px-3 text-base"
               >
                 {["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"].map(

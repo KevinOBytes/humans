@@ -72,7 +72,13 @@ versions, redacted audits, and principal-bound replay. Public values use
 normalized storage; all other values use protected-exact encryption and blind
 indexes and fail closed without runtime keys. Editors never load protected
 values and require a replacement for protected reclassification/namespace
-changes. Unit/schema/component tests cover storage preparation, generated
+changes.
+The default new profile identifier is encrypted `internal`. Invisible
+post-write results roll back with `NOT_VISIBLE` before audit/idempotency commit;
+confidential/restricted access still requires explicit resource authority.
+Update/archive SQL fences the authorized parent UUID against merge/unmerge
+ownership changes. Focused transaction-guard regressions cover both boundaries.
+Unit/schema/component tests cover storage preparation, generated
 operations, permissions, retries, and conflict feedback. The new gated
 `person-identifier-lifecycle.test.ts` covers generated and service lifecycles,
 principal separation, cross-workspace denial, version fencing, redaction, and
