@@ -18,7 +18,7 @@ changing route-specific authorization semantics.
 - Keep production route initialization lazy and fail closed.
 - Update both requirements documents only with measured evidence.
 
-## Task
+## Task 1
 
 Inventory every handler under `src/app/api`, add focused tests for any route
 that lacks the stable redacted error envelope, correlation header/body, and
