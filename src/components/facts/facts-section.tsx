@@ -187,6 +187,17 @@ export async function FactsSection({
             definitions={definitions}
             personId={personId}
             personOptions={personOptions}
+            supersededFactOptions={facts.flatMap((fact) =>
+              fact.id && fact.label
+                ? [
+                    {
+                      id: fact.id,
+                      label: fact.label,
+                      assertedAt: fact.assertedAt,
+                    },
+                  ]
+                : [],
+            )}
           />
           <PageControls
             label="Fact field options"

@@ -102,6 +102,114 @@ describe("FactForm", () => {
     });
   });
 
+  it("submits temporal, confidence, language, and same-person supersession metadata", async () => {
+    const user = userEvent.setup();
+    execute.mockResolvedValue({
+      ok: true,
+      data: {
+        createFact: { fact: { id: "fact-new" }, issues: [], code: null },
+      },
+      requestId: "request-metadata",
+    });
+    render(
+      <FactForm
+        definitions={[definition("TEXT")]}
+        personId="person-a"
+        supersededFactOptions={[
+          {
+            id: "fact-old",
+            label: "Previous biography",
+            assertedAt: "2025-01-02T00:00:00.000Z",
+          },
+        ]}
+      />,
+    );
+    await user.type(screen.getByLabelText("Value"), "Updated source claim");
+    await user.selectOptions(
+      screen.getByLabelText("Temporal interpretation"),
+      "BETWEEN",
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Temporal precision"),
+      "DAY",
+    );
+    fireEvent.change(screen.getByLabelText("Valid earliest"), {
+      target: { value: "2024-01-01T09:30" },
+    });
+    fireEvent.change(screen.getByLabelText("Valid latest"), {
+      target: { value: "2024-01-03T17:45" },
+    });
+    fireEvent.change(screen.getByLabelText("Observed at"), {
+      target: { value: "2024-01-04T12:00" },
+    });
+    await user.type(screen.getByLabelText("Language"), "en");
+    await user.type(
+      screen.getByLabelText("Confidence method"),
+      "source comparison",
+    );
+    await user.type(
+      screen.getByLabelText("Confidence explanation"),
+      "Two independent records agree.",
+    );
+    expect(
+      screen.getByRole("option", { name: /Previous biography/ }),
+    ).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText("Supersedes an existing claim"),
+      "fact-old",
+    );
+    await user.click(screen.getByRole("button", { name: "Add fact" }));
+
+    await waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    expect(execute.mock.calls[0]?.[1]).toMatchObject({
+      input: {
+        value: { text: "Updated source claim" },
+        temporalSemantics: "BETWEEN",
+        temporalPrecision: "DAY",
+        validEarliestAt: new Date("2024-01-01T09:30").toISOString(),
+        validLatestAt: new Date("2024-01-03T17:45").toISOString(),
+        observedAt: new Date("2024-01-04T12:00").toISOString(),
+        language: "en",
+        confidenceMethod: "source comparison",
+        confidenceExplanation: "Two independent records agree.",
+        supersedesFactId: "fact-old",
+      },
+    });
+  });
+
+  it("preserves the draft and blocks an invalid validity range", async () => {
+    const user = userEvent.setup();
+    render(<FactForm definitions={[definition("TEXT")]} personId="person-a" />);
+    await user.type(screen.getByLabelText("Value"), "Keep this draft");
+    fireEvent.change(screen.getByLabelText("Valid earliest"), {
+      target: { value: "2025-01-03T00:00" },
+    });
+    fireEvent.change(screen.getByLabelText("Valid latest"), {
+      target: { value: "2025-01-02T00:00" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Add fact" }));
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Value")).toHaveValue("Keep this draft");
+    expect(screen.getByLabelText("Valid earliest")).toHaveValue(
+      "2025-01-03T00:00",
+    );
+    expect(screen.getByLabelText("Valid latest")).toHaveValue(
+      "2025-01-02T00:00",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Earliest validity must be before latest validity",
+    );
+  });
+
+  it("does not expose a self-approval control for new facts", () => {
+    render(<FactForm definitions={[definition("TEXT")]} personId="person-a" />);
+
+    expect(screen.queryByLabelText(/review state/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/start unreviewed/i)).toBeInTheDocument();
+  });
+
   it("maps a literal payload issue and request ID to the value control", async () => {
     const user = userEvent.setup();
     execute.mockResolvedValue({
