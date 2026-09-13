@@ -1,0 +1,42 @@
+mutation CreatePersonIdentifier($input: CreatePersonIdentifierInput!) {
+  createPersonIdentifier(input: $input) {
+    identifier {
+      ...PersonIdentifierSummary
+    }
+    code
+    currentVersion
+    issues {
+      path
+      code
+      message
+    }
+  }
+}
+mutation UpdatePersonIdentifier($input: UpdatePersonIdentifierInput!) {
+  updatePersonIdentifier(input: $input) {
+    identifier {
+      ...PersonIdentifierSummary
+    }
+    code
+    currentVersion
+    issues {
+      path
+      code
+      message
+    }
+  }
+}
+mutation ArchivePersonIdentifier($input: ArchivePersonIdentifierInput!) {
+  archivePersonIdentifier(input: $input) {
+    identifier {
+      ...PersonIdentifierSummary
+    }
+    code
+    currentVersion
+    issues {
+      path
+      code
+      message
+    }
+  }
+}

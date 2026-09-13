@@ -702,9 +702,25 @@ for records explicitly classified `public`; encrypted values, blind indexes,
 and protected normalized values are never part of the GraphQL projection.
 Focused projection tests and a live-when-configured GraphQL acceptance cover
 public-value display, protected-value redaction, and foreign-workspace
-non-disclosure. Identifier create/update/archive controls, source-level
-citations, and the broader reconciliation/conflict and whole-profile matrices
-remain open.
+non-disclosure. Source-level citations and the broader reconciliation/conflict
+and whole-profile matrices remain open.
+
+Bounded identifier authoring checkpoint (2026-09-13): generated
+`CreatePersonIdentifier`, `UpdatePersonIdentifier`, and
+`ArchivePersonIdentifier` operations now back the profile's accessible
+create/edit/archive controls. The service revalidates live workspace authority
+and person/identifier visibility, validates effective dates, fences versions,
+and writes redacted audits and principal-bound idempotency references. Public
+values use normalized storage; non-public values use protected-exact encryption
+and workspace-bound blind indexes, failing closed when runtime keys are absent.
+Protected values are never returned to the editor; reclassification or namespace
+changes require a replacement when the existing value is protected. Unit,
+schema, and component tests verify preparation, API shape, permission denial,
+generated browser operations, retry keys, and conflict feedback. Live
+PostgreSQL lifecycle tests are present but were not run in this isolated
+worktree because `TEST_DATABASE_URL` was not configured. This checkpoint does
+not close HUM-FR-010/HUM-FR-028 or claim live-database, hosted, or whole-profile
+browser/accessibility acceptance.
 
 Bounded HUM-FR-028 effective-dated address profile evidence (2026-09-12): the
 generated `PersonAddresses` operation now carries the stored `validFrom`,

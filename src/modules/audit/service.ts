@@ -66,6 +66,7 @@ export type ResearchServiceContext = {
   database: Database;
   /** HMAC material used by retryable research mutations when enabled. */
   idempotencyHmacKey?: string;
+  protectedExactRuntime?: { blindIndexKey: string; encryptionKey: string };
   permissions: ReadonlySet<string>;
   requestId: string;
   searchIndexMaintenance: SearchIndexMaintenance;
