@@ -10,6 +10,7 @@ import {
   type SQLWrapper,
 } from "drizzle-orm";
 import { cases, caseMembers, caseResourceLinks } from "@/db/schema/cases";
+import { caseTeamLinks, teamMembers } from "@/db/schema/teams";
 import { facts } from "@/db/schema/facts";
 import { people } from "@/db/schema/people";
 import { relationships } from "@/db/schema/relationships";
@@ -23,28 +24,52 @@ export function caseResourceVisibilitySql(
 ): SQL {
   if (!["person", "fact", "relationship"].includes(input.resourceKind))
     return sql`true`;
-  return sql`NOT EXISTS (SELECT 1 FROM ${caseResourceLinks} WHERE ${caseResourceLinks.workspaceId} = ${context.workspaceId}::uuid AND ${caseResourceLinks.resourceKind} = ${input.resourceKind} AND ${caseResourceLinks.resourceId} = ${input.id} AND ${caseResourceLinks.deletedAt} IS NULL AND NOT EXISTS (SELECT 1 FROM ${caseMembers} INNER JOIN ${cases} ON ${cases.workspaceId} = ${caseMembers.workspaceId} AND ${cases.id} = ${caseMembers.caseId} WHERE ${caseMembers.workspaceId} = ${caseResourceLinks.workspaceId} AND ${caseMembers.caseId} = ${caseResourceLinks.caseId} AND ${caseMembers.principalId} = ${context.actor.principalId}::uuid AND ${caseMembers.deletedAt} IS NULL AND ${cases.deletedAt} IS NULL))`;
+  return sql`NOT EXISTS (SELECT 1 FROM ${caseResourceLinks} WHERE ${caseResourceLinks.workspaceId} = ${context.workspaceId}::uuid AND ${caseResourceLinks.resourceKind} = ${input.resourceKind} AND ${caseResourceLinks.resourceId} = ${input.id} AND ${caseResourceLinks.deletedAt} IS NULL AND NOT EXISTS (SELECT 1 FROM ${cases} WHERE ${cases.workspaceId} = ${caseResourceLinks.workspaceId} AND ${cases.id} = ${caseResourceLinks.caseId} AND ${cases.deletedAt} IS NULL AND (EXISTS (SELECT 1 FROM ${caseMembers} WHERE ${caseMembers.workspaceId} = ${caseResourceLinks.workspaceId} AND ${caseMembers.caseId} = ${caseResourceLinks.caseId} AND ${caseMembers.principalId} = ${context.actor.principalId}::uuid AND ${caseMembers.deletedAt} IS NULL) OR EXISTS (SELECT 1 FROM ${caseTeamLinks} INNER JOIN ${teamMembers} ON ${teamMembers.workspaceId} = ${caseTeamLinks.workspaceId} AND ${teamMembers.teamId} = ${caseTeamLinks.teamId} WHERE ${caseTeamLinks.workspaceId} = ${caseResourceLinks.workspaceId} AND ${caseTeamLinks.caseId} = ${caseResourceLinks.caseId} AND ${caseTeamLinks.deletedAt} IS NULL AND ${teamMembers.principalId} = ${context.actor.principalId}::uuid AND ${teamMembers.deletedAt} IS NULL))))`;
 }
 export function createCasesRepository(database: Database) {
   return {
     async get(workspaceId: string, id: string, principalId: string) {
       const [row] = await database
-        .select({ case: cases, role: caseMembers.role })
+        .select({
+          case: cases,
+          role: sql<string>`COALESCE(${caseMembers.role}, ${teamMembers.role}, 'member')`,
+        })
         .from(cases)
-        .innerJoin(
+        .leftJoin(
           caseMembers,
           and(
             eq(cases.workspaceId, caseMembers.workspaceId),
             eq(cases.id, caseMembers.caseId),
+            eq(caseMembers.principalId, principalId),
+            isNull(caseMembers.deletedAt),
+          ),
+        )
+        .leftJoin(
+          caseTeamLinks,
+          and(
+            eq(cases.workspaceId, caseTeamLinks.workspaceId),
+            eq(cases.id, caseTeamLinks.caseId),
+            isNull(caseTeamLinks.deletedAt),
+          ),
+        )
+        .leftJoin(
+          teamMembers,
+          and(
+            eq(teamMembers.workspaceId, caseTeamLinks.workspaceId),
+            eq(teamMembers.teamId, caseTeamLinks.teamId),
+            eq(teamMembers.principalId, principalId),
+            isNull(teamMembers.deletedAt),
           ),
         )
         .where(
           and(
             eq(cases.workspaceId, workspaceId),
             eq(cases.id, id),
-            eq(caseMembers.principalId, principalId),
             isNull(cases.deletedAt),
-            isNull(caseMembers.deletedAt),
+            or(
+              sql`${caseMembers.id} IS NOT NULL`,
+              sql`${teamMembers.id} IS NOT NULL`,
+            ),
           ),
         )
         .limit(1);
@@ -57,21 +82,42 @@ export function createCasesRepository(database: Database) {
       after?: { at: Date; id: string } | null,
     ) {
       return database
-        .select({ case: cases })
+        .selectDistinct({ case: cases })
         .from(cases)
-        .innerJoin(
+        .leftJoin(
           caseMembers,
           and(
             eq(cases.workspaceId, caseMembers.workspaceId),
             eq(cases.id, caseMembers.caseId),
+            eq(caseMembers.principalId, principalId),
+            isNull(caseMembers.deletedAt),
+          ),
+        )
+        .leftJoin(
+          caseTeamLinks,
+          and(
+            eq(cases.workspaceId, caseTeamLinks.workspaceId),
+            eq(cases.id, caseTeamLinks.caseId),
+            isNull(caseTeamLinks.deletedAt),
+          ),
+        )
+        .leftJoin(
+          teamMembers,
+          and(
+            eq(teamMembers.workspaceId, caseTeamLinks.workspaceId),
+            eq(teamMembers.teamId, caseTeamLinks.teamId),
+            eq(teamMembers.principalId, principalId),
+            isNull(teamMembers.deletedAt),
           ),
         )
         .where(
           and(
             eq(cases.workspaceId, workspaceId),
-            eq(caseMembers.principalId, principalId),
             isNull(cases.deletedAt),
-            isNull(caseMembers.deletedAt),
+            or(
+              sql`${caseMembers.id} IS NOT NULL`,
+              sql`${teamMembers.id} IS NOT NULL`,
+            ),
             after
               ? or(
                   lt(cases.createdAt, after.at),

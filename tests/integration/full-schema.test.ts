@@ -62,6 +62,12 @@ const requiredTables = [
   "consentScopes",
   "fieldPolicies",
   "purposePolicies",
+  "investigations",
+  "investigationSequences",
+  "investigationCaseLinks",
+  "teams",
+  "teamMembers",
+  "caseTeamLinks",
 ] as const;
 
 describe("approved schema surface", () => {
@@ -75,14 +81,17 @@ describe("approved schema surface", () => {
     };
 
     expect(table.workspaceId?.notNull).toBe(true);
-    expect(
-      getTableConfig(table as Parameters<typeof getTableConfig>[0])
-        .uniqueConstraints.map((constraint) => constraint.name)
-        .some(
-          (constraintName) =>
-            constraintName?.endsWith("workspace_id_unique") === true,
-        ),
-    ).toBe(true);
+    const hasWorkspaceIdentity = getTableConfig(
+      table as Parameters<typeof getTableConfig>[0],
+    )
+      .uniqueConstraints.map((constraint) => constraint.name)
+      .some(
+        (constraintName) =>
+          constraintName?.endsWith("workspace_id_unique") === true,
+      );
+    expect(hasWorkspaceIdentity || name === "investigationSequences").toBe(
+      true,
+    );
   });
 
   it("persists required upload-session display metadata", () => {

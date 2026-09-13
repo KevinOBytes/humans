@@ -735,3 +735,13 @@ JSON; the existing live files/imports test covers stored diagnostic redaction,
 authorized structured output, foreign-workspace denial, correlation, and
 private caching. The whole-product actor/tenant and producer/provider redaction
 matrices remain open; this evidence does not close either requirement.
+Collaboration hierarchy checkpoint (2026-09-13): migrations `0048_core.sql`
+and `0049_core.sql` add workspace-scoped teams, team members, explicit
+case–team sharing links, investigations, and investigation–case links. The
+GraphQL/service boundary enforces workspace and membership checks, owner or
+manager approval for sharing, principal-bound idempotency, and redacted audit
+events. Focused schema, GraphQL, typecheck, lint, Drizzle drift, and generated
+operation tests pass locally. Remaining work is intentionally open: dedicated
+team/investigation UI, disposable PostgreSQL lifecycle coverage, assignment
+scope integration, hosted/provider acceptance, and the full role/redaction/
+accessibility matrix.

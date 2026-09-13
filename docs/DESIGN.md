@@ -1,5 +1,18 @@
 # Product and interface design
 
+## Collaboration surfaces
+
+Cases remain the focused evidence workspace, while investigations provide the
+reviewable objective and lifecycle context above them. Team membership is
+reusable across cases, but does not implicitly grant access: a case owner or
+workspace manager must create the explicit case–team sharing link, and the
+server re-checks both the current workspace and active team/case membership on
+every read and replay. The planned UI should expose investigation list/detail,
+case links, team membership, and sharing grants as separate settings/workspace
+surfaces with sensitivity and purpose labels. Until those pages are complete,
+the generated GraphQL boundary is the supported interface and no client may
+infer access from a team name alone.
+
 ## Consent-governed research surfaces
 
 The person `Consent & Purpose` section requires an explicit purpose and operation,

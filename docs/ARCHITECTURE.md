@@ -1,5 +1,22 @@
 # Architecture
 
+## Workspace collaboration and investigation hierarchy
+
+The collaboration boundary is modeled explicitly rather than treating a case
+as an investigation or a workspace role as a team. `investigations` are
+workspace-scoped, receive a stable per-workspace number and slug, carry an
+objective, purpose, sensitivity, lifecycle dates/state, and lead principal,
+and can link to one or more cases through `investigationCaseLinks`. Reusable
+`teams` have workspace-scoped `teamMembers` with owner/reviewer/member roles.
+`caseTeamLinks` is an explicit sharing grant: a team sees a case only after a
+case owner or workspace manager links it, and ordinary members still need
+active membership in the team or case. All reads are tenant-scoped and all
+mutations use the same principal-bound idempotency and redacted audit seams as
+the other research domains. The current release includes schema, migrations,
+GraphQL operations, authorization services, and contract tests; dedicated
+investigation/team administration pages and the full hosted/browser matrix
+remain tracked in `TODO.md`.
+
 ## System boundary
 
 Humans is a TypeScript modular monolith built with the Next.js App Router. The browser talks to Better Auth for identity flows and to GraphQL Yoga at `/api/graphql` for application data. Pothos defines the schema, GraphQL Code Generator produces typed operations, domain services enforce policy and orchestration, and Drizzle repositories own workspace-scoped persistence.
