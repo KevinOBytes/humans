@@ -44,6 +44,14 @@ use its internal `postgres` and `redis` network without TLS. Focused
 credential material; Neon/Upstash reachability and external provider lifecycle
 acceptance still require an operator-run environment.
 
+Hosted authentication probe (2026-09-13): the redacted smoke harness was run
+with the operator-controlled ignored `.env` parsed through dotenv (not shell
+evaluation) and injected without printing values. Public routes/readiness
+passed, but email sign-in returned `403 AUTH_REQUEST_FAILED`. This is an
+unsuccessful credentialed probe rather than a diagnosis of the password or
+database; an attended rotation with the hosted `DATABASE_URL` and `ADMIN_*`
+values remains required.
+
 Bounded administrator review UI evidence (2026-09-13): owner/admin users now
 have `/settings/break-glass`, backed by the generated workspace-scoped query
 and versioned approve/reject/revoke mutations. The surface requires a

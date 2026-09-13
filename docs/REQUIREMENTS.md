@@ -25,6 +25,14 @@ Vercel secrets were not exported for an attended rotation run; the remaining
 hosted/provider/privacy/accessibility/performance matrix is intentionally still
 tracked below.
 
+Hosted authentication probe (2026-09-13): the same redacted smoke harness was
+run with the operator-controlled ignored `.env` parsed as dotenv and injected
+into the process without printing its values. Public routes and readiness
+passed, but the configured email sign-in returned `403 AUTH_REQUEST_FAILED`.
+This records an unsuccessful credentialed probe, not a password or provider
+diagnosis; an attended rotation using the hosted `DATABASE_URL` and `ADMIN_*`
+values is still required before hosted authentication can be accepted.
+
 Bounded production smoke contract evidence (2026-09-13): the opt-in
 authenticated harness now requires all three configured administrator values,
 signs in independently through the email and username endpoints, and verifies
