@@ -35,6 +35,19 @@ describe("middleware security envelope", () => {
     expect(response.headers.get("strict-transport-security")).toBeDefined();
   });
 
+  it("preserves the requested assignment route for unauthenticated users", () => {
+    const response = proxy(
+      new NextRequest("https://humans.example.test/assignments?status=OPEN"),
+    );
+
+    expect(response.status).toBe(307);
+    const location = new URL(response.headers.get("location")!);
+    expect(location.pathname).toBe("/sign-in");
+    expect(location.searchParams.get("returnTo")).toBe(
+      "/assignments?status=OPEN",
+    );
+  });
+
   it("moves reset tokens to hash and keeps security headers", async () => {
     const response = proxy(
       new NextRequest("https://humans.example.test/reset-password?token=s3t"),

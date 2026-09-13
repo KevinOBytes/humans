@@ -9,6 +9,7 @@ const protectedPrefixes = [
   "/analyst",
   "/evidence",
   "/imports",
+  "/assignments",
   "/settings",
 ] as const;
 
