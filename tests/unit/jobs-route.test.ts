@@ -24,7 +24,7 @@ describe("bounded Vercel job route", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
     await expect(response.json()).resolves.toEqual({
       success: true,
@@ -127,7 +127,7 @@ describe("bounded Vercel job route", () => {
     expect(maxDuration).toBe(30);
     const response = POST(new Request("https://humans.example/api/jobs/run"));
     expect(response.status).toBe(405);
-    expect(response.headers.get("allow")).toBe("GET");
+    expect(response.headers.get("allow")).toBe("GET, HEAD, OPTIONS");
     expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
   });
 

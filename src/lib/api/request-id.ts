@@ -10,7 +10,7 @@ export function requestCorrelationId(request: Request): string {
 
 export function correlationHeaders(requestId: string): Headers {
   return new Headers({
-    "cache-control": "no-store",
+    "cache-control": "private, no-store",
     "x-request-id": requestId,
   });
 }

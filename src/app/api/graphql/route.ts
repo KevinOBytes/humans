@@ -2,6 +2,7 @@ import {
   createGraphQLInternalErrorResponse,
   createGraphQLRequestId,
 } from "@/graphql/server";
+import { createMethodBoundary } from "@/lib/api/method-boundary";
 import { OperationLimiter } from "@/graphql/operation-limiter";
 import { productionSecurityEventLogger } from "@/lib/observability/security-events";
 import { createSearchIndexMaintenance } from "@/modules/search/indexer";
@@ -138,3 +139,13 @@ async function handler(request: Request) {
 }
 
 export { handler as GET, handler as OPTIONS, handler as POST };
+
+const methods = createMethodBoundary(
+  process.env.NODE_ENV === "development"
+    ? ["GET", "POST", "OPTIONS"]
+    : ["POST", "OPTIONS"],
+  "graphql",
+);
+export const DELETE = methods.deny;
+export const PATCH = methods.deny;
+export const PUT = methods.deny;

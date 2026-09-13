@@ -16,6 +16,7 @@ describe("liveness", () => {
     const response = await getLiveness(request);
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.json()).toEqual({
       status: "ok",
       service: "humans",
@@ -91,6 +92,7 @@ describe("readiness", () => {
 
     expect(response.status).toBe(503);
     expect(body).toEqual({
+      code: "PROVIDER_UNAVAILABLE",
       status: "unavailable",
       service: "humans",
       dependencies: { configuration: "ok", redis: "failed" },
@@ -122,6 +124,7 @@ describe("readiness", () => {
     expect(elapsedMs).toBeLessThan(80);
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
+      code: "PROVIDER_UNAVAILABLE",
       status: "unavailable",
       service: "humans",
       dependencies: { storage: "failed" },

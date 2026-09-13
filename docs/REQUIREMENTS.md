@@ -1,5 +1,9 @@
 # MVP requirements
 
+Bounded HUM-FR-032 direct-route evidence (2026-09-13): all 10 API route modules are inventoried by a 43-case method-boundary suite. Unsupported standard methods now return stable correlated 405 responses with explicit `Allow` and `private, no-store`; HEAD denials and OPTIONS remain bodyless, GraphQL retains its own error shape and origin-aware preflight, and the other OPTIONS responses do not grant CORS or initialize providers. Jobs now return a JSON method-denial code, health and jobs responses use the private cache policy, and readiness failures add `PROVIDER_UNAVAILABLE` without dependency details. Twelve direct-account input/authentication-boundary cases prove malformed JSON, schema rejection, origin denial, and API-key denial before mutation; existing route-specific failure codes are preserved. The focused route suite passes 138 tests and the full unit suite passes 183 files/1,377 tests. This is local handler evidence, not hosted/provider or whole-product failure-matrix closure; HUM-FR-032 remains incomplete.
+
+Local production-build route verification for this tranche: Next.js 16.3.4 built successfully with Node 24; a loopback-only standalone server (`node .next/standalone/server.js`) returned the expected status, request header/body correlation, and private cache policy for all 42 applicable method-denial/OPTIONS responses across the 10 routes. HEAD and OPTIONS bodies were empty. This does not verify hosted dependencies or authenticated user journeys.
+
 Latest application runtime checkpoint (2026-09-13): commit `ae1c5fd`
 passed GitHub Actions run `34726668384` across all 9 checks, including the live
 PostgreSQL, browser, Compose, generated-drift, security, and production-build
