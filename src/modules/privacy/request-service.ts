@@ -31,6 +31,7 @@ import {
   privacyPolicyLock,
   requirePrivacyResource,
 } from "./retention-service";
+import { retentionRequestPolicyIsCurrent } from "./retention-request-policy";
 
 function unavailable(): never {
   throw createGraphQLError(
@@ -92,6 +93,7 @@ export async function privacyRequestHeld(
       return true;
   return false;
 }
+
 export function createPrivacyRequestService(context: ResearchServiceContext) {
   async function read(
     scoped: ResearchServiceContext,
@@ -320,11 +322,11 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
         )
           precondition();
         await evidence(scoped, row.verificationEvidenceId);
-        if (
-          row.requestType === "deletion" &&
-          (await privacyRequestHeld(scoped, row))
-        )
-          precondition();
+        if (row.requestType === "deletion") {
+          if (!(await retentionRequestPolicyIsCurrent(scoped, row)))
+            precondition();
+          if (await privacyRequestHeld(scoped, row)) precondition();
+        }
         if (row.state === "fulfilling") {
           if (!input.completionEvidenceId) precondition();
           await evidence(scoped, input.completionEvidenceId);

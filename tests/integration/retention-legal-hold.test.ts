@@ -5,7 +5,9 @@ import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
 import { people } from "@/db/schema/people";
 import { auditEvents } from "@/db/schema/operations";
-import { privacyRequests } from "@/db/schema/privacy";
+import { deletionRequests, privacyRequests } from "@/db/schema/privacy";
+import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
+import { createPrivacyRequestService } from "@/modules/privacy/request-service";
 import { retentionPolicies } from "@/db/schema/workspaces";
 import { createRetentionService } from "@/modules/privacy/retention-service";
 import { enqueueExpiredRetentionRequests } from "@/modules/privacy/retention-worker";
@@ -192,5 +194,224 @@ live("retention legal hold boundary", () => {
       .from(people)
       .where(eq(people.id, person.id));
     expect(row?.deletedAt).toBeNull();
+  });
+
+  it("fulfills queued retention requests only while the policy version remains current", async () => {
+    const now = new Date("2026-09-12T00:00:00Z");
+    const executablePersonId = newId();
+    const blockedPersonId = newId();
+    const unfulfilledPersonId = newId();
+    const policyId = newId();
+    await fixture.database.insert(people).values(
+      [executablePersonId, blockedPersonId, unfulfilledPersonId].map((id) => ({
+        id,
+        workspaceId: context.workspaceId,
+        displayName: "Private retention fixture",
+        createdAt: new Date("2026-08-01T00:00:00Z"),
+        createdBy: context.actor.principalId,
+        updatedBy: context.actor.principalId,
+      })),
+    );
+    await fixture.database.insert(retentionPolicies).values({
+      id: policyId,
+      workspaceId: context.workspaceId,
+      resourceKind: "person",
+      retentionDays: 30,
+      deletionBehavior: "soft_delete",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+
+    expect(
+      await enqueueExpiredRetentionRequests({
+        database: fixture.database,
+        idempotencyHmacKey: "ab".repeat(32),
+        now,
+      }),
+    ).toBe(3);
+    const requests = await fixture.database
+      .select()
+      .from(privacyRequests)
+      .where(eq(privacyRequests.workspaceId, context.workspaceId));
+    expect(requests).toHaveLength(3);
+    const executableRequest = requests.find((row) =>
+      row.scope.personIds.includes(executablePersonId),
+    );
+    const blockedRequest = requests.find((row) =>
+      row.scope.personIds.includes(blockedPersonId),
+    );
+    const unfulfilledRequest = requests.find((row) =>
+      row.scope.personIds.includes(unfulfilledPersonId),
+    );
+    for (const request of requests)
+      expect(request).toMatchObject({
+        purpose: `retention:${policyId}:v1`,
+        requesterId: "worker:retention",
+        state: "requested",
+      });
+
+    const evidenceId = newId();
+    await fixture.database.insert(files).values({
+      id: evidenceId,
+      workspaceId: context.workspaceId,
+      storageProvider: "s3",
+      storageBucket: "private-fixture",
+      storageKey: evidenceId,
+      originalName: "private-retention-review.txt",
+      byteSize: 1,
+      checksum: "b".repeat(64),
+      quarantineState: "available",
+      scanState: "clean",
+      uploadedBy: actor.userId,
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
+    const reviewer = await caseContext(
+      fixture,
+      await fixture.createWorkspaceMember(actor, "admin"),
+    );
+    reviewer.actor = {
+      ...reviewer.actor,
+      role: "admin",
+    } as typeof reviewer.actor;
+    const service = createPrivacyRequestService(reviewer);
+    const approvedExecutable = await service.reviewRequest({
+      id: executableRequest!.id,
+      expectedVersion: executableRequest!.version,
+      state: "approved",
+      verificationEvidenceId: evidenceId,
+    });
+    expect(
+      (
+        await service.fulfillRequest({
+          id: approvedExecutable.id,
+          expectedVersion: approvedExecutable.version,
+        })
+      ).state,
+    ).toBe("fulfilling");
+    expect(
+      await executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "ab".repeat(32),
+        now,
+      }),
+    ).toBe(1);
+    const approvedBlocked = await service.reviewRequest({
+      id: blockedRequest!.id,
+      expectedVersion: blockedRequest!.version,
+      state: "approved",
+      verificationEvidenceId: evidenceId,
+    });
+    expect(
+      (
+        await service.fulfillRequest({
+          id: approvedBlocked.id,
+          expectedVersion: approvedBlocked.version,
+        })
+      ).state,
+    ).toBe("fulfilling");
+    const approvedUnfulfilled = await service.reviewRequest({
+      id: unfulfilledRequest!.id,
+      expectedVersion: unfulfilledRequest!.version,
+      state: "approved",
+      verificationEvidenceId: evidenceId,
+    });
+
+    await fixture.database
+      .update(retentionPolicies)
+      .set({
+        deletionBehavior: "review",
+        updatedBy: reviewer.actor.principalId,
+        version: 2,
+      })
+      .where(eq(retentionPolicies.id, policyId));
+
+    expect(
+      await executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "ab".repeat(32),
+        now,
+      }),
+    ).toBe(0);
+    const [blockedDeletion] = await fixture.database
+      .select()
+      .from(deletionRequests)
+      .where(eq(deletionRequests.state, "approved"));
+    expect(blockedDeletion).toMatchObject({
+      reviewNotes: "Deletion requires the current retention policy.",
+      state: "approved",
+    });
+    expect(
+      await executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "ab".repeat(32),
+        now,
+      }),
+    ).toBe(0);
+    const policyBlocks = await fixture.database
+      .select({
+        outcome: auditEvents.outcome,
+        redactedDiff: auditEvents.redactedDiff,
+      })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, context.workspaceId),
+          eq(auditEvents.action, "deletion_request.blocked"),
+        ),
+      );
+    expect(policyBlocks).toEqual([
+      {
+        outcome: "failure",
+        redactedDiff: { reason: "retention_policy_changed" },
+      },
+    ]);
+
+    await expect(
+      service.fulfillRequest({
+        id: approvedUnfulfilled.id,
+        expectedVersion: approvedUnfulfilled.version,
+      }),
+    ).rejects.toMatchObject({
+      extensions: { code: "PRECONDITION_FAILED" },
+    });
+    const requestsForDeletion = await fixture.database
+      .select()
+      .from(deletionRequests);
+    expect(requestsForDeletion).toHaveLength(2);
+    expect(requestsForDeletion).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: { personIds: [executablePersonId], fileIds: [] },
+          state: "completed",
+        }),
+        expect.objectContaining({
+          scope: { personIds: [blockedPersonId], fileIds: [] },
+          state: "approved",
+        }),
+      ]),
+    );
+    expect(blockedDeletion?.scope).toEqual({
+      personIds: [blockedPersonId],
+      fileIds: [],
+    });
+    const resources = await fixture.database
+      .select({
+        deletedAt: people.deletedAt,
+        id: people.id,
+        version: people.version,
+      })
+      .from(people);
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        {
+          deletedAt: expect.any(Date),
+          id: executablePersonId,
+          version: 2,
+        },
+        { deletedAt: null, id: blockedPersonId, version: 1 },
+        { deletedAt: null, id: unfulfilledPersonId, version: 1 },
+      ]),
+    );
   });
 });
