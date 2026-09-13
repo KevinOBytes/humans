@@ -1,10 +1,11 @@
 # MVP requirements
 
-Current release checkpoint (2026-09-13): runtime commit `b90b048` is deployed
-from `main`; checkpoint documentation is pushed to GitHub.
-CI run `34780657189` passed all nine required jobs, and Vercel deployment
-`dpl_GvYqDQDr6Fp4ooCdqCYV6sJXuPpY` is `READY` on Node 24 with the
-configured custom-domain and Vercel aliases. This release adds consented,
+Current release checkpoint (2026-09-13): runtime commit `7826483` is deployed
+from `main`; checkpoint documentation is being synchronized with that runtime.
+GitHub Actions run `34784968632` passed all nine required jobs, and Vercel
+deployment `dpl_98V3ADEfRHvTLKmdUjQrbw3kbNQf` is `READY` on Node 24 with the
+production aliases `humans-dun.vercel.app` and `humans-tkoresearch.vercel.app`.
+This release adds consented,
 workspace-catalog-backed web fact suggestions with immutable run/source
 provenance and human review; the tracked hosted credential/provider and
 whole-product acceptance requirements remain explicitly incomplete.
