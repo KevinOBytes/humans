@@ -31,6 +31,7 @@ export const permissionStatements = {
   graphView: ["create", "read", "update", "delete", "run"],
   analysis: ["create", "read", "run", "cancel", "delete"],
   audit: ["read"],
+  breakGlass: ["create", "read", "update", "delete"],
   webhook: ["create", "read", "update", "delete"],
   graphql: ["introspect"],
 } as const;
@@ -154,6 +155,7 @@ const adminStatements = {
   ...researchWrites,
   ...analysisOperations,
   audit: ["read"],
+  breakGlass: ["create", "read", "update", "delete"],
   webhook: ["create", "read", "update", "delete"],
   graphql: ["introspect"],
 } as const;
@@ -164,6 +166,7 @@ export const workspaceRoles = {
   analyst: accessControl.newRole({
     ...researchReads,
     ...analysisOperations,
+    breakGlass: ["create", "read"],
   }),
   contributor: accessControl.newRole({
     workspace: ["read"],
@@ -173,8 +176,12 @@ export const workspaceRoles = {
     savedQuery: ["read"],
     graphView: ["read"],
     analysis: ["read"],
+    breakGlass: ["create", "read"],
   }),
-  viewer: accessControl.newRole(researchReads),
+  viewer: accessControl.newRole({
+    ...researchReads,
+    breakGlass: ["create", "read"],
+  }),
 } as const;
 
 // Short aliases keep the same values available for Better Auth server and

@@ -41,6 +41,7 @@ import type { LocationsService } from "@/modules/locations/service";
 import type { createAiAnalysisService } from "@/modules/ai/service";
 import type { createWebhooksService } from "@/modules/webhooks/service";
 import type { GovernanceService } from "@/modules/governance/service";
+import type { BreakGlassService } from "@/modules/governance/break-glass-service";
 import type { CasesService } from "@/modules/cases/service";
 import type { EvidenceAssertionsService } from "@/modules/evidence/assertions";
 import type { ExportApprovalService } from "@/modules/exports/approval-service";
@@ -75,6 +76,7 @@ export type GraphQLServices = {
   ai: ReturnType<typeof createAiAnalysisService>;
   webhooks: ReturnType<typeof createWebhooksService>;
   governance: GovernanceService;
+  breakGlass: BreakGlassService;
   cases: CasesService;
   privacy: ReturnType<
     typeof import("@/modules/privacy/request-service").createPrivacyRequestService

@@ -1,6 +1,7 @@
 import {
   and,
   eq,
+  gt,
   gte,
   inArray,
   isNull,
@@ -17,6 +18,10 @@ import { apiKeys, users } from "@/db/schema/auth";
 import { auditEvents } from "@/db/schema/operations";
 import { workspacePrincipals } from "@/db/schema/principals";
 import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
+import {
+  breakGlassAccessRequests,
+  breakGlassAccessResources,
+} from "@/db/schema/governance";
 import { createGraphQLError } from "@/graphql/errors";
 import { decodeResearchCursor, normalizePagination } from "@/graphql/limits";
 import type { Database } from "@/modules/auth/bootstrap-admin";
@@ -178,6 +183,20 @@ function baselineResourceVisibilitySql(
         AND ${sensitivityRankSql(accessPolicies.sensitivityCeiling)} >=
             ${sensitivityRankSql(input.sensitivity)}
     )
+    OR EXISTS (
+      SELECT 1
+      FROM ${breakGlassAccessResources}
+      INNER JOIN ${breakGlassAccessRequests}
+        ON ${breakGlassAccessRequests.workspaceId} = ${breakGlassAccessResources.workspaceId}
+       AND ${breakGlassAccessRequests.id} = ${breakGlassAccessResources.requestId}
+      WHERE ${breakGlassAccessResources.workspaceId} = ${context.workspaceId}::uuid
+        AND ${breakGlassAccessResources.resourceKind} = ${input.resourceKind}
+        AND ${breakGlassAccessResources.resourceId} = ${input.id}
+        AND ${breakGlassAccessRequests.requesterPrincipalId} = ${context.actor.principalId}::uuid
+        AND ${breakGlassAccessRequests.state} = 'approved'
+        AND ${breakGlassAccessRequests.expiresAt} > ${now}::timestamptz
+        AND ${breakGlassAccessRequests.deletedAt} IS NULL
+    )
   )`;
 }
 
@@ -205,6 +224,37 @@ async function baselineVisibleResourceIds(
   if (protectedResources.length === 0 || context.actor.type === "apiKey") {
     return visible;
   }
+  const breakGlassRows = await database
+    .select({ resourceId: breakGlassAccessResources.resourceId })
+    .from(breakGlassAccessResources)
+    .innerJoin(
+      breakGlassAccessRequests,
+      and(
+        eq(
+          breakGlassAccessRequests.workspaceId,
+          breakGlassAccessResources.workspaceId,
+        ),
+        eq(breakGlassAccessRequests.id, breakGlassAccessResources.requestId),
+      ),
+    )
+    .where(
+      and(
+        eq(breakGlassAccessResources.workspaceId, context.workspaceId),
+        eq(breakGlassAccessResources.resourceKind, input.resourceKind),
+        inArray(
+          breakGlassAccessResources.resourceId,
+          protectedResources.map((resource) => resource.id),
+        ),
+        eq(
+          breakGlassAccessRequests.requesterPrincipalId,
+          context.actor.principalId,
+        ),
+        eq(breakGlassAccessRequests.state, "approved"),
+        gt(breakGlassAccessRequests.expiresAt, new Date()),
+        isNull(breakGlassAccessRequests.deletedAt),
+      ),
+    );
+  for (const row of breakGlassRows) visible.add(row.resourceId);
   const now = new Date();
   const grantQuery = database
     .select({

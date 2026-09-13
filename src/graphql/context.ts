@@ -65,6 +65,7 @@ import {
   type WebhookServiceRuntime,
 } from "@/modules/webhooks/service";
 import { createGovernanceService } from "@/modules/governance/service";
+import { createBreakGlassService } from "@/modules/governance/break-glass-service";
 import { createCasesService } from "@/modules/cases/service";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
 import { createRetentionService } from "@/modules/privacy/retention-service";
@@ -535,6 +536,15 @@ function createServices(input: {
       workspaceId: input.context.workspaceId,
     }),
     governance: createGovernanceService({
+      actor: input.context.actor,
+      database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
+      permissions: input.context.permissions,
+      requestId: input.context.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.context.workspaceId,
+    }),
+    breakGlass: createBreakGlassService({
       actor: input.context.actor,
       database: input.database,
       idempotencyHmacKey: input.aiRuntime.hmacKey,

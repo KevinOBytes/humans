@@ -14,6 +14,7 @@ import {
 
 import {
   approvalStateEnum,
+  breakGlassStateEnum,
   governanceScopeEnum,
   lawfulBasisEnum,
   policyStateEnum,
@@ -204,5 +205,135 @@ export const accessApprovals = pgTable(
       foreignColumns: [factDefinitions.workspaceId, factDefinitions.id],
     }).onDelete("restrict"),
     check("access_approvals_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+/**
+ * Explicit, time-limited exceptional access. A request never grants access by
+ * itself; an owner/admin must approve it and the resource rows enumerate the
+ * exact workspace records that may be viewed.
+ */
+export const breakGlassAccessRequests = pgTable(
+  "break_glass_access_requests",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    requesterPrincipalId: uuid("requester_principal_id").notNull(),
+    reviewerPrincipalId: uuid("reviewer_principal_id"),
+    purpose: text("purpose").notNull(),
+    justification: text("justification").notNull(),
+    caseReference: text("case_reference"),
+    state: breakGlassStateEnum("state").default("requested").notNull(),
+    expiresAt: domainTimestamp("expires_at").notNull(),
+    reviewedAt: domainTimestamp("reviewed_at"),
+    reviewReason: text("review_reason"),
+    revokedAt: domainTimestamp("revoked_at"),
+    revokedBy: uuid("revoked_by"),
+    revokeReason: text("revoke_reason"),
+    version: integer("version").default(1).notNull(),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+    createdBy: text("created_by").notNull(),
+    updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
+    updatedBy: text("updated_by").notNull(),
+    deletedAt: domainTimestamp("deleted_at"),
+    deletedBy: text("deleted_by"),
+  },
+  (table) => [
+    unique("break_glass_access_requests_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("break_glass_access_requests_workspace_state_idx").on(
+      table.workspaceId,
+      table.state,
+      table.expiresAt,
+    ),
+    index("break_glass_access_requests_workspace_requester_idx").on(
+      table.workspaceId,
+      table.requesterPrincipalId,
+      table.createdAt,
+    ),
+    foreignKey({
+      name: "break_glass_access_requests_workspace_requester_fk",
+      columns: [table.workspaceId, table.requesterPrincipalId],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "break_glass_access_requests_workspace_reviewer_fk",
+      columns: [table.workspaceId, table.reviewerPrincipalId],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "break_glass_access_requests_workspace_revoker_fk",
+      columns: [table.workspaceId, table.revokedBy],
+      foreignColumns: [workspacePrincipals.workspaceId, workspacePrincipals.id],
+    }).onDelete("restrict"),
+    check(
+      "break_glass_access_requests_text_check",
+      sql`length(trim(${table.purpose})) BETWEEN 1 AND 200
+        AND length(trim(${table.justification})) BETWEEN 20 AND 4000
+        AND (${table.reviewReason} IS NULL OR length(trim(${table.reviewReason})) BETWEEN 20 AND 4000)
+        AND (${table.revokeReason} IS NULL OR length(trim(${table.revokeReason})) BETWEEN 20 AND 4000)`,
+    ),
+    check(
+      "break_glass_access_requests_version_check",
+      sql`${table.version} > 0`,
+    ),
+    check(
+      "break_glass_access_requests_review_check",
+      sql`(${table.state} = 'requested' AND ${table.reviewerPrincipalId} IS NULL AND ${table.reviewedAt} IS NULL)
+        OR (${table.state} IN ('approved', 'rejected') AND ${table.reviewerPrincipalId} IS NOT NULL AND ${table.reviewedAt} IS NOT NULL)
+        OR (${table.state} = 'revoked' AND ${table.reviewerPrincipalId} IS NOT NULL AND ${table.reviewedAt} IS NOT NULL AND ${table.revokedAt} IS NOT NULL AND ${table.revokedBy} IS NOT NULL)`,
+    ),
+    check(
+      "break_glass_access_requests_reviewer_check",
+      sql`${table.reviewerPrincipalId} IS NULL OR ${table.reviewerPrincipalId} <> ${table.requesterPrincipalId}`,
+    ),
+  ],
+);
+
+export const breakGlassAccessResources = pgTable(
+  "break_glass_access_resources",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    requestId: uuid("request_id").notNull(),
+    resourceKind: text("resource_kind").notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+    createdBy: text("created_by").notNull(),
+  },
+  (table) => [
+    unique("break_glass_access_resources_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    unique("break_glass_access_resources_request_resource_unique").on(
+      table.workspaceId,
+      table.requestId,
+      table.resourceKind,
+      table.resourceId,
+    ),
+    index("break_glass_access_resources_lookup_idx").on(
+      table.workspaceId,
+      table.resourceKind,
+      table.resourceId,
+    ),
+    foreignKey({
+      name: "break_glass_access_resources_workspace_request_fk",
+      columns: [table.workspaceId, table.requestId],
+      foreignColumns: [
+        breakGlassAccessRequests.workspaceId,
+        breakGlassAccessRequests.id,
+      ],
+    }).onDelete("cascade"),
+    check(
+      "break_glass_access_resources_kind_check",
+      sql`${table.resourceKind} IN ('person', 'fact', 'relationship', 'evidence', 'source', 'file', 'address', 'contact_point', 'place', 'note')`,
+    ),
   ],
 );

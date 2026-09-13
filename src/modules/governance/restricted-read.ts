@@ -8,7 +8,11 @@ import {
   sql,
   type SQLWrapper,
 } from "drizzle-orm";
-import { accessApprovals } from "@/db/schema/governance";
+import {
+  accessApprovals,
+  breakGlassAccessRequests,
+  breakGlassAccessResources,
+} from "@/db/schema/governance";
 import { facts } from "@/db/schema/facts";
 import { people } from "@/db/schema/people";
 import {
@@ -57,6 +61,7 @@ export function matchesRestrictedReadApproval(
 export function restrictedFactApprovalSql(
   context: ResearchServiceContext,
   row: {
+    id: SQLWrapper;
     personId: SQLWrapper;
     factDefinitionId: SQLWrapper;
     sensitivity: SQLWrapper;
@@ -73,6 +78,19 @@ export function restrictedFactApprovalSql(
       AND ${accessApprovals.reviewedAt} IS NOT NULL
       AND ${accessApprovals.deletedAt} IS NULL
       AND ${accessApprovals.expiresAt} > ${new Date().toISOString()}::timestamptz
+  ) OR EXISTS (
+    SELECT 1
+    FROM ${breakGlassAccessResources}
+    INNER JOIN ${breakGlassAccessRequests}
+      ON ${breakGlassAccessRequests.workspaceId} = ${breakGlassAccessResources.workspaceId}
+     AND ${breakGlassAccessRequests.id} = ${breakGlassAccessResources.requestId}
+    WHERE ${breakGlassAccessResources.workspaceId} = ${context.workspaceId}
+      AND ${breakGlassAccessResources.resourceKind} = 'fact'
+      AND ${breakGlassAccessResources.resourceId} = ${row.id}
+      AND ${breakGlassAccessRequests.requesterPrincipalId} = ${context.actor.principalId}
+      AND ${breakGlassAccessRequests.state} = 'approved'
+      AND ${breakGlassAccessRequests.expiresAt} > ${new Date().toISOString()}::timestamptz
+      AND ${breakGlassAccessRequests.deletedAt} IS NULL
   ))`;
 }
 
@@ -93,6 +111,82 @@ export async function authorizeRestrictedFactRead(
   )
     return false;
   const at = new Date();
+  const [breakGlass] = await context.database
+    .select({ request: breakGlassAccessRequests })
+    .from(breakGlassAccessResources)
+    .innerJoin(
+      breakGlassAccessRequests,
+      and(
+        eq(
+          breakGlassAccessRequests.workspaceId,
+          breakGlassAccessResources.workspaceId,
+        ),
+        eq(breakGlassAccessRequests.id, breakGlassAccessResources.requestId),
+      ),
+    )
+    .innerJoin(
+      facts,
+      and(
+        eq(facts.workspaceId, breakGlassAccessResources.workspaceId),
+        eq(facts.id, breakGlassAccessResources.resourceId),
+      ),
+    )
+    .innerJoin(
+      people,
+      and(
+        eq(people.workspaceId, facts.workspaceId),
+        eq(people.id, facts.personId),
+      ),
+    )
+    .where(
+      and(
+        eq(breakGlassAccessResources.workspaceId, context.workspaceId),
+        eq(breakGlassAccessResources.resourceKind, "fact"),
+        eq(breakGlassAccessResources.resourceId, input.factId),
+        eq(
+          breakGlassAccessRequests.requesterPrincipalId,
+          context.actor.principalId,
+        ),
+        eq(breakGlassAccessRequests.state, "approved"),
+        gt(breakGlassAccessRequests.expiresAt, at),
+        isNull(breakGlassAccessRequests.deletedAt),
+        isNull(facts.deletedAt),
+        isNull(people.deletedAt),
+        input.purpose === undefined
+          ? undefined
+          : eq(breakGlassAccessRequests.purpose, input.purpose),
+        input.caseReference === undefined
+          ? undefined
+          : input.caseReference === null
+            ? isNull(breakGlassAccessRequests.caseReference)
+            : eq(breakGlassAccessRequests.caseReference, input.caseReference),
+      ),
+    )
+    .orderBy(
+      desc(breakGlassAccessRequests.createdAt),
+      desc(breakGlassAccessRequests.id),
+    )
+    .limit(1);
+  if (breakGlass) {
+    const coverage = await checkPurposeCoverage(context, {
+      personId: input.personId,
+      fieldDefinitionId: input.fieldDefinitionId,
+      purpose: breakGlass.request.purpose,
+      caseReference: breakGlass.request.caseReference,
+      scope: "restricted_read",
+      effectiveSensitivity: "restricted",
+      at,
+    });
+    if (coverage.allowed) {
+      await createAuditService(context).write(context.database, {
+        action: "governance.break_glass.use",
+        resourceKind: "fact",
+        resourceId: input.factId,
+        changedFields: [],
+      });
+      return true;
+    }
+  }
   const candidates = await context.database
     .select({ approval: accessApprovals })
     .from(accessApprovals)
