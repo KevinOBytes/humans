@@ -13,6 +13,7 @@ import {
 import { authEmailOutbox } from "@/db/schema/auth-email-outbox";
 import { invitations, members, sessions } from "@/db/schema/auth";
 import { auditEvents } from "@/db/schema/operations";
+import type { EmailSender } from "@/lib/email/resend";
 import { createInvitationAcceptanceHandler } from "@/app/api/account/invitations/accept/handlers";
 import { createInvitationHandoffHandlers } from "@/app/api/account/invitations/handoff/handlers";
 import { acceptInvitationAtomically } from "@/modules/auth/invitation-lifecycle";
@@ -104,6 +105,142 @@ liveDescribe("workspace member administration transactions", () => {
       `/accept-invitation#id=${encodeURIComponent(rows[0]!.id)}`,
     );
     expect(deliveredText).not.toContain("/accept-invitation?id=");
+  });
+
+  it("retains an invitation and a retryable encrypted intent when Resend is unavailable", async () => {
+    const providerCalls: Array<{
+      idempotencyKey?: string;
+      to: string | readonly string[];
+    }> = [];
+    const unavailableSender: EmailSender = {
+      send: async (message, options) => {
+        providerCalls.push({
+          idempotencyKey: options?.idempotencyKey,
+          to: message.to,
+        });
+        throw new Error(
+          "resend api key and private provider response must not cross the boundary",
+        );
+      },
+    };
+    const failureFixture = new ResearchFixture({
+      settingsRuntime: {
+        appUrl: testAdminEnv.NEXT_PUBLIC_APP_URL,
+        authSecret: testAdminEnv.AUTH_SECRET,
+        emailSender: unavailableSender,
+        encryptionKey: testAdminEnv.AUTH_ENCRYPTION_KEY,
+      },
+    });
+    await failureFixture.reset();
+    try {
+      const owner = await failureFixture.createActor();
+      const email = "provider-outage@example.test";
+      const issued = await failureFixture.execute<{
+        issueWorkspaceInvitation?: {
+          actionId?: string | null;
+          code?: string;
+          requestId?: string;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "IssueWorkspaceInvitation",
+        query: IssueWorkspaceInvitationDocument,
+        variables: {
+          input: {
+            email,
+            idempotencyKey: crypto.randomUUID(),
+            role: "VIEWER",
+          },
+        },
+      });
+
+      const result = issued.body?.data?.issueWorkspaceInvitation;
+      expect(issued.body?.errors).toBeUndefined();
+      expect(result).toMatchObject({
+        actionId: expect.any(String),
+        code: "APPLIED",
+        requestId: expect.any(String),
+      });
+      expect(JSON.stringify(issued.body)).not.toContain("resend api key");
+      expect(JSON.stringify(issued.body)).not.toContain("private provider");
+
+      const invitationId = result?.actionId;
+      const [invitation] = await failureFixture.database
+        .select({ email: invitations.email, status: invitations.status })
+        .from(invitations)
+        .where(eq(invitations.id, invitationId!));
+      expect(invitation).toEqual({ email, status: "pending" });
+
+      const [intent] = await failureFixture.database
+        .select({
+          attemptCount: authEmailOutbox.attemptCount,
+          encryptedPayload: authEmailOutbox.encryptedPayload,
+          errorCode: authEmailOutbox.errorCode,
+          id: authEmailOutbox.id,
+          idempotencyKey: authEmailOutbox.idempotencyKey,
+          state: authEmailOutbox.state,
+        })
+        .from(authEmailOutbox)
+        .where(eq(authEmailOutbox.invitationId, invitationId!));
+      expect(intent).toMatchObject({
+        attemptCount: 1,
+        errorCode: "delivery_unavailable",
+        state: "queued",
+      });
+      expect(intent?.encryptedPayload).toEqual(expect.any(String));
+      expect(intent?.encryptedPayload).not.toContain(email);
+      expect(providerCalls).toEqual([
+        { idempotencyKey: intent?.idempotencyKey, to: email },
+      ]);
+      const auditRows = await failureFixture.database
+        .select({
+          outcome: auditEvents.outcome,
+          redactedDiff: auditEvents.redactedDiff,
+        })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.action, "workspace.invitation.issue"),
+            eq(auditEvents.resourceId, invitationId!),
+          ),
+        );
+      expect(auditRows).toEqual([
+        {
+          outcome: "success",
+          redactedDiff: { changedFields: ["role", "status"] },
+        },
+      ]);
+      expect(JSON.stringify(auditRows)).not.toContain(email);
+
+      await failureFixture.database
+        .update(authEmailOutbox)
+        .set({ scheduledAt: new Date(0) })
+        .where(eq(authEmailOutbox.id, intent!.id));
+      const retryCalls: Array<{ idempotencyKey?: string }> = [];
+      const retrySummary = await runAuthEmailOutboxOnce({
+        database: failureFixture.database,
+        emailSender: {
+          send: async (_message, options) => {
+            retryCalls.push({ idempotencyKey: options?.idempotencyKey });
+            return { id: "resend-recovered-message" };
+          },
+        },
+        encryptionKey: testAdminEnv.AUTH_ENCRYPTION_KEY,
+        ids: [intent!.id],
+      });
+      expect(retrySummary).toMatchObject({ claimed: 1, completed: 1 });
+      expect(retryCalls).toEqual([{ idempotencyKey: intent?.idempotencyKey }]);
+      const [completed] = await failureFixture.database
+        .select({
+          errorCode: authEmailOutbox.errorCode,
+          state: authEmailOutbox.state,
+        })
+        .from(authEmailOutbox)
+        .where(eq(authEmailOutbox.id, intent!.id));
+      expect(completed).toEqual({ errorCode: null, state: "completed" });
+    } finally {
+      await failureFixture.close();
+    }
   });
 
   it("enforces the lower-role administrator matrix with redacted failure audit", async () => {
