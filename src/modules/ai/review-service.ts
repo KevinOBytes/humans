@@ -28,7 +28,10 @@ import {
   visibleResourceIds,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
-import { runResearchTransaction } from "@/modules/audit/transactions";
+import {
+  applySearchIndexMaintenance,
+  runResearchTransaction,
+} from "@/modules/audit/transactions";
 import {
   createCasesService,
   requireCaseResource,
@@ -41,7 +44,7 @@ import { createRelationshipsService } from "@/modules/relationships/service";
 import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
 import { normalizeHumanText } from "@/modules/facts/validation";
 import {
-  aiEvidenceReferenceSchema,
+  acceptedAiEvidenceReferenceSchema,
   normalizeAiSuggestion,
   normalizeAiReviewDecision,
   requireAiBatchApproval,
@@ -51,6 +54,7 @@ import {
   sourceSnapshotHash,
   sourceProviderAgreement,
 } from "./source-provenance";
+import type { SearchIndexMutation } from "@/modules/search/index-maintenance";
 
 type Row = typeof aiReviewSuggestions.$inferSelect;
 const readPermissions = ["analysis:read", "person:read"];
@@ -360,7 +364,12 @@ async function promoteAcceptedWebEvidence(
   context: ResearchServiceContext,
   row: Row,
   acceptedResource: { id: string; kind: string },
-) {
+): Promise<
+  readonly {
+    evidenceId: string;
+    snapshotHash: string;
+  }[]
+> {
   const webReferences = row.evidenceReferences.filter(
     (
       reference,
@@ -369,7 +378,7 @@ async function promoteAcceptedWebEvidence(
       { kind: "web" }
     > => reference.kind === "web",
   );
-  if (!webReferences.length) return;
+  if (!webReferences.length) return [];
 
   const runId = row.webRunId;
   if (!runId) fail();
@@ -388,6 +397,8 @@ async function promoteAcceptedWebEvidence(
   );
   const fieldPath = webEvidenceFieldPath(acceptedResource.kind, row.fieldKey);
   if (!fieldPath) fail();
+  const promoted = [] as Array<{ evidenceId: string; snapshotHash: string }>;
+  const searchMutations: SearchIndexMutation[] = [];
 
   for (const reference of webReferences) {
     const snapshot = snapshotsByUrl.get(reference.url);
@@ -414,6 +425,7 @@ async function promoteAcceptedWebEvidence(
 
     const sourceId = newId();
     const evidenceId = newId();
+    const excerptId = newId();
     const assertionId = newId();
     const collectedAt = snapshot.collectionTimestamp;
     const metadata = {
@@ -469,7 +481,7 @@ async function promoteAcceptedWebEvidence(
       updatedBy: context.actor.principalId,
     });
     await context.database.insert(evidenceExcerpts).values({
-      id: newId(),
+      id: excerptId,
       workspaceId: context.workspaceId,
       evidenceItemId: evidenceId,
       locator: reference.locator,
@@ -495,6 +507,33 @@ async function promoteAcceptedWebEvidence(
       createdBy: context.actor.principalId,
       updatedBy: context.actor.principalId,
     });
+    searchMutations.push(
+      {
+        action: "upsert",
+        sourceId,
+        sourceKind: "source",
+        sourceVersion: 1,
+        workspaceId: context.workspaceId,
+      },
+      {
+        action: "upsert",
+        sourceId: evidenceId,
+        sourceKind: "evidence_item",
+        sourceVersion: 1,
+        workspaceId: context.workspaceId,
+      },
+      {
+        action: "upsert",
+        sourceId: excerptId,
+        sourceKind: "evidence_excerpt",
+        sourceVersion: 1,
+        workspaceId: context.workspaceId,
+      },
+    );
+    promoted.push({
+      evidenceId,
+      snapshotHash: snapshot.retrievalHash,
+    });
     await createAuditService(context).write(context.database, {
       action: "ai.suggestion.web_evidence.promoted",
       resourceKind: "evidence_assertion",
@@ -507,6 +546,8 @@ async function promoteAcceptedWebEvidence(
       },
     });
   }
+  await applySearchIndexMaintenance(context, context.database, searchMutations);
+  return promoted;
 }
 export type AiReviewSuggestion = Awaited<ReturnType<typeof project>>;
 
@@ -649,14 +690,20 @@ async function acceptedHistoryVisibleEvidence(
   )
     return new Set();
   const parsedReferences = rows.flatMap((row) => {
-    const parsed = aiEvidenceReferenceSchema
+    const parsed = acceptedAiEvidenceReferenceSchema
       .array()
       .safeParse(row.acceptedEvidenceReferences);
     return parsed.success
-      ? parsed.data.filter((reference) => reference.kind === "evidence")
+      ? parsed.data.flatMap((reference) =>
+          reference.kind === "evidence"
+            ? [reference.evidenceId]
+            : reference.promotedEvidenceId
+              ? [reference.promotedEvidenceId]
+              : [],
+        )
       : [];
   });
-  const evidenceIds = [...new Set(parsedReferences.map((r) => r.evidenceId))];
+  const evidenceIds = [...new Set(parsedReferences)];
   if (!evidenceIds.length) return new Set();
   const evidenceRows = await context.database
     .select({
@@ -713,7 +760,7 @@ async function projectAcceptedHistory(
     acceptedHistoryVisibleEvidence(context, rows),
   ]);
   return rows.map((row) => {
-    const references = aiEvidenceReferenceSchema
+    const references = acceptedAiEvidenceReferenceSchema
       .array()
       .safeParse(row.acceptedEvidenceReferences);
     if (
@@ -753,16 +800,22 @@ async function projectAcceptedHistory(
         redacted: !resourceVisible,
       },
       evidenceReferences: references.data.map((reference) => {
-        if (reference.kind === "web")
+        if (reference.kind === "web") {
+          const evidenceVisible =
+            reference.promotedEvidenceId != null &&
+            visibleEvidence.has(reference.promotedEvidenceId);
           return {
             kind: "web" as const,
-            evidenceId: null,
-            url: reference.url,
-            locator: reference.locator,
-            quote: reference.quote,
-            snapshotHash: reference.snapshotHash ?? null,
-            redacted: false,
+            evidenceId: evidenceVisible ? reference.promotedEvidenceId! : null,
+            url: evidenceVisible ? reference.url : null,
+            locator: evidenceVisible ? reference.locator : null,
+            quote: evidenceVisible ? reference.quote : null,
+            snapshotHash: evidenceVisible
+              ? (reference.snapshotHash ?? null)
+              : null,
+            redacted: !evidenceVisible,
           };
+        }
         const evidenceVisible = visibleEvidence.has(reference.evidenceId);
         return {
           kind: "evidence" as const,
@@ -903,6 +956,7 @@ export function createAiReviewService(context: ResearchServiceContext) {
       );
     let acceptedResourceId: string | null = null;
     let acceptedResourceKind: string | null = null;
+    let acceptedEvidenceReferences: unknown = null;
     if (input.decision === "accepted") {
       const value = row.proposedValue;
       const governance = {
@@ -986,10 +1040,26 @@ export function createAiReviewService(context: ResearchServiceContext) {
           explicitConfirmed: true,
         });
       }
-      await promoteAcceptedWebEvidence(scoped, row, {
-        id: acceptedResourceId!,
-        kind: acceptedResourceKind!,
+      const promotedWebEvidence = await promoteAcceptedWebEvidence(
+        scoped,
+        row,
+        {
+          id: acceptedResourceId!,
+          kind: acceptedResourceKind!,
+        },
+      );
+      let webReferenceIndex = 0;
+      acceptedEvidenceReferences = row.evidenceReferences.map((reference) => {
+        if (reference.kind !== "web") return reference;
+        const promoted = promotedWebEvidence[webReferenceIndex++];
+        if (!promoted) fail();
+        return {
+          ...reference,
+          promotedEvidenceId: promoted.evidenceId,
+          snapshotHash: promoted.snapshotHash,
+        };
       });
+      if (webReferenceIndex !== promotedWebEvidence.length) fail();
     }
     const [updated] = await scoped.database
       .update(aiReviewSuggestions)
@@ -1006,7 +1076,7 @@ export function createAiReviewService(context: ResearchServiceContext) {
         acceptedFromRunId:
           input.decision === "accepted" ? (row.aiRunId ?? row.webRunId) : null,
         acceptedEvidenceReferences:
-          input.decision === "accepted" ? row.evidenceReferences : null,
+          input.decision === "accepted" ? acceptedEvidenceReferences : null,
       })
       .where(
         and(

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
 import {
   aiCitations,
@@ -20,6 +20,8 @@ import {
   personWebResearchRuns,
   personWebResearchSources,
 } from "@/db/schema/person-research";
+import { factDefinitions, facts } from "@/db/schema/facts";
+import { purposePolicies } from "@/db/schema/governance";
 import { people } from "@/db/schema/people";
 import { auditEvents } from "@/db/schema/operations";
 import {
@@ -57,10 +59,13 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
   async function draft(
     input: {
       field?: "biography" | "displayName" | "preferredName";
+      factDefinitionId?: string;
       personId?: string;
     } = {},
   ) {
-    const field = input.field ?? "biography";
+    const field = input.factDefinitionId
+      ? "fact"
+      : (input.field ?? "biography");
     const person = input.personId
       ? { id: input.personId }
       : await coveredPerson(context);
@@ -91,6 +96,9 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       suggestions: [
         {
           field,
+          ...(input.factDefinitionId
+            ? { definitionId: input.factDefinitionId }
+            : {}),
           value: "Synthetic researcher",
           sourceUrls: ["https://example.org/profile"],
         },
@@ -117,15 +125,35 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       model: "synthetic",
       metadata: { fixture: "ai-review" },
     });
+    if (input.factDefinitionId) {
+      const [purposePolicy] = await fixture.database
+        .select()
+        .from(purposePolicies)
+        .where(eq(purposePolicies.workspaceId, context.workspaceId));
+      await createGovernanceService(context).setFieldPolicy({
+        idempotencyKey: newId(),
+        purposePolicyId: purposePolicy!.id,
+        fieldDefinitionId: input.factDefinitionId,
+        permittedScopes: ["read", "write", "ai_operation"],
+        sensitivityCeiling: "internal",
+      });
+    }
     return recordAiSuggestion(context, {
       personId: person.id,
       fieldKey: field,
       purpose: "research",
-      proposedValue: {
-        version: 1,
-        kind: "profile",
-        value: "Synthetic researcher",
-      },
+      proposedValue: input.factDefinitionId
+        ? {
+            version: 1,
+            kind: "fact",
+            definitionId: input.factDefinitionId,
+            value: { text: "Synthetic researcher" },
+          }
+        : {
+            version: 1,
+            kind: "profile",
+            value: "Synthetic researcher",
+          },
       evidenceReferences: [
         {
           kind: "web",
@@ -142,6 +170,46 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       runKind: "web",
       promptPolicyVersion: "synthetic-v1",
     });
+  }
+  async function expectPromotionArtifactsAbsent() {
+    const [
+      promotedSources,
+      promotedEvidence,
+      promotedExcerpts,
+      assertions,
+      audits,
+    ] = await Promise.all([
+      fixture.database
+        .select({ id: sources.id })
+        .from(sources)
+        .where(eq(sources.workspaceId, context.workspaceId)),
+      fixture.database
+        .select({ id: evidenceItems.id })
+        .from(evidenceItems)
+        .where(eq(evidenceItems.workspaceId, context.workspaceId)),
+      fixture.database
+        .select({ id: evidenceExcerpts.id })
+        .from(evidenceExcerpts)
+        .where(eq(evidenceExcerpts.workspaceId, context.workspaceId)),
+      fixture.database
+        .select({ id: evidenceAssertions.id })
+        .from(evidenceAssertions)
+        .where(eq(evidenceAssertions.workspaceId, context.workspaceId)),
+      fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, context.workspaceId),
+            eq(auditEvents.action, "ai.suggestion.web_evidence.promoted"),
+          ),
+        ),
+    ]);
+    expect(promotedSources).toEqual([]);
+    expect(promotedEvidence).toEqual([]);
+    expect(promotedExcerpts).toEqual([]);
+    expect(assertions).toEqual([]);
+    expect(audits).toEqual([]);
   }
   it("accepts one field and retains the immutable original provenance with a redacted audit", async () => {
     const row = await draft();
@@ -337,6 +405,164 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       .from(aiReviewSuggestions)
       .where(eq(aiReviewSuggestions.workspaceId, context.workspaceId));
     expect(suggestions).toEqual([{ id: row.id }]);
+  });
+
+  it("redacts accepted web history when its promoted source or evidence is no longer visible", async () => {
+    const row = await draft();
+    await createAiReviewService(reviewerContext).acceptSuggestion({
+      id: row.id,
+      expectedVersion: 1,
+      explicitConfirmed: true,
+    });
+    const [source] = await fixture.database
+      .select()
+      .from(sources)
+      .where(eq(sources.workspaceId, context.workspaceId));
+    const [evidence] = await fixture.database
+      .select()
+      .from(evidenceItems)
+      .where(eq(evidenceItems.sourceId, source!.id));
+    await fixture.database
+      .update(sources)
+      .set({ sensitivity: "restricted" })
+      .where(eq(sources.id, source!.id));
+    await fixture.database
+      .update(evidenceItems)
+      .set({ sensitivity: "restricted" })
+      .where(eq(evidenceItems.id, evidence!.id));
+
+    const history = await createAiReviewService(
+      reviewerContext,
+    ).listAcceptedHistory({
+      personId: row.personId,
+      purpose: "research",
+      first: 10,
+    });
+    expect(history.nodes[0]?.evidenceReferences).toEqual([
+      {
+        evidenceId: null,
+        kind: "web",
+        locator: null,
+        quote: null,
+        redacted: true,
+        snapshotHash: null,
+        url: null,
+      },
+    ]);
+  });
+
+  it("rolls back the promoted chain and audit when transactional index maintenance rejects it", async () => {
+    const row = await draft();
+    const failingReviewer = {
+      ...reviewerContext,
+      searchIndexMaintenance: {
+        mode: "transactional" as const,
+        async apply(
+          _database: typeof reviewerContext.database,
+          mutations: readonly {
+            sourceKind: string;
+          }[],
+        ) {
+          if (
+            mutations.some(
+              (mutation) => mutation.sourceKind === "evidence_item",
+            )
+          )
+            throw new Error("promotion index failure");
+        },
+      },
+    };
+    await expect(
+      createAiReviewService(failingReviewer).acceptSuggestion({
+        id: row.id,
+        expectedVersion: 1,
+        explicitConfirmed: true,
+      }),
+    ).rejects.toThrow("promotion index failure");
+    const [suggestion] = await fixture.database
+      .select()
+      .from(aiReviewSuggestions)
+      .where(eq(aiReviewSuggestions.id, row.id));
+    expect(suggestion?.status).toBe("pending");
+    const [person] = await fixture.database
+      .select()
+      .from(people)
+      .where(eq(people.id, row.personId));
+    expect(person?.biography).toBeNull();
+    await expectPromotionArtifactsAbsent();
+  });
+
+  it("rejects acceptance-time snapshot URL and snippet tampering without promotion artifacts", async () => {
+    for (const mutation of ["snippet", "url"] as const) {
+      const row = await draft();
+      await fixture.database.execute(
+        sql`ALTER TABLE person_web_research_sources DISABLE TRIGGER person_web_research_sources_immutable`,
+      );
+      try {
+        await fixture.database
+          .update(personWebResearchSources)
+          .set(
+            mutation === "snippet"
+              ? { snippet: "Tampered snapshot snippet" }
+              : { url: "https://example.org/tampered" },
+          )
+          .where(eq(personWebResearchSources.runId, row.researchRunId));
+      } finally {
+        await fixture.database.execute(
+          sql`ALTER TABLE person_web_research_sources ENABLE TRIGGER person_web_research_sources_immutable`,
+        );
+      }
+      await expect(
+        createAiReviewService(reviewerContext).acceptSuggestion({
+          id: row.id,
+          expectedVersion: 1,
+          explicitConfirmed: true,
+        }),
+      ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+      await expectPromotionArtifactsAbsent();
+    }
+  });
+
+  it("links an accepted web-backed fact to its value field", async () => {
+    const definitionId = newId();
+    await fixture.database.insert(factDefinitions).values({
+      id: definitionId,
+      workspaceId: context.workspaceId,
+      namespace: "person",
+      fieldKey: "web_role",
+      label: "Web role",
+      allowedValueType: "text",
+      state: "active",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    const row = await draft({ factDefinitionId: definitionId });
+    const accepted = await createAiReviewService(
+      reviewerContext,
+    ).acceptSuggestion({
+      id: row.id,
+      expectedVersion: 1,
+      explicitConfirmed: true,
+    });
+    const [fact] = await fixture.database
+      .select()
+      .from(facts)
+      .where(eq(facts.id, accepted.acceptedResourceId!));
+    expect(fact).toMatchObject({
+      id: accepted.acceptedResourceId,
+      personId: row.personId,
+      factDefinitionId: definitionId,
+      valueText: "Synthetic researcher",
+    });
+    const [assertion] = await fixture.database
+      .select()
+      .from(evidenceAssertions)
+      .where(eq(evidenceAssertions.resourceId, fact!.id));
+    expect(assertion).toMatchObject({
+      resourceKind: "fact",
+      fieldPath: "value",
+      purpose: "research",
+    });
   });
   it("defers then rejects with a reason without changing the target", async () => {
     const row = await draft();
