@@ -161,136 +161,143 @@ function getRouteHandlers(): Promise<LoadedAuthRouteHandlers> {
     import("@/lib/observability/security-events"),
     import("@/modules/auth/invite-signup"),
     import("@/modules/auth/email-outbox"),
-  ]).then(
-    ([
-      { toNextJsHandler },
-      { getServerEnv },
-      { auth, createHumansAuth },
-      boundary,
-      { db },
-      { createEmailSender },
-      { productionSecurityEventLogger },
-      { createTransactionalInviteSignUpHandler },
-      { createAuthEmailOutboxSender, runAuthEmailOutboxOnce },
-    ]) => {
-      const env = getServerEnv();
-      const handlers = toNextJsHandler(auth) as AuthRouteHandlers;
-      const bootstrap = async () => {
-        const configured = [
-          process.env.ADMIN_EMAIL,
-          process.env.ADMIN_USERNAME,
-          process.env.ADMIN_DISPLAY_NAME,
-          process.env.ADMIN_PASSWORD,
-        ].every((value) => Boolean(value?.trim()));
-        if (!configured) return;
-        const [{ parseBootstrapAdminEnv }, { bootstrapAdmin }] =
-          await Promise.all([
-            import("@/lib/env/server-schema"),
-            import("@/modules/auth/bootstrap-admin"),
-          ]);
-        await bootstrapAdmin(db, parseBootstrapAdminEnv(process.env));
-      };
-      const emailSender = createEmailSender(env);
-      const inviteSignUp = createTransactionalInviteSignUpHandler({
-        database: db,
-        createHandler: (database) => {
-          const outbox = createAuthEmailOutboxSender({
-            authSecret: env.AUTH_SECRET,
-            database,
-            encryptionKey: env.AUTH_ENCRYPTION_KEY,
-          });
-          const committedEvents: Parameters<
-            typeof productionSecurityEventLogger.log
-          >[0][] = [];
-          const securityLogger = {
-            log(
-              event: Parameters<typeof productionSecurityEventLogger.log>[0],
-            ) {
-              if (event.event === "auth.registration.allowed") {
-                committedEvents.push(event);
-              } else {
-                productionSecurityEventLogger.log(event);
-              }
-            },
-          };
-          const handler = (
-            toNextJsHandler(
-              createHumansAuth({
-                database,
-                emailSender: outbox.sender,
-                securityLogger,
-                settings: env,
-              }),
-            ) as AuthRouteHandlers
-          ).POST;
-          return {
-            handler,
-            afterCommit: async () => {
-              for (const event of committedEvents) {
-                productionSecurityEventLogger.log(event);
-              }
-              if (outbox.queuedIds.length > 0) {
-                await runAuthEmailOutboxOnce({
-                  database: db,
-                  emailSender,
-                  encryptionKey: env.AUTH_ENCRYPTION_KEY,
-                  ids: outbox.queuedIds,
-                });
-              }
-            },
-          };
-        },
-        onPostCommitFailure: (request) =>
-          productionSecurityEventLogger.log({
-            event: "auth.infrastructure.failure",
-            requestId: request.headers.get(boundary.AUTH_REQUEST_ID_HEADER)!,
-            severity: "error",
-          }),
-      });
-      const clientAddressConfig =
-        env.TRUSTED_PROXY_MODE === "hmac"
-          ? {
-              deploymentMode: "docker" as const,
-              hmacKey: env.TRUSTED_PROXY_HMAC_KEY!,
-              mode: "hmac" as const,
-            }
-          : env.TRUSTED_PROXY_MODE === "vercel"
-            ? {
-                deploymentMode: "vercel" as const,
-                mode: "vercel" as const,
-              }
-            : {
-                deploymentMode: env.DEPLOYMENT_MODE,
-                mode: "none" as const,
-              };
-      const routeHandlers = Object.fromEntries(
-        Object.entries(handlers).map(([method, handler]) => [
-          method,
-          async (request: Request) => {
-            const prepared = await boundary.prepareAuthBoundaryRequest(
-              request,
-              {
-                authSecret: env.AUTH_SECRET,
-                clientAddressConfig,
+  ])
+    .then(
+      ([
+        { toNextJsHandler },
+        { getServerEnv },
+        { auth, createHumansAuth },
+        boundary,
+        { db },
+        { createEmailSender },
+        { productionSecurityEventLogger },
+        { createTransactionalInviteSignUpHandler },
+        { createAuthEmailOutboxSender, runAuthEmailOutboxOnce },
+      ]) => {
+        const env = getServerEnv();
+        const handlers = toNextJsHandler(auth) as AuthRouteHandlers;
+        const bootstrap = async () => {
+          const configured = [
+            process.env.ADMIN_EMAIL,
+            process.env.ADMIN_USERNAME,
+            process.env.ADMIN_DISPLAY_NAME,
+            process.env.ADMIN_PASSWORD,
+          ].every((value) => Boolean(value?.trim()));
+          if (!configured) return;
+          const [{ parseBootstrapAdminEnv }, { bootstrapAdmin }] =
+            await Promise.all([
+              import("@/lib/env/server-schema"),
+              import("@/modules/auth/bootstrap-admin"),
+            ]);
+          await bootstrapAdmin(db, parseBootstrapAdminEnv(process.env));
+        };
+        const emailSender = createEmailSender(env);
+        const inviteSignUp = createTransactionalInviteSignUpHandler({
+          database: db,
+          createHandler: (database) => {
+            const outbox = createAuthEmailOutboxSender({
+              authSecret: env.AUTH_SECRET,
+              database,
+              encryptionKey: env.AUTH_ENCRYPTION_KEY,
+            });
+            const committedEvents: Parameters<
+              typeof productionSecurityEventLogger.log
+            >[0][] = [];
+            const securityLogger = {
+              log(
+                event: Parameters<typeof productionSecurityEventLogger.log>[0],
+              ) {
+                if (event.event === "auth.registration.allowed") {
+                  committedEvents.push(event);
+                } else {
+                  productionSecurityEventLogger.log(event);
+                }
               },
-            );
-            const selectedHandler =
-              method === "POST" &&
-              env.AUTH_REGISTRATION_MODE === "invite_only" &&
-              normalizedPathname(prepared) === "/api/auth/sign-up/email"
-                ? inviteSignUp
-                : handler;
-            const response = await selectedHandler(prepared);
-            return boundary.decorateAuthBoundaryResponse(
-              response,
-              prepared.headers.get(boundary.AUTH_REQUEST_ID_HEADER)!,
-            );
+            };
+            const handler = (
+              toNextJsHandler(
+                createHumansAuth({
+                  database,
+                  emailSender: outbox.sender,
+                  securityLogger,
+                  settings: env,
+                }),
+              ) as AuthRouteHandlers
+            ).POST;
+            return {
+              handler,
+              afterCommit: async () => {
+                for (const event of committedEvents) {
+                  productionSecurityEventLogger.log(event);
+                }
+                if (outbox.queuedIds.length > 0) {
+                  await runAuthEmailOutboxOnce({
+                    database: db,
+                    emailSender,
+                    encryptionKey: env.AUTH_ENCRYPTION_KEY,
+                    ids: outbox.queuedIds,
+                  });
+                }
+              },
+            };
           },
-        ]),
-      ) as AuthRouteHandlers;
-      return { ...routeHandlers, bootstrap };
-    },
-  );
+          onPostCommitFailure: (request) =>
+            productionSecurityEventLogger.log({
+              event: "auth.infrastructure.failure",
+              requestId: request.headers.get(boundary.AUTH_REQUEST_ID_HEADER)!,
+              severity: "error",
+            }),
+        });
+        const clientAddressConfig =
+          env.TRUSTED_PROXY_MODE === "hmac"
+            ? {
+                deploymentMode: "docker" as const,
+                hmacKey: env.TRUSTED_PROXY_HMAC_KEY!,
+                mode: "hmac" as const,
+              }
+            : env.TRUSTED_PROXY_MODE === "vercel"
+              ? {
+                  deploymentMode: "vercel" as const,
+                  mode: "vercel" as const,
+                }
+              : {
+                  deploymentMode: env.DEPLOYMENT_MODE,
+                  mode: "none" as const,
+                };
+        const routeHandlers = Object.fromEntries(
+          Object.entries(handlers).map(([method, handler]) => [
+            method,
+            async (request: Request) => {
+              const prepared = await boundary.prepareAuthBoundaryRequest(
+                request,
+                {
+                  authSecret: env.AUTH_SECRET,
+                  clientAddressConfig,
+                },
+              );
+              const selectedHandler =
+                method === "POST" &&
+                env.AUTH_REGISTRATION_MODE === "invite_only" &&
+                normalizedPathname(prepared) === "/api/auth/sign-up/email"
+                  ? inviteSignUp
+                  : handler;
+              const response = await selectedHandler(prepared);
+              return boundary.decorateAuthBoundaryResponse(
+                response,
+                prepared.headers.get(boundary.AUTH_REQUEST_ID_HEADER)!,
+              );
+            },
+          ]),
+        ) as AuthRouteHandlers;
+        return { ...routeHandlers, bootstrap };
+      },
+    )
+    .catch((error: unknown) => {
+      // Initialization is shared while pending and retained only after success.
+      // Request/bootstrap failures are handled outside this cache.
+      routeHandlers = undefined;
+      throw error;
+    });
   return routeHandlers;
 }
 
