@@ -140,4 +140,20 @@ liveDescribe("break-glass access lifecycle", () => {
       "governance.break_glass.revoke",
     ]);
   });
+
+  it("rejects resource references that are not live workspace records", async () => {
+    const owner = await fixture.createActor("owner");
+    const ownerContext = await context(owner, "owner");
+
+    await expect(
+      createBreakGlassService(ownerContext).request({
+        purpose: "incident response",
+        justification:
+          "A documented incident requires a narrowly scoped review of this record.",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+        resources: [{ resourceKind: "person", resourceId: newId() }],
+        idempotencyKey: "break-glass-missing-resource-1",
+      }),
+    ).rejects.toThrow("not found");
+  });
 });
