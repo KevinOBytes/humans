@@ -109,6 +109,10 @@ export type WebhookMutationResult = {
   secret?: string;
 };
 
+export type WebhookServiceRuntime = {
+  afterIdempotentCommit?: (operation: string) => Promise<void>;
+};
+
 function mapWebhook(row: typeof webhooks.$inferSelect): SafeWebhook {
   return {
     id: row.id,
@@ -131,6 +135,7 @@ export function createWebhooksService(input: {
   requestId: string;
   searchIndexMaintenance: SearchIndexMaintenance;
   workspaceId: string;
+  runtime?: WebhookServiceRuntime;
 }) {
   async function requireAdmin() {
     const actor = requireUser(input.actor);
@@ -400,6 +405,7 @@ export function createWebhooksService(input: {
           return result.reference;
         },
       );
+      await input.runtime?.afterIdempotentCommit?.("webhook.create");
       const response = executed.replayed
         ? await replayWebhookMutation(executed.responseReference, {
             action: "webhook.create",
@@ -556,6 +562,7 @@ export function createWebhooksService(input: {
           return result.reference;
         },
       );
+      await input.runtime?.afterIdempotentCommit?.("webhook.rotate");
       const response = executed.replayed
         ? await replayWebhookMutation(executed.responseReference, {
             action: "webhook.rotate",
@@ -698,6 +705,7 @@ export function createWebhooksService(input: {
         ["webhook:delete"],
         async (scopedContext) => run(scopedContext.database),
       );
+      await input.runtime?.afterIdempotentCommit?.("webhook.disable");
       const response = executed.replayed
         ? await replayWebhookMutation(executed.responseReference, {
             action: "webhook.disable",

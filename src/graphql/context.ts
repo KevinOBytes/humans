@@ -60,7 +60,10 @@ import {
   createAiAnalysisService,
   type AiAnalysisRuntime,
 } from "@/modules/ai/service";
-import { createWebhooksService } from "@/modules/webhooks/service";
+import {
+  createWebhooksService,
+  type WebhookServiceRuntime,
+} from "@/modules/webhooks/service";
 import { createGovernanceService } from "@/modules/governance/service";
 import { createCasesService } from "@/modules/cases/service";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
@@ -146,6 +149,7 @@ export type CreateContextInput = {
   settingsRuntime?: WorkspaceMemberRuntime;
   aiRuntime: AiAnalysisRuntime;
   personResearchRuntime?: PersonResearchRuntime;
+  webhookRuntime?: WebhookServiceRuntime;
 };
 
 export function parseGraphQLOrigin(value: string): string | null {
@@ -195,6 +199,7 @@ function createServices(input: {
   settingsRuntime?: WorkspaceMemberRuntime;
   aiRuntime: AiAnalysisRuntime;
   personResearchRuntime?: PersonResearchRuntime;
+  webhookRuntime?: WebhookServiceRuntime;
 }): GraphQLServices {
   const people = createPeopleService({
     actor: input.context.actor,
@@ -526,6 +531,7 @@ function createServices(input: {
       permissions: input.context.permissions,
       requestId: input.context.requestId,
       searchIndexMaintenance: input.searchIndexMaintenance,
+      runtime: input.webhookRuntime,
       workspaceId: input.context.workspaceId,
     }),
     governance: createGovernanceService({
@@ -595,6 +601,7 @@ function contextWithLoaders(
   importRuntime?: ImportServiceRuntime,
   settingsRuntime?: WorkspaceMemberRuntime,
   personResearchRuntime?: PersonResearchRuntime,
+  webhookRuntime?: WebhookServiceRuntime,
 ): GraphQLContext {
   const budgetOperation = (operationClass: string) => {
     switch (operationClass) {
@@ -657,6 +664,7 @@ function contextWithLoaders(
     importRuntime,
     settingsRuntime,
     personResearchRuntime,
+    webhookRuntime,
   });
   const loaders = createLoaders({
     services,
@@ -772,6 +780,7 @@ async function createSessionContext(
     input.importRuntime,
     input.settingsRuntime,
     input.personResearchRuntime,
+    input.webhookRuntime,
   );
 }
 
@@ -856,6 +865,7 @@ async function createApiKeyContext(
     input.importRuntime,
     input.settingsRuntime,
     input.personResearchRuntime,
+    input.webhookRuntime,
   );
 }
 

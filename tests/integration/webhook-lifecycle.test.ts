@@ -52,13 +52,45 @@ function required<T>(value: T | null | undefined, label: string): T {
   return value;
 }
 
+function commitRace(operation: string) {
+  let signalReached!: () => void;
+  let release!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    signalReached = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return {
+    hit: false,
+    operation,
+    reached,
+    release,
+    released,
+    signalReached,
+  };
+}
+
 liveDescribe("webhook lifecycle acceptance", () => {
   let fixture: ResearchFixture;
+  let race: ReturnType<typeof commitRace> | null = null;
 
   beforeAll(() => {
-    fixture = new ResearchFixture();
+    fixture = new ResearchFixture({
+      webhookRuntime: {
+        afterIdempotentCommit: async (operation) => {
+          if (!race || race.hit || race.operation !== operation) return;
+          race.hit = true;
+          race.signalReached();
+          await race.released;
+        },
+      },
+    });
   });
-  beforeEach(async () => fixture.reset());
+  beforeEach(async () => {
+    race = null;
+    await fixture.reset();
+  });
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
@@ -211,6 +243,130 @@ liveDescribe("webhook lifecycle acceptance", () => {
     expect(serializedClaims).not.toContain(input.idempotencyKey);
     expect(serializedClaims).not.toContain(input.url);
     expect(serializedClaims).not.toContain(secrets[0] ?? "missing-secret");
+  });
+
+  it("does not strand the first create secret when a lifecycle mutation follows commit", async () => {
+    const owner = await fixture.createActor();
+    const input = {
+      events: ["webhook.test"],
+      idempotencyKey: "webhook-create-post-commit-race-v1",
+      url: "https://hooks.example.test/post-commit-create",
+    };
+    const commit = commitRace("webhook.create");
+    race = commit;
+    const createPromise = fixture.execute<{
+      createWebhook: {
+        code: string;
+        id: string | null;
+        requestId: string;
+        secret: string | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: { input },
+    });
+    await commit.reached;
+    const [created] = await fixture.database
+      .select({ id: webhooks.id, version: webhooks.version })
+      .from(webhooks)
+      .where(eq(webhooks.workspaceId, owner.workspaceId));
+    const webhookId = required(created?.id, "post-commit webhook ID");
+    const disabled = await fixture.execute({
+      jar: owner.jar,
+      operationName: "DisableWorkspaceWebhook",
+      query: DisableWorkspaceWebhookDocument,
+      variables: { input: { expectedVersion: 1, id: webhookId } },
+    });
+    expect(disabled.body?.errors).toBeUndefined();
+    commit.release();
+    const createdResult = await createPromise;
+    expect(createdResult.body?.errors).toBeUndefined();
+    expect(createdResult.body?.data?.createWebhook).toMatchObject({
+      code: "APPLIED",
+      id: webhookId,
+      replayed: false,
+    });
+    expect(createdResult.body?.data?.createWebhook.secret).toMatch(/^whsec_/u);
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateWorkspaceWebhook",
+        query: CreateWorkspaceWebhookDocument,
+        variables: { input },
+      }),
+      "NOT_FOUND",
+    );
+    race = null;
+  });
+
+  it("does not strand the first rotation secret when disable follows commit", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/post-commit-rotate",
+        },
+      },
+    });
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "rotation webhook ID",
+    );
+    const input = {
+      expectedVersion: 1,
+      id: webhookId,
+      idempotencyKey: "webhook-rotate-post-commit-race-v1",
+    };
+    const commit = commitRace("webhook.rotate");
+    race = commit;
+    const rotatePromise = fixture.execute<{
+      rotateWebhookSecret: {
+        code: string;
+        id: string | null;
+        replayed: boolean;
+        secret: string | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "RotateWorkspaceWebhookSecret",
+      query: RotateWorkspaceWebhookSecretDocument,
+      variables: { input },
+    });
+    await commit.reached;
+    const disabled = await fixture.execute({
+      jar: owner.jar,
+      operationName: "DisableWorkspaceWebhook",
+      query: DisableWorkspaceWebhookDocument,
+      variables: { input: { expectedVersion: 2, id: webhookId } },
+    });
+    expect(disabled.body?.errors).toBeUndefined();
+    commit.release();
+    const rotated = await rotatePromise;
+    expect(rotated.body?.errors).toBeUndefined();
+    expect(rotated.body?.data?.rotateWebhookSecret).toMatchObject({
+      code: "APPLIED",
+      id: webhookId,
+      replayed: false,
+    });
+    expect(rotated.body?.data?.rotateWebhookSecret.secret).toMatch(/^whsec_/u);
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "RotateWorkspaceWebhookSecret",
+        query: RotateWorkspaceWebhookSecretDocument,
+        variables: { input },
+      }),
+      "NOT_FOUND",
+    );
+    race = null;
   });
 
   it("converges concurrent keyed rotation with an optimistic version and one transient secret", async () => {
