@@ -88,6 +88,20 @@ export function canIndependentlyReviewFact(
   );
 }
 
+function hasFactContentMutation(input: {
+  value?: FactValueInput | null;
+  state?: string | null;
+  confidence?: number | null;
+  sensitivity?: string | null;
+}): boolean {
+  return (
+    input.value !== undefined ||
+    input.state !== undefined ||
+    input.confidence !== undefined ||
+    input.sensitivity !== undefined
+  );
+}
+
 function conflict<T>(currentVersion?: number): MutationOutcome<T> {
   return { resource: null, issues: [], code: "CONFLICT", currentVersion };
 }
@@ -1355,6 +1369,12 @@ export function createFactsService(
     async create(input: FactCreateInput): Promise<FactOutcome> {
       input = { ...input, ...normalizeGovernanceContext(input) };
       await requireVisiblePerson(input.personId);
+      if (input.reviewState?.toLowerCase() === "accepted") {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Accepted review state is only available through independent review.",
+        );
+      }
       const definition = await repository.getDefinitionForUpdate({
         workspaceId: context.workspaceId,
         id: input.definitionId,
@@ -1451,12 +1471,6 @@ export function createFactsService(
       }
       const state = (input.state ?? "asserted").toLowerCase();
       const reviewState = (input.reviewState ?? "unreviewed").toLowerCase();
-      if (reviewState === "accepted") {
-        throw createGraphQLError(
-          "FORBIDDEN",
-          "Accepted review state is only available through independent review.",
-        );
-      }
       const sensitivity = (
         input.sensitivity ?? definition.defaultSensitivity
       ).toLowerCase();
@@ -1683,13 +1697,29 @@ export function createFactsService(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
+      const requestedReviewState = input.reviewState?.toLowerCase();
+      const contentMutation = hasFactContentMutation(input);
       if (
-        input.reviewState?.toLowerCase() === "accepted" &&
-        !canIndependentlyReviewFact(context, current.createdBy)
+        requestedReviewState === "accepted" &&
+        (contentMutation ||
+          !canIndependentlyReviewFact(context, current.createdBy))
       ) {
         throw createGraphQLError(
           "FORBIDDEN",
-          "Only an independent owner or administrator may accept a fact claim.",
+          contentMutation
+            ? "Fact content changes must be reviewed in a separate revision."
+            : "Only an independent owner or administrator may accept a fact claim.",
+        );
+      }
+      if (
+        current.reviewState === "accepted" &&
+        contentMutation &&
+        (requestedReviewState !== "in_review" ||
+          !canIndependentlyReviewFact(context, current.createdBy))
+      ) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Accepted fact content requires an independent reviewer transition to in_review.",
         );
       }
       const effectiveSensitivity = effectiveGovernanceSensitivity(

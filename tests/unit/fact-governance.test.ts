@@ -7,6 +7,7 @@ import {
 
 const doubles = vi.hoisted(() => ({
   coverage: vi.fn(),
+  currentReviewState: "unreviewed" as string,
   material: {} as Record<string, unknown>,
 }));
 const factId = "019f4df3-a656-7002-9979-8946810c5bde";
@@ -23,6 +24,7 @@ vi.mock("@/modules/facts/repository", async (original) => ({
       sensitivity: "restricted",
       version: 1,
       createdBy: "original-principal",
+      reviewState: doubles.currentReviewState,
     }),
     getDefinitionForUpdate: async () => ({
       id: "field",
@@ -74,6 +76,7 @@ const context = {
 } as unknown as ResearchServiceContext;
 beforeEach(() => {
   doubles.coverage.mockReset().mockResolvedValue({ allowed: false });
+  doubles.currentReviewState = "unreviewed";
   doubles.material = {};
 });
 describe("fact governance service boundary", () => {
@@ -106,6 +109,38 @@ describe("fact governance service boundary", () => {
         reviewState: "accepted",
       }),
     ).rejects.toThrow("Only an independent owner or administrator");
+  });
+
+  it("does not let a contributor edit an accepted fact without reopening review", async () => {
+    doubles.currentReviewState = "accepted";
+    await expect(
+      createFactsService(context).revise({
+        id: factId,
+        expectedVersion: 1,
+        value: { text: "changed content" },
+      }),
+    ).rejects.toThrow("Accepted fact content requires an independent reviewer");
+  });
+
+  it("does not allow an owner/admin to author and approve one revision", async () => {
+    await expect(
+      createFactsService({
+        ...context,
+        actor: {
+          type: "user",
+          id: "admin-user",
+          principalId: "reviewer-principal",
+          sessionId: "session",
+          memberId: "member",
+          role: "admin",
+        },
+      }).revise({
+        id: factId,
+        expectedVersion: 1,
+        value: { text: "changed content" },
+        reviewState: "accepted",
+      }),
+    ).rejects.toThrow("Fact content changes must be reviewed in a separate");
   });
 
   it("recognizes an independent owner or administrator as a valid reviewer", () => {
