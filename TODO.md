@@ -12,17 +12,18 @@ action controls to wrap. Existing facts/relationships/evidence/notes/contacts/
 files suites are not replaced. This is local Chromium evidence; hosted and
 whole-product accessibility acceptance remain open, as do both requirements.
 
-Latest verified application runtime checkpoint (2026-09-13): commit `ad2251e`
-passed GitHub Actions run `34733012670` with all 9 checks successful, including
+Latest verified application runtime checkpoint (2026-09-13): commit `d0c2f41`
+passed GitHub Actions run `34734985662` with all 9 checks successful, including
 PostgreSQL/Redis/MinIO integration, browser acceptance, production build,
 generated drift, quality, image security, dependency policy, and secret
-scanning. Vercel deployment `dpl_AgyXV5czkyHDZ6Zww84cn9a1V1ia` is `READY`,
+scanning. Vercel deployment `dpl_QnPERn5WUAd4GHmSkd4Y2ZQp8dpX` is `READY`,
 serves `humans.kevinbytes.com`, and the redacted production smoke passed
 homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs.
-Live direct-route method checks passed against the alias; rejected-initialization
-recovery is verified locally through exported-route tests and is included in
-this deployment. Hosted authenticated/provider acceptance and the 24 rows
-below remain open.
+Live direct-route method checks passed against the alias (DELETE jobs 405,
+OPTIONS storage 204, PATCH GraphQL 405); rejected-initialization recovery is
+verified locally through exported-route tests and is included in this
+deployment. Hosted authenticated/provider acceptance and the 24 rows below
+remain open.
 
 Bounded HUM-FR-032 direct-route evidence (2026-09-13): all 10 API route modules are inventoried by a 43-case method-boundary suite. Unsupported standard methods now return stable correlated 405 responses with explicit `Allow` and `private, no-store`; HEAD denials and OPTIONS remain bodyless, GraphQL retains its own error shape and origin-aware preflight, and the other OPTIONS responses do not grant CORS or initialize providers. Jobs now return a JSON method-denial code, health and jobs responses use the private cache policy, and readiness failures add `PROVIDER_UNAVAILABLE` without dependency details. Twelve direct-account input/authentication-boundary cases prove malformed JSON, schema rejection, origin denial, and API-key denial before mutation; existing route-specific failure codes are preserved. The focused route suite passes 138 tests and the full unit suite passes 183 files/1,377 tests. This is local handler evidence, not hosted/provider or whole-product failure-matrix closure; HUM-FR-032 remains incomplete.
 
@@ -366,7 +367,7 @@ recovery.
 - Bounded HUM-FR-032/HUM-NFR-009 invitation failure evidence (2026-09-12): the invitation acceptance page now carries the typed direct-route `requestId` into its assertive `AuthStatus` alert for acceptance and workspace-activation failures, rendering a non-sensitive request reference that support can correlate without exposing provider or session details. Focused React coverage proves a 503 response's header/body correlation ID is announced in the accessible alert; whole-product direct-route and interruption coverage remains open.
 - [ ] `HUM-FR-033` Complete whole-application failure evidence beyond the implemented dependency readiness, durable retries, worker heartbeat, bounded signal drain, live client/lease checks, and Compose-backed PostgreSQL/Redis outage checks. Storage route initialization/provider failures now fail closed with a correlated redacted response and retryable loader recovery (`tests/unit/storage-route-boundary.test.ts`); provider, browser, and interruption coverage remain open.
 - Bounded HUM-FR-033 production-loader recovery evidence (2026-09-13): rejected application-initialization promises are evicted for GraphQL and Better Auth, and storage no longer retains a redundant rejected inner promise. The actual exported-route tests in `tests/unit/production-loader-recovery.test.ts` verify concurrent failed-attempt sharing, recovery on a later request, successful caching, retained unauthenticated/unsigned-request denials, and correlated redacted private/no-store errors. Requests and mutations are never replayed. Native ESM evaluation failures may still require a process restart or redeployment; hosted/provider outage and whole-application failure acceptance remain open.
-- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_2FFei2EMHYQMdyoZCHpAXGxqWAfh` is Ready and serves `humans.kevinbytes.com` from the current runtime tree `ae1c5fd`; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables remain managed by Vercel. A fresh public smoke against this deployment passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route; authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected route invokes configured administrator bootstrap before jobs; ordinary request-time sign-in and jobs bootstrap are deliberately non-rotating, with password rotation available only through the attended operator command. The repository includes a redacted `pnpm production:smoke -- --base-url <selected-deployment>` harness with explicit authenticated/provider opt-ins; the protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
+- [ ] `HUM-FR-035` Complete the parity Vercel deployment path. Production deployment `dpl_QnPERn5WUAd4GHmSkd4Y2ZQp8dpX` is Ready and serves `humans.kevinbytes.com` from the current runtime tree `d0c2f41`; production/preview R2 variables, Neon/Redis variables, and the configured AI/email variables remain managed by Vercel. A fresh public smoke against this deployment passed homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL, and the protected jobs route; authenticated sign-in/create-person acceptance and the full hosted provider matrix remain release work. The protected route invokes configured administrator bootstrap before jobs; ordinary request-time sign-in and jobs bootstrap are deliberately non-rotating, with password rotation available only through the attended operator command. The repository includes a redacted `pnpm production:smoke -- --base-url <selected-deployment>` harness with explicit authenticated/provider opt-ins; the protected Vercel CLI cannot export secret values for a local bootstrap command, so no plaintext hosted credentials were retrieved.
 
 ## Non-functional
 

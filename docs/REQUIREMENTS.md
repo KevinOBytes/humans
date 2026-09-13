@@ -1,15 +1,16 @@
 # MVP requirements
 
-Latest verified application runtime checkpoint (2026-09-13): commit `ad2251e`
-passed GitHub Actions run `34733012670` with all 9 checks successful, including
+Latest verified application runtime checkpoint (2026-09-13): commit `d0c2f41`
+passed GitHub Actions run `34734985662` with all 9 checks successful, including
 PostgreSQL/Redis/MinIO integration, browser acceptance, production build,
 generated drift, quality, image security, dependency policy, and secret
-scanning. Vercel deployment `dpl_AgyXV5czkyHDZ6Zww84cn9a1V1ia` is `READY`,
+scanning. Vercel deployment `dpl_QnPERn5WUAd4GHmSkd4Y2ZQp8dpX` is `READY`,
 serves `humans.kevinbytes.com`, and the redacted production smoke passed
 homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs.
-Live direct-route method checks passed against the alias; rejected-initialization
-recovery is verified locally through exported-route tests and is included in
-this deployment. Hosted authenticated/provider acceptance and the 24 explicitly
+Live direct-route method checks passed against the alias (DELETE jobs 405,
+OPTIONS storage 204, PATCH GraphQL 405); rejected-initialization recovery is
+verified locally through exported-route tests and is included in this
+deployment. Hosted authenticated/provider acceptance and the 24 explicitly
 incomplete rows remain open.
 
 Bounded HUM-FR-032 direct-route evidence (2026-09-13): all 10 API route modules are inventoried by a 43-case method-boundary suite. Unsupported standard methods now return stable correlated 405 responses with explicit `Allow` and `private, no-store`; HEAD denials and OPTIONS remain bodyless, GraphQL retains its own error shape and origin-aware preflight, and the other OPTIONS responses do not grant CORS or initialize providers. Jobs now return a JSON method-denial code, health and jobs responses use the private cache policy, and readiness failures add `PROVIDER_UNAVAILABLE` without dependency details. Twelve direct-account input/authentication-boundary cases prove malformed JSON, schema rejection, origin denial, and API-key denial before mutation; existing route-specific failure codes are preserved. The focused route suite passes 138 tests and the full unit suite passes 183 files/1,377 tests. This is local handler evidence, not hosted/provider or whole-product failure-matrix closure; HUM-FR-032 remains incomplete.
