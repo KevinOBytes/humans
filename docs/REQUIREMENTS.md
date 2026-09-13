@@ -20,8 +20,19 @@ unit files/1,429 tests plus focused bulk-query and break-glass PostgreSQL
 tests, lint/typecheck/codegen/Drizzle checks, and production build. Hosted
 credentialed sign-in/person creation and external-provider acceptance remain
 incomplete because protected Vercel secrets were not exported for an attended
-rotation run; universal profile-read audit logging, administrator review UI,
-and the full hosted/provider/privacy matrix also remain open.
+rotation run; universal profile-read audit logging and the full
+hosted/provider/privacy matrix also remain open.
+
+Bounded administrator review UI evidence (2026-09-13): the owner/admin-only
+`/settings/break-glass` route now loads the workspace-scoped generated
+`BreakGlassAccessRequests` operation and provides versioned approve, reject,
+and revoke controls with a required review reason. The browser component
+refreshes after each decision, shows only explicit resource kind/UUID pairs,
+and preserves the service's independent-review, idempotency, expiry, and
+redacted-audit boundaries. Focused component/navigation tests and the
+production build pass. This closes the administrator review surface only;
+universal ordinary profile-read logging, hosted/provider acceptance, and the
+complete privacy/audit matrix remain incomplete.
 
 Current release evidence (2026-09-13, latest): the clean `main` tree at
 commit `f74c82a` is pushed and its GitHub Actions run `34751719602` passed all
@@ -237,7 +248,7 @@ object-store lifecycle prove at-threshold and below-threshold behavior,
 interrupted-write recovery, ready replay deduplication, restricted case-export
 metadata, workspace fencing, audit immutability, and sensitive-value exclusion.
 This closes only the bounded completed-export alert seam. Whole-query counting,
-break-glass access, administrator review, hosted-provider evidence, and the
+break-glass access, hosted-provider evidence, and the
 whole-product audit/privacy matrices remain open; `HUM-NFR-007` remains
 Incomplete.
 
@@ -268,8 +279,8 @@ restricted-fact authorization only while unexpired, and each request/review/
 revoke/use writes a redacted audit event. Focused validation and disposable
 PostgreSQL lifecycle coverage prove replay, independent review, visibility
 grant/revocation, audit attribution, and least-privilege denial. This is a
-bounded local implementation seam; administrator review surfaces, universal
-read-access logging, hosted-provider evidence, and the whole-product
+bounded local implementation seam; universal read-access logging,
+hosted-provider evidence, and the whole-product
 audit/privacy matrix remain open, so `HUM-FR-005` and `HUM-NFR-018` remain
 incomplete.
 

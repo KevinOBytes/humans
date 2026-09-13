@@ -16,8 +16,9 @@ Hosted credentialed sign-in, administrator bootstrap/rotation, person creation,
 and external-provider contract acceptance remain unverified because protected
 Vercel secrets are intentionally not exported into the local environment. The
 break-glass and bulk-query features are bounded, auditable local/runtime seams;
-administrator review UI, universal profile-read logging, and the complete
-hosted/provider/privacy matrix remain open. Bulk-query alert counts are now
+the administrator review UI is now available at `/settings/break-glass` for
+owner/admin users. Universal profile-read logging and the complete
+hosted/provider/privacy matrix remain open. Bulk-query alert counts are
 computed across the complete visible query result before cursor pagination for
 both text and protected-exact search; this remains subject to the fixed
 statement timeout and operation budgets.

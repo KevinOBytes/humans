@@ -120,6 +120,7 @@ test("read-only settings are responsive, accessible, and browser-secret safe", a
     ["/settings/api-keys", "API keys"],
     ["/settings/policies", "Policies"],
     ["/settings/audit", "Audit"],
+    ["/settings/break-glass", "Break-glass access"],
     ["/settings/integrations", "Integrations"],
   ] as const;
 
@@ -190,7 +191,7 @@ test("read-only settings are responsive, accessible, and browser-secret safe", a
   await page.goto("/settings/account");
   const settingsNavigation = page.getByRole("navigation", { name: "Settings" });
   await expect(settingsNavigation).toBeVisible();
-  await expect(settingsNavigation.getByRole("link")).toHaveCount(8);
+  await expect(settingsNavigation.getByRole("link")).toHaveCount(9);
   await expect(
     settingsNavigation.getByRole("link", { name: "Account" }),
   ).toHaveAttribute("aria-current", "page");
@@ -220,6 +221,9 @@ test("read-only settings are responsive, accessible, and browser-secret safe", a
   ).toBeVisible();
   await expect(
     settingsNavigation.getByRole("link", { name: "Integrations" }),
+  ).toBeVisible();
+  await expect(
+    settingsNavigation.getByRole("link", { name: "Break-glass" }),
   ).toBeVisible();
   await cdp.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
 

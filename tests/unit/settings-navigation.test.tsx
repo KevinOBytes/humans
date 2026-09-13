@@ -28,6 +28,7 @@ describe("SettingsNavigation", () => {
       "API keys",
       "Policies",
       "Audit",
+      "Break-glass",
       "Integrations",
     ]) {
       expect(screen.getByRole("link", { name: label })).toBeVisible();
@@ -44,6 +45,7 @@ describe("SettingsNavigation", () => {
     expect(screen.queryByRole("link", { name: "API keys" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Policies" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Audit" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Break-glass" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Integrations" })).toBeNull();
   });
 

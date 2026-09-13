@@ -21,8 +21,17 @@ jobs. The expanded local gate passed 188 unit files/1,429 tests, focused
 bulk-query and break-glass PostgreSQL tests, and all format/lint/type/codegen/
 Drizzle/build checks. Hosted credentialed auth/person creation and external
 provider acceptance remain open because protected Vercel secrets were not
-exported; universal profile-read logging, administrator review UI, and the
-complete hosted/provider/privacy matrix remain open.
+exported; universal profile-read logging and the complete hosted/provider/privacy
+matrix remain open.
+
+Bounded administrator review UI evidence (2026-09-13): owner/admin users now
+have `/settings/break-glass`, backed by the generated workspace-scoped query
+and versioned approve/reject/revoke mutations. The surface requires a
+20-character review reason, renders explicit resource kind/UUID pairs, and
+refreshes after each decision without weakening the service's independent
+review, idempotency, expiry, or audit boundaries. Focused component/navigation
+tests and the production build pass. Universal ordinary profile-read logging,
+hosted/provider acceptance, and the complete privacy/audit matrix remain open.
 
 Latest release evidence (2026-09-13): clean `main` commit `f74c82a` is pushed
 to GitHub. GitHub Actions run `34751719602` passed all nine jobs, including
@@ -227,6 +236,7 @@ identity, source, object-key, and byte leakage. Bulk-query alerts, break-glass
 access, administrator review, hosted-provider evidence, and the full audit and
 privacy matrices remain open, so `HUM-NFR-007` stays incomplete.
 
+<<<<<<< HEAD
 Whole-query bulk-query alert checkpoint (2026-09-13): authorized text search
 now computes the complete visible, deduplicated result count in a SQL CTE
 before cursor filtering, while protected exact lookup counts distinct visible
@@ -242,6 +252,21 @@ GraphQL lifecycle suite cover count-before-cursor behavior, threshold crossing,
 replay deduplication, workspace isolation, protected exact lookup, and
 redaction. Administrator review UI, hosted-provider proof, and the complete
 audit/privacy matrix remain open.
+=======
+Bounded bulk-query alert checkpoint (2026-09-13): authorized search pages at
+the fixed 100-row cap now append one immutable `search.bulk_alert` per
+workspace-scoped normalized query binding. A transaction advisory lock makes
+the check-and-insert deterministic across concurrent identical requests,
+retries, and pagination. The event stores only an opaque deterministic UUID
+resource reference plus row count, threshold, query mode, and whether another
+page exists; query text, protected exact values, filters, identities, and
+source identifiers are not retained. Focused unit/redaction tests and the
+disposable PostgreSQL GraphQL lifecycle suite cover threshold behavior,
+replay deduplication, workspace isolation, and redaction. This is page-level
+evidence, not a workspace-wide count: whole-query counting across arbitrary
+pagination, break-glass access, hosted-provider proof,
+and the complete audit/privacy matrix remain open.
+>>>>>>> a8991d9 (feat(settings): add break-glass review surface)
 
 Bounded break-glass access checkpoint (2026-09-13): workspace-scoped,
 principal-bound exceptional-access requests now require a purpose, a 20–4,000
@@ -252,8 +277,8 @@ idempotent request/review/revoke mutations, approved-grant visibility, expiry,
 revocation, and redacted request/review/revoke/use audits are covered by the
 focused validation and disposable PostgreSQL GraphQL lifecycle tests. The
 workflow is intentionally time-limited and does not bypass ordinary workspace,
-case, purpose, consent, sensitivity, or redaction checks. Administrator review
-UI, universal read-access audit coverage, hosted/provider acceptance, and the
+case, purpose, consent, sensitivity, or redaction checks. Universal read-access
+audit coverage, hosted/provider acceptance, and the
 complete audit/privacy matrix remain open.
 
 Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
