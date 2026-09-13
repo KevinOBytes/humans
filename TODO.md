@@ -1,5 +1,18 @@
 # MVP closure and production hardening backlog
 
+Rich-profile definition catalog checkpoint (2026-09-13): every newly created
+workspace now receives audited fact-definition templates for pronouns,
+employment, education, languages, organizations, birth dates, and workspace
+custom JSON fields. The templates are definitions only; values still enter via
+the existing workspace-scoped fact service and retain temporal bounds,
+provenance, confidence, sensitivity, review, contradiction, and audit
+controls. `tests/unit/profile-fact-definition-catalog.test.ts` verifies the
+catalog and `tests/integration/workspace-profile-definitions.test.ts` verifies
+the generated GraphQL fact catalog when PostgreSQL is configured. Existing
+workspaces still require a controlled operator backfill before this is a
+complete historical migration; aliases, biography, contacts, addresses,
+identifiers, notes, and files remain on their existing dedicated boundaries.
+
 Latest runtime evidence (2026-09-13): commit `47ab7c0` is pushed and deployed
 as Vercel `dpl_5Zv4gEptiHqQNytSHEeuzAJ8bDwF` (`READY`) with the configured
 aliases. The production readiness harness passed homepage/liveness/readiness

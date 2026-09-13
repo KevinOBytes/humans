@@ -1,7 +1,9 @@
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
+import { createDefaultProfileFactDefinitions } from "@/db/profile-fact-definitions";
 import { apiKeys, members, organizations, users } from "@/db/schema/auth";
+import { factDefinitions } from "@/db/schema/facts";
 import { workspacePrincipals } from "@/db/schema/principals";
 import { workspaceSettings, workspaces } from "@/db/schema/workspaces";
 import type { BetterAuthRuntime } from "@/lib/auth/config";
@@ -229,6 +231,12 @@ export async function provisionWorkspace(
       createdBy: input.userId,
       updatedBy: input.userId,
     });
+    await transaction.insert(factDefinitions).values(
+      createDefaultProfileFactDefinitions({
+        workspaceId,
+        actorId: principalId,
+      }),
+    );
 
     return { organizationId, workspaceId, memberId, principalId };
   });
