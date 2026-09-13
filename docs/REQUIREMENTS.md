@@ -1151,6 +1151,18 @@ commit. External delivery/provider, DNS rebinding, migration, browser, and
 whole-domain retry matrices remain open; `HUM-FR-024` and `HUM-NFR-008` stay
 Incomplete.
 
+Bounded HUM-NFR-008 graph-analysis evidence (2026-09-13): generated
+`runGraphAnalysis`, `createGraphSnapshot`, `rerunGraphAnalysis`, and
+`replayGraphSnapshot` accept optional principal-bound durable HMAC
+idempotency keys. Focused live PostgreSQL acceptance proves concurrent
+snapshot/run convergence, deterministic run/rerun/replay responses,
+changed-material conflicts, actor/workspace fencing, opaque raw-key storage,
+and one durable snapshot/run/result/metric/audit effect per actual mutation.
+Replays recheck current graph authorization and the complete snapshot manifest
+before returning a stored resource. Malformed-reference, expiry-takeover,
+browser retry, performance, and the remaining job/settings mutation matrix
+remain open; `HUM-NFR-008` stays Incomplete.
+
 Updated hosted parity evidence (2026-09-13): reviewed `main` through commit
 `c739f4d` is deployed as Vercel `dpl_FND3s4vZ9tLEoHBY5SNegNCG6HM8` with
 `humans.kevinbytes.com`, `humans-dun.vercel.app`, and

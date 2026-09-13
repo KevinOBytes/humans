@@ -30,11 +30,13 @@ import {
   graphAnalysisVersionContract,
   type GraphAnalysisVersionContract,
   type GraphAnalysisAlgorithm,
+  type GraphMetric,
 } from "./metrics";
 import {
   createGraphRepository,
   type GraphEdgeRow,
   type GraphPersonRow,
+  type GraphSnapshotRow,
   type GraphViewRow,
 } from "./repository";
 import { normalizeGraphFilter, type GraphFilterInput } from "./transform";
@@ -134,6 +136,11 @@ export type AnalysisResultConnection = {
   nodes: AnalysisResultRecord[];
   pageInfo: { endCursor: string | null; hasNextPage: boolean };
 };
+type GraphAnalysisPayloadRecord = {
+  run: NonNullable<AnalysisRunRecord>;
+  metrics: GraphMetric[];
+  graph: GraphResult;
+};
 
 const READ_POLICY = {
   capacity: 2_000,
@@ -177,6 +184,8 @@ const DASHBOARD_ANALYSIS_RUN_CURSOR_ORDER =
   "dashboard-graph-analysis-created-desc";
 const ANALYSIS_RESULT_CURSOR_ORDER = "graph-analysis-result-rank-id-asc";
 const GRAPH_VIEW_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const GRAPH_ANALYSIS_IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
+const HASH_PATTERN = /^[0-9a-f]{64}$/u;
 
 function graphCost(input: GraphFilterInput) {
   const bounded = (
@@ -667,6 +676,24 @@ type GraphViewResponseReference = ResearchResponseReference & {
   readonly version: number;
 };
 
+type GraphSnapshotResponseReference = ResearchResponseReference & {
+  readonly manifestHash: string;
+  readonly snapshotId: string;
+};
+
+type GraphAnalysisResponseReference = GraphSnapshotResponseReference & {
+  readonly algorithm: GraphAnalysisAlgorithm;
+  readonly graphGeneratedAt: string;
+  readonly resultCount: number;
+  readonly runId: string;
+};
+
+type GraphSnapshotReplayResponseReference = ResearchResponseReference & {
+  readonly manifestHash: string | null;
+  readonly snapshotId: string;
+  readonly valid: boolean;
+};
+
 export function createGraphService(context: GraphServiceContext) {
   const personVisibility = ({
     id,
@@ -896,6 +923,322 @@ export function createGraphService(context: GraphServiceContext) {
     if (row.version !== version)
       throw createGraphQLError("CONFLICT", "The graph view has changed.");
     return summarizeView(row);
+  }
+
+  function snapshotReference(
+    responseReference: ResearchResponseReference,
+  ): GraphSnapshotResponseReference {
+    const snapshotId = responseReference.snapshotId;
+    const manifestHash = responseReference.manifestHash;
+    if (
+      typeof snapshotId !== "string" ||
+      !UUID_PATTERN.test(snapshotId) ||
+      typeof manifestHash !== "string" ||
+      !HASH_PATTERN.test(manifestHash)
+    )
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored graph snapshot mutation result is invalid.",
+      );
+    return { manifestHash, snapshotId: snapshotId.toLowerCase() };
+  }
+
+  async function replayCreatedSnapshot(
+    responseReference: ResearchResponseReference,
+  ) {
+    const reference = snapshotReference(responseReference);
+    return context.database.transaction(
+      async (transaction) => {
+        await transaction.execute(sql`set local statement_timeout = '5000ms'`);
+        return (await loadCurrentSnapshot(transaction as Database, reference))
+          .snapshot;
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+  }
+
+  async function loadCurrentSnapshot(
+    database: Database,
+    reference: GraphSnapshotResponseReference,
+  ): Promise<{ graph: GraphResult; snapshot: GraphSnapshotRow }> {
+    const snapshot = await createGraphRepository(
+      database,
+    ).getAuthorizedSnapshot({
+      actorId: context.actor.type === "user" ? context.actor.id : null,
+      id: reference.snapshotId,
+      personVisibility,
+      relationshipVisibility,
+      workspaceId: context.workspaceId,
+    });
+    if (
+      !snapshot ||
+      snapshot.actorPrincipalId !== context.actor.principalId ||
+      snapshot.actorKind !==
+        (context.actor.type === "apiKey" ? "API_KEY" : "USER")
+    )
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The graph snapshot was not found.",
+      );
+    if (
+      snapshot.manifestHash !== reference.manifestHash ||
+      !validateStoredGraphSnapshotManifest(snapshot).valid ||
+      !GRAPH_ANALYSIS_ALGORITHMS.includes(
+        snapshot.algorithm as GraphAnalysisAlgorithm,
+      )
+    )
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored graph snapshot mutation result is invalid.",
+      );
+    const algorithm = snapshot.algorithm as GraphAnalysisAlgorithm;
+    const algorithmContract = graphAnalysisVersionContract(
+      algorithm,
+      snapshot.algorithmVersion,
+    );
+    if (
+      !algorithmContract ||
+      canonical(snapshot.algorithmConfiguration) !==
+        canonical(algorithmContract.configuration)
+    )
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored graph snapshot mutation result is invalid.",
+      );
+    const filter = normalizeFilterOrError(
+      snapshot.queryInput as GraphFilterInput,
+    );
+    validateAnalysisCaps(filter, algorithm);
+    try {
+      const view = await authorizeSnapshotView(database, snapshot.graphViewId);
+      if (view && canonical(view.filter) !== canonical(filter))
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "The stored graph snapshot mutation result is invalid.",
+        );
+      const graph = await buildGraph(database, filter);
+      if (graph.limits.nodesTruncated || graph.limits.edgesTruncated)
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "The stored graph snapshot mutation result is invalid.",
+        );
+      const manifest = await currentManifest(database, {
+        algorithm,
+        algorithmContract,
+        filter,
+        graph,
+      });
+      if (!validateGraphSnapshotReplay(snapshot, manifest).valid)
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "The stored graph snapshot mutation result is invalid.",
+        );
+      return { graph, snapshot };
+    } catch (error) {
+      const code =
+        error && typeof error === "object"
+          ? (error as { extensions?: { code?: string } }).extensions?.code
+          : undefined;
+      if (code === "NOT_FOUND" || code === "VALIDATION_FAILED")
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "The stored graph snapshot mutation result is invalid.",
+        );
+      throw error;
+    }
+  }
+
+  function analysisReference(
+    responseReference: ResearchResponseReference,
+  ): GraphAnalysisResponseReference {
+    const snapshot = snapshotReference(responseReference);
+    const runId = responseReference.runId;
+    const algorithm = responseReference.algorithm;
+    const graphGeneratedAt = responseReference.graphGeneratedAt;
+    const resultCount = responseReference.resultCount;
+    if (
+      typeof runId !== "string" ||
+      !UUID_PATTERN.test(runId) ||
+      typeof algorithm !== "string" ||
+      !GRAPH_ANALYSIS_ALGORITHMS.includes(
+        algorithm as GraphAnalysisAlgorithm,
+      ) ||
+      typeof graphGeneratedAt !== "string" ||
+      graphGeneratedAt.length > 64 ||
+      !Number.isFinite(Date.parse(graphGeneratedAt)) ||
+      new Date(graphGeneratedAt).toISOString() !== graphGeneratedAt ||
+      typeof resultCount !== "number" ||
+      !Number.isSafeInteger(resultCount) ||
+      resultCount < 0 ||
+      resultCount > GRAPH_SNAPSHOT_MANIFEST_LIMITS.people
+    )
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored graph analysis mutation result is invalid.",
+      );
+    return {
+      ...snapshot,
+      algorithm: algorithm as GraphAnalysisAlgorithm,
+      graphGeneratedAt,
+      resultCount,
+      runId: runId.toLowerCase(),
+    };
+  }
+
+  async function replayAnalysis(
+    responseReference: ResearchResponseReference,
+  ): Promise<GraphAnalysisPayloadRecord> {
+    const reference = analysisReference(responseReference);
+    return context.database.transaction(
+      async (transaction) => {
+        await transaction.execute(sql`set local statement_timeout = '5000ms'`);
+        const database = transaction as Database;
+        const repository = createGraphRepository(database);
+        const run = await repository.getAuthorizedAnalysisRun({
+          actorId: context.actor.type === "user" ? context.actor.id : null,
+          id: reference.runId,
+          personVisibility,
+          relationshipVisibility,
+          workspaceId: context.workspaceId,
+        });
+        if (
+          !run ||
+          run.actorPrincipalId !== context.actor.principalId ||
+          run.actorKind !==
+            (context.actor.type === "apiKey" ? "API_KEY" : "USER")
+        )
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The graph analysis run was not found.",
+          );
+        if (
+          run.state !== "completed" ||
+          run.graphSnapshotId !== reference.snapshotId ||
+          run.algorithm !== reference.algorithm
+        )
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored graph analysis mutation result is invalid.",
+          );
+        const { graph, snapshot } = await loadCurrentSnapshot(database, {
+          manifestHash: reference.manifestHash,
+          snapshotId: reference.snapshotId,
+        });
+        if (snapshot.algorithm !== reference.algorithm)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored graph analysis mutation result is invalid.",
+          );
+        const rows = await repository.getAnalysisResults({
+          workspaceId: context.workspaceId,
+          runId: reference.runId,
+          personVisibility,
+          limit: reference.resultCount + 1,
+        });
+        if (rows.length !== reference.resultCount)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "The stored graph analysis mutation result is invalid.",
+          );
+        verifyAnalysisResults(rows, run.algorithmVersion);
+        const contract = GRAPH_ANALYSIS_CONTRACTS[reference.algorithm];
+        const metrics = rows
+          .map((row): GraphMetric => {
+            const value = Number(row.numericValue);
+            if (
+              row.resultKind !== contract.key ||
+              row.subjectPersonId == null ||
+              row.rank == null ||
+              row.explanation == null ||
+              !Number.isFinite(value)
+            )
+              throw createGraphQLError(
+                "PRECONDITION_FAILED",
+                "The stored graph analysis mutation result is invalid.",
+              );
+            return {
+              algorithmVersion: run.algorithmVersion,
+              explanation: row.explanation,
+              metricKey: row.resultKind,
+              personId: row.subjectPersonId,
+              rank: row.rank,
+              value,
+            };
+          })
+          .sort(
+            (left, right) =>
+              left.rank - right.rank ||
+              left.personId.localeCompare(right.personId),
+          );
+        return {
+          graph: { ...graph, generatedAt: reference.graphGeneratedAt },
+          metrics,
+          run,
+        };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+  }
+
+  function snapshotReplayReference(
+    responseReference: ResearchResponseReference,
+  ): GraphSnapshotReplayResponseReference {
+    const snapshotId = responseReference.snapshotId;
+    const valid = responseReference.valid;
+    const manifestHash = responseReference.manifestHash;
+    if (
+      typeof snapshotId !== "string" ||
+      !UUID_PATTERN.test(snapshotId) ||
+      typeof valid !== "boolean" ||
+      (manifestHash !== null &&
+        (typeof manifestHash !== "string" ||
+          !HASH_PATTERN.test(manifestHash))) ||
+      (valid && manifestHash === null) ||
+      (!valid && manifestHash !== null)
+    )
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The stored graph snapshot replay result is invalid.",
+      );
+    return { manifestHash, snapshotId: snapshotId.toLowerCase(), valid };
+  }
+
+  async function replaySnapshotResult(
+    responseReference: ResearchResponseReference,
+  ) {
+    const reference = snapshotReplayReference(responseReference);
+    return context.database.transaction(
+      async (transaction) => {
+        await transaction.execute(sql`set local statement_timeout = '5000ms'`);
+        const database = transaction as Database;
+        const snapshot = await createGraphRepository(
+          database,
+        ).getAuthorizedSnapshot({
+          actorId: context.actor.type === "user" ? context.actor.id : null,
+          id: reference.snapshotId,
+          personVisibility,
+          relationshipVisibility,
+          workspaceId: context.workspaceId,
+        });
+        if (
+          !snapshot ||
+          snapshot.actorPrincipalId !== context.actor.principalId ||
+          snapshot.actorKind !==
+            (context.actor.type === "apiKey" ? "API_KEY" : "USER")
+        )
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The graph snapshot was not found.",
+          );
+        if (!reference.valid) return { snapshot: null, valid: false } as const;
+        const current = await loadCurrentSnapshot(database, {
+          manifestHash: reference.manifestHash!,
+          snapshotId: reference.snapshotId,
+        });
+        return { snapshot: current.snapshot, valid: true } as const;
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
   }
 
   async function visibleIds(
@@ -1289,6 +1632,9 @@ export function createGraphService(context: GraphServiceContext) {
       input.graph,
       input.algorithm,
       algorithmConfiguration,
+    ).sort(
+      (left, right) =>
+        left.rank - right.rank || left.personId.localeCompare(right.personId),
     );
     const runId = newId();
     const now = new Date();
@@ -1933,6 +2279,7 @@ export function createGraphService(context: GraphServiceContext) {
       filter?: GraphFilterInput | null;
       algorithm: GraphAnalysisAlgorithm;
       graphViewId?: string | null;
+      idempotencyKey?: string | null;
     }) {
       if (!GRAPH_ANALYSIS_ALGORITHMS.includes(input.algorithm))
         throw createGraphQLError(
@@ -1949,6 +2296,64 @@ export function createGraphService(context: GraphServiceContext) {
         );
       if (requestedFilter)
         validateAnalysisCaps(requestedFilter, input.algorithm);
+      if (input.idempotencyKey != null) {
+        if (!context.idempotencyHmacKey)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Graph analysis idempotency is not configured.",
+          );
+        const graphViewId = input.graphViewId
+          ? normalizeUuid(input.graphViewId, "The graph view ID is invalid.")
+          : null;
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + GRAPH_ANALYSIS_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "graph_snapshot.create.graphql",
+          requestMaterial: {
+            algorithm: input.algorithm,
+            filter: fieldMaterial(
+              requestedFilter as unknown as CanonicalRequestMaterial,
+            ),
+            graphViewId: fieldMaterial(graphViewId),
+          },
+          secret: context.idempotencyHmacKey,
+        });
+        let transientSnapshot: GraphSnapshotRow | null = null;
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          [
+            "graph:read",
+            "person:read",
+            "relationship:read",
+            "graph:run",
+            "analysis:create",
+            "analysis:run",
+          ],
+          async (scopedContext): Promise<GraphSnapshotResponseReference> => {
+            transientSnapshot = await createGraphService({
+              ...context,
+              ...scopedContext,
+            }).createSnapshot({ ...input, idempotencyKey: null });
+            return {
+              manifestHash: transientSnapshot.manifestHash,
+              snapshotId: transientSnapshot.id,
+            };
+          },
+        );
+        if (!executed.replayed && transientSnapshot) return transientSnapshot;
+        await context.operationLimiter.consume({
+          clientPolicy: SNAPSHOT_CLIENT_POLICY,
+          operationClass: "graph.snapshot",
+          cost: input.filter ? graphCost(input.filter) : 400,
+          policy: SNAPSHOT_POLICY,
+        });
+        const snapshot = await replayCreatedSnapshot(
+          executed.responseReference,
+        );
+        context.metrics.snapshotCreate({ outcome: "SUCCESS" });
+        return snapshot;
+      }
       try {
         await context.operationLimiter.consume({
           clientPolicy: SNAPSHOT_CLIENT_POLICY,
@@ -2071,8 +2476,69 @@ export function createGraphService(context: GraphServiceContext) {
         throw error;
       }
     },
-    async replaySnapshot(id: string) {
+    async replaySnapshot(
+      input: string | { snapshotId: string; idempotencyKey?: string | null },
+    ) {
+      const id = typeof input === "string" ? input : input.snapshotId;
       const snapshotId = normalizeUuid(id, "The graph snapshot ID is invalid.");
+      const idempotencyKey =
+        typeof input === "string" ? null : input.idempotencyKey;
+      if (idempotencyKey != null) {
+        if (!context.idempotencyHmacKey)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Graph analysis idempotency is not configured.",
+          );
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + GRAPH_ANALYSIS_IDEMPOTENCY_TTL_MS),
+          idempotencyKey,
+          operation: "graph_snapshot.replay.graphql",
+          requestMaterial: { snapshotId },
+          secret: context.idempotencyHmacKey,
+        });
+        let transientResult: {
+          snapshot: GraphSnapshotRow | null;
+          valid: boolean;
+        } | null = null;
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          [
+            "graph:read",
+            "person:read",
+            "relationship:read",
+            "graph:run",
+            "analysis:run",
+          ],
+          async (
+            scopedContext,
+          ): Promise<GraphSnapshotReplayResponseReference> => {
+            transientResult = await createGraphService({
+              ...context,
+              ...scopedContext,
+            }).replaySnapshot(snapshotId);
+            return {
+              manifestHash: transientResult.valid
+                ? transientResult.snapshot!.manifestHash
+                : null,
+              snapshotId,
+              valid: transientResult.valid,
+            };
+          },
+        );
+        if (!executed.replayed && transientResult) return transientResult;
+        await context.operationLimiter.consume({
+          clientPolicy: SNAPSHOT_CLIENT_POLICY,
+          operationClass: "graph.replay",
+          cost: 800,
+          policy: SNAPSHOT_POLICY,
+        });
+        const result = await replaySnapshotResult(executed.responseReference);
+        context.metrics.snapshotReplay({
+          outcome: result.valid ? "VALID" : "INVALID",
+        });
+        return result;
+      }
       try {
         await context.operationLimiter.consume({
           clientPolicy: SNAPSHOT_CLIENT_POLICY,
@@ -2246,6 +2712,7 @@ export function createGraphService(context: GraphServiceContext) {
       filter?: GraphFilterInput | null;
       algorithm: GraphAnalysisAlgorithm;
       graphViewId?: string | null;
+      idempotencyKey?: string | null;
     }) {
       if (!GRAPH_ANALYSIS_ALGORITHMS.includes(input.algorithm))
         throw createGraphQLError(
@@ -2260,6 +2727,77 @@ export function createGraphService(context: GraphServiceContext) {
           "VALIDATION_FAILED",
           "A graph filter or saved graph view is required.",
         );
+      if (input.idempotencyKey != null) {
+        if (!context.idempotencyHmacKey)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Graph analysis idempotency is not configured.",
+          );
+        const graphViewId = input.graphViewId
+          ? normalizeUuid(input.graphViewId, "The graph view ID is invalid.")
+          : null;
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + GRAPH_ANALYSIS_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "graph_analysis.run.graphql",
+          requestMaterial: {
+            algorithm: input.algorithm,
+            filter: fieldMaterial(
+              requestedFilter as unknown as CanonicalRequestMaterial,
+            ),
+            graphViewId: fieldMaterial(graphViewId),
+          },
+          secret: context.idempotencyHmacKey,
+        });
+        let transientAnalysis: GraphAnalysisPayloadRecord | null = null;
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          [
+            "graph:read",
+            "person:read",
+            "relationship:read",
+            "graph:run",
+            "analysis:create",
+            "analysis:run",
+          ],
+          async (scopedContext): Promise<GraphAnalysisResponseReference> => {
+            transientAnalysis = await createGraphService({
+              ...context,
+              ...scopedContext,
+            }).runAnalysis({ ...input, idempotencyKey: null });
+            const snapshot = await createGraphRepository(
+              scopedContext.database,
+            ).getSnapshot({
+              id: transientAnalysis.run.graphSnapshotId,
+              workspaceId: scopedContext.workspaceId,
+            });
+            if (!snapshot)
+              throw new Error("The graph analysis snapshot was not found.");
+            return {
+              algorithm: input.algorithm,
+              graphGeneratedAt: transientAnalysis.graph.generatedAt,
+              manifestHash: snapshot.manifestHash,
+              resultCount: transientAnalysis.metrics.length,
+              runId: transientAnalysis.run.id,
+              snapshotId: snapshot.id,
+            };
+          },
+        );
+        if (!executed.replayed && transientAnalysis) return transientAnalysis;
+        await context.operationLimiter.consume({
+          operationClass: "graph.analysis",
+          cost: input.filter ? graphCost(input.filter) * 2 : 800,
+          policy: ANALYSIS_POLICY,
+          clientPolicy: ANALYSIS_CLIENT_POLICY,
+        });
+        const result = await replayAnalysis(executed.responseReference);
+        context.metrics.analysisRun({
+          algorithm: input.algorithm,
+          outcome: "SUCCESS",
+        });
+        return result;
+      }
       try {
         await context.operationLimiter.consume({
           operationClass: "graph.analysis",
@@ -2341,6 +2879,7 @@ export function createGraphService(context: GraphServiceContext) {
     async rerunAnalysis(input: {
       snapshotId: string;
       algorithm: GraphAnalysisAlgorithm;
+      idempotencyKey?: string | null;
     }) {
       if (!GRAPH_ANALYSIS_ALGORITHMS.includes(input.algorithm))
         throw createGraphQLError(
@@ -2351,6 +2890,68 @@ export function createGraphService(context: GraphServiceContext) {
         input.snapshotId,
         "The graph snapshot ID is invalid.",
       );
+      if (input.idempotencyKey != null) {
+        if (!context.idempotencyHmacKey)
+          throw createGraphQLError(
+            "PRECONDITION_FAILED",
+            "Graph analysis idempotency is not configured.",
+          );
+        const idempotency = derivePrincipalResearchIdempotency(context, {
+          expiresAt: new Date(Date.now() + GRAPH_ANALYSIS_IDEMPOTENCY_TTL_MS),
+          idempotencyKey: input.idempotencyKey,
+          operation: "graph_analysis.rerun.graphql",
+          requestMaterial: { algorithm: input.algorithm, snapshotId },
+          secret: context.idempotencyHmacKey,
+        });
+        let transientAnalysis: GraphAnalysisPayloadRecord | null = null;
+        const executed = await runPrincipalIdempotentResearchWrite(
+          context,
+          idempotency,
+          [
+            "graph:read",
+            "person:read",
+            "relationship:read",
+            "graph:run",
+            "analysis:create",
+            "analysis:run",
+          ],
+          async (scopedContext): Promise<GraphAnalysisResponseReference> => {
+            transientAnalysis = await createGraphService({
+              ...context,
+              ...scopedContext,
+            }).rerunAnalysis({ ...input, idempotencyKey: null });
+            const snapshot = await createGraphRepository(
+              scopedContext.database,
+            ).getSnapshot({
+              id: transientAnalysis.run.graphSnapshotId,
+              workspaceId: scopedContext.workspaceId,
+            });
+            if (!snapshot)
+              throw new Error("The graph analysis snapshot was not found.");
+            return {
+              algorithm: input.algorithm,
+              graphGeneratedAt: transientAnalysis.graph.generatedAt,
+              manifestHash: snapshot.manifestHash,
+              resultCount: transientAnalysis.metrics.length,
+              runId: transientAnalysis.run.id,
+              snapshotId: snapshot.id,
+            };
+          },
+        );
+        if (!executed.replayed && transientAnalysis) return transientAnalysis;
+        await context.operationLimiter.consume({
+          operationClass: "graph.analysis",
+          cost: 800,
+          policy: ANALYSIS_POLICY,
+          clientPolicy: ANALYSIS_CLIENT_POLICY,
+        });
+        const result = await replayAnalysis(executed.responseReference);
+        context.metrics.analysisRun({
+          algorithm: input.algorithm,
+          outcome: "SUCCESS",
+        });
+        return result;
+      }
       try {
         await context.operationLimiter.consume({
           operationClass: "graph.analysis",

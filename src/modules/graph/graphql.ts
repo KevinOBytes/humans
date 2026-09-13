@@ -586,17 +586,20 @@ const RunGraphAnalysisInput = builder.inputType("RunGraphAnalysisInput", {
     filter: t.field({ type: GraphFilterInput }),
     algorithm: t.field({ type: GraphAnalysisAlgorithm, required: true }),
     graphViewId: t.field({ type: "UUID" }),
+    idempotencyKey: t.string(),
   }),
 });
 const RerunGraphAnalysisInput = builder.inputType("RerunGraphAnalysisInput", {
   fields: (t) => ({
     snapshotId: t.field({ type: "UUID", required: true }),
     algorithm: t.field({ type: GraphAnalysisAlgorithm, required: true }),
+    idempotencyKey: t.string(),
   }),
 });
 const ReplayGraphSnapshotInput = builder.inputType("ReplayGraphSnapshotInput", {
   fields: (t) => ({
     snapshotId: t.field({ type: "UUID", required: true }),
+    idempotencyKey: t.string(),
   }),
 });
 
@@ -840,7 +843,7 @@ export function registerGraphGraphQL(): void {
         requireGraphRead(context);
         requirePermission(context, "graph", "run");
         requirePermission(context, "analysis", "run");
-        return context.services.graph.replaySnapshot(args.input.snapshotId);
+        return context.services.graph.replaySnapshot(args.input);
       },
     }),
     rerunGraphAnalysis: t.field({
