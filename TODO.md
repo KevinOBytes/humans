@@ -1,5 +1,17 @@
 # MVP closure and production hardening backlog
 
+Current release checkpoint (2026-09-13): `main` commit `8847771` is pushed to
+GitHub. CI run `34776730139` passed all nine required jobs, and Vercel
+deployment `dpl_BuwgGkiTexdJYiVKRWUciHZLA3oz` is `READY` on Node 24 with
+aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. The release adds governed, catalog-backed
+web fact suggestions for consented AI research and fixes the authenticated
+smoke harness to send the trusted same-origin headers required by GraphQL.
+The local Compose stack was also started successfully with PostgreSQL, Redis,
+MinIO, app, worker, migration, admin bootstrap, and synthetic seed; the
+remaining hosted credential rotation/provider and whole-product acceptance
+rows below are still intentionally open.
+
 The expanded scope for this backlog is explicit: rich, multi-fact person
 profiles; temporal and epistemically-labelled relationship graphs; source and
 field-level provenance; workspace/case/investigation/team boundaries; consent,
