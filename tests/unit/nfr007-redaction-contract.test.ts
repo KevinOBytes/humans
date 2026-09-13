@@ -103,6 +103,34 @@ describe("NFR-007 redaction boundaries", () => {
     );
   });
 
+  it("retains bounded bulk-query alert metadata without query material", () => {
+    const redacted = redactAuditDiff({
+      changedFields: ["resultCount"],
+      metadata: {
+        hasNextPage: true,
+        queryMode: "TEXT",
+        rowCount: 100,
+        threshold: 100,
+        query: "private identity search",
+        queryHash: "private-query-binding",
+      },
+      sensitivity: "internal",
+    });
+
+    expect(redacted).toEqual({
+      changedFields: ["resultCount"],
+      metadata: {
+        hasNextPage: true,
+        queryMode: "TEXT",
+        rowCount: 100,
+        threshold: 100,
+      },
+    });
+    expect(JSON.stringify(redacted)).not.toMatch(
+      /private identity search|private-query-binding/u,
+    );
+  });
+
   it("drops accidental logger fields before console serialization", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const unsafe = {
