@@ -13,10 +13,10 @@ workspaces still require a controlled operator backfill before this is a
 complete historical migration; aliases, biography, contacts, addresses,
 identifiers, notes, and files remain on their existing dedicated boundaries.
 
-Latest runtime evidence (2026-09-13): commit `ac12a4c` is pushed and deployed
-as Vercel `dpl_HtAmMML1xP2pTghAvC6xJJsypC1a` (`READY`) with aliases
+Latest runtime evidence (2026-09-13): commit `567bd83` is pushed and deployed
+as Vercel `dpl_CHp1q3uBWMFgESvT2MPCYr9Dodoe` (`READY`) with aliases
 `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
-`humans-tkoresearch.vercel.app`. GitHub Actions run `34759485896` passed all
+`humans-tkoresearch.vercel.app`. GitHub Actions run `34760813821` passed all
 nine required jobs (Node 24 quality, PostgreSQL integration, browser
 acceptance, production build, generated drift, Compose lifecycle, image
 security, dependency policy, and secret scanning). Public smoke passed
