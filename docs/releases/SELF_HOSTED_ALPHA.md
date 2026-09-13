@@ -1,13 +1,13 @@
 # Self-hosted alpha and MVP release-candidate boundary
 
-Latest verified application runtime checkpoint (2026-09-13): commit `c3139ab`
-passed GitHub Actions run `34737257196` with all 9 required jobs successful,
+Latest verified application runtime checkpoint (2026-09-13): commit `39f4728`
+passed GitHub Actions run `34740109083` with all 9 required jobs successful,
 including PostgreSQL integration, browser acceptance (38 passed, 3 skipped),
 Compose lifecycle, production build, generated drift, quality, image security,
 dependency policy, and secret scanning. Vercel deployment
-`dpl_3RCBQcxsrNdAnfaLgfFXtwjbr9Nk` is `READY`, serves
-`humans.kevinbytes.com`, and Vercel metadata confirms it was built from
-`c3139ab`. Public smoke passed homepage, liveness, readiness, unauthenticated
+`dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` is `READY`, serves
+`humans.kevinbytes.com`, and was deployed from the clean `main` tree at
+`39f4728` after that CI run. Public smoke passed homepage, liveness, readiness, unauthenticated
 GraphQL, and protected jobs; direct-route method checks returned DELETE jobs
 405, OPTIONS storage 204, and PATCH GraphQL 405 with correlation IDs and
 `private, no-store`. The direct-route error contract, production
@@ -15,6 +15,11 @@ initialization-recovery tests, extraction read-boundary fixes, temporal graph
 editor, and retention-policy revalidation are included in this tree.
 Hosted authenticated/provider acceptance remains outside the verified alpha
 boundary.
+
+Deployment refresh: `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` is READY with the custom
+domain aliases and was deployed from clean `main` at `39f4728` after CI run
+`34740109083`. Public smoke and direct method-boundary probes passed; this does
+not establish hosted authenticated/provider or full-MVP acceptance.
 
 Latest runtime checkpoint (2026-09-13): application tree `ae1c5fd` passed
 GitHub Actions run `34726668384` across all 9 checks, including the live
