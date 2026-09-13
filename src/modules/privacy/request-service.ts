@@ -22,6 +22,7 @@ import {
 } from "./request-validation";
 import {
   privacyProcessors,
+  privacyPropagationIsComplete,
   type PrivacyRequestRow,
   type PrivacyRequestState,
 } from "./request-types";
@@ -355,11 +356,11 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
                 eq(privacyProcessorPropagations.privacyRequestId, row.id),
               ),
             );
-          if (
-            propagations.some(
-              (r) => !["succeeded", "not_applicable"].includes(r.state),
-            )
-          )
+          // A mutation/deletion request is not complete merely because its
+          // local worker ran. Every configured external processor must have a
+          // terminal result, otherwise provider erasure and cache/index
+          // propagation would be silently skipped.
+          if (!privacyPropagationIsComplete(row.requestType, propagations))
             precondition();
           assertPrivacyTransition({
             from: row.state,
