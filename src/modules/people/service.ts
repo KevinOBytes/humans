@@ -1,4 +1,6 @@
 import { createGraphQLError } from "@/graphql/errors";
+import { createIdentifierService } from "./identifier-service";
+export { prepareIdentifierWrite } from "./identifier-service";
 import { decodeResearchCursor, normalizePagination } from "@/graphql/limits";
 import {
   canAccessResource,
@@ -845,6 +847,7 @@ export function createPeopleService(context: ResearchServiceContext) {
       if (row) await auditProfileReads([row]);
       return row;
     },
+    ...createIdentifierService(context),
 
     async getByIds(
       ids: readonly string[],

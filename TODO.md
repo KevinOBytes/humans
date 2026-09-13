@@ -62,8 +62,29 @@ period”) with an accessible description relationship. This makes the existing
 audited fact path discoverable for pronouns, employment, education, languages,
 organizations, birth dates, and custom JSON without adding an ungoverned write
 path. `tests/unit/fact-form.test.tsx` and `tests/unit/facts-section.test.tsx`
-pass for the focused behavior. Identifier create/update/archive controls and
-the full rich-profile browser/accessibility matrix remain open.
+pass for the focused behavior. The full rich-profile browser/accessibility
+matrix remains open.
+
+Identifier authoring checkpoint (2026-09-13): generated create/update/archive
+operations and profile controls are implemented with live workspace-authority
+revalidation, resource visibility, effective-date validation, optimistic
+versions, redacted audits, and principal-bound replay. Public values use
+normalized storage; all other values use protected-exact encryption and blind
+indexes and fail closed without runtime keys. Editors never load protected
+values and require a replacement for protected reclassification/namespace
+changes.
+The default new profile identifier is encrypted `internal`. Invisible
+post-write results roll back with `NOT_VISIBLE` before audit/idempotency commit;
+confidential/restricted access still requires explicit resource authority.
+Update/archive SQL fences the authorized parent UUID against merge/unmerge
+ownership changes. Focused transaction-guard regressions cover both boundaries.
+Unit/schema/component tests cover storage preparation, generated
+operations, permissions, retries, and conflict feedback. The new gated
+`person-identifier-lifecycle.test.ts` covers generated and service lifecycles,
+principal separation, cross-workspace denial, version fencing, redaction, and
+audit counts, but remains unexecuted here without `TEST_DATABASE_URL`. Live
+PostgreSQL, hosted, and full profile browser/accessibility acceptance remain
+open; HUM-FR-010/HUM-FR-028 are not marked complete.
 
 Latest main-tree evidence (2026-09-13): commit `591c1d7` is pushed and deployed
 as Vercel `dpl_HSK2gk4swq1gvyiBYawCrx3UiJaT` (`READY`) with aliases
@@ -632,7 +653,7 @@ recovery.
 - Bounded HUM-FR-010 reconciliation browser evidence (2026-09-08): `tests/e2e/reconciliation.spec.ts` now proves an owner can inspect a seeded workspace candidate, review it as `ACCEPTED`, merge the selected people with explicit confirmation, verify the loser status/merge decision in PostgreSQL, undo the merge, and verify the candidate/loser restoration; the same journey proves a viewer can inspect but cannot change it. Broader conflict-matrix and hosted acceptance remain open.
 - The same browser suite now includes a stale-view review case: two authorized pages load one candidate, the first commits an acceptance, and the second must surface `CONFLICT` without replacing the accepted database state. CI execution remains required before treating this as release evidence; the broader merge/unmerge and hosted conflict matrix remains open.
 - Bounded HUM-FR-010 candidate-generation evidence (2026-09-08): `generateIdentityCandidates` now derives workspace-scoped candidates from normalized exact display, sort, and preferred-name matches plus protected identifier/contact blind-index and non-disproven birth-date agreement, without persisting raw protected values. It caps work at 100 pairs, serializes concurrent runs with a workspace advisory lock, fences duplicate pairs, supports principal-bound durable idempotency/replay, and records redacted creation audits. Broader fuzzy/weighted identity signals, merge/unmerge browser acceptance, and the full conflict matrix remain open.
-- Bounded HUM-FR-010/HUM-FR-028 public-identifier profile evidence (2026-09-12): generated `PersonIdentifiers` now exposes a paginated, workspace-scoped identifier projection on the person profile. The domain service applies the existing person and `personIdentifier` visibility policies, returns issuer/type/validity/verification metadata, and only returns a normalized value for records explicitly classified `public`; encrypted values, blind indexes, and protected normalized values are never part of the GraphQL projection. Focused projection tests and a live-when-configured GraphQL acceptance cover public-value display, protected-value redaction, and foreign-workspace non-disclosure. Identifier create/update/archive controls, source-level citations, and the broader reconciliation/conflict and whole-profile matrices remain open.
+- Bounded HUM-FR-010/HUM-FR-028 public-identifier profile evidence (2026-09-12): generated `PersonIdentifiers` exposes a paginated, workspace-scoped identifier projection on the person profile. The service applies person and `personIdentifier` visibility policies, returns issuer/type/validity/verification metadata, and only returns normalized values for records classified `public`. Protected storage internals never enter the projection. The 2026-09-13 authoring checkpoint above adds create/update/archive controls with local unit evidence; live database acceptance, source-level citations, and the broader reconciliation/conflict and whole-profile matrices remain open.
 - Bounded HUM-FR-028 effective-dated address profile evidence (2026-09-12): generated `PersonAddresses` now carries stored address-association validity bounds and temporal precision into the existing workspace- and sensitivity-scoped profile projection. Address cards identify the association type and render a UTC-stable effective period without inventing day precision for year-only records. Focused component coverage and the live-when-configured generated GraphQL location matrix cover presentation, authorized readback, and foreign-workspace non-disclosure. Address-source presentation, the exhaustive location authorization/browser matrix, and whole-profile acceptance remain open.
 - [ ] `HUM-FR-023` Complete workspace-policy-controlled restricted-prompt omission and the full retention-policy matrix beyond implemented AI-thread retention inheritance/purge, read-only tool allowlist, authorization checks, citation validation, and provider/model disclosure. Bounded person web research now provides explicit consent, safe bounded Brave/OpenAI-compatible provider handling, source-backed auto-filled editable drafts, per-field and accept-all review controls, an immutable workspace/person-scoped provenance snapshot with a generated run ID, and a Chromium acceptance journey for selective persistence. Accepted web citations now promote their persisted snapshots transactionally into source/custody/evidence/excerpt/field-level assertion chains, retain bounded run/provider/model/hash/time/purpose/reviewer provenance, and replay without duplicate chains. Live provider credentials, retention deletion/expiry coverage for research snapshots, and the remaining policy/provider matrix are still open.
 - [ ] `HUM-FR-024` Complete live webhook lifecycle, signed delivery, retry, destination-rebinding, and upgrade-migration acceptance beyond the implemented durable jobs and immutable audit records.
