@@ -67,6 +67,14 @@ test("an owner manages a fictional case assignment queue without expanding case 
     priority: 7,
     idempotencyKey: "browser-assignment-seeded-verification",
   });
+  await assignments.create({
+    caseId: null,
+    queueKind: "review",
+    title: "Seeded workspace review",
+    description: "A fictional workspace-level review item.",
+    priority: 3,
+    idempotencyKey: "browser-assignment-seeded-workspace-review",
+  });
 
   const [beforeLinks] = await fixture.database
     .select({ total: count() })
@@ -241,6 +249,81 @@ test("an owner manages a fictional case assignment queue without expanding case 
     ).violations,
   ).toEqual([]);
 
+  await page.goto("/assignments");
+  const workspaceQueue = page.getByRole("region", {
+    name: "Workspace assignments",
+  });
+  await expect(workspaceQueue).toBeVisible();
+  await expect(workspaceQueue).toContainText("Seeded workspace review");
+  await expect(workspaceQueue).toContainText("Seeded fictional verification");
+
+  const workspaceTitle = "Browser fictional workspace assignment";
+  await workspaceQueue.locator("#assignment-title").fill(workspaceTitle);
+  const workspaceCreateResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/graphql") &&
+      Boolean(
+        response.request().postData()?.includes("CreateResearchAssignment"),
+      ),
+  );
+  await workspaceQueue
+    .getByRole("button", { name: "Create assignment" })
+    .click();
+  const workspaceCreateHttpResponse = await workspaceCreateResponse;
+  const workspaceCreateRequest = workspaceCreateHttpResponse.request();
+  expect(workspaceCreateRequest.postData()).toContain('"caseId":null');
+  const workspaceCreateResult = await workspaceCreateHttpResponse.json();
+  expect(workspaceCreateResult.errors).toBeUndefined();
+  expect(workspaceCreateResult).toMatchObject({
+    data: {
+      createResearchAssignment: { assignment: { title: workspaceTitle } },
+    },
+  });
+  await expect(
+    workspaceQueue.getByRole("heading", { name: workspaceTitle }),
+  ).toBeVisible();
+
+  const workspaceAssignments = await fixture.execute<{
+    researchAssignments?: {
+      nodes: Array<{ caseId: string | null; title: string }>;
+    };
+  }>({
+    jar: owner.jar,
+    query: ResearchAssignmentsDocument,
+    variables: { first: 25 },
+  });
+  expect(workspaceAssignments.body?.errors).toBeUndefined();
+  expect(workspaceAssignments.body?.data?.researchAssignments?.nodes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ caseId: null, title: workspaceTitle }),
+    ]),
+  );
+  const [workspaceRow] = await fixture.database
+    .select({ caseId: researchAssignmentItems.caseId })
+    .from(researchAssignmentItems)
+    .where(
+      and(
+        eq(researchAssignmentItems.workspaceId, owner.workspaceId),
+        eq(researchAssignmentItems.title, workspaceTitle),
+      ),
+    );
+  expect(workspaceRow?.caseId).toBeNull();
+
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include('[aria-labelledby="assignment-queue-heading"]')
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+
   const viewer = await fixture.createWorkspaceMember(owner, "viewer");
   const viewerQueue = await fixture.execute({
     jar: viewer.jar,
@@ -254,6 +337,25 @@ test("an owner manages a fictional case assignment queue without expanding case 
   });
   await authenticate(viewerContext, viewer.jar);
   const viewerPage = await viewerContext.newPage();
+  await viewerPage.goto("/assignments");
+  const viewerWorkspaceQueue = viewerPage.getByRole("region", {
+    name: "Workspace assignments",
+  });
+  await expect(viewerWorkspaceQueue).toBeVisible();
+  await expect(viewerWorkspaceQueue).toContainText("Seeded workspace review");
+  await expect(
+    viewerWorkspaceQueue.getByRole("button", { name: "Create assignment" }),
+  ).toHaveCount(0);
+  await expect(
+    viewerWorkspaceQueue.getByText("You have read-only access to this queue."),
+  ).toBeVisible();
+  expect(
+    (
+      await new AxeBuilder({ page: viewerPage })
+        .include('[aria-labelledby="assignment-queue-heading"]')
+        .analyze()
+    ).violations,
+  ).toEqual([]);
   await viewerPage.goto("/cases");
   await expect(viewerPage.getByLabel("Research case")).not.toContainText(
     researchCase.title,
