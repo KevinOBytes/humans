@@ -6,7 +6,7 @@ Latest collaboration/runtime release evidence (2026-09-13): commits
 required jobs, including Node 24 quality, real
 PostgreSQL integration, browser acceptance, production build, generated drift,
 Compose lifecycle, image security, dependency policy, and secret scanning. The
-current runtime tree was deployed as Vercel `dpl_DxhPnSN55zXxKGY1rCvCEo7B8LCQ`
+current runtime tree was deployed as Vercel `dpl_F4MjcikAGaGnh1AEgKBgxyEyvQhk`
 (`READY`) with aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`. Redacted production smoke passed homepage,
 liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL,
