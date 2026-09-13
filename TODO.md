@@ -1,5 +1,17 @@
 # MVP closure and production hardening backlog
 
+Bounded HUM-FR-028/HUM-NFR-009 local profile-editor evidence (2026-09-13):
+`tests/e2e/profile-records.spec.ts` exercises authenticated creation of multiple
+fictional names and a dated timeline event, keyboard update/archive, persisted
+generated GraphQL reads and reloads, read-only viewer controls, and a foreign
+workspace's unavailable-record page with no record content in the streamed
+payload. Desktop, 390px mobile, and RTL/200% CSS-zoom axe/reflow assertions
+include long unbroken names/event titles and open edit forms. The test exposed
+and fixes page-wide mobile overflow in name/event rows by allowing content and
+action controls to wrap. Existing facts/relationships/evidence/notes/contacts/
+files suites are not replaced. This is local Chromium evidence; hosted and
+whole-product accessibility acceptance remain open, as do both requirements.
+
 Latest verified application runtime checkpoint (2026-09-13): commit `ad2251e`
 passed GitHub Actions run `34733012670` with all 9 checks successful, including
 PostgreSQL/Redis/MinIO integration, browser acceptance, production build,

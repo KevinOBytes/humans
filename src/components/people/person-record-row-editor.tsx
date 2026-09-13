@@ -149,7 +149,7 @@ export function PersonNameRowEditor({
   }
 
   return (
-    <li className="border-border bg-card rounded-xl border p-4">
+    <li className="border-border bg-card min-w-0 rounded-xl border p-4 [overflow-wrap:anywhere]">
       {feedback ? (
         <MutationFeedback feedback={feedback} title="Name update failed" />
       ) : null}
@@ -203,7 +203,7 @@ export function PersonNameRowEditor({
               {dateLabel ? ` · ${dateLabel}` : ""}
             </p>
           </div>
-          <div className="flex items-start gap-2">
+          <div className="flex flex-wrap items-start gap-2">
             <Badge>{name.state.toLowerCase()}</Badge>
             {canUpdate ? (
               <Button
@@ -337,7 +337,7 @@ export function PersonEventRowEditor({
   }
 
   return (
-    <li className="border-border bg-card rounded-xl border p-4">
+    <li className="border-border bg-card min-w-0 rounded-xl border p-4 [overflow-wrap:anywhere]">
       {feedback ? (
         <MutationFeedback feedback={feedback} title="Event update failed" />
       ) : null}
@@ -403,7 +403,7 @@ export function PersonEventRowEditor({
               </p>
             ) : null}
           </div>
-          <div className="flex items-start gap-2">
+          <div className="flex flex-wrap items-start gap-2">
             <Badge>{event.state.toLowerCase()}</Badge>
             {canUpdate ? (
               <Button
