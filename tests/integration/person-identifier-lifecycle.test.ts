@@ -2,6 +2,9 @@
 import { and, eq } from "drizzle-orm";
 import { beforeAll, beforeEach, afterAll, describe, it, expect } from "vitest";
 import { personIdentifiers } from "@/db/schema/people";
+import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
+import { locationMutationIdempotency } from "@/db/schema/locations";
+import { newId } from "@/db/id";
 import { auditEvents } from "@/db/schema/operations";
 import { createPeopleService } from "@/modules/people/service";
 import {
@@ -140,7 +143,7 @@ liveDescribe("governed identifier lifecycle", () => {
       namespace: "registry",
       identifierType: "profile",
       value: "sensitive-42",
-      sensitivity: "confidential",
+      sensitivity: "internal",
       idempotencyKey: "identifier-create",
     };
     const [first, replay] = await Promise.all([
@@ -154,6 +157,30 @@ liveDescribe("governed identifier lifecycle", () => {
     });
     expect(replay).toEqual(first);
     const id = first.resource!.id;
+    // Protected storage does not itself grant visibility. Start with an
+    // internal encrypted record, then explicitly grant confidential access.
+    const policyId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: actor.workspaceId,
+      name: "Identifier confidential readers",
+      sensitivityCeiling: "confidential",
+      resourceKinds: ["personIdentifier"],
+      state: "active",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values({
+      id: newId(),
+      workspaceId: actor.workspaceId,
+      policyId,
+      memberId: actor.memberId,
+      resourceKind: "personIdentifier",
+      resourceId: id,
+      state: "active",
+      createdBy: actor.principalId,
+      updatedBy: actor.principalId,
+    });
     const [stored] = await fixture.database
       .select()
       .from(personIdentifiers)
@@ -165,6 +192,8 @@ liveDescribe("governed identifier lifecycle", () => {
       id,
       expectedVersion: 1,
       issuer: "Synthetic issuer",
+      sensitivity: "confidential",
+      value: "sensitive-42",
       idempotencyKey: "identifier-update",
     };
     const changed = await service.updateIdentifier(update);
@@ -172,6 +201,7 @@ liveDescribe("governed identifier lifecycle", () => {
       version: 2,
       issuer: "Synthetic issuer",
       value: null,
+      sensitivity: "confidential",
     });
     expect(await service.updateIdentifier(update)).toEqual(changed);
     await expect(
@@ -209,6 +239,105 @@ liveDescribe("governed identifier lifecycle", () => {
     ]);
     expect(JSON.stringify(audits)).not.toContain("sensitive-42");
   });
+  it.each([false, true])(
+    "rolls back hidden writes, audit events, and retry claims without an explicit grant (idempotent=%s)",
+    async (idempotent) => {
+      const actor = await fixture.createActor();
+      const createdPerson = await fixture.createPerson(actor, {
+        displayName: "Hidden identifier fixture",
+      });
+      const personId = createdPerson.body!.data!.createPerson!.person!.id;
+      const service = createPeopleService({
+        ...(await caseContext(fixture, actor)),
+        protectedExactRuntime: {
+          blindIndexKey: "12".repeat(32),
+          encryptionKey: "34".repeat(32),
+        },
+      });
+      const input = {
+        personId,
+        namespace: "registry",
+        identifierType: "profile",
+        value: "protected-42",
+        sensitivity: "confidential",
+        ...(idempotent ? { idempotencyKey: "hidden-create" } : {}),
+      };
+      expect(await service.createIdentifier(input)).toMatchObject({
+        resource: null,
+        code: "NOT_VISIBLE",
+      });
+      expect(
+        await fixture.database
+          .select()
+          .from(personIdentifiers)
+          .where(eq(personIdentifiers.workspaceId, actor.workspaceId)),
+      ).toHaveLength(0);
+      const created = await service.createIdentifier({
+        ...input,
+        sensitivity: "internal",
+        idempotencyKey: null,
+      });
+      const id = created.resource!.id;
+      const [before] = await fixture.database
+        .select()
+        .from(personIdentifiers)
+        .where(eq(personIdentifiers.id, id));
+      expect(
+        await service.updateIdentifier({
+          id,
+          expectedVersion: 1,
+          sensitivity: "restricted",
+          value: "replacement-42",
+          ...(idempotent ? { idempotencyKey: "hidden-update" } : {}),
+        }),
+      ).toMatchObject({ resource: null, code: "NOT_VISIBLE" });
+      const [after] = await fixture.database
+        .select()
+        .from(personIdentifiers)
+        .where(eq(personIdentifiers.id, id));
+      expect(after).toEqual(before);
+      const audits = await fixture.database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, actor.workspaceId),
+            eq(auditEvents.resourceKind, "personIdentifier"),
+          ),
+        );
+      expect(audits.map((row) => row.action)).toEqual([
+        "personIdentifier.create",
+      ]);
+      expect(
+        await fixture.database
+          .select()
+          .from(locationMutationIdempotency)
+          .where(
+            and(
+              eq(locationMutationIdempotency.workspaceId, actor.workspaceId),
+              eq(
+                locationMutationIdempotency.operation,
+                "person_identifier.create.graphql",
+              ),
+            ),
+          ),
+      ).toHaveLength(0);
+      expect(
+        await fixture.database
+          .select()
+          .from(locationMutationIdempotency)
+          .where(
+            and(
+              eq(locationMutationIdempotency.workspaceId, actor.workspaceId),
+              eq(
+                locationMutationIdempotency.operation,
+                "person_identifier.update.graphql",
+              ),
+            ),
+          ),
+      ).toHaveLength(0);
+    },
+  );
   it("rejects cross-workspace writes and callers lacking write permission", async () => {
     const owner = await fixture.createActor();
     const other = await fixture.createActor();

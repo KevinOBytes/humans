@@ -65,7 +65,7 @@ describe("identifier profile controls", () => {
     expect(execute.mock.calls[0]![0]).toBe(CreatePersonIdentifierDocument);
     expect(execute.mock.calls[1]![1]).toEqual(execute.mock.calls[0]![1]);
     expect(execute.mock.calls[0]![1].input).toMatchObject({
-      sensitivity: "CONFIDENTIAL",
+      sensitivity: "INTERNAL",
       value: "Synthetic-42",
       idempotencyKey: expect.any(String),
     });

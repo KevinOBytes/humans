@@ -714,8 +714,13 @@ and writes redacted audits and principal-bound idempotency references. Public
 values use normalized storage; non-public values use protected-exact encryption
 and workspace-bound blind indexes, failing closed when runtime keys are absent.
 Protected values are never returned to the editor; reclassification or namespace
-changes require a replacement when the existing value is protected. Unit,
-schema, and component tests verify preparation, API shape, permission denial,
+changes require a replacement when the existing value is protected.
+Post-write visibility is rechecked inside the transaction: invisible results
+roll back with `NOT_VISIBLE`, including their audit and retry claim. The profile
+defaults to encrypted `internal` identifiers; confidential/restricted edits
+require the existing explicit resource-access authority. Update/archive SQL
+also fences the authorized parent UUID against concurrent merge/unmerge moves.
+Unit, schema, and component tests verify preparation, API shape, permission denial,
 generated browser operations, retry keys, and conflict feedback. Live
 PostgreSQL lifecycle tests are present but were not run in this isolated
 worktree because `TEST_DATABASE_URL` was not configured. This checkpoint does

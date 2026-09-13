@@ -49,6 +49,7 @@ type ArchiveInput = Pick<
 >;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+class IdentifierNotVisible extends Error {}
 function invalid(): never {
   throw createGraphQLError(
     "VALIDATION_FAILED",
@@ -199,7 +200,7 @@ export function createIdentifierService(context: ResearchServiceContext) {
     await person(scoped, row.personId);
     return row;
   }
-  async function mutate(
+  async function executeMutation(
     action: "create" | "update" | "archive",
     input: CreateInput | UpdateInput | ArchiveInput,
   ): Promise<MutationOutcome<PersonIdentifierView>> {
@@ -284,6 +285,7 @@ export function createIdentifierService(context: ResearchServiceContext) {
             and(
               eq(personIdentifiers.workspaceId, scoped.workspaceId),
               eq(personIdentifiers.id, update.id),
+              eq(personIdentifiers.personId, existing.personId),
               eq(personIdentifiers.version, update.expectedVersion),
               isNull(personIdentifiers.deletedAt),
             ),
@@ -295,6 +297,30 @@ export function createIdentifierService(context: ResearchServiceContext) {
           "CONFLICT",
           "The identifier has changed. Refresh before retrying.",
         );
+      if (action !== "archive") {
+        // Do not commit a write whose resulting sensitivity/purpose is hidden
+        // from the caller. Throw inside the transaction so audit/idempotency
+        // and the identifier write roll back together.
+        const [visibleResult] = await scoped.database
+          .select({ id: personIdentifiers.id })
+          .from(personIdentifiers)
+          .where(
+            and(
+              eq(personIdentifiers.workspaceId, scoped.workspaceId),
+              eq(personIdentifiers.id, row.id),
+              eq(personIdentifiers.personId, row.personId),
+              isNull(personIdentifiers.deletedAt),
+              resourceVisibilitySql(scoped, {
+                resourceKind: "personIdentifier",
+                id: personIdentifiers.id,
+                sensitivity: personIdentifiers.sensitivity,
+              }),
+            ),
+          )
+          .limit(1);
+        if (!visibleResult) throw new IdentifierNotVisible();
+        await person(scoped, row.personId);
+      }
       await createAuditService(scoped).write(scoped.database, {
         action: `personIdentifier.${action}`,
         resourceKind: "personIdentifier",
@@ -380,6 +406,18 @@ export function createIdentifierService(context: ResearchServiceContext) {
         };
       },
     );
+  }
+  async function mutate(
+    action: "create" | "update" | "archive",
+    input: CreateInput | UpdateInput | ArchiveInput,
+  ): Promise<MutationOutcome<PersonIdentifierView>> {
+    try {
+      return await executeMutation(action, input);
+    } catch (error) {
+      if (error instanceof IdentifierNotVisible)
+        return { resource: null, issues: [], code: "NOT_VISIBLE" };
+      throw error;
+    }
   }
   return {
     createIdentifier: (input: CreateInput) => mutate("create", input),
