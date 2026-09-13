@@ -101,6 +101,8 @@ const workspaceTableNames = [
   "workspaceUsage",
   "researchAssignmentItems",
   "researchAssignmentEvents",
+  "breakGlassAccessRequests",
+  "breakGlassAccessResources",
 ] as const satisfies readonly (keyof typeof schema)[];
 
 const versionedTableNames = [
@@ -157,6 +159,7 @@ const versionedTableNames = [
   "workspaceUsage",
   "researchAssignmentItems",
   "workspaces",
+  "breakGlassAccessRequests",
 ] as const satisfies readonly (keyof typeof schema)[];
 
 function table(name: keyof typeof schema): Table {
