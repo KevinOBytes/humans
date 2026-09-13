@@ -1,5 +1,8 @@
 export type AuthMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
-import { decorateAuthBoundaryResponse } from "@/modules/auth/request-boundary";
+import {
+  AUTH_REQUEST_ID_HEADER,
+  decorateAuthBoundaryResponse,
+} from "@/modules/auth/request-boundary";
 
 type AuthHandler = (request: Request) => Promise<Response>;
 type AuthRouteHandlers = Record<AuthMethod, AuthHandler>;
@@ -73,6 +76,13 @@ function infrastructureUnavailable(
   logger: InfrastructureLogger,
 ): Response {
   const correlationId = requestId(request);
+  return infrastructureUnavailableForRequestId(correlationId, logger);
+}
+
+function infrastructureUnavailableForRequestId(
+  correlationId: string,
+  logger: InfrastructureLogger,
+): Response {
   logger.log({
     event: "auth.infrastructure.failure",
     requestId: correlationId,
@@ -92,6 +102,26 @@ function infrastructureUnavailable(
       },
     },
   );
+}
+
+export function createPreparedAuthHandler(input: {
+  handler(request: Request): Promise<Response>;
+  logger: InfrastructureLogger;
+  prepare(request: Request): Promise<Request>;
+}) {
+  return async (request: Request): Promise<Response> => {
+    const prepared = await input.prepare(request);
+    const correlationId =
+      prepared.headers.get(AUTH_REQUEST_ID_HEADER) ?? requestId(request);
+    try {
+      return decorateAuthBoundaryResponse(
+        await input.handler(prepared),
+        correlationId,
+      );
+    } catch {
+      return infrastructureUnavailableForRequestId(correlationId, input.logger);
+    }
+  };
 }
 
 const fallbackInfrastructureLogger: InfrastructureLogger = {
@@ -276,26 +306,23 @@ function getRouteHandlers(): Promise<LoadedAuthRouteHandlers> {
         const routeHandlers = Object.fromEntries(
           Object.entries(handlers).map(([method, handler]) => [
             method,
-            async (request: Request) => {
-              const prepared = await boundary.prepareAuthBoundaryRequest(
-                request,
-                {
+            createPreparedAuthHandler({
+              handler: async (prepared) => {
+                const selectedHandler =
+                  method === "POST" &&
+                  env.AUTH_REGISTRATION_MODE === "invite_only" &&
+                  normalizedPathname(prepared) === "/api/auth/sign-up/email"
+                    ? inviteSignUp
+                    : handler;
+                return selectedHandler(prepared);
+              },
+              logger: productionSecurityEventLogger,
+              prepare: (request) =>
+                boundary.prepareAuthBoundaryRequest(request, {
                   authSecret: env.AUTH_SECRET,
                   clientAddressConfig,
-                },
-              );
-              const selectedHandler =
-                method === "POST" &&
-                env.AUTH_REGISTRATION_MODE === "invite_only" &&
-                normalizedPathname(prepared) === "/api/auth/sign-up/email"
-                  ? inviteSignUp
-                  : handler;
-              const response = await selectedHandler(prepared);
-              return boundary.decorateAuthBoundaryResponse(
-                response,
-                prepared.headers.get(boundary.AUTH_REQUEST_ID_HEADER)!,
-              );
-            },
+                }),
+            }),
           ]),
         ) as AuthRouteHandlers;
         return { ...routeHandlers, bootstrap };
