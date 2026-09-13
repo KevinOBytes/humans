@@ -393,7 +393,7 @@ describe("PersonResearchPanel governed review", () => {
     ).toBeNull();
 
     await act(async () => {
-      resolveNewPersonHistory({.gmail,
+      resolveNewPersonHistory({
         ok: true,
         data: {
           acceptedAiResearchHistory: {
