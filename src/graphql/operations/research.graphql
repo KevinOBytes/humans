@@ -414,6 +414,24 @@ query PersonRelationships($id: UUID!, $first: Int, $after: String) {
         version
         createdAt
         updatedAt
+        evidence(first: 3) {
+          nodes {
+            id
+            locator
+            evidenceItem {
+              id
+              reviewState
+              source {
+                id
+                title
+                citation
+              }
+            }
+          }
+          pageInfo {
+            ...PageDetails
+          }
+        }
       }
       pageInfo {
         ...PageDetails
