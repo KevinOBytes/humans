@@ -13,8 +13,8 @@ workspaces still require a controlled operator backfill before this is a
 complete historical migration; aliases, biography, contacts, addresses,
 identifiers, notes, and files remain on their existing dedicated boundaries.
 
-Latest runtime evidence (2026-09-13): commit `567bd83` is pushed and deployed
-as Vercel `dpl_CHp1q3uBWMFgESvT2MPCYr9Dodoe` (`READY`) with aliases
+Latest main-tree evidence (2026-09-13): commit `591c1d7` is pushed and deployed
+as Vercel `dpl_HSK2gk4swq1gvyiBYawCrx3UiJaT` (`READY`) with aliases
 `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`. GitHub Actions run `34760813821` passed all
 nine required jobs (Node 24 quality, PostgreSQL integration, browser
@@ -25,6 +25,11 @@ GraphQL, and protected jobs. Hosted credentialed auth/person creation and
 external provider acceptance remain open because protected Vercel secrets were
 not exported; the remaining hosted/provider/privacy/accessibility/performance
 matrix is intentionally still tracked below.
+
+The deployment was built from the current `main` tree after the latest
+documentation-only commit. Vercel's manual deployment metadata does not expose
+a Git SHA, so the local commit and Ready deployment ID are recorded together;
+this is not treated as a replacement for authenticated/provider acceptance.
 
 Bounded production smoke contract evidence (2026-09-13): the opt-in
 authenticated smoke now requires the configured `ADMIN_EMAIL`,
