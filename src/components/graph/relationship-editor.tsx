@@ -92,7 +92,10 @@ const TEMPORAL_PRECISIONS = [
 function dateTimeLocal(value: string | null | undefined) {
   if (!value) return "";
   const date = new Date(value);
-  return Number.isFinite(date.valueOf()) ? date.toISOString().slice(0, 16) : "";
+  if (!Number.isFinite(date.valueOf())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${milliseconds}`;
 }
 
 function dateTimeIso(value: string) {
@@ -708,6 +711,7 @@ export function RelationshipEditor({
                       id="editor-relationship-valid-from"
                       aria-label="Relationship valid from"
                       type="datetime-local"
+                      step="0.001"
                       value={createValidFrom}
                       onChange={(event) =>
                         setCreateValidFrom(event.target.value)
@@ -723,6 +727,7 @@ export function RelationshipEditor({
                       id="editor-relationship-valid-until"
                       aria-label="Relationship valid until"
                       type="datetime-local"
+                      step="0.001"
                       value={createValidUntil}
                       onChange={(event) =>
                         setCreateValidUntil(event.target.value)
@@ -862,6 +867,7 @@ export function RelationshipEditor({
                           id="editor-existing-valid-from"
                           aria-label="Existing relationship valid from"
                           type="datetime-local"
+                          step="0.001"
                           value={existingValidFrom}
                           onChange={(event) => {
                             setExistingTemporalDirty(true);
@@ -879,6 +885,7 @@ export function RelationshipEditor({
                           id="editor-existing-valid-until"
                           aria-label="Existing relationship valid until"
                           type="datetime-local"
+                          step="0.001"
                           value={existingValidUntil}
                           onChange={(event) => {
                             setExistingTemporalDirty(true);
