@@ -1152,3 +1152,10 @@ protected jobs probes passed with correlated private responses. Hosted
 authenticated sign-in remains unverified because sensitive production
 credentials cannot be exported by the CLI; the hosted release requirement
 remains incomplete.
+
+Current CI evidence (2026-09-13): GitHub Actions run `34749135777` for pushed
+commit `1102a67` passed all nine required jobs, including PostgreSQL
+integration, browser acceptance, Compose lifecycle, production build,
+generated drift, quality, image security, dependency policy, and secret
+scanning. The deployed application parent is `c739f4d`; hosted authenticated
+and provider acceptance remain incomplete.
