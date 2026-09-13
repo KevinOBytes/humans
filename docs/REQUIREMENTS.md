@@ -1,9 +1,9 @@
 # MVP requirements
 
-Latest application runtime checkpoint (2026-09-12): commit `46c70c7`
-passed GitHub Actions run `34724759703` across all 9 checks, including the live
+Latest application runtime checkpoint (2026-09-13): commit `ae1c5fd`
+passed GitHub Actions run `34726668384` across all 9 checks, including the live
 PostgreSQL, browser, Compose, generated-drift, security, and production-build
-gates. Vercel deployment `dpl_8vezgh3i9Fk84tUBbBvTkKs1xeGv` reached `READY`
+gates. Vercel deployment `dpl_2FFei2EMHYQMdyoZCHpAXGxqWAfh` reached `READY`
 and serves `humans.kevinbytes.com`. The redacted production smoke passed the
 homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs
 boundaries. Hosted authenticated/provider acceptance and the 24 explicitly
@@ -926,12 +926,12 @@ still inherits the matrix status above: a local unit/schema result is not a
 hosted provider, browser, Compose lifecycle, or authenticated-production
 acceptance claim.
 
-Current release evidence (2026-09-12): runtime commit `46c70c7` passed all nine
-checks in GitHub Actions run `34724759703`: quality, real PostgreSQL
+Current release evidence (2026-09-13): runtime commit `ae1c5fd` passed all nine
+checks in GitHub Actions run `34726668384`: quality, real PostgreSQL
 integration, browser acceptance, isolated Compose lifecycle, production build,
 image security, generated-artifact drift, dependency policy, and secret
 scanning. The linked Vercel project then deployed the same runtime as
-`dpl_8vezgh3i9Fk84tUBbBvTkKs1xeGv`, reached `READY`, and retained the
+`dpl_2FFei2EMHYQMdyoZCHpAXGxqWAfh`, reached `READY`, and retained the
 `humans.kevinbytes.com` alias. Documentation commit `3d892e5` also passed all
 nine checks in run `34725180690`. The source-custody GraphQL selection remains
 isolated behind a bounded five-event operation so the existing 500-point
@@ -962,5 +962,22 @@ content from a queue row and relies on the existing server-side case/mutation
 authorization boundary. Focused component tests cover generated bounded
 listing, creation, and transition inputs; authenticated browser and hosted
 acceptance remain open.
+
+Bounded research assignment browser evidence (2026-09-13): the authenticated
+Chromium journey now selects a fictional seeded case, filters the bounded queue,
+creates and assigns work, transitions and keyboard-escalates it, verifies
+persisted events and the absence of case-resource grants, and proves foreign
+viewer denial plus mobile no-overflow and axe behavior. The production GraphQL
+context now passes the configured idempotency HMAC and queue connection nodes
+use non-multiplying complexity accounting, keeping the documented 500-point
+cap effective. CI run `34726668384` passed this journey; full FR-038/NFR-009
+and hosted/provider acceptance remain open.
+
+Synthetic Compose seed evidence (2026-09-13): the guarded seed lifecycle now
+rejects absent opt-in, proves two deterministic runs, authenticates an Atlas
+viewer through generated GraphQL, and denies the Sandbox person across tenant
+boundaries. CI run `34726668384` covers both the PostgreSQL/Redis/MinIO
+database seam and the production-image Compose lifecycle; hosted seeding and
+external-provider acceptance remain open.
 
 - Out-of-scope capabilities in `HUM-NFR-019` may have extension seams but must not become deployment prerequisites.
