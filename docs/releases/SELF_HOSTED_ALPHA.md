@@ -1,9 +1,9 @@
 # Self-hosted alpha and MVP release-candidate boundary
 
-Latest runtime checkpoint (2026-09-12): application tree `46c70c7` passed
-GitHub Actions run `34724759703` across all 9 checks, including the live
+Latest runtime checkpoint (2026-09-13): application tree `ae1c5fd` passed
+GitHub Actions run `34726668384` across all 9 checks, including the live
 PostgreSQL, browser, Compose, generated-drift, security, and production-build
-gates. Vercel deployment `dpl_8vezgh3i9Fk84tUBbBvTkKs1xeGv` is `READY` and
+gates. Vercel deployment `dpl_2FFei2EMHYQMdyoZCHpAXGxqWAfh` is `READY` and
 serves `humans.kevinbytes.com`; the redacted public smoke passes homepage,
 liveness, readiness, unauthenticated GraphQL, and protected jobs. Hosted
 authenticated and external-provider acceptance remain outside this verified
@@ -15,6 +15,12 @@ creation, assignment, valid status transitions, escalation, optimistic
 concurrency, idempotent mutations, stale-case fencing, keyboard controls, and
 explicit null unassignment. Focused UI tests and the CI browser gate pass;
 authenticated hosted acceptance remains open.
+
+The same verified tree includes the guarded synthetic Compose seed lifecycle:
+absent opt-in is rejected, two guarded runs preserve deterministic fictional
+counts, generated GraphQL reads prove Atlas/Sandbox isolation, and the
+production-image Compose and PostgreSQL/Redis/MinIO CI jobs exercise the path.
+Hosted seeding remains intentionally unsupported.
 
 Humans is usable today as a self-hosted research alpha and is an MVP release
 candidate. An operator can configure the required secrets, start the Docker
