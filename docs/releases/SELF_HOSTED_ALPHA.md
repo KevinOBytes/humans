@@ -1,5 +1,14 @@
 # Self-hosted alpha and MVP release-candidate boundary
 
+Latest verified application runtime checkpoint (2026-09-13): commit `ad2251e`
+passed GitHub Actions run `34733012670` with all 9 checks successful. Vercel
+deployment `dpl_AgyXV5czkyHDZ6Zww84cn9a1V1ia` is `READY` and serves
+`humans.kevinbytes.com`; public smoke passed homepage, liveness, readiness,
+unauthenticated GraphQL, and protected jobs. The direct-route error contract
+and production initialization-recovery tests are included in this tree.
+Hosted authenticated/provider acceptance remains outside the verified alpha
+boundary.
+
 Latest runtime checkpoint (2026-09-13): application tree `ae1c5fd` passed
 GitHub Actions run `34726668384` across all 9 checks, including the live
 PostgreSQL, browser, Compose, generated-drift, security, and production-build
