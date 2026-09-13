@@ -11,8 +11,8 @@ provides generated GraphQL/PostgreSQL acceptance when the live database seam
 is configured. A controlled backfill for workspaces created before this
 checkpoint remains open, as does the broader hosted and whole-profile matrix.
 
-Current release evidence (2026-09-13, latest runtime): commit `567bd83` is
-pushed to `main` and deployed as Vercel `dpl_CHp1q3uBWMFgESvT2MPCYr9Dodoe`
+Current release evidence (2026-09-13, latest main tree): commit `591c1d7` is
+pushed to `main` and deployed as Vercel `dpl_HSK2gk4swq1gvyiBYawCrx3UiJaT`
 (`READY`) with aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`. GitHub Actions run `34760813821` passed all
 nine required jobs (Node 24 quality, PostgreSQL integration, browser
@@ -23,7 +23,10 @@ GraphQL, and the protected jobs boundary. Hosted credentialed sign-in/person
 creation and external-provider acceptance remain incomplete because protected
 Vercel secrets were not exported for an attended rotation run; the remaining
 hosted/provider/privacy/accessibility/performance matrix is intentionally still
-tracked below.
+tracked below. The deployment was built from the current main tree after the
+documentation-only release commit; Vercel's manual deployment metadata does
+not expose a Git SHA, so the local commit and deployment ID are recorded
+together here.
 
 Hosted authentication probe (2026-09-13): the same redacted smoke harness was
 run with the operator-controlled ignored `.env` parsed as dotenv and injected

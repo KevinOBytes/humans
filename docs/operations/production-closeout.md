@@ -2,8 +2,8 @@
 
 ## Current release evidence (2026-09-13, latest runtime)
 
-The latest verified runtime tree at commit `567bd83` is pushed to GitHub and
-deployed as Vercel `dpl_CHp1q3uBWMFgESvT2MPCYr9Dodoe` (`READY`). The deployment
+The latest verified `main` tree at commit `591c1d7` is pushed to GitHub and
+deployed as Vercel `dpl_HSK2gk4swq1gvyiBYawCrx3UiJaT` (`READY`). The deployment
 aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`. GitHub Actions run `34760813821` passed all
 nine required jobs: Node 24 quality, PostgreSQL integration, browser
@@ -23,6 +23,11 @@ performance matrix remains open. Bulk-query alert counts are
 computed across the complete visible query result before cursor pagination for
 both text and protected-exact search; this remains subject to the fixed
 statement timeout and operation budgets.
+
+This was a manual Vercel deployment of the current `main` tree after the
+documentation-only release commit. Vercel does not expose a Git SHA for this
+manual deployment, so the repository commit and deployment ID are recorded
+together; this does not substitute for hosted authenticated/provider evidence.
 
 An additional redacted hosted smoke attempt on 2026-09-13 parsed the
 operator-controlled ignored `.env` with dotenv and injected it without
