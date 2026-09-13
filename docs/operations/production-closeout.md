@@ -24,6 +24,13 @@ computed across the complete visible query result before cursor pagination for
 both text and protected-exact search; this remains subject to the fixed
 statement timeout and operation budgets.
 
+An additional redacted hosted smoke attempt on 2026-09-13 parsed the
+operator-controlled ignored `.env` with dotenv and injected it without
+printing secret values. Public routes/readiness passed, but email sign-in
+returned `403 AUTH_REQUEST_FAILED`. Treat this as an unsuccessful credentialed
+probe only; complete the attended hosted password rotation procedure below
+before accepting production authentication.
+
 ## Current release evidence (2026-09-13, latest)
 
 The clean `main` tree at commit `f74c82a` is pushed to GitHub and has a green
