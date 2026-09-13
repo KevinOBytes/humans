@@ -27,6 +27,18 @@ describe("evidence assertions", () => {
       normalizeEvidenceAssertion({ ...input, confidence: 1.1 }),
     ).toThrow();
   });
+  it("normalizes an optional field path for field-level provenance", () => {
+    const normalized = normalizeEvidenceAssertion({
+      resourceKind: "person",
+      fieldPath: "  names.aliases  ",
+      locator: "p. 2",
+      quote: "quote",
+      role: "supports",
+      confidence: 0.8,
+    });
+
+    expect(normalized.fieldPath).toBe("names.aliases");
+  });
   it("requires reviewer permission, assertion and approval for promotion", () => {
     const input = {
       from: "inferred",

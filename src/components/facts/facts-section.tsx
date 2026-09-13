@@ -140,6 +140,8 @@ export async function FactsSection({
         ? [
             {
               id: definition.id,
+              category: definition.category,
+              description: definition.description,
               label: definition.label,
               valueType: definition.allowedValueType,
               sensitivity:

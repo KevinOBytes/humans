@@ -58,6 +58,20 @@ describe("authenticated app session boundary", () => {
     });
   });
 
+  it("preserves the protected collaboration route when redirecting to sign in", async () => {
+    server.headers.mockResolvedValue(
+      new Headers({
+        cookie: "better-auth.session_token=value",
+        "next-url": "/investigations/018f0000-0000-7000-8000-000000000001",
+      }),
+    );
+    server.getSession.mockResolvedValue(null);
+
+    await expect(getVerifiedAppSession()).rejects.toThrow(
+      "redirect:/sign-in?returnTo=%2Finvestigations%2F018f0000-0000-7000-8000-000000000001",
+    );
+  });
+
   it("does not query research data when no active organization is present", async () => {
     server.getSession.mockResolvedValue({
       session: { activeOrganizationId: null },

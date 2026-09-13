@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { ResearchViewerDocument } from "@/graphql/generated/graphql";
+import { returnToFromRequestHeaders } from "@/modules/auth/return-to";
 import {
   executeServerGraphQL,
   ServerGraphQLError,
@@ -17,7 +18,10 @@ export const getVerifiedAppSession = cache(async () => {
     headers: requestHeaders,
     query: { disableCookieCache: true, disableRefresh: true },
   });
-  if (!session) redirect("/sign-in?returnTo=%2Fdashboard");
+  if (!session) {
+    const returnTo = returnToFromRequestHeaders(requestHeaders);
+    redirect(`/sign-in?returnTo=${encodeURIComponent(returnTo)}`);
+  }
 
   const organizations = await auth.api.listOrganizations({
     headers: requestHeaders,

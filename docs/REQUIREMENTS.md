@@ -67,6 +67,19 @@ GraphQL. Existing workspace- and case-scoped queues remain compatible. Focused
 schema and service tests cover the contract; hosted/provider and whole-role
 acceptance remain tracked as incomplete.
 
+Field-level provenance checkpoint (2026-09-13): evidence assertions now carry
+an optional bounded `fieldPath` (migration `0051`) so a source quote can point
+to a specific profile field or nested field path, such as `biography` or
+`names.aliases`, without changing the existing resource, workspace, review,
+confidence, or sensitivity boundaries. The generated
+`LinkEvidenceAssertion` operation exposes the path, and the assertion service
+trims, bounds, and rejects control characters before persistence. Focused unit
+normalization coverage and a live-when-configured PostgreSQL persistence test
+cover the new field; the migration/constraint checks provide database
+enforcement evidence. This closes only the field-addressability gap;
+source-to-field authoring UX, hosted/provider acceptance, and the whole-profile
+provenance matrix remain incomplete.
+
 Rich-profile definition catalog checkpoint (2026-09-13): newly provisioned
 workspaces receive active, workspace-scoped fact-definition templates for
 pronouns, employment, education, languages, organizations, birth dates, and
@@ -77,6 +90,17 @@ test passes, and `tests/integration/workspace-profile-definitions.test.ts`
 provides generated GraphQL/PostgreSQL acceptance when the live database seam
 is configured. A controlled backfill for workspaces created before this
 checkpoint remains open, as does the broader hosted and whole-profile matrix.
+
+Rich-profile entry guidance checkpoint (2026-09-13): the generated fact catalog
+description and category now flow into the profile fact editor. The selected
+field presents an accessible, human-readable guide such as “Work · Employment”
+and its intended use, while writes continue through the audited fact mutation
+with temporal, provenance, confidence, sensitivity, review, contradiction, and
+workspace authorization controls. Focused `FactForm` and `FactsSection` unit
+tests pass. This is a discoverability improvement, not completion of the rich
+profile requirement: identifier create/update/archive, existing-workspace
+catalog backfill, and the whole-profile browser/accessibility matrix remain
+open.
 
 Current release evidence (2026-09-13, latest main tree): commit `591c1d7` is
 pushed to `main` and deployed as Vercel `dpl_HSK2gk4swq1gvyiBYawCrx3UiJaT`

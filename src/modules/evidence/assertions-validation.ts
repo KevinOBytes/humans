@@ -7,6 +7,7 @@ import {
 
 export function normalizeEvidenceAssertion(input: {
   resourceKind: string;
+  fieldPath?: unknown;
   locator: unknown;
   quote: unknown;
   role: string;
@@ -20,8 +21,16 @@ export function normalizeEvidenceAssertion(input: {
     input.confidence > 1
   )
     throw createGraphQLError("VALIDATION_FAILED", "The assertion is invalid.");
+  const fieldPath =
+    input.fieldPath == null ? null : boundedCaseText(input.fieldPath, 256);
+  if (fieldPath && /[\u0000-\u001f\u007f]/u.test(fieldPath))
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "The field path contains a control character.",
+    );
   return {
     resourceKind: input.resourceKind as CaseResourceKind,
+    fieldPath,
     locator: boundedCaseText(input.locator, 2048),
     quote: boundedCaseText(input.quote, 8000),
     role: input.role,

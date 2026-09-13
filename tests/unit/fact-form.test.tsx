@@ -32,6 +32,31 @@ describe("FactForm", () => {
     refresh.mockReset();
   });
 
+  it("shows catalog guidance for rich profile fields", () => {
+    render(
+      <FactForm
+        definitions={[
+          {
+            ...definition("TEXT"),
+            label: "Employment",
+            category: "work",
+            description: "An employment role, employer, or employment period.",
+          },
+        ]}
+        personId="person-a"
+      />,
+    );
+
+    expect(screen.getByText("Work · Employment")).toBeVisible();
+    expect(screen.getByLabelText("Field")).toHaveAttribute(
+      "aria-describedby",
+      "fact-definition-guidance",
+    );
+    expect(
+      screen.getByText(/An employment role, employer, or employment period/),
+    ).toBeVisible();
+  });
+
   it("keeps invalid JSON as a draft and never submits it", async () => {
     const user = userEvent.setup();
     render(<FactForm definitions={[definition("JSON")]} personId="person-a" />);

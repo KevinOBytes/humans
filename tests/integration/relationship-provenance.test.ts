@@ -3,6 +3,7 @@ import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
 import { newId } from "@/db/id";
 import { and, eq } from "drizzle-orm";
 import {
+  evidenceAssertions,
   evidenceItems,
   sources,
   evidenceAssertionReviews,
@@ -129,6 +130,27 @@ liveDescribe("relationship evidence review and promotion", () => {
       .where(eq(auditEvents.id, row.auditReference));
     expect(JSON.stringify(event)).not.toContain("A private fixture quote");
     expect(JSON.stringify(event)).not.toContain("page 1");
+  });
+  it("persists a field path for field-level provenance", async () => {
+    const row = await linkEvidenceAssertion(context, {
+      evidenceId,
+      resourceKind: "relationship",
+      resourceId: id,
+      fieldPath: "relationships.observedAt",
+      locator: "page 1",
+      quote: "A private fixture quote",
+      role: "supports",
+      confidence: 0.8,
+      purpose: "research",
+      explicitConfirmed: true,
+    });
+
+    expect(row.fieldPath).toBe("relationships.observedAt");
+    const [stored] = await fixture.database
+      .select({ fieldPath: evidenceAssertions.fieldPath })
+      .from(evidenceAssertions)
+      .where(eq(evidenceAssertions.id, row.id));
+    expect(stored?.fieldPath).toBe("relationships.observedAt");
   });
   it("replays assertion link and independent review without duplicate effects", async () => {
     const input = {
