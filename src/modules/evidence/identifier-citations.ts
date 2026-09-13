@@ -1,4 +1,5 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, ilike, isNull } from "drizzle-orm";
+import { evidenceAssertions } from "@/db/schema/evidence";
 import { people, personIdentifiers } from "@/db/schema/people";
 import { createGraphQLError } from "@/graphql/errors";
 import {
@@ -54,7 +55,7 @@ export async function requireIdentifierCitation(
         eq(personIdentifiers.personId, parent.id),
         isNull(personIdentifiers.deletedAt),
         resourceVisibilitySql(context, {
-          resourceKind: "person_identifier",
+          resourceKind: "personIdentifier",
           id: personIdentifiers.id,
           sensitivity: personIdentifiers.sensitivity,
         }),
@@ -78,5 +79,31 @@ export async function requireIdentifierCitation(
     throw createGraphQLError(
       "CONFLICT",
       "The identifier has changed. Refresh before citing it.",
+    );
+}
+
+/** The caller holds the identifier's parent write lock, excluding new citations. */
+export async function requireUncitedIdentifierReclassification(
+  context: ResearchServiceContext,
+  identifierId: string,
+) {
+  const [assertion] = await context.database
+    .select({ id: evidenceAssertions.id })
+    .from(evidenceAssertions)
+    .where(
+      and(
+        eq(evidenceAssertions.workspaceId, context.workspaceId),
+        isNull(evidenceAssertions.deletedAt),
+        // Check every parent/version, including pre-canonical paths: merges must
+        // not hide an existing plaintext quote associated with this identifier.
+        ilike(evidenceAssertions.fieldPath, `identifiers.${identifierId}%`),
+      ),
+    )
+    .limit(1)
+    .for("share");
+  if (assertion)
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "An identifier with active plaintext citations cannot be reclassified as protected.",
     );
 }

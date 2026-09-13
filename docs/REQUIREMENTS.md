@@ -84,7 +84,14 @@ identifier, parent, workspace, current version, and visibility under parent-firs
 row locks. It preserves existing evidence/source linkage, purpose coverage,
 redacted audit, and principal-bound idempotency; replay rechecks the current
 identifier boundary. Keyed person assertion writes now deduplicate required
-permissions and receive the configured runtime HMAC through GraphQL. Focused
+permissions. Public-to-protected identifier reclassification is rejected while
+active plaintext identifier citations exist, even with a replacement value;
+existing source quotes are not silently rewritten or left as protected-value
+shadow copies. The guard includes previous parents/versions and legacy path
+prefixes. Explicit confidential identifier grants use the canonical
+`personIdentifier` resource kind before the protected-storage precondition.
+Keyed assertion services receive the configured runtime HMAC through GraphQL.
+Focused
 real-PostgreSQL tests cover linkage/replay, wrong parent/workspace, protected
 value rejection, stale versions, archive, source preservation, and generated
 GraphQL author permissions. This is not full identifier provenance completion:
