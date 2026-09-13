@@ -450,10 +450,75 @@ export function createResearchAssignmentsService(
   }
   async function visibleScope(scoped: ResearchServiceContext, row: ItemRow) {
     if (row.caseId) {
+      let caseVisible = true;
       try {
         await visibleCase(scoped, row.caseId);
       } catch {
-        return false;
+        caseVisible = false;
+      }
+      if (!caseVisible) {
+        let sharedCase = false;
+        if (row.teamId) {
+          const [teamShare] = await scoped.database
+            .select({ id: caseTeamLinks.id })
+            .from(caseTeamLinks)
+            .innerJoin(
+              teamMembers,
+              and(
+                eq(teamMembers.workspaceId, caseTeamLinks.workspaceId),
+                eq(teamMembers.teamId, caseTeamLinks.teamId),
+                eq(teamMembers.principalId, scoped.actor.principalId),
+                isNull(teamMembers.deletedAt),
+              ),
+            )
+            .innerJoin(
+              teams,
+              and(
+                eq(teams.workspaceId, caseTeamLinks.workspaceId),
+                eq(teams.id, caseTeamLinks.teamId),
+                eq(teams.state, "active"),
+                isNull(teams.deletedAt),
+              ),
+            )
+            .where(
+              and(
+                eq(caseTeamLinks.workspaceId, scoped.workspaceId),
+                eq(caseTeamLinks.caseId, row.caseId),
+                eq(caseTeamLinks.teamId, row.teamId),
+                isNull(caseTeamLinks.deletedAt),
+              ),
+            )
+            .limit(1);
+          sharedCase = Boolean(teamShare);
+        }
+        if (!sharedCase && row.investigationId) {
+          const [investigationShare] = await scoped.database
+            .select({ id: investigationCaseLinks.id })
+            .from(investigationCaseLinks)
+            .innerJoin(
+              investigations,
+              and(
+                eq(
+                  investigations.workspaceId,
+                  investigationCaseLinks.workspaceId,
+                ),
+                eq(investigations.id, investigationCaseLinks.investigationId),
+                eq(investigations.leadPrincipalId, scoped.actor.principalId),
+                isNull(investigations.deletedAt),
+              ),
+            )
+            .where(
+              and(
+                eq(investigationCaseLinks.workspaceId, scoped.workspaceId),
+                eq(investigationCaseLinks.caseId, row.caseId),
+                eq(investigationCaseLinks.investigationId, row.investigationId),
+                isNull(investigationCaseLinks.deletedAt),
+              ),
+            )
+            .limit(1);
+          sharedCase = Boolean(investigationShare);
+        }
+        if (!sharedCase) return false;
       }
     }
     if (isWorkspaceManager(scoped)) return true;
