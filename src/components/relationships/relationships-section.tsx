@@ -238,6 +238,13 @@ export async function RelationshipsSection({
           const counterpartName = item.counterpartId
             ? counterpartById.get(item.counterpartId)
             : undefined;
+          const evidence = (item.relationship.evidence?.nodes ?? []).flatMap(
+            (entry) => (entry?.id ? [entry] : []),
+          );
+          const evidencePage = readFragment(
+            PageDetailsFragmentDoc,
+            item.relationship.evidence?.pageInfo,
+          );
           return (
             <li
               key={item.relationship.id!}
@@ -269,6 +276,57 @@ export async function RelationshipsSection({
                   {item.relationship.sensitivity?.toLowerCase() ?? "internal"}
                 </Badge>
               </div>
+              <section
+                aria-label="Evidence"
+                className="border-border mt-4 border-t pt-4"
+              >
+                <p className="text-xs font-semibold tracking-[0.12em] uppercase">
+                  Evidence
+                </p>
+                {evidence.length ? (
+                  <div className="mt-2 space-y-2">
+                    {evidence.map((entry) => {
+                      const source = entry.evidenceItem?.source;
+                      return (
+                        <div
+                          key={entry.id}
+                          className="bg-muted/45 rounded-lg px-3 py-2 text-sm"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">
+                              {source?.title ?? "Source details restricted"}
+                            </span>
+                            {entry.evidenceItem?.reviewState ? (
+                              <Badge>
+                                {entry.evidenceItem.reviewState.toLowerCase()}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          {source?.citation ? (
+                            <p className="text-muted-foreground mt-1">
+                              {source.citation}
+                            </p>
+                          ) : null}
+                          {entry.locator ? (
+                            <p className="text-muted-foreground mt-1 text-xs">
+                              {entry.locator}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                    {evidencePage?.hasNextPage ? (
+                      <p className="text-muted-foreground text-xs">
+                        More evidence is available through the GraphQL API.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground mt-2 text-sm">
+                    No evidence linked.
+                  </p>
+                )}
+              </section>
             </li>
           );
         })}

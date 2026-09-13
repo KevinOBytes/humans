@@ -4242,6 +4242,24 @@ export type PersonRelationshipsQuery = {
         version: number | null;
         createdAt: string | null;
         updatedAt: string | null;
+        evidence: {
+          nodes: Array<{
+            id: string | null;
+            locator: string | null;
+            evidenceItem: {
+              id: string | null;
+              reviewState: string | null;
+              source: {
+                id: string | null;
+                title: string | null;
+                citation: string | null;
+              } | null;
+            } | null;
+          }> | null;
+          pageInfo: {
+            " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+          } | null;
+        } | null;
       }> | null;
       pageInfo: {
         " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
@@ -10416,6 +10434,24 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
         version
         createdAt
         updatedAt
+        evidence(first: 3) {
+          nodes {
+            id
+            locator
+            evidenceItem {
+              id
+              reviewState
+              source {
+                id
+                title
+                citation
+              }
+            }
+          }
+          pageInfo {
+            ...PageDetails
+          }
+        }
       }
       pageInfo {
         ...PageDetails
@@ -10428,7 +10464,7 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:67125532baf1e50feaf927a902da9155dd455c6d04de076a00ac77ea520cbc13",
+    hash: "sha256:0696fcde90f3b032b529dbf68d7804a92df6f0e6322b76b0d64ddfa7c24cd88e",
   },
 ) as unknown as TypedDocumentString<
   PersonRelationshipsQuery,
