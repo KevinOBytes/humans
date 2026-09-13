@@ -43,6 +43,7 @@ import {
 import type { SearchRuntime } from "@/modules/search/service";
 import type { AiAnalysisRuntime } from "@/modules/ai/service";
 import type { PersonResearchRuntime } from "@/modules/people/research";
+import type { WebhookServiceRuntime } from "@/modules/webhooks/service";
 
 import {
   CookieJar,
@@ -278,6 +279,7 @@ export class GraphQLFixture {
       settingsRuntime?: WorkspaceMemberRuntime;
       aiRuntime?: AiAnalysisRuntime;
       personResearchRuntime?: PersonResearchRuntime;
+      webhookRuntime?: WebhookServiceRuntime;
     } = {},
   ) {
     this.connection = createTestConnection(16, () => {
@@ -359,6 +361,7 @@ export class GraphQLFixture {
         },
       },
       personResearchRuntime: this.options.personResearchRuntime,
+      webhookRuntime: this.options.webhookRuntime,
     });
   }
 

@@ -75,6 +75,7 @@ export type CreateGraphQLHandlerOptions = {
   settingsRuntime?: WorkspaceMemberRuntime;
   aiRuntime: AiAnalysisRuntime;
   personResearchRuntime?: import("@/modules/people/research").PersonResearchRuntime;
+  webhookRuntime?: import("@/modules/webhooks/service").WebhookServiceRuntime;
 };
 
 type NextRouteContext = {
@@ -589,6 +590,7 @@ export function createGraphQLHandler(
             settingsRuntime: options.settingsRuntime,
             aiRuntime: options.aiRuntime,
             personResearchRuntime: options.personResearchRuntime,
+            webhookRuntime: options.webhookRuntime,
           });
         } catch (error) {
           if (
