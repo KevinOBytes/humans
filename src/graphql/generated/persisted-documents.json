@@ -201,8 +201,8 @@
   "sha256:e45aea9b50a2bef8b2e0322171971e75089ad55b40391dc7471abd1935025eac": "mutation ArchiveResourceGrant($expectedVersion: Int!, $id: UUID!, $idempotencyKey: String) { archiveResourceGrant( id: $id expectedVersion: $expectedVersion idempotencyKey: $idempotencyKey ) { code id requestId version } }",
   "sha256:914d3bbffa388283841e86303dd4dd44ffbedf27a18db54e4cc73c99daf3dc4d": "query Viewer { viewer { actorType id permissions role workspace { id name organizationId } } workspace { id name organizationId } }",
   "sha256:b3fa728323e514a4f5b1d59c9010b90b1c9698ef085d74d5d7708f431dfe2810": "query WorkspaceWebhooks { webhooks { nodes { createdAt id secretFingerprint state subscribedEvents updatedAt url version } } }",
-  "sha256:6c786f5c2521027e813425f9c3fcc65d62b97b4b7bbb267f2e140c699cbd7757": "mutation CreateWorkspaceWebhook($input: CreateWebhookInput!) { createWebhook(input: $input) { code id requestId secret } }",
-  "sha256:8330a47021846a6a42a3a3b4fba9c16efeb5ab09adcdb90a7def42a6cfff94e4": "mutation RotateWorkspaceWebhookSecret($input: WebhookIdInput!) { rotateWebhookSecret(input: $input) { code id requestId secret } }",
-  "sha256:87f1dd44c64da868a38ec1d9d6157215559a39ecbf76cf451418b20f0f81831a": "mutation DisableWorkspaceWebhook($input: WebhookIdInput!) { disableWebhook(input: $input) { code id requestId } }",
+  "sha256:5883c4f4167cd1439f97b8f045672a8de3fecdc7e85869d82b2b16695fcb7623": "mutation CreateWorkspaceWebhook($input: CreateWebhookInput!) { createWebhook(input: $input) { code id replayed requestId secret } }",
+  "sha256:b824215d33be4f0363e0a8a4b749ee8f44977f8ac00bf347ade644371e57007a": "mutation RotateWorkspaceWebhookSecret($input: WebhookIdInput!) { rotateWebhookSecret(input: $input) { code id replayed requestId secret } }",
+  "sha256:4d1e939c8a59a2050a8b1a7981e8040d20d0e568e36d95286d0bb00143815f04": "mutation DisableWorkspaceWebhook($input: WebhookIdInput!) { disableWebhook(input: $input) { code id replayed requestId } }",
   "sha256:741a363509843d75b701f5b4c6444a117aeba47e8566d54248c97e19130f69c4": "mutation SendWorkspaceWebhookTestEvent($input: SendWebhookTestEventInput!) { sendWebhookTestEvent(input: $input) { code deliveryId id requestId } }"
 }

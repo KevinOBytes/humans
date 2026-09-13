@@ -36,6 +36,8 @@ import {
   webhookDeliveries,
   webhooks,
 } from "@/db/schema/operations";
+import { locationMutationIdempotency } from "@/db/schema/locations";
+import { openSealedEnvelope } from "@/lib/security/sealed-envelope";
 import { verifyWebhookSignature } from "@/modules/webhooks/signature";
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 
@@ -62,6 +64,839 @@ liveDescribe("webhook lifecycle acceptance", () => {
     vi.restoreAllMocks();
   });
   afterAll(async () => fixture.close());
+
+  it("converges concurrent keyed creation with one encrypted secret and secretless replay", async () => {
+    const owner = await fixture.createActor();
+    const input = {
+      events: ["webhook.test", "person.updated"],
+      idempotencyKey: "webhook-create-concurrent-v1",
+      url: "https://hooks.example.test/durable-create",
+    };
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        fixture.execute<{
+          createWebhook: {
+            code: string;
+            id: string | null;
+            replayed: boolean;
+            requestId: string;
+            secret: string | null;
+          };
+        }>({
+          jar: owner.jar,
+          operationName: "CreateWorkspaceWebhook",
+          query: CreateWorkspaceWebhookDocument,
+          variables: { input },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.body?.errors)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    const payloads = responses.map((response) =>
+      required(response.body?.data?.createWebhook, "create payload"),
+    );
+    expect(new Set(payloads.map((payload) => payload.id))).toHaveLength(1);
+    expect(payloads.map((payload) => payload.replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+    const secrets = payloads
+      .map((payload) => payload.secret)
+      .filter((secret): secret is string => typeof secret === "string");
+    expect(secrets).toHaveLength(1);
+    expect(secrets[0]).toMatch(/^whsec_/u);
+    const executor = required(
+      payloads.find((payload) => !payload.replayed),
+      "create executor payload",
+    );
+
+    const replay = await fixture.execute<{
+      createWebhook: {
+        code: string;
+        id: string | null;
+        replayed: boolean;
+        requestId: string;
+        secret: string | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: { input },
+    });
+    expect(replay.body?.errors).toBeUndefined();
+    expect(replay.body?.data?.createWebhook).toEqual({
+      code: "APPLIED",
+      id: executor.id,
+      replayed: true,
+      requestId: executor.requestId,
+      secret: null,
+    });
+
+    const storedWebhooks = await fixture.database
+      .select({
+        encryptedSecret: webhooks.encryptedSecret,
+        id: webhooks.id,
+        secretFingerprint: webhooks.secretFingerprint,
+        version: webhooks.version,
+      })
+      .from(webhooks)
+      .where(eq(webhooks.workspaceId, owner.workspaceId));
+    expect(storedWebhooks).toHaveLength(1);
+    expect(storedWebhooks[0]).toMatchObject({
+      id: executor.id,
+      secretFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/u),
+      version: 1,
+    });
+    expect(storedWebhooks[0]?.encryptedSecret).not.toContain(secrets[0] ?? "");
+    expect(
+      openSealedEnvelope({
+        key: testAdminEnv.DATA_ENCRYPTION_KEY,
+        purpose: "webhook-secret",
+        token: required(
+          storedWebhooks[0]?.encryptedSecret,
+          "encrypted webhook secret",
+        ),
+      }),
+    ).toBe(secrets[0]);
+
+    const audits = await fixture.database
+      .select({
+        id: auditEvents.id,
+        redactedDiff: auditEvents.redactedDiff,
+        requestId: auditEvents.requestId,
+      })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.action, "webhook.create"),
+        ),
+      );
+    expect(audits).toEqual([
+      {
+        id: expect.any(String),
+        redactedDiff: null,
+        requestId: executor.requestId,
+      },
+    ]);
+    const claims = await fixture.database
+      .select({
+        actorPrincipalId: locationMutationIdempotency.actorPrincipalId,
+        keyHash: locationMutationIdempotency.keyHash,
+        operation: locationMutationIdempotency.operation,
+        requestHash: locationMutationIdempotency.requestHash,
+        responseReference: locationMutationIdempotency.responseReference,
+      })
+      .from(locationMutationIdempotency)
+      .where(eq(locationMutationIdempotency.workspaceId, owner.workspaceId));
+    expect(claims).toEqual([
+      {
+        actorPrincipalId: owner.principalId,
+        keyHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        operation: "webhook.create.graphql",
+        requestHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        responseReference: {
+          auditEventId: audits[0]?.id,
+          code: "APPLIED",
+          requestId: executor.requestId,
+          version: 1,
+          webhookId: executor.id,
+        },
+      },
+    ]);
+    const serializedClaims = JSON.stringify(claims);
+    expect(serializedClaims).not.toContain(input.idempotencyKey);
+    expect(serializedClaims).not.toContain(input.url);
+    expect(serializedClaims).not.toContain(secrets[0] ?? "missing-secret");
+  });
+
+  it("converges concurrent keyed rotation with an optimistic version and one transient secret", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null; secret: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/durable-rotate",
+        },
+      },
+    });
+    expect(created.body?.errors).toBeUndefined();
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "webhook ID",
+    );
+    const originalSecret = required(
+      created.body?.data?.createWebhook.secret,
+      "original webhook secret",
+    );
+    const input = {
+      expectedVersion: 1,
+      id: webhookId,
+      idempotencyKey: "webhook-rotate-concurrent-v1",
+    };
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        fixture.execute<{
+          rotateWebhookSecret: {
+            code: string;
+            id: string | null;
+            replayed: boolean;
+            requestId: string;
+            secret: string | null;
+          };
+        }>({
+          jar: owner.jar,
+          operationName: "RotateWorkspaceWebhookSecret",
+          query: RotateWorkspaceWebhookSecretDocument,
+          variables: { input },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.body?.errors)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    const payloads = responses.map((response) =>
+      required(response.body?.data?.rotateWebhookSecret, "rotation payload"),
+    );
+    expect(new Set(payloads.map((payload) => payload.id))).toEqual(
+      new Set([webhookId]),
+    );
+    expect(payloads.map((payload) => payload.replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+    const secrets = payloads
+      .map((payload) => payload.secret)
+      .filter((secret): secret is string => typeof secret === "string");
+    expect(secrets).toHaveLength(1);
+    expect(secrets[0]).toMatch(/^whsec_/u);
+    expect(secrets[0]).not.toBe(originalSecret);
+    const executor = required(
+      payloads.find((payload) => !payload.replayed),
+      "rotation executor payload",
+    );
+    const replay = await fixture.execute<{
+      rotateWebhookSecret: {
+        code: string;
+        id: string | null;
+        replayed: boolean;
+        requestId: string;
+        secret: string | null;
+      };
+    }>({
+      jar: owner.jar,
+      operationName: "RotateWorkspaceWebhookSecret",
+      query: RotateWorkspaceWebhookSecretDocument,
+      variables: { input },
+    });
+    expect(replay.body?.errors).toBeUndefined();
+    expect(replay.body?.data?.rotateWebhookSecret).toEqual({
+      code: "APPLIED",
+      id: webhookId,
+      replayed: true,
+      requestId: executor.requestId,
+      secret: null,
+    });
+
+    const [stored] = await fixture.database
+      .select({
+        encryptedSecret: webhooks.encryptedSecret,
+        version: webhooks.version,
+      })
+      .from(webhooks)
+      .where(
+        and(
+          eq(webhooks.workspaceId, owner.workspaceId),
+          eq(webhooks.id, webhookId),
+        ),
+      );
+    expect(stored?.version).toBe(2);
+    expect(
+      openSealedEnvelope({
+        key: testAdminEnv.DATA_ENCRYPTION_KEY,
+        purpose: "webhook-secret",
+        token: required(stored?.encryptedSecret, "rotated encrypted secret"),
+      }),
+    ).toBe(secrets[0]);
+    const rotationAudits = await fixture.database
+      .select({ id: auditEvents.id, requestId: auditEvents.requestId })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.action, "webhook.rotate"),
+        ),
+      );
+    expect(rotationAudits).toEqual([
+      { id: expect.any(String), requestId: executor.requestId },
+    ]);
+    const [claim] = await fixture.database
+      .select({
+        operation: locationMutationIdempotency.operation,
+        responseReference: locationMutationIdempotency.responseReference,
+      })
+      .from(locationMutationIdempotency)
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+          eq(locationMutationIdempotency.operation, "webhook.rotate.graphql"),
+        ),
+      );
+    expect(claim).toEqual({
+      operation: "webhook.rotate.graphql",
+      responseReference: {
+        auditEventId: rotationAudits[0]?.id,
+        code: "APPLIED",
+        requestId: executor.requestId,
+        version: 2,
+        webhookId,
+      },
+    });
+    expect(JSON.stringify(claim)).not.toContain(secrets[0] ?? "missing-secret");
+  });
+
+  it("converges concurrent keyed disable with one versioned deletion and audit", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/durable-disable",
+        },
+      },
+    });
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "webhook ID",
+    );
+    const input = {
+      expectedVersion: 1,
+      id: webhookId,
+      idempotencyKey: "webhook-disable-concurrent-v1",
+    };
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        fixture.execute<{
+          disableWebhook: {
+            code: string;
+            id: string | null;
+            replayed: boolean;
+            requestId: string;
+          };
+        }>({
+          jar: owner.jar,
+          operationName: "DisableWorkspaceWebhook",
+          query: DisableWorkspaceWebhookDocument,
+          variables: { input },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.body?.errors)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    const payloads = responses.map((response) =>
+      required(response.body?.data?.disableWebhook, "disable payload"),
+    );
+    expect(payloads).toEqual([
+      expect.objectContaining({ code: "APPLIED", id: webhookId }),
+      expect.objectContaining({ code: "APPLIED", id: webhookId }),
+    ]);
+    expect(new Set(payloads.map((payload) => payload.requestId))).toHaveLength(
+      1,
+    );
+    expect(payloads.map((payload) => payload.replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+
+    const [disabled] = await fixture.database
+      .select({
+        deletedAt: webhooks.deletedAt,
+        state: webhooks.state,
+        version: webhooks.version,
+      })
+      .from(webhooks)
+      .where(
+        and(
+          eq(webhooks.workspaceId, owner.workspaceId),
+          eq(webhooks.id, webhookId),
+        ),
+      );
+    expect(disabled).toMatchObject({ state: "disabled", version: 2 });
+    expect(disabled?.deletedAt).toBeInstanceOf(Date);
+    const disableAudits = await fixture.database
+      .select({ id: auditEvents.id, requestId: auditEvents.requestId })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.action, "webhook.disable"),
+        ),
+      );
+    expect(disableAudits).toEqual([
+      { id: expect.any(String), requestId: payloads[0]?.requestId },
+    ]);
+    const [claim] = await fixture.database
+      .select({
+        responseReference: locationMutationIdempotency.responseReference,
+      })
+      .from(locationMutationIdempotency)
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, owner.workspaceId),
+          eq(locationMutationIdempotency.operation, "webhook.disable.graphql"),
+        ),
+      );
+    expect(claim?.responseReference).toEqual({
+      auditEventId: disableAudits[0]?.id,
+      code: "APPLIED",
+      requestId: payloads[0]?.requestId,
+      version: 2,
+      webhookId,
+    });
+  });
+
+  it("rejects changed material and stale versions while fencing replay to the current webhook", async () => {
+    const owner = await fixture.createActor();
+    const createInput = {
+      events: ["webhook.test"],
+      idempotencyKey: "webhook-changed-create-v1",
+      url: "https://hooks.example.test/changed-create",
+    };
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: { input: createInput },
+    });
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "webhook ID",
+    );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateWorkspaceWebhook",
+        query: CreateWorkspaceWebhookDocument,
+        variables: {
+          input: {
+            ...createInput,
+            url: "https://hooks.example.test/changed-create-material",
+          },
+        },
+      }),
+      "CONFLICT",
+    );
+
+    const rotateInput = {
+      expectedVersion: 1,
+      id: webhookId,
+      idempotencyKey: "webhook-changed-rotate-v1",
+    };
+    const rotated = await fixture.execute({
+      jar: owner.jar,
+      operationName: "RotateWorkspaceWebhookSecret",
+      query: RotateWorkspaceWebhookSecretDocument,
+      variables: { input: rotateInput },
+    });
+    expect(rotated.body?.errors).toBeUndefined();
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "RotateWorkspaceWebhookSecret",
+        query: RotateWorkspaceWebhookSecretDocument,
+        variables: { input: { ...rotateInput, expectedVersion: 2 } },
+      }),
+      "CONFLICT",
+    );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateWorkspaceWebhook",
+        query: CreateWorkspaceWebhookDocument,
+        variables: { input: createInput },
+      }),
+      "CONFLICT",
+    );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "DisableWorkspaceWebhook",
+        query: DisableWorkspaceWebhookDocument,
+        variables: {
+          input: {
+            expectedVersion: 1,
+            id: webhookId,
+            idempotencyKey: "webhook-stale-disable-v1",
+          },
+        },
+      }),
+      "CONFLICT",
+    );
+
+    const disableInput = {
+      expectedVersion: 2,
+      id: webhookId,
+      idempotencyKey: "webhook-changed-disable-v1",
+    };
+    const disabled = await fixture.execute({
+      jar: owner.jar,
+      operationName: "DisableWorkspaceWebhook",
+      query: DisableWorkspaceWebhookDocument,
+      variables: { input: disableInput },
+    });
+    expect(disabled.body?.errors).toBeUndefined();
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "DisableWorkspaceWebhook",
+        query: DisableWorkspaceWebhookDocument,
+        variables: { input: { ...disableInput, expectedVersion: 3 } },
+      }),
+      "CONFLICT",
+    );
+  });
+
+  it("fails closed for malformed create, rotate, and disable response references", async () => {
+    const owner = await fixture.createActor();
+    const createInput = {
+      events: ["webhook.test"],
+      idempotencyKey: "webhook-malformed-create-v1",
+      url: "https://hooks.example.test/malformed-create",
+    };
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: { input: createInput },
+    });
+    const createdId = required(
+      created.body?.data?.createWebhook.id,
+      "created ID",
+    );
+    const [createClaim] = await fixture.database
+      .select({ id: locationMutationIdempotency.id })
+      .from(locationMutationIdempotency)
+      .where(
+        eq(locationMutationIdempotency.operation, "webhook.create.graphql"),
+      );
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({ responseReference: { webhookId: "not-a-uuid" } })
+      .where(
+        eq(
+          locationMutationIdempotency.id,
+          required(createClaim, "create claim").id,
+        ),
+      );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateWorkspaceWebhook",
+        query: CreateWorkspaceWebhookDocument,
+        variables: { input: createInput },
+      }),
+      "VALIDATION_FAILED",
+    );
+
+    const rotateInput = {
+      expectedVersion: 1,
+      id: createdId,
+      idempotencyKey: "webhook-malformed-rotate-v1",
+    };
+    const rotated = await fixture.execute<{
+      rotateWebhookSecret: { requestId: string };
+    }>({
+      jar: owner.jar,
+      operationName: "RotateWorkspaceWebhookSecret",
+      query: RotateWorkspaceWebhookSecretDocument,
+      variables: { input: rotateInput },
+    });
+    const rotateRequestId = required(
+      rotated.body?.data?.rotateWebhookSecret.requestId,
+      "rotate request ID",
+    );
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({
+        responseReference: {
+          auditEventId: randomUUID(),
+          code: "APPLIED",
+          requestId: rotateRequestId,
+          version: 2,
+          webhookId: createdId,
+        },
+      })
+      .where(
+        eq(locationMutationIdempotency.operation, "webhook.rotate.graphql"),
+      );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "RotateWorkspaceWebhookSecret",
+        query: RotateWorkspaceWebhookSecretDocument,
+        variables: { input: rotateInput },
+      }),
+      "VALIDATION_FAILED",
+    );
+
+    const disableInput = {
+      expectedVersion: 2,
+      id: createdId,
+      idempotencyKey: "webhook-malformed-disable-v1",
+    };
+    const disabled = await fixture.execute({
+      jar: owner.jar,
+      operationName: "DisableWorkspaceWebhook",
+      query: DisableWorkspaceWebhookDocument,
+      variables: { input: disableInput },
+    });
+    expect(disabled.body?.errors).toBeUndefined();
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({
+        responseReference: {
+          auditEventId: randomUUID(),
+          code: "APPLIED",
+          requestId: randomUUID(),
+          version: "3",
+          webhookId: createdId,
+        },
+      })
+      .where(
+        eq(locationMutationIdempotency.operation, "webhook.disable.graphql"),
+      );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "DisableWorkspaceWebhook",
+        query: DisableWorkspaceWebhookDocument,
+        variables: { input: disableInput },
+      }),
+      "VALIDATION_FAILED",
+    );
+    for (const action of [
+      "webhook.create",
+      "webhook.rotate",
+      "webhook.disable",
+    ]) {
+      const rows = await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.action, action),
+          ),
+        );
+      expect(rows).toHaveLength(1);
+    }
+  });
+
+  it("takes over an expired rotation claim at the current version and ignores its stale reference", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/expired-rotate",
+        },
+      },
+    });
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "webhook ID",
+    );
+    const key = "webhook-expired-rotate-v1";
+    const first = await fixture.execute({
+      jar: owner.jar,
+      operationName: "RotateWorkspaceWebhookSecret",
+      query: RotateWorkspaceWebhookSecretDocument,
+      variables: {
+        input: { expectedVersion: 1, id: webhookId, idempotencyKey: key },
+      },
+    });
+    expect(first.body?.errors).toBeUndefined();
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({
+        expiresAt: new Date(Date.now() - 1_000),
+        responseReference: { webhookId: "expired-stale-reference" },
+      })
+      .where(
+        eq(locationMutationIdempotency.operation, "webhook.rotate.graphql"),
+      );
+    const takeoverInput = {
+      expectedVersion: 2,
+      id: webhookId,
+      idempotencyKey: key,
+    };
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        fixture.execute<{
+          rotateWebhookSecret: {
+            replayed: boolean;
+            secret: string | null;
+          };
+        }>({
+          jar: owner.jar,
+          operationName: "RotateWorkspaceWebhookSecret",
+          query: RotateWorkspaceWebhookSecretDocument,
+          variables: { input: takeoverInput },
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.body?.errors)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    const payloads = responses.map((response) =>
+      required(response.body?.data?.rotateWebhookSecret, "takeover payload"),
+    );
+    expect(payloads.map((payload) => payload.replayed).sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(payloads.filter((payload) => payload.secret != null)).toHaveLength(
+      1,
+    );
+    const [stored] = await fixture.database
+      .select({ version: webhooks.version })
+      .from(webhooks)
+      .where(eq(webhooks.id, webhookId));
+    expect(stored?.version).toBe(3);
+    const claims = await fixture.database
+      .select({ expiresAt: locationMutationIdempotency.expiresAt })
+      .from(locationMutationIdempotency)
+      .where(
+        eq(locationMutationIdempotency.operation, "webhook.rotate.graphql"),
+      );
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    const audits = await fixture.database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "webhook.rotate"));
+    expect(audits).toHaveLength(2);
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "RotateWorkspaceWebhookSecret",
+        query: RotateWorkspaceWebhookSecretDocument,
+        variables: {
+          input: {
+            expectedVersion: 2,
+            id: webhookId,
+            idempotencyKey: "webhook-stale-after-takeover-v1",
+          },
+        },
+      }),
+      "CONFLICT",
+    );
+  });
+
+  it("isolates raw keys by workspace and principal and denies unauthorized actors", async () => {
+    const owner = await fixture.createActor();
+    const admin = await fixture.createWorkspaceMember(owner, "admin");
+    const viewer = await fixture.createWorkspaceMember(owner, "viewer");
+    const foreign = await fixture.createActor();
+    const rawKey = "webhook-principal-fence-v1";
+    const executeCreate = (jar: typeof owner.jar, url: string) =>
+      fixture.execute<{
+        createWebhook: { id: string | null };
+      }>({
+        jar,
+        operationName: "CreateWorkspaceWebhook",
+        query: CreateWorkspaceWebhookDocument,
+        variables: {
+          input: {
+            events: ["webhook.test"],
+            idempotencyKey: rawKey,
+            url,
+          },
+        },
+      });
+    const ownerResult = await executeCreate(
+      owner.jar,
+      "https://hooks.example.test/principal-owner",
+    );
+    const adminResult = await executeCreate(
+      admin.jar,
+      "https://hooks.example.test/principal-admin",
+    );
+    const foreignResult = await executeCreate(
+      foreign.jar,
+      "https://hooks.example.test/principal-owner",
+    );
+    expect(ownerResult.body?.errors).toBeUndefined();
+    expect(adminResult.body?.errors).toBeUndefined();
+    expect(foreignResult.body?.errors).toBeUndefined();
+    expect(
+      new Set([
+        ownerResult.body?.data?.createWebhook.id,
+        adminResult.body?.data?.createWebhook.id,
+        foreignResult.body?.data?.createWebhook.id,
+      ]),
+    ).toHaveLength(3);
+
+    expectGraphQLError(
+      await executeCreate(
+        viewer.jar,
+        "https://hooks.example.test/principal-viewer",
+      ),
+      "FORBIDDEN",
+    );
+    const apiKey = await fixture.provisionKey(owner, {
+      webhook: ["create", "read", "update", "delete"],
+    });
+    expectGraphQLError(
+      await fixture.execute({
+        apiKey: apiKey.key,
+        operationName: "CreateWorkspaceWebhook",
+        query: CreateWorkspaceWebhookDocument,
+        variables: {
+          input: {
+            events: ["webhook.test"],
+            idempotencyKey: rawKey,
+            url: "https://hooks.example.test/principal-api-key",
+          },
+        },
+      }),
+      "FORBIDDEN",
+    );
+    const claims = await fixture.database
+      .select({ keyHash: locationMutationIdempotency.keyHash })
+      .from(locationMutationIdempotency)
+      .where(
+        eq(locationMutationIdempotency.operation, "webhook.create.graphql"),
+      );
+    expect(claims).toHaveLength(3);
+    expect(new Set(claims.map((claim) => claim.keyHash))).toHaveLength(3);
+  });
 
   it("administers a generated webhook lifecycle and records a signed retry without duplicate replay", async () => {
     const owner = await fixture.createActor();
@@ -304,6 +1139,7 @@ liveDescribe("webhook lifecycle acceptance", () => {
     expect(disabled.body?.data?.disableWebhook).toEqual({
       code: "APPLIED",
       id: webhookId,
+      replayed: false,
       requestId: expect.any(String),
     });
     const [disabledWebhook] = await fixture.database

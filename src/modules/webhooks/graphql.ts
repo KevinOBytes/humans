@@ -37,6 +37,10 @@ const WebhookMutationPayload = builder
       id: t.exposeString("id", { nullable: true }),
       deliveryId: t.exposeString("deliveryId", { nullable: true }),
       code: t.exposeString("code"),
+      replayed: t.boolean({
+        nullable: false,
+        resolve: (result) => result.replayed ?? false,
+      }),
       requestId: t.exposeString("requestId"),
       secret: t.exposeString("secret", { nullable: true }),
     }),
@@ -46,11 +50,16 @@ const CreateWebhookInput = builder.inputType("CreateWebhookInput", {
   fields: (t) => ({
     url: t.string({ required: true }),
     events: t.stringList({ required: true }),
+    idempotencyKey: t.string(),
   }),
 });
 
 const WebhookIdInput = builder.inputType("WebhookIdInput", {
-  fields: (t) => ({ id: t.field({ type: "UUID", required: true }) }),
+  fields: (t) => ({
+    expectedVersion: t.int(),
+    id: t.field({ type: "UUID", required: true }),
+    idempotencyKey: t.string(),
+  }),
 });
 
 const SendWebhookTestEventInput = builder.inputType(
@@ -85,6 +94,7 @@ export function registerWebhooksGraphQL(): void {
         return context.services.webhooks.create(
           args.input.url,
           args.input.events,
+          args.input.idempotencyKey,
         );
       },
     }),
@@ -94,7 +104,11 @@ export function registerWebhooksGraphQL(): void {
       args: { input: t.arg({ type: WebhookIdInput, required: true }) },
       resolve: (_root, args, context) => {
         requirePermission(context, "webhook", "update");
-        return context.services.webhooks.rotate(args.input.id);
+        return context.services.webhooks.rotate(
+          args.input.id,
+          args.input.expectedVersion,
+          args.input.idempotencyKey,
+        );
       },
     }),
     disableWebhook: t.field({
@@ -103,7 +117,11 @@ export function registerWebhooksGraphQL(): void {
       args: { input: t.arg({ type: WebhookIdInput, required: true }) },
       resolve: (_root, args, context) => {
         requirePermission(context, "webhook", "delete");
-        return context.services.webhooks.disable(args.input.id);
+        return context.services.webhooks.disable(
+          args.input.id,
+          args.input.expectedVersion,
+          args.input.idempotencyKey,
+        );
       },
     }),
     sendWebhookTestEvent: t.field({
