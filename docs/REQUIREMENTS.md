@@ -1142,3 +1142,13 @@ concurrent lifecycle mutation cannot strand a newly issued secret after
 commit. External delivery/provider, DNS rebinding, migration, browser, and
 whole-domain retry matrices remain open; `HUM-FR-024` and `HUM-NFR-008` stay
 Incomplete.
+
+Updated hosted parity evidence (2026-09-13): reviewed `main` through commit
+`c739f4d` is deployed as Vercel `dpl_FND3s4vZ9tLEoHBY5SNegNCG6HM8` with
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app` aliases. Public homepage, liveness,
+readiness (PostgreSQL/Redis/storage), unauthenticated POST GraphQL, and
+protected jobs probes passed with correlated private responses. Hosted
+authenticated sign-in remains unverified because sensitive production
+credentials cannot be exported by the CLI; the hosted release requirement
+remains incomplete.
