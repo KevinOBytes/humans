@@ -26,6 +26,15 @@ method checks passed against the alias (DELETE jobs 405, OPTIONS storage 204,
 PATCH GraphQL 405), each with a correlation ID and `private, no-store`.
 Hosted authenticated/provider acceptance and the 24 rows below remain open.
 
+Bounded relationship provenance evidence (2026-09-13, commit `88ecf4c`): the
+generated `PersonRelationships` query and profile cards now expose an
+authorized, cursor-paginated first page of relationship evidence with source
+title/citation, locator/page, assertion role, and explicit redacted/empty
+states. Documentation labels still depend on the relationship review state;
+evidence counts are not treated as proof. Focused component and live-service
+tests pass. This narrows but does not close HUM-FR-023/HUM-FR-028 or the full
+hosted/provider/accessibility matrix.
+
 The historical `HUM-FR-035`/`HUM-NFR-018` entries below are superseded for
 deployment identity by `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` (READY, custom-domain
 aliases), whose Vercel Git metadata points to `379f177` and includes runtime
