@@ -1,7 +1,7 @@
 # MVP requirements
 
 Latest verified application runtime checkpoint (2026-09-13): commit `39f4728`
-passed GitHub Actions run `34740109083` with all 9 required jobs successful:
+passed GitHub Actions run `34740356099` with all 9 required jobs successful:
 PostgreSQL integration, browser acceptance (38 passed, 3 skipped), production
 build, generated drift, quality, Compose lifecycle, image security, dependency
 policy, and secret scanning. Vercel deployment
@@ -19,7 +19,7 @@ The historical `HUM-FR-035`/`HUM-NFR-018` table evidence below predates this
 checkpoint. The current hosted deployment is `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS`
 (READY, aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`) with Vercel Git SHA `379f177` and runtime
-parent `39f4728` after CI run `34740109083`. Public smoke and direct method-boundary probes
+parent `39f4728` after CI run `34740356099`. Public smoke and direct method-boundary probes
 passed; authenticated hosted sign-in, provider contract, and full-matrix
 acceptance remain intentionally incomplete.
 

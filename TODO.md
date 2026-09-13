@@ -13,7 +13,7 @@ files suites are not replaced. This is local Chromium evidence; hosted and
 whole-product accessibility acceptance remain open, as do both requirements.
 
 Latest verified application runtime checkpoint (2026-09-13): commit `39f4728`
-passed GitHub Actions run `34740109083` with all 9 required jobs successful:
+passed GitHub Actions run `34740356099` with all 9 required jobs successful:
 PostgreSQL integration, browser acceptance (38 passed, 3 skipped), production
 build, generated drift, quality, Compose lifecycle, image security, dependency
 policy, and secret scanning. Vercel deployment
@@ -29,7 +29,7 @@ Hosted authenticated/provider acceptance and the 24 rows below remain open.
 The historical `HUM-FR-035`/`HUM-NFR-018` entries below are superseded for
 deployment identity by `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` (READY, custom-domain
 aliases), whose Vercel Git metadata points to `379f177` and includes runtime
-commit `39f4728` after CI run `34740109083`.
+commit `39f4728` after CI run `34740356099`.
 Public smoke and direct method-boundary probes passed; hosted authenticated,
 provider, and full-matrix acceptance remain open.
 

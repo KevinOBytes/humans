@@ -1,7 +1,7 @@
 # Self-hosted alpha and MVP release-candidate boundary
 
 Latest verified application runtime checkpoint (2026-09-13): commit `39f4728`
-passed GitHub Actions run `34740109083` with all 9 required jobs successful,
+passed GitHub Actions run `34740356099` with all 9 required jobs successful,
 including PostgreSQL integration, browser acceptance (38 passed, 3 skipped),
 Compose lifecycle, production build, generated drift, quality, image security,
 dependency policy, and secret scanning. Vercel deployment
@@ -18,7 +18,7 @@ boundary.
 
 Deployment refresh: `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` is READY with the custom
 domain aliases; Vercel Git metadata points to `379f177` and its runtime parent
-`39f4728` after CI run `34740109083`. Public smoke and direct method-boundary probes passed; this does
+`39f4728` after CI run `34740356099`. Public smoke and direct method-boundary probes passed; this does
 not establish hosted authenticated/provider or full-MVP acceptance.
 
 Latest runtime checkpoint (2026-09-13): application tree `ae1c5fd` passed
