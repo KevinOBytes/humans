@@ -23,6 +23,8 @@ import {
   CreateFactDocument,
   SelectPersonFieldDocument,
   type FactValueType,
+  type TemporalPrecision,
+  type TemporalSemantics,
 } from "@/graphql/generated/graphql";
 
 export type FactDefinitionOption = {
@@ -37,14 +39,31 @@ export type PersonReferenceOption = {
   displayName: string;
 };
 
+export type SupersededFactOption = {
+  id: string;
+  label: string;
+  assertedAt?: string | null;
+};
+
+function optionalUtcDateTime(value: FormDataEntryValue | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return { value: undefined, invalid: false };
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime())
+    ? { value: undefined, invalid: true }
+    : { value: date.toISOString(), invalid: false };
+}
+
 export function FactForm({
   definitions,
   personId,
   personOptions = [],
+  supersededFactOptions = [],
 }: {
   definitions: readonly FactDefinitionOption[];
   personId: string;
   personOptions?: readonly PersonReferenceOption[];
+  supersededFactOptions?: readonly SupersededFactOption[];
 }) {
   const router = useRouter();
   const supported = useMemo(
@@ -92,6 +111,49 @@ export function FactForm({
       return;
     }
     const confidence = Number(form.get("confidence"));
+    const validEarliestAt = optionalUtcDateTime(form.get("validEarliestAt"));
+    const validLatestAt = optionalUtcDateTime(form.get("validLatestAt"));
+    const observedAt = optionalUtcDateTime(form.get("observedAt"));
+    if (
+      validEarliestAt.invalid ||
+      validLatestAt.invalid ||
+      observedAt.invalid
+    ) {
+      setFeedback(
+        mutationFeedback({
+          code: "CLIENT_VALIDATION",
+          fallback: "Enter valid dates and times for the fact metadata.",
+          issues: [
+            {
+              code: "INVALID_DATETIME",
+              message: "Use a valid date and time.",
+              path: ["validEarliestAt", "validLatestAt", "observedAt"],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    if (
+      validEarliestAt.value &&
+      validLatestAt.value &&
+      validEarliestAt.value > validLatestAt.value
+    ) {
+      setFeedback(
+        mutationFeedback({
+          code: "CLIENT_VALIDATION",
+          fallback: "The earliest validity time must be before the latest.",
+          issues: [
+            {
+              code: "INVALID_TEMPORAL_RANGE",
+              message: "Earliest validity must be before latest validity.",
+              path: ["validEarliestAt", "validLatestAt"],
+            },
+          ],
+        }),
+      );
+      return;
+    }
     setPending(true);
     setFeedback(null);
     const result = await executeBrowserGraphQL(CreateFactDocument, {
@@ -103,6 +165,24 @@ export function FactForm({
           "ASSERTED" | "DISPUTED" | "DISPROVEN" | "UNKNOWN",
         sensitivity,
         ...(Number.isFinite(confidence) ? { confidence } : {}),
+        confidenceMethod:
+          String(form.get("confidenceMethod") ?? "").trim() || undefined,
+        confidenceExplanation:
+          String(form.get("confidenceExplanation") ?? "").trim() || undefined,
+        temporalSemantics: String(
+          form.get("temporalSemantics") ?? "UNKNOWN",
+        ) as TemporalSemantics,
+        temporalPrecision: String(
+          form.get("temporalPrecision") ?? "UNKNOWN",
+        ) as TemporalPrecision,
+        ...(validEarliestAt.value
+          ? { validEarliestAt: validEarliestAt.value }
+          : {}),
+        ...(validLatestAt.value ? { validLatestAt: validLatestAt.value } : {}),
+        ...(observedAt.value ? { observedAt: observedAt.value } : {}),
+        language: String(form.get("language") ?? "").trim() || undefined,
+        supersedesFactId:
+          String(form.get("supersedesFactId") ?? "").trim() || undefined,
       },
     });
     setPending(false);
@@ -274,12 +354,145 @@ export function FactForm({
           ) : null}
         </div>
       </div>
+      <fieldset className="border-border grid gap-4 rounded-xl border p-4">
+        <legend className="px-1 text-sm font-medium">Fact metadata</legend>
+        <p className="text-muted-foreground text-sm">
+          Add when the claim was valid or observed. New claims start unreviewed
+          and require a separate reviewer approval.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="fact-temporal-semantics">
+              Temporal interpretation
+            </Label>
+            <select
+              id="fact-temporal-semantics"
+              name="temporalSemantics"
+              defaultValue="UNKNOWN"
+              className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+            >
+              <option value="UNKNOWN">Unknown</option>
+              <option value="EXACT">Exact</option>
+              <option value="APPROXIMATE">Approximate</option>
+              <option value="BEFORE">Before</option>
+              <option value="AFTER">After</option>
+              <option value="BETWEEN">Between</option>
+              <option value="YEAR_ONLY">Year only</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="fact-temporal-precision">Temporal precision</Label>
+            <select
+              id="fact-temporal-precision"
+              name="temporalPrecision"
+              defaultValue="UNKNOWN"
+              className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+            >
+              <option value="UNKNOWN">Unknown</option>
+              <option value="INSTANT">Instant</option>
+              <option value="SECOND">Second</option>
+              <option value="MINUTE">Minute</option>
+              <option value="HOUR">Hour</option>
+              <option value="DAY">Day</option>
+              <option value="MONTH">Month</option>
+              <option value="YEAR">Year</option>
+              <option value="RANGE">Range</option>
+            </select>
+          </div>
+          <DateTimeField
+            id="fact-valid-earliest"
+            label="Valid earliest"
+            name="validEarliestAt"
+          />
+          <DateTimeField
+            id="fact-valid-latest"
+            label="Valid latest"
+            name="validLatestAt"
+          />
+          <DateTimeField
+            id="fact-observed-at"
+            label="Observed at"
+            name="observedAt"
+          />
+          <div className="space-y-2">
+            <Label htmlFor="fact-language">Language</Label>
+            <Input
+              id="fact-language"
+              name="language"
+              placeholder="e.g. en"
+              autoComplete="language"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="fact-confidence-method">Confidence method</Label>
+            <Input
+              id="fact-confidence-method"
+              name="confidenceMethod"
+              placeholder="e.g. source comparison"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="fact-confidence-explanation">
+              Confidence explanation
+            </Label>
+            <textarea
+              id="fact-confidence-explanation"
+              name="confidenceExplanation"
+              rows={3}
+              className="border-input bg-background w-full rounded-xl border px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="fact-supersedes">
+              Supersedes an existing claim
+            </Label>
+            <select
+              id="fact-supersedes"
+              name="supersedesFactId"
+              defaultValue=""
+              className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+            >
+              <option value="">None</option>
+              {supersededFactOptions.map((fact) => (
+                <option key={fact.id} value={fact.id}>
+                  {fact.label}
+                  {fact.assertedAt
+                    ? ` · ${new Date(fact.assertedAt).toLocaleDateString()}`
+                    : ""}
+                </option>
+              ))}
+            </select>
+            {!supersededFactOptions.length ? (
+              <p className="text-muted-foreground text-xs">
+                Existing claims for this person will appear here when available.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </fieldset>
       <div>
         <Button disabled={pending} type="submit">
           {pending ? "Saving…" : "Add fact"}
         </Button>
       </div>
     </form>
+  );
+}
+
+function DateTimeField({
+  id,
+  label,
+  name,
+}: {
+  id: string;
+  label: string;
+  name: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} name={name} type="datetime-local" />
+    </div>
   );
 }
 
