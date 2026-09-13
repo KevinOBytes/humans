@@ -341,6 +341,72 @@ describe("PersonResearchPanel governed review", () => {
     ).toBeEnabled();
   });
 
+  it("does not reactivate retained rows while loading the first page for a new person", async () => {
+    const user = userEvent.setup();
+    execute.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        acceptedAiResearchHistory: {
+          nodes: [acceptedHistoryNode("old person retained row")],
+          pageInfo: { endCursor: "old-person-next", hasNextPage: true },
+        },
+      },
+    });
+    const nextPerson = {
+      ...person,
+      id: "c1ee46a9-e2ca-47d6-8c28-cc250d0bc823",
+      displayName: "Grace Researcher",
+    };
+    let resolveNewPersonHistory!: (value: {
+      ok: true;
+      data: {
+        acceptedAiResearchHistory: {
+          nodes: ReturnType<typeof acceptedHistoryNode>[];
+          pageInfo: { endCursor: null; hasNextPage: false };
+        };
+      };
+    }) => void;
+    const { rerender } = render(
+      <PersonResearchPanel person={person} canUpdate />,
+    );
+    await user.type(screen.getByLabelText("Governed purpose"), "research");
+    await user.click(
+      screen.getByRole("button", { name: "Load accepted history" }),
+    );
+    expect(await screen.findByText("old person retained row")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Load more accepted history" }),
+    ).toBeVisible();
+
+    rerender(<PersonResearchPanel person={nextPerson} canUpdate />);
+    execute.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveNewPersonHistory = resolve;
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Load accepted history" }),
+    );
+    expect(screen.queryByText("old person retained row")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Load more accepted history" }),
+    ).toBeNull();
+
+    await act(async () => {
+      resolveNewPersonHistory({.gmail,
+        ok: true,
+        data: {
+          acceptedAiResearchHistory: {
+            nodes: [acceptedHistoryNode("new person row", nextPerson.id)],
+            pageInfo: { endCursor: null, hasNextPage: false },
+          },
+        },
+      });
+    });
+    expect(screen.getByText("new person row")).toBeVisible();
+    expect(screen.queryByText("old person retained row")).toBeNull();
+  });
+
   it("renders safe accepted metadata and an explicit redacted evidence state", async () => {
     const user = userEvent.setup();
     execute.mockResolvedValueOnce({
