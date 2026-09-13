@@ -108,7 +108,12 @@ const Connection = builder
   }>("BreakGlassAccessRequestConnection")
   .implement({
     fields: (t) => ({
-      nodes: t.expose("nodes", { type: [Request] }),
+      nodes: t.expose("nodes", {
+        type: [Request],
+        // The connection resolver already accounts for the requested page
+        // size. Avoid applying the global list multiplier a second time.
+        complexity: { field: 0, multiplier: 1 },
+      }),
       pageInfo: t.expose("pageInfo", { type: PageInfo }),
     }),
   });
