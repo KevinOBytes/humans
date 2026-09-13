@@ -1,5 +1,23 @@
 # MVP closure and production hardening backlog
 
+Latest collaboration/runtime release evidence (2026-09-13): commits
+`4b55c33` and `556ad33` are pushed to `main`. GitHub Actions run
+`34767480893` passed all nine required jobs, including Node 24 quality, real
+PostgreSQL integration, browser acceptance, production build, generated drift,
+Compose lifecycle, image security, dependency policy, and secret scanning. The
+current runtime tree was deployed as Vercel `dpl_7aCx1WrcHPbyVAMyEPTeL6neumvk`
+(`READY`) with aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. Redacted production smoke passed homepage,
+liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL,
+and the protected jobs boundary. This release includes first-class
+workspace-scoped teams, team members, explicit case-team sharing grants,
+investigations, and investigation-case links with authorization, idempotency,
+and audit coverage. Hosted credentialed sign-in/person creation and external
+provider-contract acceptance remain open because protected Vercel secrets were
+not exported for an attended administrator rotation; the remaining hosted,
+privacy, accessibility, performance, recovery, and dedicated collaboration UI
+matrix remains tracked below.
+
 Rich-profile definition catalog checkpoint (2026-09-13): every newly created
 workspace now receives audited fact-definition templates for pronouns,
 employment, education, languages, organizations, birth dates, and workspace
