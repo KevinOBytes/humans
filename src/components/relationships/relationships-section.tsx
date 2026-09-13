@@ -241,10 +241,6 @@ export async function RelationshipsSection({
           const evidence = (item.relationship.evidence?.nodes ?? []).flatMap(
             (entry) => (entry?.id ? [entry] : []),
           );
-          const evidencePage = readFragment(
-            PageDetailsFragmentDoc,
-            item.relationship.evidence?.pageInfo,
-          );
           return (
             <li
               key={item.relationship.id!}
@@ -315,11 +311,6 @@ export async function RelationshipsSection({
                         </div>
                       );
                     })}
-                    {evidencePage?.hasNextPage ? (
-                      <p className="text-muted-foreground text-xs">
-                        More evidence is available through the GraphQL API.
-                      </p>
-                    ) : null}
                   </div>
                 ) : (
                   <p className="text-muted-foreground mt-2 text-sm">
