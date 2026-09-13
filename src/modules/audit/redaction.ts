@@ -3,6 +3,8 @@ export type AuditSensitivity =
 
 const safeMetadataKeys = new Set([
   "caseScoped",
+  "hasNextPage",
+  "queryMode",
   "redactionProfile",
   "rowCount",
   "state",

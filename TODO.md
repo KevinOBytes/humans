@@ -190,7 +190,7 @@ PostgreSQL/GraphQL replay and rollback lifecycle suite is present but gated beca
 `TEST_DATABASE_URL` is absent. No requirement row is closed. Live migration,
 object-store, browser, and provider proof, stale-artifact reconciliation, retention
 cleanup, bulk-query alerts, break-glass access, and the remaining whole-product
-matrix remain open.
+whole-query counting and the remaining whole-product matrix remain open.
 
 Bounded bulk-export alert checkpoint (2026-09-13): a fixed 100-row threshold
 now appends one immutable `export.bulk_alert` in the same transaction that first
@@ -202,6 +202,20 @@ restricted case exports, workspace fencing, immutability, and absence of query,
 identity, source, object-key, and byte leakage. Bulk-query alerts, break-glass
 access, administrator review, hosted-provider evidence, and the full audit and
 privacy matrices remain open, so `HUM-NFR-007` stays incomplete.
+
+Bounded bulk-query alert checkpoint (2026-09-13): authorized search pages at
+the fixed 100-row cap now append one immutable `search.bulk_alert` per
+workspace-scoped normalized query binding. A transaction advisory lock makes
+the check-and-insert deterministic across concurrent identical requests,
+retries, and pagination. The event stores only an opaque deterministic UUID
+resource reference plus row count, threshold, query mode, and whether another
+page exists; query text, protected exact values, filters, identities, and
+source identifiers are not retained. Focused unit/redaction tests and the
+disposable PostgreSQL GraphQL lifecycle suite cover threshold behavior,
+replay deduplication, workspace isolation, and redaction. This is page-level
+evidence, not a workspace-wide count: whole-query counting across arbitrary
+pagination, break-glass access, administrator review, hosted-provider proof,
+and the complete audit/privacy matrix remain open.
 
 Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
 source-comparison, duplicate, contradiction and descriptive graph analysis now

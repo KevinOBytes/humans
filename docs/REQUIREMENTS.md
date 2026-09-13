@@ -201,7 +201,7 @@ metadata-only rendering, and fail-closed commit. The expanded PostgreSQL/GraphQL
 lifecycle suite, including durable review replay and injected rollback assertions,
 remains gated because `TEST_DATABASE_URL` is absent. This does not close an
 acceptance row: live migration, object-store, browser, retention/reconciliation,
-bulk-query alert, break-glass, and hosted provider evidence remain open.
+whole-query bulk counting, break-glass, and hosted provider evidence remain open.
 
 Bounded bulk-export alert checkpoint (2026-09-13): a fixed threshold of 100
 rows now emits one immutable `export.bulk_alert` only inside the transaction
@@ -213,8 +213,23 @@ allowlist. Focused redaction tests plus a disposable PostgreSQL/in-memory
 object-store lifecycle prove at-threshold and below-threshold behavior,
 interrupted-write recovery, ready replay deduplication, restricted case-export
 metadata, workspace fencing, audit immutability, and sensitive-value exclusion.
-This closes only the bounded completed-export alert seam. Bulk-query alerts,
+This closes only the bounded completed-export alert seam. Whole-query counting,
 break-glass access, administrator review, hosted-provider evidence, and the
+whole-product audit/privacy matrices remain open; `HUM-NFR-007` remains
+Incomplete.
+
+Bounded bulk-query alert checkpoint (2026-09-13): an authorized search page at
+the fixed 100-row cap now emits one immutable `search.bulk_alert` per
+workspace-scoped normalized query binding. The check and insert are serialized
+by a transaction advisory lock, so identical retries and pagination cannot
+duplicate the alert. The audit resource identifier is an opaque deterministic
+UUID; the allowlisted metadata contains only page row count, fixed threshold,
+query mode, and the next-page indicator. Query text, protected exact values,
+filters, identities, and source identifiers are excluded. Focused unit and
+disposable PostgreSQL GraphQL tests cover at-threshold/over-threshold pages,
+repeat replay deduplication, workspace isolation, and redaction. This is
+bounded page-level evidence: whole-query counting across arbitrary pagination,
+break-glass access, administrator review, hosted-provider acceptance, and the
 whole-product audit/privacy matrices remain open; `HUM-NFR-007` remains
 Incomplete.
 
@@ -923,7 +938,7 @@ analysis, duplicate/contradiction reporting, schema mapping, duplicate flagging,
 redaction, token expiry, and API-key scope/rate decisions. These previews do not
 write domain data, and descriptive graph metrics explicitly carry a no-adverse-
 inference methodology. No acceptance row is closed: durable import/export
-execution, database-backed facet aggregation, persisted bulk/break-glass audit
+execution, database-backed facet aggregation, persisted whole-query/break-glass audit
 controls, key/session integration, and live database/provider/object-storage/browser
 evidence remain open.
 

@@ -8,6 +8,7 @@ import { caseResourceLinks } from "@/db/schema/cases";
 import { facts } from "@/db/schema/facts";
 import { exportArtifacts } from "@/db/schema/search";
 import { files } from "@/db/schema/files";
+import { auditEvents } from "@/db/schema/operations";
 import { relationships } from "@/db/schema/relationships";
 import { createGraphQLError, publicErrorMessage } from "@/graphql/errors";
 import type { RequestOperationLimiter } from "@/graphql/operation-limiter";
@@ -74,6 +75,12 @@ const SEARCH_CLIENT_POLICY = {
 } as const;
 
 export const BULK_EXPORT_ALERT_ROW_THRESHOLD = 100;
+/**
+ * A search page is capped at 100 rows. Alerting at that cap makes the event
+ * useful to administrators without requiring a second unrestricted count
+ * query over potentially sensitive resources.
+ */
+export const BULK_QUERY_ALERT_RESULT_THRESHOLD = 100;
 
 export type SearchRuntime = Readonly<{
   cursorHmacKey: string;
@@ -240,11 +247,67 @@ function iso(value: Date | string): string {
   return parsed.toISOString();
 }
 
+/**
+ * Return a stable opaque UUID for a query alert. The query binding is already
+ * an HMAC over the workspace and normalized query, so this derived resource
+ * identifier does not disclose the search terms while allowing retries and
+ * pagination of the same query to share one audit record.
+ */
+export function bulkQueryAlertResourceId(queryHash: string): string {
+  const digest = createHash("sha256")
+    .update(`humans:search:bulk-alert:v1\\0${queryHash}`, "utf8")
+    .digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
 export function createSearchService(
   context: SearchServiceContext,
   runtime: SearchRuntime,
 ) {
   const audit = createAuditService(context);
+
+  async function writeBulkQueryAlert(
+    database: Database,
+    input: {
+      hasNextPage: boolean;
+      mode: "TEXT" | "PROTECTED_EXACT";
+      queryHash: string;
+      resultCount: number;
+    },
+  ): Promise<void> {
+    if (input.resultCount < BULK_QUERY_ALERT_RESULT_THRESHOLD) return;
+    const resourceId = bulkQueryAlertResourceId(input.queryHash);
+    // Serialize the check-and-insert for the same workspace/query so retries
+    // and concurrent identical requests cannot produce duplicate alerts.
+    await database.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`humans:search:bulk-alert:${context.workspaceId}:${input.queryHash}`}, 0))`,
+    );
+    const [existing] = await database
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, context.workspaceId),
+          eq(auditEvents.action, "search.bulk_alert"),
+          eq(auditEvents.resourceKind, "search_query"),
+          eq(auditEvents.resourceId, resourceId),
+        ),
+      )
+      .limit(1);
+    if (existing) return;
+    await audit.write(database, {
+      action: "search.bulk_alert",
+      changedFields: ["resultCount"],
+      metadata: {
+        hasNextPage: input.hasNextPage,
+        queryMode: input.mode,
+        rowCount: input.resultCount,
+        threshold: BULK_QUERY_ALERT_RESULT_THRESHOLD,
+      },
+      resourceId,
+      resourceKind: "search_query",
+    });
+  }
 
   function requireExportActor(): Extract<
     SearchServiceContext["actor"],
@@ -378,6 +441,12 @@ export function createSearchService(
             },
             resourceKind: "search",
           });
+          await writeBulkQueryAlert(database, {
+            hasNextPage: page.nextPersonId !== null,
+            mode,
+            queryHash,
+            resultCount: nodes.length,
+          });
           return {
             nodes,
             pageInfo: {
@@ -426,6 +495,12 @@ export function createSearchService(
             resultKinds: [...new Set(nodes.map(({ kind }) => kind))].sort(),
           },
           resourceKind: "search",
+        });
+        await writeBulkQueryAlert(database, {
+          hasNextPage,
+          mode,
+          queryHash,
+          resultCount: nodes.length,
         });
         return {
           nodes,
