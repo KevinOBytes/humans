@@ -1,5 +1,16 @@
 # MVP requirements
 
+Latest production deployment (2026-09-13): the fully verified `main` tree at
+commit `d369a50` was deployed directly to Vercel as
+`dpl_7sws8qdPjuQj1tuT8n7J85RzyrJo` (`READY`) with aliases
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. The custom-domain smoke returned homepage
+`200`, liveness `200`, readiness `200` with PostgreSQL/Redis/storage all
+healthy, and unauthenticated GraphQL `401` with a stable request ID. The
+deployment's temporary URL is Vercel-protected and intentionally not used for
+public smoke. This is the exact local `main` tree deployment; the Vercel Git
+metadata for the older connected deployment remains historical.
+
 Latest verified application runtime checkpoint (2026-09-13): commit `39f4728`
 passed GitHub Actions run `34740356099` with all 9 required jobs successful:
 PostgreSQL integration, browser acceptance (38 passed, 3 skipped), production
