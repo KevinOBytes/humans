@@ -2,9 +2,13 @@ export type AuditSensitivity =
   "public" | "internal" | "confidential" | "restricted";
 
 const safeMetadataKeys = new Set([
+  "caseScoped",
+  "redactionProfile",
+  "rowCount",
   "state",
   "status",
   "sensitivity",
+  "threshold",
   "version",
   "relationshipType",
   "reviewState",

@@ -178,7 +178,19 @@ inactive, and demoted reviewer scope plus fail-closed commit. The expanded
 PostgreSQL/GraphQL replay and rollback lifecycle suite is present but gated because
 `TEST_DATABASE_URL` is absent. No requirement row is closed. Live migration,
 object-store, browser, and provider proof, stale-artifact reconciliation, retention
-cleanup, bulk alerts, and the remaining whole-product matrix remain open.
+cleanup, bulk-query alerts, break-glass access, and the remaining whole-product
+matrix remain open.
+
+Bounded bulk-export alert checkpoint (2026-09-13): a fixed 100-row threshold
+now appends one immutable `export.bulk_alert` in the same transaction that first
+commits a governed export artifact to `ready`. Its allowlisted metadata contains
+only row count, threshold, redaction profile, and a case-scoped boolean. Focused
+redaction and disposable PostgreSQL/object-store lifecycle tests cover exact and
+below-threshold exports, interrupted recovery, ready replay deduplication,
+restricted case exports, workspace fencing, immutability, and absence of query,
+identity, source, object-key, and byte leakage. Bulk-query alerts, break-glass
+access, administrator review, hosted-provider evidence, and the full audit and
+privacy matrices remain open, so `HUM-NFR-007` stays incomplete.
 
 Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
 source-comparison, duplicate, contradiction and descriptive graph analysis now

@@ -189,7 +189,22 @@ metadata-only rendering, and fail-closed commit. The expanded PostgreSQL/GraphQL
 lifecycle suite, including durable review replay and injected rollback assertions,
 remains gated because `TEST_DATABASE_URL` is absent. This does not close an
 acceptance row: live migration, object-store, browser, retention/reconciliation,
-bulk-alert, and hosted provider evidence remain open.
+bulk-query alert, break-glass, and hosted provider evidence remain open.
+
+Bounded bulk-export alert checkpoint (2026-09-13): a fixed threshold of 100
+rows now emits one immutable `export.bulk_alert` only inside the transaction
+that first changes a governed export artifact from `writing` or `failed` to
+`ready`. The audit event retains only the row count, fixed threshold, redaction
+profile, and whether the export is case-scoped; query text, identities, source
+identifiers, object keys, and artifact bytes are excluded by the audit
+allowlist. Focused redaction tests plus a disposable PostgreSQL/in-memory
+object-store lifecycle prove at-threshold and below-threshold behavior,
+interrupted-write recovery, ready replay deduplication, restricted case-export
+metadata, workspace fencing, audit immutability, and sensitive-value exclusion.
+This closes only the bounded completed-export alert seam. Bulk-query alerts,
+break-glass access, administrator review, hosted-provider evidence, and the
+whole-product audit/privacy matrices remain open; `HUM-NFR-007` remains
+Incomplete.
 
 Task 4 local checkpoint (2026-09-11): the generalized privacy lifecycle covers six request types with workspace/resource/case checks, verification-file evidence, independent reviewer approval, deadlines, optimistic transitions, idempotent creation replay, and completion evidence. Retention evaluation is deterministic and non-destructive; legal holds take precedence, and hard-delete/anonymization policies require review. New deletion fulfillment queues the existing worker instead of deleting synchronously. Processor results remain visible and retryable, with unconfigured external adapters explicitly failed rather than assumed complete. Historical deletion rows are preserved and represented explicitly without manufacturing verification evidence. Unit tests and gated lifecycle tests cover the new boundary. Live PostgreSQL migration/lifecycle proof, external search/cache/email/AI propagation adapters, complete retention enforcement, legacy-settings-path convergence, and browser acceptance remain open; HUM-FR-005 is not closed.
 
