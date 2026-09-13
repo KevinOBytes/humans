@@ -221,12 +221,67 @@ function unavailableTransaction(): never {
   );
 }
 
-function isSerializationFailure(error: unknown): boolean {
+function databaseErrorDetails(error: unknown): {
+  code: string | null;
+  constraint: string | null;
+} {
+  if (error == null || typeof error !== "object") {
+    return { code: null, constraint: null };
+  }
+  const direct = "code" in error ? (error as { code?: unknown }).code : null;
+  const directConstraint =
+    "constraint" in error
+      ? (error as { constraint?: unknown }).constraint
+      : null;
+  if (typeof direct === "string") {
+    return {
+      code: direct,
+      constraint:
+        typeof directConstraint === "string"
+          ? directConstraint
+          : typeof (error as { constraint_name?: unknown }).constraint_name ===
+              "string"
+            ? (error as { constraint_name: string }).constraint_name
+            : null,
+    };
+  }
+  if ("cause" in error) {
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause != null && typeof cause === "object" && "code" in cause) {
+      const nested = (cause as { code?: unknown }).code;
+      const nestedConstraint =
+        "constraint" in cause
+          ? (cause as { constraint?: unknown }).constraint
+          : null;
+      if (typeof nested === "string") {
+        return {
+          code: nested,
+          constraint:
+            typeof nestedConstraint === "string"
+              ? nestedConstraint
+              : typeof (cause as { constraint_name?: unknown })
+                    .constraint_name === "string"
+                ? (cause as unknown as { constraint_name: string })
+                    .constraint_name
+                : null,
+        };
+      }
+    }
+  }
+  return { code: null, constraint: null };
+}
+
+function isRetryableIdempotencyTransactionFailure(error: unknown): boolean {
+  // Repeatable-read/serializable snapshots can be established before the
+  // advisory claim lock. A concurrent same-key insert then surfaces as a
+  // unique violation rather than serialization failure; a fresh transaction
+  // observes the completed claim and deterministically replays it.
+  const details = databaseErrorDetails(error);
   return (
-    error != null &&
-    typeof error === "object" &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "40001"
+    details.code === "40001" ||
+    details.code === "40P01" ||
+    (details.code === "23505" &&
+      details.constraint === "location_mutation_idempotency_claim_unique")
   );
 }
 
@@ -1903,7 +1958,11 @@ export async function runPrincipalIdempotentResearchWrite<
     try {
       return await execute();
     } catch (error) {
-      if (!isSerializationFailure(error) || attempt === attempts) throw error;
+      if (
+        !isRetryableIdempotencyTransactionFailure(error) ||
+        attempt === attempts
+      )
+        throw error;
     }
   }
   throw new Error("unreachable principal idempotency retry");
