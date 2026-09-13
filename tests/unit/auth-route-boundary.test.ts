@@ -3,6 +3,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createAuthRouteHandlers } from "@/app/api/auth/[...all]/handlers";
+import {
+  AUTH_REQUEST_ID_HEADER,
+  decorateAuthBoundaryResponse,
+  prepareAuthBoundaryRequest,
+} from "@/modules/auth/request-boundary";
 
 const protectedRoutes = [
   "/api/auth/organization/invite-member",
@@ -203,6 +208,35 @@ describe("Better Auth administration boundary", () => {
       message: "Authentication request failed.",
       requestId: "a4e128f2-c057-43e9-bf32-7b0e30cc2cf1",
     });
+  });
+
+  it("preserves the prepared production request ID through delegated failures", async () => {
+    let preparedRequestId: string | undefined;
+    const handlers = createAuthRouteHandlers(async () => ({
+      POST: async (request) => {
+        const prepared = await prepareAuthBoundaryRequest(request, {
+          authSecret: "test-auth-secret",
+          clientAddressConfig: { deploymentMode: "docker", mode: "none" },
+        });
+        preparedRequestId =
+          prepared.headers.get(AUTH_REQUEST_ID_HEADER) ?? undefined;
+        return decorateAuthBoundaryResponse(
+          new Response("private provider failure", { status: 503 }),
+          preparedRequestId!,
+        );
+      },
+    }));
+
+    const response = await handlers.POST(
+      new Request("https://humans.example.test/api/auth/sign-in/email", {
+        method: "POST",
+      }),
+    );
+    const body = await response.json();
+
+    expect(preparedRequestId).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(response.headers.get("x-request-id")).toBe(preparedRequestId);
+    expect(body).toMatchObject({ requestId: preparedRequestId });
   });
 
   it.each(["/api/auth/sign-in/email", "/api/auth/sign-in/username"])(
