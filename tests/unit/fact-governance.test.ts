@@ -8,6 +8,7 @@ import {
 const doubles = vi.hoisted(() => ({
   coverage: vi.fn(),
   currentReviewState: "unreviewed" as string,
+  latestRevisionAuthor: "original-principal" as string,
   material: {} as Record<string, unknown>,
 }));
 const factId = "019f4df3-a656-7002-9979-8946810c5bde";
@@ -26,6 +27,7 @@ vi.mock("@/modules/facts/repository", async (original) => ({
       createdBy: "original-principal",
       reviewState: doubles.currentReviewState,
     }),
+    listRevisions: async () => [{ createdBy: doubles.latestRevisionAuthor }],
     getDefinitionForUpdate: async () => ({
       id: "field",
       state: "active",
@@ -77,6 +79,7 @@ const context = {
 beforeEach(() => {
   doubles.coverage.mockReset().mockResolvedValue({ allowed: false });
   doubles.currentReviewState = "unreviewed";
+  doubles.latestRevisionAuthor = "original-principal";
   doubles.material = {};
 });
 describe("fact governance service boundary", () => {
@@ -120,6 +123,28 @@ describe("fact governance service boundary", () => {
         value: { text: "changed content" },
       }),
     ).rejects.toThrow("Accepted fact content requires an independent reviewer");
+  });
+
+  it("binds later approval to the latest content revision author", () => {
+    const reviewer = {
+      actor: {
+        type: "user" as const,
+        id: "reviewer-user",
+        principalId: "reviewer-b",
+        sessionId: "session",
+        memberId: "member",
+        role: "admin",
+      },
+    };
+    // B authored the reopened content revision, so B cannot approve it.
+    expect(canIndependentlyReviewFact(reviewer, "reviewer-b")).toBe(false);
+    // C can approve that unchanged, version-bound content revision.
+    expect(
+      canIndependentlyReviewFact(
+        { actor: { ...reviewer.actor, principalId: "reviewer-c" } },
+        "reviewer-b",
+      ),
+    ).toBe(true);
   });
 
   it("does not allow an owner/admin to author and approve one revision", async () => {
