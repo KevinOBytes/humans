@@ -12,6 +12,7 @@ export type RelationshipProvenanceInput = {
   validFrom?: Date | string | null;
   validUntil?: Date | string | null;
   creationMethod?: string | null;
+  epistemicStatus?: string | null;
   reviewState?: string | null;
   state?: string | null;
   explicitConfirmed?: boolean | null;

@@ -412,6 +412,7 @@ query PersonRelationships($id: UUID!, $first: Int, $after: String) {
         validUntil
         observedAt
         creationMethod
+        epistemicStatus
         reviewState
         version
         createdAt

@@ -2,23 +2,24 @@
 
 ## Current release evidence (2026-09-13, latest runtime)
 
-The auditability-complete runtime tree at commit `47ab7c0` is pushed to
-GitHub and deployed as Vercel `dpl_5Zv4gEptiHqQNytSHEeuzAJ8bDwF` (`READY`).
-The deployment aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
-`humans-tkoresearch.vercel.app`. The production readiness harness returned
+The latest verified runtime tree at commit `bbfa638` is pushed to GitHub and
+deployed as Vercel `dpl_3YPDnFiCMKP1goMvUeEFTMxPGjz3` (`READY`). The deployment
+aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. GitHub Actions run `34756730288` passed all
+nine required jobs: Node 24 quality, PostgreSQL integration, browser
+acceptance, production build, generated drift, Compose lifecycle, image
+security, dependency policy, and secret scanning. Public probes returned
 homepage `200`, liveness `200`, readiness `200` with PostgreSQL/Redis/storage
 healthy, unauthenticated GraphQL `401`, and protected jobs `401`, all with
-correlation IDs. The local expanded gates passed 188 unit files/1,429 tests,
-focused bulk-query and break-glass PostgreSQL tests, typecheck, lint, codegen,
-Drizzle checks, and production build.
+correlation IDs.
 
 Hosted credentialed sign-in, administrator bootstrap/rotation, person creation,
 and external-provider contract acceptance remain unverified because protected
 Vercel secrets are intentionally not exported into the local environment. The
 break-glass and bulk-query features are bounded, auditable local/runtime seams;
 the administrator review UI is now available at `/settings/break-glass` for
-owner/admin users. Universal profile-read logging and the complete
-hosted/provider/privacy matrix remain open. Bulk-query alert counts are
+owner/admin users. The complete hosted/provider/privacy/accessibility/
+performance matrix remains open. Bulk-query alert counts are
 computed across the complete visible query result before cursor pagination for
 both text and protected-exact search; this remains subject to the fixed
 statement timeout and operation budgets.

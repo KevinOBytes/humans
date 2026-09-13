@@ -455,6 +455,7 @@ export type CreateRelationshipInput = {
   caseId?: string | null | undefined;
   confidence?: number | null | undefined;
   creationMethod?: string | null | undefined;
+  epistemicStatus?: RelationshipEpistemicStatus | null | undefined;
   explicitConfirmed: boolean;
   governancePurpose: string;
   idempotencyKey?: string | null | undefined;
@@ -916,6 +917,8 @@ export type RejectAiSuggestionInput = {
   reason: string;
 };
 
+export type RelationshipEpistemicStatus = "ANALYST_HYPOTHESIS" | "DOCUMENTED";
+
 export type RelationshipMultiplicity =
   "MANY_TO_MANY" | "MANY_TO_ONE" | "ONE_TO_MANY" | "ONE_TO_ONE";
 
@@ -1341,6 +1344,7 @@ export type UpdateRelationshipInput = {
   caseId?: string | null | undefined;
   confidence?: number | null | undefined;
   creationMethod?: string | null | undefined;
+  epistemicStatus?: RelationshipEpistemicStatus | null | undefined;
   evidenceAssertionId?: string | null | undefined;
   expectedVersion: number;
   explicitConfirmed: boolean;
@@ -4398,6 +4402,7 @@ export type PersonRelationshipsQuery = {
         validUntil: string | null;
         observedAt: string | null;
         creationMethod: string | null;
+        epistemicStatus: RelationshipEpistemicStatus | null;
         reviewState: string | null;
         version: number | null;
         createdAt: string | null;
@@ -10803,6 +10808,7 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
         validUntil
         observedAt
         creationMethod
+        epistemicStatus
         reviewState
         version
         createdAt
@@ -10834,7 +10840,7 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:84bec8cab75a592eb3b2411c1a0862e7e419a593a47ae5c605cc03500176ea5d",
+    hash: "sha256:c5f7610b6395796cd55c9d32bd8d04c523b13b13b15ed28f1fd8a4c2f18371be",
   },
 ) as unknown as TypedDocumentString<
   PersonRelationshipsQuery,

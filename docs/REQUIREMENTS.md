@@ -11,17 +11,19 @@ provides generated GraphQL/PostgreSQL acceptance when the live database seam
 is configured. A controlled backfill for workspaces created before this
 checkpoint remains open, as does the broader hosted and whole-profile matrix.
 
-Current release evidence (2026-09-13, latest runtime): commit `47ab7c0` is
-pushed to `main` and deployed as Vercel `dpl_5Zv4gEptiHqQNytSHEeuzAJ8bDwF`
-(`READY`) with the configured custom-domain aliases. Public smoke passed
+Current release evidence (2026-09-13, latest runtime): commit `bbfa638` is
+pushed to `main` and deployed as Vercel `dpl_3YPDnFiCMKP1goMvUeEFTMxPGjz3`
+(`READY`) with aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. GitHub Actions run `34756730288` passed all
+nine required jobs (Node 24 quality, PostgreSQL integration, browser
+acceptance, production build, generated drift, Compose lifecycle, image
+security, dependency policy, and secret scanning). Public smoke passed
 homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated
-GraphQL, and the protected jobs boundary. The expanded local gate passes 188
-unit files/1,429 tests plus focused bulk-query and break-glass PostgreSQL
-tests, lint/typecheck/codegen/Drizzle checks, and production build. Hosted
-credentialed sign-in/person creation and external-provider acceptance remain
-incomplete because protected Vercel secrets were not exported for an attended
-rotation run; universal profile-read audit logging and the full
-hosted/provider/privacy matrix also remain open.
+GraphQL, and the protected jobs boundary. Hosted credentialed sign-in/person
+creation and external-provider acceptance remain incomplete because protected
+Vercel secrets were not exported for an attended rotation run; the remaining
+hosted/provider/privacy/accessibility/performance matrix is intentionally still
+tracked below.
 
 Bounded administrator review UI evidence (2026-09-13): the owner/admin-only
 `/settings/break-glass` route now loads the workspace-scoped generated
@@ -116,6 +118,14 @@ assertion role, and redacted/empty states without inferring documentation from
 counts. Focused component and live-service tests cover workspace and source
 sensitivity fencing; this is a local bounded slice and does not close
 HUM-FR-023, HUM-FR-028, or the whole-product hosted/accessibility matrix.
+
+Bounded relationship epistemic-status evidence (2026-09-13): migration
+`0047_relationship-epistemic-status.sql` adds a constrained, persisted
+`documented` versus `analyst_hypothesis` value. Generated GraphQL mutations and
+profile reads expose it; AI-created edges default to hypotheses and historical
+AI edges are backfilled. The relationship form and cards show the explicit
+status. Focused form tests and schema/codegen checks pass. Full hosted/provider
+and whole-product acceptance remain open.
 
 Bounded temporal fact authoring evidence (2026-09-13): commits `afd2525`,
 `ef96dbc`, `39b26aa`, `9d978a7`, and `68ad246` extend the generated fact

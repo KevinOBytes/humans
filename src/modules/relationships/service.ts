@@ -77,6 +77,7 @@ function provenanceMaterial(
         ? null
         : new Date(input.observedAt).toISOString(),
     creationMethod: input.creationMethod ?? null,
+    epistemicStatus: input.epistemicStatus ?? null,
     reviewState: input.reviewState ?? null,
     explicitConfirmed: input.explicitConfirmed ?? false,
     evidenceAssertionId: input.evidenceAssertionId ?? null,
@@ -140,6 +141,34 @@ const relationshipStates = [
   "disproven",
   "inactive",
 ] as const;
+
+const relationshipEpistemicStatuses = [
+  "documented",
+  "analyst_hypothesis",
+] as const;
+
+function validateRelationshipEpistemicStatus(
+  value: string | null | undefined,
+): { value: string | null; issues: ValidationIssue[] } {
+  const status = value?.trim().toLowerCase() || null;
+  if (
+    !status ||
+    !relationshipEpistemicStatuses.includes(
+      status as (typeof relationshipEpistemicStatuses)[number],
+    )
+  )
+    return {
+      value: null,
+      issues: [
+        {
+          path: ["epistemicStatus"],
+          code: "INVALID_ENUM",
+          message: "Invalid relationship epistemic status.",
+        },
+      ],
+    };
+  return { value: status, issues: [] };
+}
 
 function validateRelationshipState(
   value: string | null | undefined,
@@ -866,6 +895,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
         strength?: number | null;
         confidence?: number | null;
         state?: string | null;
+        epistemicStatus?: string | null;
         sensitivity?: string | null;
         temporalSemantics?: string | null;
         temporalPrecision?: string | null;
@@ -947,7 +977,13 @@ export function createRelationshipsService(context: ResearchServiceContext) {
         input.state ??
           (provenance.creationMethod === "manual" ? "asserted" : "inferred"),
       );
-      issues.push(...state.issues);
+      const epistemicStatus = validateRelationshipEpistemicStatus(
+        input.epistemicStatus ??
+          (provenance.creationMethod === "ai"
+            ? "analyst_hypothesis"
+            : "documented"),
+      );
+      issues.push(...state.issues, ...epistemicStatus.issues);
       if (issues.length) return invalid(issues);
       if (input.idempotencyKey != null) {
         const secret = context.idempotencyHmacKey;
@@ -970,6 +1006,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             sensitivity,
             sourcePersonId: input.sourcePersonId,
             state: state.value!,
+            epistemicStatus: epistemicStatus.value!,
             strength: strength.value ?? null,
             targetPersonId: input.targetPersonId,
             temporalPrecision: temporal.value!.precision,
@@ -1099,6 +1136,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             caseId: input.caseId,
             observedAt: provenance.observedAt,
             creationMethod: provenance.creationMethod,
+            epistemicStatus: epistemicStatus.value!,
             reviewState: "unreviewed",
             labelOverride,
             strength: strength.value,
@@ -1169,6 +1207,7 @@ export function createRelationshipsService(context: ResearchServiceContext) {
         strength?: number | null;
         confidence?: number | null;
         state?: string | null;
+        epistemicStatus?: string | null;
         sensitivity?: string | null;
         temporalSemantics?: string | null;
         temporalPrecision?: string | null;
@@ -1233,6 +1272,11 @@ export function createRelationshipsService(context: ResearchServiceContext) {
               input.state === undefined
                 ? undefined
                 : (input.state?.trim().toLowerCase() ?? null),
+            ),
+            epistemicStatus: fieldMaterial(
+              input.epistemicStatus === undefined
+                ? undefined
+                : (input.epistemicStatus?.trim().toLowerCase() ?? null),
             ),
             strength: fieldMaterial(input.strength),
             temporalPrecision: dateMaterial(input.temporalPrecision),
@@ -1401,6 +1445,15 @@ export function createRelationshipsService(context: ResearchServiceContext) {
           issues.push(
             ...validateRelationshipState(locked.state, locked.state).issues,
           );
+        }
+        if (input.epistemicStatus !== undefined) {
+          const epistemicStatus = validateRelationshipEpistemicStatus(
+            input.epistemicStatus,
+          );
+          issues.push(...epistemicStatus.issues);
+          if (epistemicStatus.issues.length === 0)
+            patch.epistemicStatus = epistemicStatus.value;
+          changed.push("epistemicStatus");
         }
         if (input.sensitivity !== undefined) {
           const value = input.sensitivity?.toLowerCase();
