@@ -4303,9 +4303,6 @@ export type PersonRelationshipsQuery = {
               } | null;
             } | null;
           }> | null;
-          pageInfo: {
-            " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
-          } | null;
         } | null;
       }> | null;
       pageInfo: {
@@ -10578,7 +10575,7 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
         version
         createdAt
         updatedAt
-        evidence(first: 3) {
+        evidence(first: 1) {
           nodes {
             id
             locator
@@ -10591,9 +10588,6 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
                 citation
               }
             }
-          }
-          pageInfo {
-            ...PageDetails
           }
         }
       }
@@ -10608,7 +10602,7 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:0696fcde90f3b032b529dbf68d7804a92df6f0e6322b76b0d64ddfa7c24cd88e",
+    hash: "sha256:84bec8cab75a592eb3b2411c1a0862e7e419a593a47ae5c605cc03500176ea5d",
   },
 ) as unknown as TypedDocumentString<
   PersonRelationshipsQuery,

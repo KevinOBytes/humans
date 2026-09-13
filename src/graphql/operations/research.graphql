@@ -414,7 +414,7 @@ query PersonRelationships($id: UUID!, $first: Int, $after: String) {
         version
         createdAt
         updatedAt
-        evidence(first: 3) {
+        evidence(first: 1) {
           nodes {
             id
             locator
@@ -427,9 +427,6 @@ query PersonRelationships($id: UUID!, $first: Int, $after: String) {
                 citation
               }
             }
-          }
-          pageInfo {
-            ...PageDetails
           }
         }
       }
