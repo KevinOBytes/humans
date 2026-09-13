@@ -4359,9 +4359,11 @@ export type FactCatalogQuery = {
       fieldKey: string | null;
       label: string | null;
       description: string | null;
+      category: string | null;
       allowedValueType: FactValueType | null;
       cardinality: FactCardinality | null;
       defaultSensitivity: Sensitivity | null;
+      state: FactDefinitionState | null;
       version: number | null;
     }> | null;
     pageInfo: {
@@ -10756,9 +10758,11 @@ export const FactCatalogDocument = new TypedDocumentString(
       fieldKey
       label
       description
+      category
       allowedValueType
       cardinality
       defaultSensitivity
+      state
       version
     }
     pageInfo {
@@ -10771,7 +10775,7 @@ export const FactCatalogDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:8b9a98ab1f638d2e07c8fd7a8ffd34af45a96765f591cd489514164ec3ae53fe",
+    hash: "sha256:7a12eb61748d52105be5bd906de4d6e92aba7e8b3bea5f2d8ddaf3e40df763c9",
   },
 ) as unknown as TypedDocumentString<
   FactCatalogQuery,

@@ -379,9 +379,11 @@ query FactCatalog($first: Int, $after: String) {
       fieldKey
       label
       description
+      category
       allowedValueType
       cardinality
       defaultSensitivity
+      state
       version
     }
     pageInfo {
