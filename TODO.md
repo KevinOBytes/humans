@@ -1,5 +1,15 @@
 # MVP closure and production hardening backlog
 
+The expanded scope for this backlog is explicit: rich, multi-fact person
+profiles; temporal and epistemically-labelled relationship graphs; source and
+field-level provenance; workspace/case/investigation/team boundaries; consent,
+privacy, retention, deletion, legal holds, and export governance; immutable
+auditability; human-reviewed AI research; faceted search and explainable
+analysis; controlled import/export; scoped API keys and 2FA; and fictional
+synthetic demo data. The current release ships the collaboration pages and
+linked-scope assignment queue. Remaining entries are release evidence gaps or
+operator/provider acceptance work, not permission to weaken these boundaries.
+
 Latest collaboration/runtime release evidence (2026-09-13): commits
 `4b55c33`, `556ad33`, and the documentation release `d08bbcd` are pushed to
 `main`. GitHub Actions runs `34767480893` and `34768072841` passed all nine

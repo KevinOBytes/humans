@@ -1,5 +1,33 @@
 # MVP requirements
 
+## Expanded product scope
+
+The requirements below include the full consent-governed research scope: rich
+person profiles (names and aliases, pronouns, biographies, employment,
+education, public contact points, dated addresses, languages, organizations,
+identifiers, notes, and custom fields); temporal directional relationships with
+strength, confidence, evidence, corroboration, and explicit documented versus
+analyst-hypothesis status; field-level provenance and chain-of-custody metadata;
+workspace/case/investigation/team isolation with least-privilege roles and
+assignment queues; consent, lawful-basis, sensitivity, redaction, encryption,
+retention, deletion, legal holds, export controls, and subject requests;
+immutable audit and break-glass review; human-reviewed AI suggestions with
+evidence and uncertainty; faceted GraphQL search, timelines, comparison,
+duplicate/contradiction detection, and explainable graph metrics; controlled
+CSV/JSON/document import/export; scoped API keys, 2FA, rate limits, and tenant
+isolation; and a synthetic fictional demo dataset. The product deliberately
+does not make autonomous adverse decisions or emit threat scores. Each item is
+mapped to a requirement ID and evidence below; an incomplete status means the
+implementation exists only as a bounded slice or still needs hosted/operator
+acceptance.
+
+Latest collaboration release: commit `7efe302` is pushed to `main`, GitHub
+Actions run `34772787721` passed all nine required jobs, and Vercel deployment
+`dpl_61gghMJ7YXjfUuYPXH7PHkrqDhfv` is `READY` with the configured aliases.
+Public smoke passed homepage, liveness, readiness, unauthenticated GraphQL,
+and protected jobs. The release includes dedicated investigation/team pages
+and linked-scope assignment authorization.
+
 Latest collaboration/runtime release evidence (2026-09-13): commits `4b55c33`,
 `556ad33`, and the documentation release `d08bbcd` are pushed to `main`;
 GitHub Actions runs `34767480893` and `34768072841` passed all nine required
