@@ -18,8 +18,9 @@ PostgreSQL integration, browser acceptance (38 passed, 3 skipped), production
 build, generated drift, quality, Compose lifecycle, image security, dependency
 policy, and secret scanning. Vercel deployment
 `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` is `READY`, serves
-`humans.kevinbytes.com`, and was deployed from the clean `main` tree at
-`39f4728` after that CI run. The redacted production smoke passed homepage, liveness,
+`humans.kevinbytes.com`, and Vercel metadata identifies GitHub SHA `379f177`
+(`docs: record person idempotency upgrade bridge`), whose runtime parent is
+`39f4728`. The redacted production smoke passed homepage, liveness,
 readiness, unauthenticated GraphQL, and protected jobs. Live direct-route
 method checks passed against the alias (DELETE jobs 405, OPTIONS storage 204,
 PATCH GraphQL 405), each with a correlation ID and `private, no-store`.
@@ -27,7 +28,8 @@ Hosted authenticated/provider acceptance and the 24 rows below remain open.
 
 The historical `HUM-FR-035`/`HUM-NFR-018` entries below are superseded for
 deployment identity by `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` (READY, custom-domain
-aliases) deployed from clean `main` at `39f4728` after CI run `34740109083`.
+aliases), whose Vercel Git metadata points to `379f177` and includes runtime
+commit `39f4728` after CI run `34740109083`.
 Public smoke and direct method-boundary probes passed; hosted authenticated,
 provider, and full-matrix acceptance remain open.
 
