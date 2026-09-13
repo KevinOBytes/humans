@@ -236,7 +236,6 @@ identity, source, object-key, and byte leakage. Bulk-query alerts, break-glass
 access, administrator review, hosted-provider evidence, and the full audit and
 privacy matrices remain open, so `HUM-NFR-007` stays incomplete.
 
-<<<<<<< HEAD
 Whole-query bulk-query alert checkpoint (2026-09-13): authorized text search
 now computes the complete visible, deduplicated result count in a SQL CTE
 before cursor filtering, while protected exact lookup counts distinct visible
@@ -250,23 +249,8 @@ query text, protected exact values, filters, identities, and source identifiers
 are not retained. Focused unit/redaction tests and the disposable PostgreSQL
 GraphQL lifecycle suite cover count-before-cursor behavior, threshold crossing,
 replay deduplication, workspace isolation, protected exact lookup, and
-redaction. Administrator review UI, hosted-provider proof, and the complete
+redaction. Administrator review, hosted-provider proof, and the complete
 audit/privacy matrix remain open.
-=======
-Bounded bulk-query alert checkpoint (2026-09-13): authorized search pages at
-the fixed 100-row cap now append one immutable `search.bulk_alert` per
-workspace-scoped normalized query binding. A transaction advisory lock makes
-the check-and-insert deterministic across concurrent identical requests,
-retries, and pagination. The event stores only an opaque deterministic UUID
-resource reference plus row count, threshold, query mode, and whether another
-page exists; query text, protected exact values, filters, identities, and
-source identifiers are not retained. Focused unit/redaction tests and the
-disposable PostgreSQL GraphQL lifecycle suite cover threshold behavior,
-replay deduplication, workspace isolation, and redaction. This is page-level
-evidence, not a workspace-wide count: whole-query counting across arbitrary
-pagination, break-glass access, hosted-provider proof,
-and the complete audit/privacy matrix remain open.
->>>>>>> a8991d9 (feat(settings): add break-glass review surface)
 
 Bounded break-glass access checkpoint (2026-09-13): workspace-scoped,
 principal-bound exceptional-access requests now require a purpose, a 20–4,000
