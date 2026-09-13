@@ -492,6 +492,7 @@ export function createPeopleService(context: ResearchServiceContext) {
         and(
           eq(people.workspaceId, context.workspaceId),
           eq(people.id, personId),
+          allowLegacyCreateReference ? isNull(people.deletedAt) : undefined,
           visibility,
         ),
       )

@@ -349,6 +349,13 @@ liveDescribe("generated core-person mutation idempotency", () => {
       id: archived.id,
       version: archived.version,
     });
+    await expectGraphQLError(
+      await create(actor, {
+        displayName: "Legacy create",
+        idempotencyKey: createKey,
+      }),
+      "NOT_FOUND",
+    );
 
     expect(
       await fixture.database
