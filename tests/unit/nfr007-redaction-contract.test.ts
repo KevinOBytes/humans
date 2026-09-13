@@ -107,6 +107,7 @@ describe("NFR-007 redaction boundaries", () => {
     const redacted = redactAuditDiff({
       changedFields: ["resultCount"],
       metadata: {
+        countScope: "whole_query",
         hasNextPage: true,
         queryMode: "TEXT",
         rowCount: 100,
@@ -120,6 +121,7 @@ describe("NFR-007 redaction boundaries", () => {
     expect(redacted).toEqual({
       changedFields: ["resultCount"],
       metadata: {
+        countScope: "whole_query",
         hasNextPage: true,
         queryMode: "TEXT",
         rowCount: 100,

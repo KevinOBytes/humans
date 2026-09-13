@@ -20,6 +20,8 @@ export type ProtectedExactLookupPage = Readonly<{
     personId: string;
   }>[];
   nextPersonId: string | null;
+  /** Count of all authorized matching people before cursor pagination. */
+  totalCount: number;
 }>;
 
 const UUID =
@@ -118,6 +120,7 @@ export function createProtectedExactLookupService(
           rows.length > input.first
             ? (returned.at(-1)?.personId ?? null)
             : null,
+        totalCount: Number(rows[0]?.totalCount ?? 0),
       });
     },
   };

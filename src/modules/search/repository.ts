@@ -100,6 +100,12 @@ export type TextSearchRow = {
   sensitivity: "public" | "internal" | "confidential" | "restricted";
   subjectPersonId: string | null;
   title: string;
+  /**
+   * Count of the complete authorized result set, before cursor pagination.
+   * The value is computed in a CTE so advancing a cursor cannot turn a
+   * whole-query bulk alert into a page-only alert.
+   */
+  totalCount: number | string;
   updatedAt: Date | string;
 };
 
@@ -585,13 +591,16 @@ export function createSearchRepository(
           FROM authorized_matches
         ), winning AS (
           SELECT * FROM ranked WHERE contribution_rank = 1
+        ), winning_with_total AS (
+          SELECT winning.*, count(*) OVER () AS total_count
+          FROM winning
         )
         SELECT result_kind AS kind, result_id AS id, title_text AS title,
                subject_person_id AS "subjectPersonId",
                display_text AS "displayText", updated_at AS "updatedAt", rank,
-               sensitivity
+               sensitivity, total_count AS "totalCount"
                ${input.analysis ? sql`, ${researchAnalysisMetadataSql(context, input.analysis.caseId)} AS "analysis"` : sql``}
-        FROM winning
+        FROM winning_with_total
         WHERE ${
           cursor
             ? sql`(

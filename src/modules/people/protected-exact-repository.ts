@@ -19,8 +19,8 @@ type LookupInput = {
 export function createProtectedExactRepository(database: Database) {
   return {
     lookupPhones(input: LookupInput) {
-      return database
-        .selectDistinct({ personId: people.id })
+      const matches = database
+        .select({ personId: people.id })
         .from(contactPoints)
         .innerJoin(
           personContactPoints,
@@ -57,18 +57,35 @@ export function createProtectedExactRepository(database: Database) {
             ),
             input.protectedVisibility,
             input.personVisibility,
-            input.afterPersonId
-              ? gt(people.id, input.afterPersonId)
-              : undefined,
           ),
         )
-        .orderBy(asc(people.id))
+        .groupBy(people.id)
+        .as("protected_phone_matches");
+      const counted = database
+        .select({
+          personId: matches.personId,
+          totalCount: sql<number>`count(*) over ()`.as("total_count"),
+        })
+        .from(matches)
+        .as("protected_phone_counted");
+      return database
+        .select({
+          personId: counted.personId,
+          totalCount: counted.totalCount,
+        })
+        .from(counted)
+        .where(
+          input.afterPersonId
+            ? gt(counted.personId, input.afterPersonId)
+            : undefined,
+        )
+        .orderBy(asc(counted.personId))
         .limit(input.limit);
     },
 
     lookupPersonIdentifiers(input: LookupInput & { namespace: string }) {
-      return database
-        .selectDistinct({ personId: people.id })
+      const matches = database
+        .select({ personId: people.id })
         .from(personIdentifiers)
         .innerJoin(
           people,
@@ -97,12 +114,29 @@ export function createProtectedExactRepository(database: Database) {
             ),
             input.protectedVisibility,
             input.personVisibility,
-            input.afterPersonId
-              ? gt(people.id, input.afterPersonId)
-              : undefined,
           ),
         )
-        .orderBy(asc(people.id))
+        .groupBy(people.id)
+        .as("protected_identifier_matches");
+      const counted = database
+        .select({
+          personId: matches.personId,
+          totalCount: sql<number>`count(*) over ()`.as("total_count"),
+        })
+        .from(matches)
+        .as("protected_identifier_counted");
+      return database
+        .select({
+          personId: counted.personId,
+          totalCount: counted.totalCount,
+        })
+        .from(counted)
+        .where(
+          input.afterPersonId
+            ? gt(counted.personId, input.afterPersonId)
+            : undefined,
+        )
+        .orderBy(asc(counted.personId))
         .limit(input.limit);
     },
   };

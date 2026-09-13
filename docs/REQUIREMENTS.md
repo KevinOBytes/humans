@@ -9,9 +9,8 @@ unit files/1,429 tests plus focused bulk-query and break-glass PostgreSQL
 tests, lint/typecheck/codegen/Drizzle checks, and production build. Hosted
 credentialed sign-in/person creation and external-provider acceptance remain
 incomplete because protected Vercel secrets were not exported for an attended
-rotation run; universal profile-read audit logging, whole-query counting,
-administrator review UI, and the full hosted/provider/privacy matrix also
-remain open.
+rotation run; universal profile-read audit logging, administrator review UI,
+and the full hosted/provider/privacy matrix also remain open.
 
 Current release evidence (2026-09-13, latest): the clean `main` tree at
 commit `f74c82a` is pushed and its GitHub Actions run `34751719602` passed all
@@ -214,7 +213,7 @@ metadata-only rendering, and fail-closed commit. The expanded PostgreSQL/GraphQL
 lifecycle suite, including durable review replay and injected rollback assertions,
 remains gated because `TEST_DATABASE_URL` is absent. This does not close an
 acceptance row: live migration, object-store, browser, retention/reconciliation,
-whole-query bulk counting, break-glass, and hosted provider evidence remain open.
+administrator review UI, break-glass, and hosted provider evidence remain open.
 
 Bounded bulk-export alert checkpoint (2026-09-13): a fixed threshold of 100
 rows now emits one immutable `export.bulk_alert` only inside the transaction
@@ -231,20 +230,22 @@ break-glass access, administrator review, hosted-provider evidence, and the
 whole-product audit/privacy matrices remain open; `HUM-NFR-007` remains
 Incomplete.
 
-Bounded bulk-query alert checkpoint (2026-09-13): an authorized search page at
-the fixed 100-row cap now emits one immutable `search.bulk_alert` per
-workspace-scoped normalized query binding. The check and insert are serialized
-by a transaction advisory lock, so identical retries and pagination cannot
-duplicate the alert. The audit resource identifier is an opaque deterministic
-UUID; the allowlisted metadata contains only page row count, fixed threshold,
-query mode, and the next-page indicator. Query text, protected exact values,
-filters, identities, and source identifiers are excluded. Focused unit and
-disposable PostgreSQL GraphQL tests cover at-threshold/over-threshold pages,
-repeat replay deduplication, workspace isolation, and redaction. This is
-bounded page-level evidence: whole-query counting across arbitrary pagination,
-break-glass access, administrator review, hosted-provider acceptance, and the
+Whole-query bulk-query alert checkpoint (2026-09-13): authorized text search
+computes the complete visible, deduplicated result count in a SQL CTE before
+cursor filtering, while protected exact lookup counts distinct visible people
+in a counted subquery before pagination. The fixed 100-row threshold therefore
+alerts on the whole authorized query, including later cursor pages. A
+transaction advisory lock serializes check-and-insert, so concurrent identical
+requests, retries, and pagination cannot duplicate the alert. The audit
+resource identifier is an opaque deterministic UUID; allowlisted metadata
+contains only the whole-query row count, fixed threshold, query mode, count
+scope, and next-page indicator. Query text, protected exact values, filters,
+identities, and source identifiers are excluded. Focused unit and disposable
+PostgreSQL GraphQL tests cover count-before-cursor behavior, threshold
+crossing, replay deduplication, workspace isolation, protected exact lookup,
+and redaction. Administrator review, hosted-provider acceptance, and the
 whole-product audit/privacy matrices remain open; `HUM-NFR-007` remains
-Incomplete.
+Incomplete for its broader producer/provider sweep.
 
 Bounded break-glass checkpoint (2026-09-13): explicit workspace-scoped,
 principal-bound exceptional-access requests enumerate resource kind/UUID pairs,

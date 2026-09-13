@@ -76,9 +76,11 @@ const SEARCH_CLIENT_POLICY = {
 
 export const BULK_EXPORT_ALERT_ROW_THRESHOLD = 100;
 /**
- * A search page is capped at 100 rows. Alerting at that cap makes the event
- * useful to administrators without requiring a second unrestricted count
- * query over potentially sensitive resources.
+ * A search page is capped at 100 rows. The search repository also computes a
+ * count of the complete authorized result set before cursor pagination. The
+ * alert records that count, rather than treating a single page as the query's
+ * total. PostgreSQL statement_timeout and the existing operation budgets keep
+ * the count bounded operationally; the query material itself is never logged.
  */
 export const BULK_QUERY_ALERT_RESULT_THRESHOLD = 100;
 
@@ -273,6 +275,7 @@ export function createSearchService(
       mode: "TEXT" | "PROTECTED_EXACT";
       queryHash: string;
       resultCount: number;
+      countScope: "whole_query" | "page";
     },
   ): Promise<void> {
     if (input.resultCount < BULK_QUERY_ALERT_RESULT_THRESHOLD) return;
@@ -300,6 +303,7 @@ export function createSearchService(
       changedFields: ["resultCount"],
       metadata: {
         hasNextPage: input.hasNextPage,
+        countScope: input.countScope,
         queryMode: input.mode,
         rowCount: input.resultCount,
         threshold: BULK_QUERY_ALERT_RESULT_THRESHOLD,
@@ -445,7 +449,8 @@ export function createSearchService(
             hasNextPage: page.nextPersonId !== null,
             mode,
             queryHash,
-            resultCount: nodes.length,
+            resultCount: page.totalCount,
+            countScope: "whole_query",
           });
           return {
             nodes,
@@ -500,7 +505,8 @@ export function createSearchService(
           hasNextPage,
           mode,
           queryHash,
-          resultCount: nodes.length,
+          resultCount: Number(returned[0]?.totalCount ?? 0),
+          countScope: "whole_query",
         });
         return {
           nodes,
