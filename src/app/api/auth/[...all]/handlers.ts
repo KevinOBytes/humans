@@ -1,4 +1,6 @@
 export type AuthMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+import { decorateAuthBoundaryResponse } from "@/modules/auth/request-boundary";
+
 type AuthHandler = (request: Request) => Promise<Response>;
 type AuthRouteHandlers = Record<AuthMethod, AuthHandler>;
 type LoadedAuthRouteHandlers = Partial<AuthRouteHandlers> & {
@@ -345,7 +347,10 @@ function lazyAuthHandler(
           405,
         );
       }
-      return await handler(request);
+      return decorateAuthBoundaryResponse(
+        await handler(request),
+        requestId(request),
+      );
     } catch {
       return infrastructureUnavailable(request, infrastructureLogger);
     }
