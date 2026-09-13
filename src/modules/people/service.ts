@@ -2606,10 +2606,10 @@ export function createPeopleService(context: ResearchServiceContext) {
             "Idempotent person creation is not configured.",
           );
         }
-        const idempotency = deriveResearchIdempotency(context, {
+        const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey,
-          operation: "person.create",
+          operation: "person.create.graphql",
           requestMaterial: {
             biography: biography.value ?? null,
             confidence: confidence.value ?? "1",
@@ -2622,7 +2622,7 @@ export function createPeopleService(context: ResearchServiceContext) {
           },
           secret,
         });
-        const result = await runIdempotentResearchWrite(
+        const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
           ["person:create"],
@@ -2631,29 +2631,10 @@ export function createPeopleService(context: ResearchServiceContext) {
               scopedContext,
               scopedContext.database,
             );
-            return { personId: created.id };
+            return { personId: created.id, version: created.version };
           },
         );
-        const personId = result.responseReference.personId;
-        if (
-          typeof personId !== "string" ||
-          !PERSON_REFERENCE_UUID.test(personId)
-        ) {
-          throw createGraphQLError(
-            "VALIDATION_FAILED",
-            "The operation response reference is invalid.",
-          );
-        }
-        const replayed = await repository.getById({
-          workspaceId: context.workspaceId,
-          id: personId,
-        });
-        if (!replayed || !(await visible(replayed))) {
-          throw createGraphQLError(
-            "NOT_FOUND",
-            "The requested resource was not found.",
-          );
-        }
+        const replayed = await replayPerson(result.responseReference);
         return { resource: replayed, issues: [], code: null };
       }
       const row = await writeTransaction(context, async (transaction) =>
@@ -2792,10 +2773,10 @@ export function createPeopleService(context: ResearchServiceContext) {
             "Idempotent person updates are not configured.",
           );
         }
-        const idempotency = deriveResearchIdempotency(context, {
+        const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey: input.idempotencyKey,
-          operation: "person.update",
+          operation: "person.update.graphql",
           requestMaterial: {
             biography: {
               present: input.biography !== undefined,
@@ -2844,7 +2825,7 @@ export function createPeopleService(context: ResearchServiceContext) {
           },
           secret,
         });
-        const result = await runIdempotentResearchWrite(
+        const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
           ["person:update"],
@@ -2963,17 +2944,17 @@ export function createPeopleService(context: ResearchServiceContext) {
             "Idempotent person archives are not configured.",
           );
         }
-        const idempotency = deriveResearchIdempotency(context, {
+        const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey: input.idempotencyKey,
-          operation: "person.archive",
+          operation: "person.archive.graphql",
           requestMaterial: {
             expectedVersion: input.expectedVersion,
             id: input.id,
           },
           secret,
         });
-        const result = await runIdempotentResearchWrite(
+        const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
           ["person:delete"],
