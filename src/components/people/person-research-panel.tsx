@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AiReviewQueue } from "@/components/ai/ai-review-queue";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ export function PersonResearchPanel({
     endCursor: string | null;
     hasNextPage: boolean;
   }>({ endCursor: null, hasNextPage: false });
+  const acceptedHistoryRequestGeneration = useRef(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   async function loadQueue() {
@@ -70,6 +71,7 @@ export function PersonResearchPanel({
     );
   }
   async function loadAcceptedHistory(after: string | null = null) {
+    const requestGeneration = ++acceptedHistoryRequestGeneration.current;
     setAcceptedHistoryState("loading");
     try {
       const result = await executeBrowserGraphQL(
@@ -82,6 +84,8 @@ export function PersonResearchPanel({
           after,
         },
       );
+      if (requestGeneration !== acceptedHistoryRequestGeneration.current)
+        return;
       if (!result.ok) {
         if (!after) setAcceptedHistory([]);
         setAcceptedHistoryState("error");
@@ -94,11 +98,14 @@ export function PersonResearchPanel({
       setAcceptedHistoryPage(result.data.acceptedAiResearchHistory.pageInfo);
       setAcceptedHistoryState("loaded");
     } catch {
+      if (requestGeneration !== acceptedHistoryRequestGeneration.current)
+        return;
       if (!after) setAcceptedHistory([]);
       setAcceptedHistoryState("error");
     }
   }
   function clearAcceptedHistory() {
+    acceptedHistoryRequestGeneration.current += 1;
     setAcceptedHistory([]);
     setAcceptedHistoryPage({ endCursor: null, hasNextPage: false });
     setAcceptedHistoryState("idle");
