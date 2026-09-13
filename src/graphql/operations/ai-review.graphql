@@ -32,6 +32,60 @@ query PendingAiSuggestions($personId: UUID!, $purpose: String!, $caseId: UUID) {
     ...AiReviewFields
   }
 }
+fragment AcceptedAiResearchHistoryFields on AcceptedAiResearchHistoryItem {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  confidence
+  uncertainty
+  provider
+  model
+  promptPolicyVersion
+  researchRunId
+  reviewerPrincipalId
+  suggestedAt
+  reviewedAt
+  decisionReason
+  acceptedResource {
+    kind
+    id
+    redacted
+  }
+  evidenceReferences {
+    kind
+    evidenceId
+    url
+    locator
+    quote
+    snapshotHash
+    redacted
+  }
+}
+query AcceptedAiResearchHistory(
+  $personId: UUID!
+  $purpose: String!
+  $caseId: UUID
+  $first: Int
+  $after: String
+) {
+  acceptedAiResearchHistory(
+    personId: $personId
+    purpose: $purpose
+    caseId: $caseId
+    first: $first
+    after: $after
+  ) {
+    nodes {
+      ...AcceptedAiResearchHistoryFields
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
 mutation AcceptAiSuggestion($input: AcceptAiSuggestionInput!) {
   acceptAiSuggestion(input: $input) {
     ...AiReviewFields

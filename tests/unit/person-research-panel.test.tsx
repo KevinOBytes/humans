@@ -14,6 +14,7 @@ import { PersonResearchPanel } from "@/components/people/person-research-panel";
 import {
   PersonWebResearchDocument,
   AcceptAiSuggestionDocument,
+  AcceptedAiResearchHistoryDocument,
   PendingAiSuggestionsDocument,
 } from "@/graphql/generated/graphql";
 const person = {
@@ -146,5 +147,102 @@ describe("PersonResearchPanel governed review", () => {
     expect(
       screen.getByRole("button", { name: "Research this person" }),
     ).toBeEnabled();
+  });
+
+  it("shows an explicit empty accepted research history for the governed purpose", async () => {
+    const user = userEvent.setup();
+    execute.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        acceptedAiResearchHistory: {
+          nodes: [],
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
+    });
+    render(<PersonResearchPanel person={person} canUpdate />);
+    expect(
+      screen.getByRole("heading", { name: "Accepted research history" }),
+    ).toBeVisible();
+    await user.type(screen.getByLabelText("Governed purpose"), "Research");
+    await user.click(
+      screen.getByRole("button", { name: "Load accepted history" }),
+    );
+    expect(execute).toHaveBeenCalledWith(AcceptedAiResearchHistoryDocument, {
+      personId: person.id,
+      purpose: "research",
+      caseId: null,
+      first: 10,
+      after: null,
+    });
+    expect(
+      await screen.findByText(
+        "No accepted AI research exists for this person and purpose.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("renders safe accepted metadata and an explicit redacted evidence state", async () => {
+    const user = userEvent.setup();
+    execute.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        acceptedAiResearchHistory: {
+          nodes: [
+            {
+              __typename: "AcceptedAiResearchHistoryItem",
+              id: "8c23bfeb-ce83-45d4-b29b-b53cbc15d186",
+              personId: person.id,
+              caseId: null,
+              purpose: "research",
+              fieldKey: "biography",
+              confidence: 0.8,
+              uncertainty: "Identity needs a second source.",
+              provider: "COMPATIBLE",
+              model: "research-model",
+              promptPolicyVersion: "review-v1",
+              researchRunId: runId,
+              reviewerPrincipalId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf6",
+              suggestedAt: "2026-09-13T01:00:00.000Z",
+              reviewedAt: "2026-09-13T02:00:00.000Z",
+              decisionReason: "Corroborated against the cited record.",
+              acceptedResource: {
+                kind: "person",
+                id: person.id,
+                redacted: false,
+              },
+              evidenceReferences: [
+                {
+                  kind: "evidence",
+                  evidenceId: null,
+                  url: null,
+                  locator: null,
+                  quote: null,
+                  snapshotHash: null,
+                  redacted: true,
+                },
+              ],
+            },
+          ],
+          pageInfo: { endCursor: "next-page", hasNextPage: false },
+        },
+      },
+    });
+    render(<PersonResearchPanel person={person} canUpdate />);
+    await user.type(screen.getByLabelText("Governed purpose"), "research");
+    await user.click(
+      screen.getByRole("button", { name: "Load accepted history" }),
+    );
+    expect(await screen.findByText("biography")).toBeVisible();
+    expect(screen.getByText("COMPATIBLE / research-model")).toBeVisible();
+    expect(
+      screen.getByText("Evidence details are redacted for your access."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Sensitive accepted evidence excerpt"),
+    ).toBeNull();
+    expect(
+      screen.getByText("Corroborated against the cited record."),
+    ).toBeVisible();
   });
 });

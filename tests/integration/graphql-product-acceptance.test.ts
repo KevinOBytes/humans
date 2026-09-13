@@ -48,6 +48,9 @@ import {
   ArchivePersonNameDocument,
   PersonEventsDocument,
   PersonNamesDocument,
+  PendingAiSuggestionsDocument,
+  AcceptAiSuggestionDocument,
+  AcceptedAiResearchHistoryDocument,
 } from "@/graphql/generated/graphql";
 
 import { expectGraphQLError, type OperationResult } from "../support/graphql";
@@ -420,6 +423,68 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
           sourceUrls: [sources[0]!.url],
         },
       ]);
+
+      const reviewer = await persisted.createWorkspaceMember(owner, "admin");
+      const pending = await persisted.execute<{
+        pendingAiSuggestions: Array<{ id: string; version: number }>;
+      }>({
+        jar: owner.jar,
+        query: PendingAiSuggestionsDocument,
+        variables: { personId, purpose: "research", caseId: null },
+      });
+      const suggestion = pending.body?.data?.pendingAiSuggestions[0];
+      expect(suggestion).toMatchObject({ version: 1 });
+      const accepted = await persisted.execute({
+        jar: reviewer.jar,
+        query: AcceptAiSuggestionDocument,
+        variables: {
+          input: {
+            id: suggestion!.id,
+            expectedVersion: suggestion!.version,
+            explicitConfirmed: true,
+          },
+        },
+      });
+      expect(accepted.body?.errors).toBeUndefined();
+
+      const history = await persisted.execute({
+        jar: reviewer.jar,
+        query: AcceptedAiResearchHistoryDocument,
+        variables: {
+          personId,
+          purpose: "research",
+          caseId: null,
+          first: 10,
+          after: null,
+        },
+      });
+      expect(history.body?.errors).toBeUndefined();
+      expect(history.body?.data?.acceptedAiResearchHistory).toMatchObject({
+        nodes: [
+          {
+            id: suggestion!.id,
+            fieldKey: "biography",
+            purpose: "research",
+            provider: "OLLAMA",
+            model: "research-test-model",
+            researchRunId: runId,
+            reviewerPrincipalId: reviewer.principalId,
+            acceptedResource: {
+              kind: "person",
+              id: personId,
+              redacted: false,
+            },
+            evidenceReferences: [
+              {
+                kind: "web",
+                url: sources[0]!.url,
+                redacted: false,
+              },
+            ],
+          },
+        ],
+        pageInfo: { endCursor: expect.any(String), hasNextPage: false },
+      });
     } finally {
       await persisted.close();
     }

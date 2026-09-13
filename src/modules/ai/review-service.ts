@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { aiReviewSuggestions, aiRuns, aiCitations } from "@/db/schema/ai";
 import {
@@ -7,11 +7,19 @@ import {
   personWebResearchSources,
 } from "@/db/schema/person-research";
 import { evidenceItems, sources } from "@/db/schema/evidence";
+import { facts } from "@/db/schema/facts";
 import { people } from "@/db/schema/people";
+import { relationships } from "@/db/schema/relationships";
 import { createGraphQLError } from "@/graphql/errors";
+import {
+  decodeResearchCursor,
+  normalizePagination,
+  type PaginationInput,
+} from "@/graphql/limits";
 import {
   canAccessResource,
   createAuditService,
+  visibleResourceIds,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
 import { runResearchTransaction } from "@/modules/audit/transactions";
@@ -25,7 +33,9 @@ import { createPeopleService } from "@/modules/people/service";
 import { createFactsService } from "@/modules/facts/service";
 import { createRelationshipsService } from "@/modules/relationships/service";
 import { createEvidenceAssertionsService } from "@/modules/evidence/assertions";
+import { normalizeHumanText } from "@/modules/facts/validation";
 import {
+  aiEvidenceReferenceSchema,
   normalizeAiSuggestion,
   normalizeAiReviewDecision,
   requireAiBatchApproval,
@@ -303,6 +313,274 @@ async function project(context: ResearchServiceContext, row: Row) {
 }
 export type AiReviewSuggestion = Awaited<ReturnType<typeof project>>;
 
+export type AcceptedAiEvidenceReference = {
+  kind: "evidence" | "web";
+  evidenceId: string | null;
+  url: string | null;
+  locator: string | null;
+  quote: string | null;
+  snapshotHash: string | null;
+  redacted: boolean;
+};
+
+export type AcceptedAiHistoryItem = {
+  id: string;
+  personId: string;
+  caseId: string | null;
+  purpose: string;
+  fieldKey: string;
+  confidence: number;
+  uncertainty: string;
+  provider: string;
+  model: string;
+  promptPolicyVersion: string;
+  researchRunId: string;
+  reviewerPrincipalId: string;
+  suggestedAt: Date;
+  reviewedAt: Date;
+  decisionReason: string | null;
+  acceptedResource: {
+    kind: "person" | "fact" | "relationship";
+    id: string | null;
+    redacted: boolean;
+  };
+  evidenceReferences: AcceptedAiEvidenceReference[];
+};
+
+export type AcceptedAiHistoryConnection = {
+  nodes: AcceptedAiHistoryItem[];
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+};
+
+type AcceptedHistoryCursor = { reviewedAt: Date; id: string };
+
+function acceptedHistoryCursor(row: Pick<Row, "id" | "reviewedAt">): string {
+  if (!row.reviewedAt)
+    throw createGraphQLError(
+      "INTERNAL",
+      "The accepted research history is unavailable.",
+    );
+  return Buffer.from(
+    JSON.stringify({
+      v: 1,
+      o: "ai-review-accepted-desc",
+      t: row.reviewedAt.toISOString(),
+      i: row.id,
+    }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function acceptedHistoryAfter(
+  value: string | null,
+): AcceptedHistoryCursor | null {
+  const decoded = decodeResearchCursor(value, "ai-review-accepted-desc");
+  return decoded
+    ? { reviewedAt: new Date(decoded.t as string), id: decoded.i as string }
+    : null;
+}
+
+function acceptedHistoryPurpose(value: string): string {
+  const normalized = normalizeHumanText(value, {
+    path: ["purpose"],
+    min: 1,
+    max: 200,
+  });
+  if (normalized.issues.length)
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "The governed purpose is invalid.",
+    );
+  return normalized.value!.toLowerCase();
+}
+
+async function acceptedHistoryVisibleResources(
+  context: ResearchServiceContext,
+  rows: readonly Row[],
+): Promise<ReadonlySet<string>> {
+  const visible = new Set<string>();
+  const configurations = [
+    { kind: "person" as const, permission: "person:read", table: people },
+    { kind: "fact" as const, permission: "fact:read", table: facts },
+    {
+      kind: "relationship" as const,
+      permission: "relationship:read",
+      table: relationships,
+    },
+  ];
+  for (const configuration of configurations) {
+    if (!context.permissions.has(configuration.permission)) continue;
+    const ids = [
+      ...new Set(
+        rows
+          .filter((row) => row.acceptedResourceKind === configuration.kind)
+          .flatMap((row) =>
+            row.acceptedResourceId ? [row.acceptedResourceId] : [],
+          ),
+      ),
+    ];
+    if (!ids.length) continue;
+    const resources = await context.database
+      .select({
+        id: configuration.table.id,
+        sensitivity: configuration.table.sensitivity,
+      })
+      .from(configuration.table)
+      .where(
+        and(
+          eq(configuration.table.workspaceId, context.workspaceId),
+          inArray(configuration.table.id, ids),
+          isNull(configuration.table.deletedAt),
+        ),
+      );
+    const idsForKind = await visibleResourceIds(context.database, context, {
+      resourceKind: configuration.kind,
+      resources,
+    });
+    for (const id of idsForKind) visible.add(id);
+  }
+  return visible;
+}
+
+async function acceptedHistoryVisibleEvidence(
+  context: ResearchServiceContext,
+  rows: readonly Row[],
+): Promise<ReadonlySet<string>> {
+  if (
+    !context.permissions.has("evidence:read") ||
+    !context.permissions.has("source:read")
+  )
+    return new Set();
+  const parsedReferences = rows.flatMap((row) => {
+    const parsed = aiEvidenceReferenceSchema
+      .array()
+      .safeParse(row.acceptedEvidenceReferences);
+    return parsed.success
+      ? parsed.data.filter((reference) => reference.kind === "evidence")
+      : [];
+  });
+  const evidenceIds = [...new Set(parsedReferences.map((r) => r.evidenceId))];
+  if (!evidenceIds.length) return new Set();
+  const evidenceRows = await context.database
+    .select({
+      id: evidenceItems.id,
+      sensitivity: evidenceItems.sensitivity,
+      sourceId: evidenceItems.sourceId,
+    })
+    .from(evidenceItems)
+    .where(
+      and(
+        eq(evidenceItems.workspaceId, context.workspaceId),
+        inArray(evidenceItems.id, evidenceIds),
+        isNull(evidenceItems.deletedAt),
+      ),
+    );
+  const sourceIds = [...new Set(evidenceRows.map((row) => row.sourceId))];
+  if (!sourceIds.length) return new Set();
+  const sourceRows = await context.database
+    .select({ id: sources.id, sensitivity: sources.sensitivity })
+    .from(sources)
+    .where(
+      and(
+        eq(sources.workspaceId, context.workspaceId),
+        inArray(sources.id, sourceIds),
+        isNull(sources.deletedAt),
+      ),
+    );
+  const [visibleEvidence, visibleSources] = await Promise.all([
+    visibleResourceIds(context.database, context, {
+      resourceKind: "evidence",
+      resources: evidenceRows,
+    }),
+    visibleResourceIds(context.database, context, {
+      resourceKind: "source",
+      resources: sourceRows,
+    }),
+  ]);
+  return new Set(
+    evidenceRows
+      .filter(
+        (row) =>
+          visibleEvidence.has(row.id) && visibleSources.has(row.sourceId),
+      )
+      .map((row) => row.id),
+  );
+}
+
+async function projectAcceptedHistory(
+  context: ResearchServiceContext,
+  rows: readonly Row[],
+): Promise<AcceptedAiHistoryItem[]> {
+  const [visibleResources, visibleEvidence] = await Promise.all([
+    acceptedHistoryVisibleResources(context, rows),
+    acceptedHistoryVisibleEvidence(context, rows),
+  ]);
+  return rows.map((row) => {
+    const references = aiEvidenceReferenceSchema
+      .array()
+      .safeParse(row.acceptedEvidenceReferences);
+    if (
+      !references.success ||
+      !row.acceptedFromRunId ||
+      !row.reviewedBy ||
+      !row.reviewedAt ||
+      !row.acceptedResourceId ||
+      !["person", "fact", "relationship"].includes(
+        row.acceptedResourceKind ?? "",
+      )
+    )
+      throw createGraphQLError(
+        "INTERNAL",
+        "The accepted research history is unavailable.",
+      );
+    const resourceVisible = visibleResources.has(row.acceptedResourceId);
+    return {
+      id: row.id,
+      personId: row.personId,
+      caseId: row.caseId,
+      purpose: row.purpose,
+      fieldKey: row.fieldKey,
+      confidence: row.confidence,
+      uncertainty: row.uncertainty,
+      provider: row.provider,
+      model: row.model,
+      promptPolicyVersion: row.promptPolicyVersion,
+      researchRunId: row.acceptedFromRunId,
+      reviewerPrincipalId: row.reviewedBy,
+      suggestedAt: row.createdAt,
+      reviewedAt: row.reviewedAt,
+      decisionReason: row.decisionReason,
+      acceptedResource: {
+        kind: row.acceptedResourceKind as "person" | "fact" | "relationship",
+        id: resourceVisible ? row.acceptedResourceId : null,
+        redacted: !resourceVisible,
+      },
+      evidenceReferences: references.data.map((reference) => {
+        if (reference.kind === "web")
+          return {
+            kind: "web" as const,
+            evidenceId: null,
+            url: reference.url,
+            locator: reference.locator,
+            quote: reference.quote,
+            snapshotHash: reference.snapshotHash ?? null,
+            redacted: false,
+          };
+        const evidenceVisible = visibleEvidence.has(reference.evidenceId);
+        return {
+          kind: "evidence" as const,
+          evidenceId: evidenceVisible ? reference.evidenceId : null,
+          url: null,
+          locator: evidenceVisible ? reference.locator : null,
+          quote: evidenceVisible ? reference.quote : null,
+          snapshotHash: null,
+          redacted: !evidenceVisible,
+        };
+      }),
+    };
+  });
+}
+
 /**
  * A suggestion author may inspect their own pending work, but may not make a
  * review decision on it. Cross-user review is limited to workspace owners and
@@ -547,6 +825,68 @@ export function createAiReviewService(context: ResearchServiceContext) {
       (scoped) => decide(scoped, raw),
     );
   return {
+    async listAcceptedHistory(
+      input: {
+        personId: string;
+        caseId?: string | null;
+        purpose: string;
+      } & PaginationInput,
+    ): Promise<AcceptedAiHistoryConnection> {
+      return runResearchTransaction(
+        context,
+        { requiredPermissions: readPermissions },
+        async (scoped) => {
+          const purpose = acceptedHistoryPurpose(input.purpose);
+          const caseId = input.caseId ?? null;
+          await authorizeAiReviewScope(scoped, {
+            personId: input.personId,
+            purpose,
+            caseId,
+          });
+          const page = normalizePagination(input);
+          const after = acceptedHistoryAfter(page.after);
+          const rows = await scoped.database
+            .select()
+            .from(aiReviewSuggestions)
+            .where(
+              and(
+                eq(aiReviewSuggestions.workspaceId, scoped.workspaceId),
+                eq(aiReviewSuggestions.personId, input.personId),
+                eq(aiReviewSuggestions.purpose, purpose),
+                caseId
+                  ? eq(aiReviewSuggestions.caseId, caseId)
+                  : isNull(aiReviewSuggestions.caseId),
+                eq(aiReviewSuggestions.status, "accepted"),
+                isNotNull(aiReviewSuggestions.reviewedAt),
+                after
+                  ? or(
+                      lt(aiReviewSuggestions.reviewedAt, after.reviewedAt),
+                      and(
+                        eq(aiReviewSuggestions.reviewedAt, after.reviewedAt),
+                        lt(aiReviewSuggestions.id, after.id),
+                      ),
+                    )
+                  : undefined,
+              ),
+            )
+            .orderBy(
+              desc(aiReviewSuggestions.reviewedAt),
+              desc(aiReviewSuggestions.id),
+            )
+            .limit(page.first + 1);
+          const pageRows = rows.slice(0, page.first);
+          return {
+            nodes: await projectAcceptedHistory(scoped, pageRows),
+            pageInfo: {
+              hasNextPage: rows.length > page.first,
+              endCursor: pageRows.at(-1)
+                ? acceptedHistoryCursor(pageRows.at(-1)!)
+                : null,
+            },
+          };
+        },
+      );
+    },
     async listSuggestions(input: {
       personId: string;
       caseId?: string | null;
