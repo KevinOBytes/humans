@@ -928,6 +928,7 @@ export type ReleaseLegalHoldInput = {
 };
 
 export type ReplayGraphSnapshotInput = {
+  idempotencyKey?: string | null | undefined;
   snapshotId: string;
 };
 
@@ -943,6 +944,7 @@ export type RequestExportApprovalInput = {
 
 export type RerunGraphAnalysisInput = {
   algorithm: GraphAnalysisAlgorithm;
+  idempotencyKey?: string | null | undefined;
   snapshotId: string;
 };
 
@@ -1033,6 +1035,7 @@ export type RunGraphAnalysisInput = {
   algorithm: GraphAnalysisAlgorithm;
   filter?: GraphFilterInput | null | undefined;
   graphViewId?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type SaveImportMappingInput = {

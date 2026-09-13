@@ -11,6 +11,16 @@ describe("graph GraphQL schema", () => {
     expect(query).toHaveProperty("graphViews");
     expect(mutation).toHaveProperty("createGraphView");
     expect(mutation).toHaveProperty("runGraphAnalysis");
+    for (const inputName of [
+      "RunGraphAnalysisInput",
+      "RerunGraphAnalysisInput",
+      "ReplayGraphSnapshotInput",
+    ]) {
+      const input = schema.getType(
+        inputName,
+      ) as import("graphql").GraphQLInputObjectType;
+      expect(input.getFields()).toHaveProperty("idempotencyKey");
+    }
     expect(query?.graph?.args.map(({ name }) => name)).toEqual(["filter"]);
     expect(query?.graphViews?.args.map(({ name }) => name)).toEqual([
       "after",
