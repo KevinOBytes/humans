@@ -1247,6 +1247,19 @@ Focused provenance/retention tests, schema checks, typecheck, and formatting
 pass; live PostgreSQL trigger/worker execution and external provider acceptance
 remain required.
 
+Bounded accepted-web-citation evidence (2026-09-13): accepting a web-backed
+AI suggestion now promotes only its persisted workspace/person/run snapshot in
+the same review transaction into an internal source, collection-custody event,
+evidence item, excerpt, and approved field-level assertion. The promoted
+records retain the run ID, provider/model, retrieval hash, collection time,
+purpose, and independent reviewer in metadata/custody without copying raw
+provider metadata. Matching acceptance retries return the committed decision
+without creating another chain; stale decisions still conflict. Disposable
+PostgreSQL coverage proves source/snippet tamper rejection, workspace denial,
+field-path linkage, audit redaction, and batch rollback. This is local service
+evidence only: hosted provider, retention/deletion, and broader product
+acceptance remain incomplete.
+
 Bounded source-custody evidence (2026-09-12): generic source records now carry
 first-class publication timestamp, collector, and extraction-method fields.
 Each source creation records a workspace-scoped collection checkpoint, and
