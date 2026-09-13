@@ -231,6 +231,34 @@ describe("FactForm", () => {
     );
   });
 
+  it("requires complete calendar-year bounds for year-only claims", async () => {
+    const user = userEvent.setup();
+    render(<FactForm definitions={[definition("TEXT")]} personId="person-a" />);
+    await user.type(screen.getByLabelText("Value"), "Keep this draft");
+    await user.selectOptions(
+      screen.getByLabelText("Temporal interpretation"),
+      "YEAR_ONLY",
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Temporal precision"),
+      "YEAR",
+    );
+    fireEvent.change(screen.getByLabelText("Valid earliest"), {
+      target: { value: "2025-01-02T00:00" },
+    });
+    fireEvent.change(screen.getByLabelText("Valid latest"), {
+      target: { value: "2025-12-31T23:00" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Add fact" }));
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Value")).toHaveValue("Keep this draft");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "compatible temporal bounds and precision",
+    );
+  });
+
   it("does not expose a self-approval control for new facts", () => {
     render(<FactForm definitions={[definition("TEXT")]} personId="person-a" />);
 
