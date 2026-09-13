@@ -2,11 +2,12 @@
 
 ## Current release evidence (2026-09-13, collaboration/runtime release)
 
-Commits `4b55c33` and `556ad33` are pushed to `main`. GitHub Actions run
-`34767480893` passed all nine required jobs: Node 24 quality, real PostgreSQL
+Commits `4b55c33`, `556ad33`, and the documentation release `d08bbcd` are
+pushed to `main`. GitHub Actions runs `34767480893` and `34768072841` passed
+all nine required jobs: Node 24 quality, real PostgreSQL
 integration, browser acceptance, production build, generated drift, Compose
 lifecycle, image security, dependency policy, and secret scanning. The current
-runtime tree was deployed as Vercel `dpl_7aCx1WrcHPbyVAMyEPTeL6neumvk`
+runtime tree was deployed as Vercel `dpl_DxhPnSN55zXxKGY1rCvCEo7B8LCQ`
 (`READY`) with aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`. Redacted production smoke passed homepage,
 liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL,
