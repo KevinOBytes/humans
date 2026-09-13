@@ -43,6 +43,13 @@ function requestId(request: Request): string {
     : crypto.randomUUID();
 }
 
+function responseRequestId(response: Response, fallback: string): string {
+  const candidate = response.headers.get("x-request-id")?.trim();
+  return candidate && requestIdPattern.test(candidate)
+    ? candidate.toLowerCase()
+    : fallback;
+}
+
 function boundaryError(
   request: Request,
   body: { code: string; message: string },
@@ -347,9 +354,10 @@ function lazyAuthHandler(
           405,
         );
       }
+      const response = await handler(request);
       return decorateAuthBoundaryResponse(
-        await handler(request),
-        requestId(request),
+        response,
+        responseRequestId(response, requestId(request)),
       );
     } catch {
       return infrastructureUnavailable(request, infrastructureLogger);
