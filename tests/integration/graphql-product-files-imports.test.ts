@@ -850,6 +850,11 @@ liveDescribe("generated files and imports product inventory", () => {
       extractorVersion: "test-1",
       state: "completed",
       structuredOutput: { text: "workspace scoped" },
+      errorSummary: {
+        code: "extraction_failed",
+        message: "private extraction text sk-provider-secret",
+        credentials: { password: "private extraction password" },
+      },
       createdBy: owner.userId,
     });
 
@@ -860,6 +865,7 @@ liveDescribe("generated files and imports product inventory", () => {
           fileId
           state
           structuredOutput
+          errorSummary
         }
       }
     `;
@@ -876,8 +882,14 @@ liveDescribe("generated files and imports product inventory", () => {
         id: extractionRunId,
         fileId: file.id,
         state: "COMPLETED",
+        structuredOutput: { text: "workspace scoped" },
+        errorSummary: { code: "extraction_failed" },
       }),
     ]);
+
+    expect(JSON.stringify(ownerRuns.body)).not.toContain("private extraction");
+    expect(JSON.stringify(ownerRuns.body)).not.toContain("sk-provider-secret");
+    expect(ownerRuns.headers.get("cache-control")).toBe("private, no-store");
 
     const ownerMappings = await fixture.execute<{
       importMappings: { nodes: Array<{ id: string }> };
@@ -900,6 +912,14 @@ liveDescribe("generated files and imports product inventory", () => {
     });
     expectGraphQLError(foreignRuns, "NOT_FOUND");
     expect(JSON.stringify(foreignRuns.body)).not.toContain(extractionRunId);
+    expect(JSON.stringify(foreignRuns.body)).not.toContain("workspace scoped");
+    expect(JSON.stringify(foreignRuns.body)).not.toContain(
+      "private extraction",
+    );
+    expect(foreignRuns.headers.get("cache-control")).toBe("private, no-store");
+    expect(foreignRuns.body?.errors?.[0]?.extensions?.requestId).toBe(
+      foreignRuns.headers.get("x-request-id"),
+    );
 
     const foreignMappings = await fixture.execute<{
       importMappings: { nodes: unknown[] };

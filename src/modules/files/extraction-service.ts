@@ -43,6 +43,12 @@ export function createExtractionService(
   }
   return {
     async list(fileId: string) {
+      if (!context.permissions.has("file:read")) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "This operation is not permitted.",
+        );
+      }
       await requireFile(fileId);
       return context.database
         .select()

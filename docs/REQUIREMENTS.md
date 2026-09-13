@@ -1027,3 +1027,18 @@ database seam and the production-image Compose lifecycle; hosted seeding and
 external-provider acceptance remain open.
 
 - Out-of-scope capabilities in `HUM-NFR-019` may have extension seams but must not become deployment prerequisites.
+
+Bounded extraction security evidence (2026-09-13, HUM-NFR-004/HUM-NFR-007):
+`tests/unit/extraction-security-boundary.test.ts` proves the extraction read
+service denies missing `file:read` before database access for user and API-key
+actors, independently of the existing GraphQL permission gate. The production
+request/retry GraphQL mutations check the same read authority before enqueueing
+work so their follow-up run read cannot cause a partial mutation/error result.
+The production
+GraphQL extraction diagnostic field now emits only an allowlisted worker code,
+preserves null, and discards provider messages, credentials, stacks, and nested
+metadata. The existing live files/imports PostgreSQL test additionally proves
+safe projection of a secret-bearing stored diagnostic, unchanged authorized
+structured output, foreign-workspace non-disclosure, correlation, and private
+response caching. This is a local extraction boundary, not a whole-product
+authorization/redaction sweep or external-provider acceptance.

@@ -2,6 +2,7 @@ import { builder } from "@/graphql/builder";
 import { requirePermission } from "@/graphql/context";
 import type { SignedObjectRequest } from "@/lib/storage/types";
 import { ActorAttribution } from "@/modules/audit/attribution-graphql";
+import { safeJobFailureCode } from "@/modules/jobs/types";
 import {
   PageInfo,
   Sensitivity,
@@ -81,7 +82,17 @@ const ExtractionRun = builder
       errorSummary: t.field({
         type: "JSON",
         nullable: true,
-        resolve: (row) => row.errorSummary,
+        resolve: (row) => {
+          if (row.errorSummary == null) return null;
+          const summary = row.errorSummary;
+          return {
+            code: safeJobFailureCode(
+              typeof summary === "object" && !Array.isArray(summary)
+                ? (summary as Record<string, unknown>).code
+                : undefined,
+            ),
+          };
+        },
       }),
       startedAt: t.field({
         type: "DateTime",
@@ -460,6 +471,7 @@ export function registerFilesGraphQL(): void {
       },
       resolve: async (_root, args, context) => {
         requirePermission(context, "file", "update");
+        requirePermission(context, "file", "read");
         if (!context.services.extraction) {
           throw new Error("Extraction storage is not configured");
         }
@@ -490,6 +502,7 @@ export function registerFilesGraphQL(): void {
       args: { runId: t.arg({ type: "UUID", required: true }) },
       resolve: async (_root, args, context) => {
         requirePermission(context, "file", "update");
+        requirePermission(context, "file", "read");
         if (!context.services.extraction) {
           throw new Error("Extraction storage is not configured");
         }
