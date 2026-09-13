@@ -154,6 +154,25 @@ export type AuditEventFilterInput = {
 
 export type AuditOutcome = "FAILURE" | "SUCCESS";
 
+export type BreakGlassResourceInput = {
+  resourceId: string;
+  resourceKind: BreakGlassResourceKind;
+};
+
+export type BreakGlassResourceKind =
+  | "ADDRESS"
+  | "CONTACT_POINT"
+  | "EVIDENCE"
+  | "FACT"
+  | "FILE"
+  | "NOTE"
+  | "PERSON"
+  | "PLACE"
+  | "RELATIONSHIP"
+  | "SOURCE";
+
+export type BreakGlassState = "APPROVED" | "REJECTED" | "REQUESTED" | "REVOKED";
+
 export type CommitExportInput = {
   caseId?: string | null | undefined;
   commitToken: string;
@@ -1624,6 +1643,92 @@ export type CancelAiAnalysisMutationVariables = Exact<{
 export type CancelAiAnalysisMutation = {
   cancelAiAnalysis: {
     " $fragmentRefs"?: { AnalystPublicRunFragment: AnalystPublicRunFragment };
+  } | null;
+};
+
+export type BreakGlassAccessRequestsQueryVariables = Exact<{
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type BreakGlassAccessRequestsQuery = {
+  breakGlassAccessRequests: {
+    nodes: Array<{
+      id: string | null;
+      purpose: string | null;
+      justification: string | null;
+      caseReference: string | null;
+      state: BreakGlassState | null;
+      requesterPrincipalId: string | null;
+      reviewerPrincipalId: string | null;
+      expiresAt: string | null;
+      reviewedAt: string | null;
+      reviewReason: string | null;
+      revokedAt: string | null;
+      version: number | null;
+      createdAt: string | null;
+      resources: Array<{
+        resourceKind: string | null;
+        resourceId: string | null;
+      }> | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type RequestBreakGlassAccessMutationVariables = Exact<{
+  purpose: string;
+  justification: string;
+  expiresAt: string;
+  caseReference?: string | null | undefined;
+  resources: Array<BreakGlassResourceInput> | BreakGlassResourceInput;
+  idempotencyKey: string;
+}>;
+
+export type RequestBreakGlassAccessMutation = {
+  requestBreakGlassAccess: {
+    id: string | null;
+    state: BreakGlassState | null;
+    version: number | null;
+    expiresAt: string | null;
+    resources: Array<{
+      resourceKind: string | null;
+      resourceId: string | null;
+    }> | null;
+  } | null;
+};
+
+export type ReviewBreakGlassAccessMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  state: BreakGlassState;
+  reason: string;
+  idempotencyKey: string;
+}>;
+
+export type ReviewBreakGlassAccessMutation = {
+  reviewBreakGlassAccess: {
+    id: string | null;
+    state: BreakGlassState | null;
+    version: number | null;
+    reviewedAt: string | null;
+    reviewerPrincipalId: string | null;
+  } | null;
+};
+
+export type RevokeBreakGlassAccessMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  reason: string;
+  idempotencyKey: string;
+}>;
+
+export type RevokeBreakGlassAccessMutation = {
+  revokeBreakGlassAccess: {
+    id: string | null;
+    state: BreakGlassState | null;
+    version: number | null;
+    revokedAt: string | null;
   } | null;
 };
 
@@ -6875,6 +6980,120 @@ export const CancelAiAnalysisDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   CancelAiAnalysisMutation,
   CancelAiAnalysisMutationVariables
+>;
+export const BreakGlassAccessRequestsDocument = new TypedDocumentString(
+  `
+    query BreakGlassAccessRequests($first: Int, $after: String) {
+  breakGlassAccessRequests(first: $first, after: $after) {
+    nodes {
+      id
+      purpose
+      justification
+      caseReference
+      state
+      requesterPrincipalId
+      reviewerPrincipalId
+      expiresAt
+      reviewedAt
+      reviewReason
+      revokedAt
+      version
+      createdAt
+      resources {
+        resourceKind
+        resourceId
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:c3bbcd9b295d7de439df46519e4fdadbe1e99979d6a923a1c0a4700aaef31952",
+  },
+) as unknown as TypedDocumentString<
+  BreakGlassAccessRequestsQuery,
+  BreakGlassAccessRequestsQueryVariables
+>;
+export const RequestBreakGlassAccessDocument = new TypedDocumentString(
+  `
+    mutation RequestBreakGlassAccess($purpose: String!, $justification: String!, $expiresAt: DateTime!, $caseReference: String, $resources: [BreakGlassResourceInput!]!, $idempotencyKey: String!) {
+  requestBreakGlassAccess(
+    purpose: $purpose
+    justification: $justification
+    expiresAt: $expiresAt
+    caseReference: $caseReference
+    resources: $resources
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    version
+    expiresAt
+    resources {
+      resourceKind
+      resourceId
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:6a2c4f4b27e517d65b2ccb1553c5f41e0db021cb004bbcd9016934795c0c8df3",
+  },
+) as unknown as TypedDocumentString<
+  RequestBreakGlassAccessMutation,
+  RequestBreakGlassAccessMutationVariables
+>;
+export const ReviewBreakGlassAccessDocument = new TypedDocumentString(
+  `
+    mutation ReviewBreakGlassAccess($id: UUID!, $expectedVersion: Int!, $state: BreakGlassState!, $reason: String!, $idempotencyKey: String!) {
+  reviewBreakGlassAccess(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    reason: $reason
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    version
+    reviewedAt
+    reviewerPrincipalId
+  }
+}
+    `,
+  {
+    hash: "sha256:a61380d7e466dab8d6b27fcc41c696f5d685352e1437d2e19908fb78af8853e3",
+  },
+) as unknown as TypedDocumentString<
+  ReviewBreakGlassAccessMutation,
+  ReviewBreakGlassAccessMutationVariables
+>;
+export const RevokeBreakGlassAccessDocument = new TypedDocumentString(
+  `
+    mutation RevokeBreakGlassAccess($id: UUID!, $expectedVersion: Int!, $reason: String!, $idempotencyKey: String!) {
+  revokeBreakGlassAccess(
+    id: $id
+    expectedVersion: $expectedVersion
+    reason: $reason
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    version
+    revokedAt
+  }
+}
+    `,
+  {
+    hash: "sha256:22ecc5a3602226f91a240c38336d73ebcd9e975dbdb253ae139d9d5e8473d6ed",
+  },
+) as unknown as TypedDocumentString<
+  RevokeBreakGlassAccessMutation,
+  RevokeBreakGlassAccessMutationVariables
 >;
 export const ResearchCasesDocument = new TypedDocumentString(
   `

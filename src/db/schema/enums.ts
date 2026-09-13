@@ -106,6 +106,13 @@ export const approvalStateEnum = pgEnum("approval_state", [
   "expired",
 ]);
 
+export const breakGlassStateEnum = pgEnum("break_glass_state", [
+  "requested",
+  "approved",
+  "rejected",
+  "revoked",
+]);
+
 export const personStatusEnum = pgEnum("person_status", [
   "active",
   "deceased",

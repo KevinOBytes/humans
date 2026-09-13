@@ -1,0 +1,95 @@
+query BreakGlassAccessRequests($first: Int, $after: String) {
+  breakGlassAccessRequests(first: $first, after: $after) {
+    nodes {
+      id
+      purpose
+      justification
+      caseReference
+      state
+      requesterPrincipalId
+      reviewerPrincipalId
+      expiresAt
+      reviewedAt
+      reviewReason
+      revokedAt
+      version
+      createdAt
+      resources {
+        resourceKind
+        resourceId
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+mutation RequestBreakGlassAccess(
+  $purpose: String!
+  $justification: String!
+  $expiresAt: DateTime!
+  $caseReference: String
+  $resources: [BreakGlassResourceInput!]!
+  $idempotencyKey: String!
+) {
+  requestBreakGlassAccess(
+    purpose: $purpose
+    justification: $justification
+    expiresAt: $expiresAt
+    caseReference: $caseReference
+    resources: $resources
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    version
+    expiresAt
+    resources {
+      resourceKind
+      resourceId
+    }
+  }
+}
+
+mutation ReviewBreakGlassAccess(
+  $id: UUID!
+  $expectedVersion: Int!
+  $state: BreakGlassState!
+  $reason: String!
+  $idempotencyKey: String!
+) {
+  reviewBreakGlassAccess(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    reason: $reason
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    version
+    reviewedAt
+    reviewerPrincipalId
+  }
+}
+
+mutation RevokeBreakGlassAccess(
+  $id: UUID!
+  $expectedVersion: Int!
+  $reason: String!
+  $idempotencyKey: String!
+) {
+  revokeBreakGlassAccess(
+    id: $id
+    expectedVersion: $expectedVersion
+    reason: $reason
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    state
+    version
+    revokedAt
+  }
+}
