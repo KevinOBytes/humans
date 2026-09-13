@@ -1,5 +1,24 @@
 # Production closeout
 
+## Current release evidence (2026-09-13, latest runtime)
+
+The auditability-complete runtime tree at commit `47ab7c0` is pushed to
+GitHub and deployed as Vercel `dpl_5Zv4gEptiHqQNytSHEeuzAJ8bDwF` (`READY`).
+The deployment aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. The production readiness harness returned
+homepage `200`, liveness `200`, readiness `200` with PostgreSQL/Redis/storage
+healthy, unauthenticated GraphQL `401`, and protected jobs `401`, all with
+correlation IDs. The local expanded gates passed 188 unit files/1,429 tests,
+focused bulk-query and break-glass PostgreSQL tests, typecheck, lint, codegen,
+Drizzle checks, and production build.
+
+Hosted credentialed sign-in, administrator bootstrap/rotation, person creation,
+and external-provider contract acceptance remain unverified because protected
+Vercel secrets are intentionally not exported into the local environment. The
+break-glass and bulk-query features are bounded, auditable local/runtime seams;
+administrator review UI, universal profile-read logging, whole-query counting,
+and the complete hosted/provider/privacy matrix remain open.
+
 ## Current release evidence (2026-09-13, latest)
 
 The clean `main` tree at commit `f74c82a` is pushed to GitHub and has a green

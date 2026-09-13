@@ -1,5 +1,16 @@
 # MVP closure and production hardening backlog
 
+Latest runtime evidence (2026-09-13): commit `47ab7c0` is pushed and deployed
+as Vercel `dpl_5Zv4gEptiHqQNytSHEeuzAJ8bDwF` (`READY`) with the configured
+aliases. The production readiness harness passed homepage/liveness/readiness
+(PostgreSQL/Redis/storage healthy), unauthenticated GraphQL, and protected
+jobs. The expanded local gate passed 188 unit files/1,429 tests, focused
+bulk-query and break-glass PostgreSQL tests, and all format/lint/type/codegen/
+Drizzle/build checks. Hosted credentialed auth/person creation and external
+provider acceptance remain open because protected Vercel secrets were not
+exported; universal profile-read logging, whole-query counting, administrator
+review UI, and the complete hosted/provider/privacy matrix remain open.
+
 Latest release evidence (2026-09-13): clean `main` commit `f74c82a` is pushed
 to GitHub. GitHub Actions run `34751719602` passed all nine jobs, including
 the real PostgreSQL matrix and browser acceptance. Vercel deployment

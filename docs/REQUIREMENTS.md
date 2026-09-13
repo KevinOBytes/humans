@@ -1,5 +1,18 @@
 # MVP requirements
 
+Current release evidence (2026-09-13, latest runtime): commit `47ab7c0` is
+pushed to `main` and deployed as Vercel `dpl_5Zv4gEptiHqQNytSHEeuzAJ8bDwF`
+(`READY`) with the configured custom-domain aliases. Public smoke passed
+homepage, liveness, readiness with PostgreSQL/Redis/storage, unauthenticated
+GraphQL, and the protected jobs boundary. The expanded local gate passes 188
+unit files/1,429 tests plus focused bulk-query and break-glass PostgreSQL
+tests, lint/typecheck/codegen/Drizzle checks, and production build. Hosted
+credentialed sign-in/person creation and external-provider acceptance remain
+incomplete because protected Vercel secrets were not exported for an attended
+rotation run; universal profile-read audit logging, whole-query counting,
+administrator review UI, and the full hosted/provider/privacy matrix also
+remain open.
+
 Current release evidence (2026-09-13, latest): the clean `main` tree at
 commit `f74c82a` is pushed and its GitHub Actions run `34751719602` passed all
 nine jobs, including browser acceptance, real PostgreSQL integration,
