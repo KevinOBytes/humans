@@ -29,97 +29,104 @@ async function getProductionHandler() {
     import("@/modules/auth/auth"),
     import("@/lib/email/resend"),
     import("@/modules/ai/provider"),
-  ]).then(
-    ([
-      { db },
-      { createGraphQLHandler },
-      { getServerEnv },
-      { createRedisStore },
-      { createObjectStore },
-      { auth },
-      { createEmailSender },
-      { createAiProvider },
-    ]) => {
-      const env = getServerEnv();
-      const operationLimiter = new OperationLimiter(
-        createRedisStore(env),
-        productionSecurityEventLogger,
-        env.OPERATION_LIMIT_HMAC_KEY,
-      );
-      const objectStore = createObjectStore(env);
-      const metrics = createTask12Metrics(productionMetricsSink);
-      const aiProvider = createAiProvider({
-        provider: env.AI_PROVIDER,
-        baseUrl: env.AI_BASE_URL,
-        apiKey: env.AI_API_KEY,
-        model: env.AI_MODEL,
-        fingerprintHmacKey: env.DATA_ENCRYPTION_KEY,
-        nodeEnv: env.NODE_ENV,
-      });
-      return createGraphQLHandler({
-        auth,
-        clientAddressConfig:
-          env.TRUSTED_PROXY_MODE === "hmac"
+  ])
+    .then(
+      ([
+        { db },
+        { createGraphQLHandler },
+        { getServerEnv },
+        { createRedisStore },
+        { createObjectStore },
+        { auth },
+        { createEmailSender },
+        { createAiProvider },
+      ]) => {
+        const env = getServerEnv();
+        const operationLimiter = new OperationLimiter(
+          createRedisStore(env),
+          productionSecurityEventLogger,
+          env.OPERATION_LIMIT_HMAC_KEY,
+        );
+        const objectStore = createObjectStore(env);
+        const metrics = createTask12Metrics(productionMetricsSink);
+        const aiProvider = createAiProvider({
+          provider: env.AI_PROVIDER,
+          baseUrl: env.AI_BASE_URL,
+          apiKey: env.AI_API_KEY,
+          model: env.AI_MODEL,
+          fingerprintHmacKey: env.DATA_ENCRYPTION_KEY,
+          nodeEnv: env.NODE_ENV,
+        });
+        return createGraphQLHandler({
+          auth,
+          clientAddressConfig:
+            env.TRUSTED_PROXY_MODE === "hmac"
+              ? {
+                  deploymentMode: "docker",
+                  hmacKey: env.TRUSTED_PROXY_HMAC_KEY!,
+                  mode: "hmac",
+                }
+              : env.TRUSTED_PROXY_MODE === "vercel"
+                ? { deploymentMode: "vercel", mode: "vercel" }
+                : { deploymentMode: env.DEPLOYMENT_MODE, mode: "none" },
+          database: db,
+          databaseQueryDiagnostics: {
+            enabled: process.env.GRAPH_PERFORMANCE_INSTRUMENTATION === "1",
+            isolatedTestRuntime:
+              env.NODE_ENV === "test" &&
+              process.env.GRAPH_PERFORMANCE_TEST_RUNTIME === "1",
+            secret: process.env.GRAPH_PERFORMANCE_DIAGNOSTIC_SECRET ?? "",
+          },
+          environment: env.NODE_ENV,
+          logger: productionSecurityEventLogger,
+          metrics,
+          operationLimiter,
+          searchIndexMaintenance: createSearchIndexMaintenance({ metrics }),
+          searchRuntime: {
+            cursorHmacKey: env.OPERATION_LIMIT_HMAC_KEY,
+            encryptionKey: env.DATA_ENCRYPTION_KEY,
+            protectedLookupHmacKey: env.PROTECTED_LOOKUP_HMAC_KEY,
+          },
+          fileRuntime: {
+            deploymentMode: env.DEPLOYMENT_MODE,
+            objectStore,
+            storageBucket: env.STORAGE_BUCKET,
+            storageProvider: env.STORAGE_PROVIDER,
+            encryptionKey: env.DATA_ENCRYPTION_KEY,
+          },
+          importRuntime: {
+            encryptionKey: env.DATA_ENCRYPTION_KEY,
+            objectStore,
+          },
+          settingsRuntime: {
+            appUrl: env.NEXT_PUBLIC_APP_URL,
+            authSecret: env.AUTH_SECRET,
+            emailSender: createEmailSender(env),
+            encryptionKey: env.AUTH_ENCRYPTION_KEY,
+          },
+          trustedOrigins: env.AUTH_TRUSTED_ORIGINS,
+          aiRuntime: {
+            encryptionKey: env.DATA_ENCRYPTION_KEY,
+            hmacKey: env.DATA_ENCRYPTION_KEY,
+            provider: aiProvider,
+          },
+          personResearchRuntime: env.WEB_SEARCH_API_KEY
             ? {
-                deploymentMode: "docker",
-                hmacKey: env.TRUSTED_PROXY_HMAC_KEY!,
-                mode: "hmac",
+                search: createBravePersonSearch({
+                  apiKey: env.WEB_SEARCH_API_KEY,
+                }),
+                provider: aiProvider,
               }
-            : env.TRUSTED_PROXY_MODE === "vercel"
-              ? { deploymentMode: "vercel", mode: "vercel" }
-              : { deploymentMode: env.DEPLOYMENT_MODE, mode: "none" },
-        database: db,
-        databaseQueryDiagnostics: {
-          enabled: process.env.GRAPH_PERFORMANCE_INSTRUMENTATION === "1",
-          isolatedTestRuntime:
-            env.NODE_ENV === "test" &&
-            process.env.GRAPH_PERFORMANCE_TEST_RUNTIME === "1",
-          secret: process.env.GRAPH_PERFORMANCE_DIAGNOSTIC_SECRET ?? "",
-        },
-        environment: env.NODE_ENV,
-        logger: productionSecurityEventLogger,
-        metrics,
-        operationLimiter,
-        searchIndexMaintenance: createSearchIndexMaintenance({ metrics }),
-        searchRuntime: {
-          cursorHmacKey: env.OPERATION_LIMIT_HMAC_KEY,
-          encryptionKey: env.DATA_ENCRYPTION_KEY,
-          protectedLookupHmacKey: env.PROTECTED_LOOKUP_HMAC_KEY,
-        },
-        fileRuntime: {
-          deploymentMode: env.DEPLOYMENT_MODE,
-          objectStore,
-          storageBucket: env.STORAGE_BUCKET,
-          storageProvider: env.STORAGE_PROVIDER,
-          encryptionKey: env.DATA_ENCRYPTION_KEY,
-        },
-        importRuntime: {
-          encryptionKey: env.DATA_ENCRYPTION_KEY,
-          objectStore,
-        },
-        settingsRuntime: {
-          appUrl: env.NEXT_PUBLIC_APP_URL,
-          authSecret: env.AUTH_SECRET,
-          emailSender: createEmailSender(env),
-          encryptionKey: env.AUTH_ENCRYPTION_KEY,
-        },
-        trustedOrigins: env.AUTH_TRUSTED_ORIGINS,
-        aiRuntime: {
-          encryptionKey: env.DATA_ENCRYPTION_KEY,
-          hmacKey: env.DATA_ENCRYPTION_KEY,
-          provider: aiProvider,
-        },
-        personResearchRuntime: env.WEB_SEARCH_API_KEY
-          ? {
-              search: createBravePersonSearch({
-                apiKey: env.WEB_SEARCH_API_KEY,
-              }),
-              provider: aiProvider,
-            }
-          : undefined,
-      });
-    },
-  );
+            : undefined,
+        });
+      },
+    )
+    .catch((error: unknown) => {
+      // Retain successful initialization, but let a later request retry failure.
+      // This never retries execution of the request itself.
+      productionHandler = undefined;
+      throw error;
+    });
   return productionHandler;
 }
 

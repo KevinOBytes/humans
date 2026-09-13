@@ -9,10 +9,9 @@ import {
 import { createS3Client } from "@/lib/storage/s3";
 import { createUploadSessionProxyExecutor } from "@/modules/files/upload-proxy";
 
-let handlers: Promise<StorageHandlers> | undefined;
-
 function defaultHandlers(): Promise<StorageHandlers> {
-  handlers ??= import("@/db/client").then(({ db }) => {
+  // createStorageRouteHandlers owns the retryable initialization cache.
+  return import("@/db/client").then(({ db }) => {
     const env = getServerEnv();
     const options: StorageProxyOptions = {
       client: createS3Client(env),
@@ -25,7 +24,6 @@ function defaultHandlers(): Promise<StorageHandlers> {
     };
     return createStorageProxyHandlers(options);
   });
-  return handlers;
 }
 
 type StorageHandlers = ReturnType<typeof createStorageProxyHandlers>;
