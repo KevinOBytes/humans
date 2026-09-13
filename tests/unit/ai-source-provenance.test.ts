@@ -36,6 +36,12 @@ describe("immutable AI web source provenance", () => {
     expect(() =>
       assertImmutableSourceSnapshot(stored, {
         ...stored,
+        url: "https://example.invalid/replaced",
+      }),
+    ).toThrow(/immutable/);
+    expect(() =>
+      assertImmutableSourceSnapshot(stored, {
+        ...stored,
         retrievalHash: "0".repeat(64),
       }),
     ).toThrow(/hash/);

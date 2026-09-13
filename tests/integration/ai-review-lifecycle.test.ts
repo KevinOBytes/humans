@@ -9,14 +9,24 @@ import {
   aiRuns,
   aiThreads,
 } from "@/db/schema/ai";
-import { evidenceItems, sources } from "@/db/schema/evidence";
-import { personWebResearchRuns } from "@/db/schema/person-research";
+import {
+  evidenceAssertions,
+  evidenceExcerpts,
+  evidenceItems,
+  sourceCustodyEvents,
+  sources,
+} from "@/db/schema/evidence";
+import {
+  personWebResearchRuns,
+  personWebResearchSources,
+} from "@/db/schema/person-research";
 import { people } from "@/db/schema/people";
 import { auditEvents } from "@/db/schema/operations";
 import {
   createAiReviewService,
   recordAiSuggestion,
 } from "@/modules/ai/review-service";
+import { sourceSnapshotHash } from "@/modules/ai/source-provenance";
 import { createGovernanceService } from "@/modules/governance/service";
 import { rolePermissionKeys } from "@/modules/auth/permissions";
 import type { ResearchServiceContext } from "@/modules/audit/service";
@@ -89,6 +99,24 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       consentedAt: new Date(),
       createdBy: context.actor.principalId,
     });
+    await fixture.database.insert(personWebResearchSources).values({
+      id: newId(),
+      workspaceId: context.workspaceId,
+      runId,
+      personId: person.id,
+      url: "https://example.org/profile",
+      title: "Profile",
+      snippet: "Synthetic public profile",
+      collectionTimestamp: new Date("2026-09-13T12:00:00.000Z"),
+      retrievalHash: sourceSnapshotHash({
+        url: "https://example.org/profile",
+        title: "Profile",
+        snippet: "Synthetic public profile",
+      }),
+      provider: "COMPATIBLE",
+      model: "synthetic",
+      metadata: { fixture: "ai-review" },
+    });
     return recordAiSuggestion(context, {
       personId: person.id,
       fieldKey: field,
@@ -146,7 +174,16 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
         expectedVersion: 1,
         explicitConfirmed: true,
       }),
-    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+    ).resolves.toMatchObject({
+      id: row.id,
+      status: "accepted",
+      version: 2,
+    });
+    const replayedPromotionSources = await fixture.database
+      .select({ id: sources.id })
+      .from(sources)
+      .where(eq(sources.workspaceId, context.workspaceId));
+    expect(replayedPromotionSources).toHaveLength(1);
     await expect(
       fixture.database
         .update(aiReviewSuggestions)
@@ -161,6 +198,145 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       .where(eq(auditEvents.resourceId, row.id));
     expect(events.map((e) => e.action)).toContain("ai.suggestion.accepted");
     expect(JSON.stringify(events)).not.toContain("Synthetic researcher");
+  });
+
+  it("promotes an accepted persisted web snapshot into one field-level evidence chain", async () => {
+    const row = await draft();
+    const accepted = await createAiReviewService(
+      reviewerContext,
+    ).acceptSuggestion({
+      id: row.id,
+      expectedVersion: 1,
+      explicitConfirmed: true,
+    });
+
+    const promotedSources = await fixture.database
+      .select()
+      .from(sources)
+      .where(eq(sources.workspaceId, context.workspaceId));
+    const promoted = promotedSources.filter(
+      (source) =>
+        (source.metadata as { webResearchRunId?: string }).webResearchRunId ===
+        row.researchRunId,
+    );
+    expect(promoted).toHaveLength(1);
+    const source = promoted[0]!;
+    expect(source).toMatchObject({
+      canonicalUrl: "https://example.org/profile",
+      collectionMethod: "ai_web_research",
+      extractionMethod: "persisted_snapshot",
+      collectedAt: new Date("2026-09-13T12:00:00.000Z"),
+      contentHash: sourceSnapshotHash({
+        url: "https://example.org/profile",
+        title: "Profile",
+        snippet: "Synthetic public profile",
+      }),
+      metadata: expect.objectContaining({
+        webResearchRunId: row.researchRunId,
+        provider: "COMPATIBLE",
+        model: "synthetic",
+        purpose: "research",
+        reviewerPrincipalId: reviewerContext.actor.principalId,
+      }),
+    });
+    expect(source.metadata as Record<string, unknown>).not.toHaveProperty(
+      "fixture",
+    );
+
+    const [evidence] = await fixture.database
+      .select()
+      .from(evidenceItems)
+      .where(eq(evidenceItems.sourceId, source.id));
+    expect(evidence).toMatchObject({
+      externalLocator: "https://example.org/profile",
+      extractedText: "Synthetic public profile",
+      reviewState: "accepted",
+    });
+    const [excerpt] = await fixture.database
+      .select()
+      .from(evidenceExcerpts)
+      .where(eq(evidenceExcerpts.evidenceItemId, evidence!.id));
+    expect(excerpt).toMatchObject({
+      locator: "Profile",
+      excerpt: "Synthetic public profile",
+      redactionState: "clear",
+    });
+    const [assertion] = await fixture.database
+      .select()
+      .from(evidenceAssertions)
+      .where(eq(evidenceAssertions.evidenceId, evidence!.id));
+    expect(assertion).toMatchObject({
+      resourceId: accepted.acceptedResourceId,
+      resourceKind: "person",
+      fieldPath: "biography",
+      locator: "Profile",
+      quote: "Synthetic public profile",
+      role: "supports",
+      reviewState: "approved",
+      createdBy: reviewerContext.actor.principalId,
+    });
+    const [custody] = await fixture.database
+      .select()
+      .from(sourceCustodyEvents)
+      .where(eq(sourceCustodyEvents.sourceId, source.id));
+    expect(custody).toMatchObject({
+      eventKind: "collected",
+      occurredAt: new Date("2026-09-13T12:00:00.000Z"),
+      integrityHash: source.contentHash,
+      metadata: expect.objectContaining({
+        webResearchRunId: row.researchRunId,
+        provider: "COMPATIBLE",
+        model: "synthetic",
+        retrievalHash: source.contentHash,
+        purpose: "research",
+        reviewerPrincipalId: reviewerContext.actor.principalId,
+      }),
+    });
+    const promotionAudits = await fixture.database
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "ai.suggestion.web_evidence.promoted"));
+    expect(promotionAudits).toHaveLength(1);
+    expect(JSON.stringify(promotionAudits)).not.toContain(
+      "Synthetic public profile",
+    );
+  });
+
+  it("rejects a changed web snippet instead of promoting a provider-supplied replacement", async () => {
+    const row = await draft();
+
+    await expect(
+      recordAiSuggestion(context, {
+        personId: row.personId,
+        fieldKey: "biography",
+        purpose: "research",
+        proposedValue: {
+          version: 1,
+          kind: "profile",
+          value: "Synthetic researcher",
+        },
+        evidenceReferences: [
+          {
+            kind: "web",
+            url: "https://example.org/profile",
+            quote: "Provider replacement snippet",
+            locator: "Profile",
+          },
+        ],
+        confidence: 0.5,
+        uncertainty: "Synthetic identity match not independently verified",
+        provider: "COMPATIBLE",
+        model: "synthetic",
+        researchRunId: row.researchRunId,
+        runKind: "web",
+        promptPolicyVersion: "synthetic-v1",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+    const suggestions = await fixture.database
+      .select({ id: aiReviewSuggestions.id })
+      .from(aiReviewSuggestions)
+      .where(eq(aiReviewSuggestions.workspaceId, context.workspaceId));
+    expect(suggestions).toEqual([{ id: row.id }]);
   });
   it("defers then rejects with a reason without changing the target", async () => {
     const row = await draft();
@@ -183,6 +359,11 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       .from(people)
       .where(eq(people.id, row.personId));
     expect(person?.biography).toBeNull();
+    const promotionSources = await fixture.database
+      .select({ id: sources.id })
+      .from(sources)
+      .where(eq(sources.workspaceId, context.workspaceId));
+    expect(promotionSources).toEqual([]);
   });
   it("denies foreign workspaces and withdrawn AI coverage", async () => {
     const row = await draft();

@@ -6,7 +6,13 @@ import {
   personWebResearchRuns,
   personWebResearchSources,
 } from "@/db/schema/person-research";
-import { evidenceItems, sources } from "@/db/schema/evidence";
+import {
+  evidenceAssertions,
+  evidenceExcerpts,
+  evidenceItems,
+  sourceCustodyEvents,
+  sources,
+} from "@/db/schema/evidence";
 import { facts } from "@/db/schema/facts";
 import { people } from "@/db/schema/people";
 import { relationships } from "@/db/schema/relationships";
@@ -41,7 +47,10 @@ import {
   requireAiBatchApproval,
 } from "./review-validation";
 import type { AiSuggestionInput } from "./review-types";
-import { sourceSnapshotHash } from "./source-provenance";
+import {
+  sourceSnapshotHash,
+  sourceProviderAgreement,
+} from "./source-provenance";
 
 type Row = typeof aiReviewSuggestions.$inferSelect;
 const readPermissions = ["analysis:read", "person:read"];
@@ -327,6 +336,177 @@ async function project(context: ResearchServiceContext, row: Row) {
     currentValue: currentValue ?? null,
     researchRunId: row.aiRunId ?? row.webRunId!,
   };
+}
+
+function webEvidenceFieldPath(
+  resourceKind: string,
+  fieldKey: string,
+): string | null {
+  return resourceKind === "person"
+    ? fieldKey
+    : resourceKind === "fact"
+      ? "value"
+      : null;
+}
+
+/**
+ * Copies only the immutable snapshot a reviewer accepted into the ordinary
+ * evidence graph. This is deliberately a database-level helper: review
+ * acceptance already owns an outer transaction, so the source, custody,
+ * evidence, excerpt, assertion, and review decision commit or roll back as a
+ * single unit.
+ */
+async function promoteAcceptedWebEvidence(
+  context: ResearchServiceContext,
+  row: Row,
+  acceptedResource: { id: string; kind: string },
+) {
+  const webReferences = row.evidenceReferences.filter(
+    (
+      reference,
+    ): reference is Extract<
+      AiSuggestionInput["evidenceReferences"][number],
+      { kind: "web" }
+    > => reference.kind === "web",
+  );
+  if (!webReferences.length) return;
+
+  const runId = row.webRunId;
+  if (!runId) fail();
+  const snapshotRows = await context.database
+    .select()
+    .from(personWebResearchSources)
+    .where(
+      and(
+        eq(personWebResearchSources.workspaceId, context.workspaceId),
+        eq(personWebResearchSources.runId, runId),
+        eq(personWebResearchSources.personId, row.personId),
+      ),
+    );
+  const snapshotsByUrl = new Map(
+    snapshotRows.map((snapshot) => [snapshot.url, snapshot]),
+  );
+  const fieldPath = webEvidenceFieldPath(acceptedResource.kind, row.fieldKey);
+  if (!fieldPath) fail();
+
+  for (const reference of webReferences) {
+    const snapshot = snapshotsByUrl.get(reference.url);
+    if (
+      !snapshot ||
+      !sourceProviderAgreement({
+        runProvider: row.provider,
+        runModel: row.model,
+        sourceProvider: snapshot.provider,
+        sourceModel: snapshot.model,
+      }) ||
+      snapshot.retrievalHash !==
+        sourceSnapshotHash({
+          url: snapshot.url,
+          title: snapshot.title,
+          snippet: snapshot.snippet,
+          publicationDate: snapshot.publicationDate,
+        }) ||
+      (snapshot.snippet || snapshot.title) !== reference.quote ||
+      (reference.snapshotHash != null &&
+        reference.snapshotHash !== snapshot.retrievalHash)
+    )
+      fail();
+
+    const sourceId = newId();
+    const evidenceId = newId();
+    const assertionId = newId();
+    const collectedAt = snapshot.collectionTimestamp;
+    const metadata = {
+      collectionTimestamp: collectedAt.toISOString(),
+      model: snapshot.model,
+      provider: snapshot.provider,
+      purpose: row.purpose,
+      retrievalHash: snapshot.retrievalHash,
+      reviewerPrincipalId: context.actor.principalId,
+      webResearchRunId: runId,
+    };
+    await context.database.insert(sources).values({
+      id: sourceId,
+      workspaceId: context.workspaceId,
+      kind: "web",
+      title: snapshot.title,
+      canonicalUrl: snapshot.url,
+      publicationDate: snapshot.publicationDate,
+      collector: snapshot.provider,
+      extractionMethod: "persisted_snapshot",
+      collectionMethod: "ai_web_research",
+      collectedAt,
+      reliability: snapshot.reliability,
+      sensitivity: "internal",
+      metadata,
+      contentHash: snapshot.retrievalHash,
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    await context.database.insert(sourceCustodyEvents).values({
+      id: newId(),
+      workspaceId: context.workspaceId,
+      sourceId,
+      eventKind: "collected",
+      occurredAt: collectedAt,
+      collector: snapshot.provider,
+      integrityHash: snapshot.retrievalHash,
+      notes: "Accepted AI review promoted persisted web snapshot.",
+      metadata,
+      createdBy: context.actor.principalId,
+    });
+    await context.database.insert(evidenceItems).values({
+      id: evidenceId,
+      workspaceId: context.workspaceId,
+      sourceId,
+      externalLocator: snapshot.url,
+      extractedText: reference.quote,
+      capturedAt: collectedAt,
+      checksum: `sha256:${snapshot.retrievalHash}`,
+      reviewState: "accepted",
+      sensitivity: "internal",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    await context.database.insert(evidenceExcerpts).values({
+      id: newId(),
+      workspaceId: context.workspaceId,
+      evidenceItemId: evidenceId,
+      locator: reference.locator,
+      excerpt: reference.quote,
+      checksum: `sha256:${snapshot.retrievalHash}`,
+      redactionState: "clear",
+      createdBy: context.actor.principalId,
+    });
+    await context.database.insert(evidenceAssertions).values({
+      id: assertionId,
+      workspaceId: context.workspaceId,
+      evidenceId,
+      resourceKind: acceptedResource.kind,
+      resourceId: acceptedResource.id,
+      fieldPath,
+      caseId: row.caseId,
+      purpose: row.purpose,
+      locator: reference.locator,
+      quote: reference.quote,
+      role: "supports",
+      confidence: row.confidence.toFixed(3),
+      reviewState: "approved",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    await createAuditService(context).write(context.database, {
+      action: "ai.suggestion.web_evidence.promoted",
+      resourceKind: "evidence_assertion",
+      resourceId: assertionId,
+      changedFields: ["source", "evidence", "excerpt", "fieldPath"],
+      metadata: {
+        evidenceId,
+        sourceId,
+        webResearchRunId: runId,
+      },
+    });
+  }
 }
 export type AiReviewSuggestion = Awaited<ReturnType<typeof project>>;
 
@@ -708,6 +888,12 @@ export function createAiReviewService(context: ResearchServiceContext) {
     const row = await get(scoped, input.id, true);
     await requireIndependentReviewer(scoped, row);
     if (
+      row.status === "accepted" &&
+      input.decision === "accepted" &&
+      row.version === input.expectedVersion + 1
+    )
+      return project(scoped, row);
+    if (
       row.version !== input.expectedVersion ||
       !["pending", "deferred"].includes(row.status)
     )
@@ -800,6 +986,10 @@ export function createAiReviewService(context: ResearchServiceContext) {
           explicitConfirmed: true,
         });
       }
+      await promoteAcceptedWebEvidence(scoped, row, {
+        id: acceptedResourceId!,
+        kind: acceptedResourceKind!,
+      });
     }
     const [updated] = await scoped.database
       .update(aiReviewSuggestions)
