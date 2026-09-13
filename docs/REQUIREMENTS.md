@@ -1,8 +1,8 @@
 # MVP requirements
 
-Current release checkpoint (2026-09-13): `main` commit `8847771` is pushed to
-GitHub. CI run `34776730139` passed all nine required jobs, and Vercel
-deployment `dpl_BuwgGkiTexdJYiVKRWUciHZLA3oz` is `READY` on Node 24 with the
+Current release checkpoint (2026-09-13): `main` commit `268f6fd` is pushed to
+GitHub. CI run `34777267740` passed all nine required jobs, and Vercel
+deployment `dpl_BdthTWCMWSpVGqsBjEgGYxNgEB8W` is `READY` on Node 24 with the
 configured custom-domain and Vercel aliases. This release adds consented,
 workspace-catalog-backed web fact suggestions with immutable run/source
 provenance and human review; the tracked hosted credential/provider and
