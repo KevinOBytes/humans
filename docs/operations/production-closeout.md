@@ -72,9 +72,16 @@ coverage is opt-in and requires process-injected values:
 ```sh
 PRODUCTION_SMOKE_AUTH=1 \
   ADMIN_EMAIL='operator-provided-value' \
+  ADMIN_USERNAME='operator-provided-value' \
   ADMIN_PASSWORD='operator-provided-value' \
   pnpm production:smoke -- --base-url https://humans.kevinbytes.com
 ```
+
+The authenticated smoke signs in separately through both the configured email
+and username endpoints before creating the synthetic person. All three
+administrator values are required so a successful smoke proves the same
+identifier paths exposed by the sign-in page; it does not rotate the password
+or claim provider acceptance.
 
 Provider contracts are separately opt-in with
 `--provider-contracts` and `RUN_EXTERNAL_PROVIDER_CONTRACTS=true`; missing
