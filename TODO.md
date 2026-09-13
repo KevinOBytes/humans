@@ -12,18 +12,24 @@ action controls to wrap. Existing facts/relationships/evidence/notes/contacts/
 files suites are not replaced. This is local Chromium evidence; hosted and
 whole-product accessibility acceptance remain open, as do both requirements.
 
-Latest verified application runtime checkpoint (2026-09-13): commit `c3139ab`
-passed GitHub Actions run `34737257196` with all 9 required jobs successful:
+Latest verified application runtime checkpoint (2026-09-13): commit `39f4728`
+passed GitHub Actions run `34740109083` with all 9 required jobs successful:
 PostgreSQL integration, browser acceptance (38 passed, 3 skipped), production
 build, generated drift, quality, Compose lifecycle, image security, dependency
 policy, and secret scanning. Vercel deployment
-`dpl_3RCBQcxsrNdAnfaLgfFXtwjbr9Nk` is `READY`, serves
-`humans.kevinbytes.com`, and is confirmed by Vercel metadata to have been built
-from `c3139ab`. The redacted production smoke passed homepage, liveness,
+`dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` is `READY`, serves
+`humans.kevinbytes.com`, and was deployed from the clean `main` tree at
+`39f4728` after that CI run. The redacted production smoke passed homepage, liveness,
 readiness, unauthenticated GraphQL, and protected jobs. Live direct-route
 method checks passed against the alias (DELETE jobs 405, OPTIONS storage 204,
 PATCH GraphQL 405), each with a correlation ID and `private, no-store`.
 Hosted authenticated/provider acceptance and the 24 rows below remain open.
+
+The historical `HUM-FR-035`/`HUM-NFR-018` entries below are superseded for
+deployment identity by `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` (READY, custom-domain
+aliases) deployed from clean `main` at `39f4728` after CI run `34740109083`.
+Public smoke and direct method-boundary probes passed; hosted authenticated,
+provider, and full-matrix acceptance remain open.
 
 Bounded HUM-FR-032 direct-route evidence (2026-09-13): all 10 API route modules are inventoried by a 43-case method-boundary suite. Unsupported standard methods now return stable correlated 405 responses with explicit `Allow` and `private, no-store`; HEAD denials and OPTIONS remain bodyless, GraphQL retains its own error shape and origin-aware preflight, and the other OPTIONS responses do not grant CORS or initialize providers. Jobs now return a JSON method-denial code, health and jobs responses use the private cache policy, and readiness failures add `PROVIDER_UNAVAILABLE` without dependency details. Twelve direct-account input/authentication-boundary cases prove malformed JSON, schema rejection, origin denial, and API-key denial before mutation; existing route-specific failure codes are preserved. The focused route suite passes 138 tests and the full unit suite passes 183 files/1,377 tests. This is local handler evidence, not hosted/provider or whole-product failure-matrix closure; HUM-FR-032 remains incomplete.
 
