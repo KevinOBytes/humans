@@ -522,6 +522,7 @@ export function createResearchAssignmentsService(
       }
     }
     if (isWorkspaceManager(scoped)) return true;
+    let scopeVisible = !row.investigationId && !row.teamId;
     if (row.investigationId) {
       const [lead] = await scoped.database
         .select({ id: investigations.id })
@@ -535,7 +536,7 @@ export function createResearchAssignmentsService(
           ),
         )
         .limit(1);
-      if (!lead) return false;
+      scopeVisible = Boolean(lead);
     }
     if (row.teamId) {
       const [member] = await scoped.database
@@ -559,9 +560,9 @@ export function createResearchAssignmentsService(
           ),
         )
         .limit(1);
-      if (!member) return false;
+      scopeVisible ||= Boolean(member);
     }
-    return true;
+    return scopeVisible;
   }
   async function authorizeMutation(
     scoped: ResearchServiceContext,
