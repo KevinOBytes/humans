@@ -160,9 +160,49 @@ describe("Better Auth administration boundary", () => {
       method: "POST",
     });
 
-    await expect(handlers.POST(request)).resolves.toBe(delegatedResponse);
+    const response = await handlers.POST(request);
+    expect(response.status).toBe(202);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
+    await expect(response.text()).resolves.toBe("delegated");
     expect(loadHandlers).toHaveBeenCalledOnce();
     expect(delegate).toHaveBeenCalledWith(request);
+  });
+
+  it("redacts and correlates a delegated authentication failure", async () => {
+    const handlers = createAuthRouteHandlers(async () => ({
+      POST: async () =>
+        new Response(
+          JSON.stringify({
+            code: "untrusted-code",
+            diagnostic: "private database secret",
+          }),
+          {
+            headers: { "content-type": "application/json" },
+            status: 503,
+          },
+        ),
+    }));
+
+    const response = await handlers.POST(
+      new Request("https://humans.example.test/api/auth/sign-in/email", {
+        headers: {
+          "x-request-id": "A4E128F2-C057-43E9-BF32-7B0E30CC2CF1",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-request-id")).toBe(
+      "a4e128f2-c057-43e9-bf32-7b0e30cc2cf1",
+    );
+    await expect(response.json()).resolves.toEqual({
+      code: "AUTH_REQUEST_FAILED",
+      message: "Authentication request failed.",
+      requestId: "a4e128f2-c057-43e9-bf32-7b0e30cc2cf1",
+    });
   });
 
   it.each(["/api/auth/sign-in/email", "/api/auth/sign-in/username"])(
@@ -201,21 +241,22 @@ describe("Better Auth administration boundary", () => {
     const loadHandlers = vi.fn(async () => ({ GET: get, POST: post }));
     const handlers = createAuthRouteHandlers(loadHandlers);
 
-    await expect(
-      handlers.POST(
-        new Request(
-          "https://humans.example.test/api/auth/organization/invite-member-preview",
-          { method: "POST" },
-        ),
+    const postResponse = await handlers.POST(
+      new Request(
+        "https://humans.example.test/api/auth/organization/invite-member-preview",
+        { method: "POST" },
       ),
-    ).resolves.toBe(delegatedResponse);
-    await expect(
-      handlers.GET(
-        new Request(
-          "https://humans.example.test/api/auth/organization/invite-member",
-        ),
+    );
+    const getResponse = await handlers.GET(
+      new Request(
+        "https://humans.example.test/api/auth/organization/invite-member",
       ),
-    ).resolves.toBe(delegatedResponse);
+    );
+
+    expect(postResponse.status).toBe(200);
+    expect(getResponse.status).toBe(200);
+    expect(postResponse.headers.get("cache-control")).toBe("private, no-store");
+    expect(getResponse.headers.get("cache-control")).toBe("private, no-store");
 
     expect(post).toHaveBeenCalledOnce();
     expect(get).toHaveBeenCalledOnce();
