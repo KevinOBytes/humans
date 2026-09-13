@@ -26,6 +26,7 @@ export type FactEvidenceView = {
   title: string;
   excerpt?: string | null;
   locator?: string | null;
+  supportStrength?: number | null;
   url?: string | null;
 };
 

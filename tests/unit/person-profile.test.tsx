@@ -43,6 +43,7 @@ describe("PersonProfile", () => {
     const { container } = render(<PersonProfile person={unsafe} />);
     expect(screen.getByText("Source transcription corrected")).toBeVisible();
     expect(screen.getByText("Archive register")).toBeVisible();
+    expect(screen.getByText("Evidence support strength: -75%")).toBeVisible();
     expect(screen.getByText("<img src=x onerror=alert(1)>")).toBeVisible();
     expect(container.querySelector("img")).toBeNull();
   });

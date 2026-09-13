@@ -65,6 +65,7 @@ export function EvidenceAssociationForm({
       ? (progress.excerpt ?? "")
       : String(data.get("excerpt") ?? "");
     const factId = String(data.get("factId") ?? "");
+    const supportStrength = Number(data.get("supportStrength") ?? 0.5);
     setPending(true);
     setFeedback(null);
 
@@ -166,7 +167,7 @@ export function EvidenceAssociationForm({
         evidenceItemId: nextProgress.evidenceItemId,
         excerpt: excerpt || undefined,
         locator: url || undefined,
-        supportStrength: 0.5,
+        supportStrength,
       },
     });
     setPending(false);
@@ -207,6 +208,7 @@ export function EvidenceAssociationForm({
   );
   const factIssue = fieldMutationIssue(feedback, "factId");
   const excerptIssue = fieldMutationIssue(feedback, "excerpt", "extractedText");
+  const supportStrengthIssue = fieldMutationIssue(feedback, "supportStrength");
   return (
     <form
       ref={formRef}
@@ -303,6 +305,42 @@ export function EvidenceAssociationForm({
         {excerptIssue ? (
           <p id="evidence-excerpt-error" className="text-destructive text-sm">
             {excerptIssue.message}
+          </p>
+        ) : null}
+      </div>
+      <div className="space-y-2 sm:col-span-2">
+        <Label htmlFor="evidence-support-strength">
+          Evidence support strength
+        </Label>
+        <Input
+          id="evidence-support-strength"
+          name="supportStrength"
+          type="number"
+          min={-1}
+          max={1}
+          step={0.01}
+          defaultValue={0.5}
+          required
+          aria-describedby={
+            supportStrengthIssue
+              ? "evidence-support-strength-hint evidence-support-strength-error"
+              : "evidence-support-strength-hint"
+          }
+          aria-invalid={Boolean(supportStrengthIssue)}
+        />
+        <p
+          id="evidence-support-strength-hint"
+          className="text-muted-foreground text-sm"
+        >
+          Use -1 for strongest contradiction, 0 for neutral context, and 1 for
+          strongest support. This does not change the claim or its review state.
+        </p>
+        {supportStrengthIssue ? (
+          <p
+            id="evidence-support-strength-error"
+            className="text-destructive text-sm"
+          >
+            {supportStrengthIssue.message}
           </p>
         ) : null}
       </div>

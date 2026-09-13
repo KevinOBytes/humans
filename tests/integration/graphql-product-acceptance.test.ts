@@ -1131,6 +1131,7 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
           input: {
             evidenceItemId: evidence.evidenceItem.id,
             factId: fact.fact.id,
+            supportStrength: -0.75,
           },
         },
       }),
@@ -1138,7 +1139,12 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
     );
     expect(
       dataField<{
-        evidence: { nodes: Array<{ evidenceItem: { id: string } }> };
+        evidence: {
+          nodes: Array<{
+            evidenceItem: { id: string };
+            supportStrength: number | null;
+          }>;
+        };
       }>(
         await run({
           name: "FactEvidence",
@@ -1153,6 +1159,7 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
           evidenceItem: expect.objectContaining({
             id: evidence.evidenceItem.id,
           }),
+          supportStrength: -0.75,
         }),
       ]),
     );
