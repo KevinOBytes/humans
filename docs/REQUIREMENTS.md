@@ -937,7 +937,8 @@ nine checks in run `34725180690`. The source-custody GraphQL selection remains
 isolated behind a bounded five-event operation so the existing 500-point
 complexity ceiling remains effective. This is release/build evidence; hosted
 authenticated sign-in, external-provider contracts, and operator credential
-recovery remain explicitly open in the matrix above.
+recovery remain explicitly open in the matrix above. The current documentation
+tree `2285e7a` also passed all nine checks in run `34727398708`.
 
 - Every incomplete requirement appears exactly once in root `TODO.md`.
 - A checked or removed TODO requires committed tests or runtime evidence and an updated status in this matrix.
