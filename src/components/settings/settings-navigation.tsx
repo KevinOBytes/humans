@@ -15,6 +15,7 @@ const administrationDestinations = [
   { href: "/settings/api-keys", label: "API keys" },
   { href: "/settings/policies", label: "Policies" },
   { href: "/settings/audit", label: "Audit" },
+  { href: "/settings/break-glass", label: "Break-glass" },
   { href: "/settings/integrations", label: "Integrations" },
   { href: "/settings/webhooks", label: "Webhooks" },
 ] as const;
