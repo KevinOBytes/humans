@@ -1,10 +1,16 @@
-import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
+import { files } from "@/db/schema/files";
+import { evidenceItems, notes, sources } from "@/db/schema/evidence";
+import { facts } from "@/db/schema/facts";
 import {
   breakGlassAccessRequests,
   breakGlassAccessResources,
 } from "@/db/schema/governance";
+import { addresses, contactPoints, places } from "@/db/schema/locations";
+import { people } from "@/db/schema/people";
+import { relationships } from "@/db/schema/relationships";
 import { createGraphQLError } from "@/graphql/errors";
 import {
   createAuditService,
@@ -139,6 +145,58 @@ async function loadRequest(
   return { ...request, resources };
 }
 
+/**
+ * Break-glass is intentionally polymorphic, so the resource join cannot be
+ * represented by a database foreign key. Resolve every requested reference
+ * against the current workspace before persisting it instead. The caller
+ * receives one generic not-found result for missing, deleted, or foreign
+ * resources so this validation cannot become a cross-tenant existence oracle.
+ */
+async function requireLiveWorkspaceResources(
+  database: ResearchServiceContext["database"],
+  workspaceId: string,
+  resources: readonly ReturnType<typeof normalizeBreakGlassResources>[number][],
+): Promise<void> {
+  const tables = {
+    address: addresses,
+    contact_point: contactPoints,
+    evidence: evidenceItems,
+    fact: facts,
+    file: files,
+    note: notes,
+    person: people,
+    place: places,
+    relationship: relationships,
+    source: sources,
+  } as const;
+
+  for (const [resourceKind, table] of Object.entries(tables) as Array<
+    [keyof typeof tables, (typeof tables)[keyof typeof tables]]
+  >) {
+    const ids = resources
+      .filter((resource) => resource.resourceKind === resourceKind)
+      .map((resource) => resource.resourceId);
+    if (ids.length === 0) continue;
+
+    const rows = await database
+      .select({ id: table.id })
+      .from(table)
+      .where(
+        and(
+          eq(table.workspaceId, workspaceId),
+          inArray(table.id, ids),
+          isNull(table.deletedAt),
+        ),
+      );
+    if (rows.length !== ids.length) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested break-glass record was not found.",
+      );
+    }
+  }
+}
+
 export function breakGlassResourceVisibilitySql(
   context: Pick<ResearchServiceContext, "actor" | "workspaceId">,
   input: { resourceKind: unknown; resourceId: unknown },
@@ -168,6 +226,7 @@ export function createBreakGlassService(context: ResearchServiceContext) {
     resources: ReturnType<typeof normalizeBreakGlassResources>,
   ): Promise<RequestWithResources> {
     const [created] = await context.database.transaction(async (tx) => {
+      await requireLiveWorkspaceResources(tx, context.workspaceId, resources);
       const [row] = await tx
         .insert(breakGlassAccessRequests)
         .values({
