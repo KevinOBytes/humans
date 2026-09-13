@@ -26,6 +26,15 @@ external provider acceptance remain open because protected Vercel secrets were
 not exported; the remaining hosted/provider/privacy/accessibility/performance
 matrix is intentionally still tracked below.
 
+Bounded production smoke contract evidence (2026-09-13): the opt-in
+authenticated smoke now requires the configured `ADMIN_EMAIL`,
+`ADMIN_USERNAME`, and `ADMIN_PASSWORD`, then signs in through both email and
+username endpoints and verifies a workspace viewer before creating the
+synthetic record. Focused `tests/unit/production-readiness-contract.test.ts`
+passes and the harness remains redacted. This strengthens local acceptance
+coverage only; hosted credentials, attended rotation/recovery, and external
+provider contracts remain open.
+
 Bounded administrator review UI evidence (2026-09-13): owner/admin users now
 have `/settings/break-glass`, backed by the generated workspace-scoped query
 and versioned approve/reject/revoke mutations. The surface requires a

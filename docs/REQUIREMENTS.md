@@ -25,6 +25,14 @@ Vercel secrets were not exported for an attended rotation run; the remaining
 hosted/provider/privacy/accessibility/performance matrix is intentionally still
 tracked below.
 
+Bounded production smoke contract evidence (2026-09-13): the opt-in
+authenticated harness now requires all three configured administrator values,
+signs in independently through the email and username endpoints, and verifies
+a workspace viewer for each session before running the synthetic-person
+journey. The focused redaction/contract suite passes. This is local harness
+evidence only; hosted credentialed sign-in, attended password rotation/recovery,
+and external-provider acceptance remain incomplete.
+
 Bounded administrator review UI evidence (2026-09-13): the owner/admin-only
 `/settings/break-glass` route now loads the workspace-scoped generated
 `BreakGlassAccessRequests` operation and provides versioned approve, reject,

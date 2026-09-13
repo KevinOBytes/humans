@@ -78,7 +78,7 @@
 - Modify: `.github/workflows/ci.yml` only if the contract requires a non-secret CI invocation
 
 **Interfaces:**
-- `pnpm production:smoke -- --base-url <url>` checks homepage, liveness, readiness, unauthenticated GraphQL, protected jobs, and (when `PRODUCTION_SMOKE_AUTH=1`) signs in using process-injected `ADMIN_EMAIL`/`ADMIN_PASSWORD`, creates/selects the first workspace, and creates/reads a synthetic person. It prints status codes and correlation IDs only, never response bodies containing secrets.
+- `pnpm production:smoke -- --base-url <url>` checks homepage, liveness, readiness, unauthenticated GraphQL, protected jobs, and (when `PRODUCTION_SMOKE_AUTH=1`) signs in separately through the configured email and username endpoints using process-injected `ADMIN_EMAIL`/`ADMIN_USERNAME`/`ADMIN_PASSWORD`, creates/selects the first workspace, and creates/reads a synthetic person. It prints status codes and correlation IDs only, never response bodies containing secrets.
 - `pnpm production:smoke -- --provider-contracts` runs only when explicit `RUN_EXTERNAL_PROVIDER_CONTRACTS=true`; missing credentials result in a clear skipped result, never a production request.
 
 - [ ] **Step 1: Write failing contract tests** for URL validation, redacted output, secret-free errors, auth opt-in, and provider opt-in.

@@ -45,6 +45,7 @@ export async function runProductionSmoke({
   timeoutMs = 15_000,
   auth = false,
   adminEmail = "",
+  adminUsername = "",
   adminPassword = "",
   providerContracts = false,
   randomUUID = () => crypto.randomUUID(),
@@ -108,45 +109,70 @@ export async function runProductionSmoke({
   );
 
   if (auth) {
-    if (!adminEmail || !adminPassword)
+    if (!adminEmail || !adminUsername || !adminPassword)
       throw new Error(
-        "PRODUCTION_SMOKE_AUTH=1 requires ADMIN_EMAIL and ADMIN_PASSWORD",
+        "PRODUCTION_SMOKE_AUTH=1 requires ADMIN_EMAIL, ADMIN_USERNAME, and ADMIN_PASSWORD",
       );
-    const signIn = await call("/api/auth/sign-in/email", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: base.origin,
-        referer: new URL("/sign-in", base).toString(),
-        "sec-fetch-site": "same-origin",
-      },
-      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
-    });
-    if (!signIn.ok)
-      throw new Error(
-        `authenticated sign-in returned ${signIn.status} (request ${requestId(signIn.headers)})`,
+    const signIn = async ({ path, body, label }) => {
+      const response = await call(path, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: base.origin,
+          referer: new URL("/sign-in", base).toString(),
+          "sec-fetch-site": "same-origin",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok)
+        throw new Error(
+          `authenticated ${label} sign-in returned ${response.status} (request ${requestId(response.headers)})`,
+        );
+      const cookie = response.headers.get("set-cookie");
+      if (!cookie)
+        throw new Error(
+          `authenticated ${label} sign-in did not return a session cookie`,
+        );
+      return {
+        headers: { cookie: cookie.split(",")[0].split(";")[0] },
+        label,
+      };
+    };
+    const verifyViewer = async (session) => {
+      const viewer = await call("/api/graphql", {
+        method: "POST",
+        headers: { ...session.headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          operationName: "SmokeViewer",
+          query: "query SmokeViewer { viewer { id workspace { id } } }",
+        }),
+      });
+      const viewerBody = await viewer.json().catch(() => null);
+      const workspaceId = viewerBody?.data?.viewer?.workspace?.id;
+      if (!viewer.ok || !UUID.test(workspaceId ?? ""))
+        throw new Error(
+          `authenticated ${session.label} viewer failed (request ${requestId(viewer.headers)})`,
+        );
+      log(
+        `authenticated ${session.label} viewer 200 workspace=${workspaceId} request=${requestId(viewer.headers)}`,
       );
-    const cookie = signIn.headers.get("set-cookie");
-    if (!cookie)
-      throw new Error("authenticated sign-in did not return a session cookie");
-    const sessionHeaders = { cookie: cookie.split(",")[0].split(";")[0] };
-    const viewer = await call("/api/graphql", {
-      method: "POST",
-      headers: { ...sessionHeaders, "content-type": "application/json" },
-      body: JSON.stringify({
-        operationName: "SmokeViewer",
-        query: "query SmokeViewer { viewer { id workspace { id } } }",
+      return { headers: session.headers, workspaceId };
+    };
+    const emailSession = await verifyViewer(
+      await signIn({
+        path: "/api/auth/sign-in/email",
+        body: { email: adminEmail, password: adminPassword },
+        label: "email",
       }),
-    });
-    const viewerBody = await viewer.json().catch(() => null);
-    const workspaceId = viewerBody?.data?.viewer?.workspace?.id;
-    if (!viewer.ok || !UUID.test(workspaceId ?? ""))
-      throw new Error(
-        `authenticated viewer failed (request ${requestId(viewer.headers)})`,
-      );
-    log(
-      `authenticated viewer 200 workspace=${workspaceId} request=${requestId(viewer.headers)}`,
     );
+    await verifyViewer(
+      await signIn({
+        path: "/api/auth/sign-in/username",
+        body: { username: adminUsername, password: adminPassword },
+        label: "username",
+      }),
+    );
+    const sessionHeaders = emailSession.headers;
     const idempotencyKey = randomUUID();
     const create = await call("/api/graphql", {
       method: "POST",
@@ -220,6 +246,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       base,
       auth: process.env.PRODUCTION_SMOKE_AUTH === "1",
       adminEmail: process.env.ADMIN_EMAIL,
+      adminUsername: process.env.ADMIN_USERNAME,
       adminPassword: process.env.ADMIN_PASSWORD,
       providerContracts: options.providerContracts,
     });
