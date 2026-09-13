@@ -1,5 +1,15 @@
 # MVP closure and production hardening backlog
 
+Latest production deployment (2026-09-13): the fully verified `main` tree at
+commit `d369a50` was deployed directly to Vercel as
+`dpl_7sws8qdPjuQj1tuT8n7J85RzyrJo` (`READY`) with aliases
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. Custom-domain smoke returned homepage `200`,
+liveness `200`, readiness `200` with PostgreSQL/Redis/storage healthy, and
+unauthenticated GraphQL `401` with a stable request ID. The deployment's
+temporary URL is Vercel-protected; the custom-domain result is the public
+runtime evidence. The 24 incomplete requirement rows below remain open.
+
 Bounded HUM-FR-028/HUM-NFR-009 local profile-editor evidence (2026-09-13):
 `tests/e2e/profile-records.spec.ts` exercises authenticated creation of multiple
 fictional names and a dated timeline event, keyboard update/archive, persisted
