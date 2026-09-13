@@ -96,11 +96,18 @@ const suggestionSchema = z
     if (
       v.proposedValue.kind !== "profile" &&
       (v.fieldKey !== v.proposedValue.kind ||
-        v.evidenceReferences.some((e) => e.kind !== "evidence"))
+        (v.proposedValue.kind === "relationship" &&
+          v.evidenceReferences.some((e) => e.kind !== "evidence")) ||
+        (v.proposedValue.kind === "fact" &&
+          (v.runKind === "analysis"
+            ? v.evidenceReferences.some((e) => e.kind !== "evidence")
+            : v.evidenceReferences.some((e) => e.kind !== "web") ||
+              !("text" in v.proposedValue.value))))
     )
       ctx.addIssue({
         code: "custom",
-        message: "Facts and relationships require workspace evidence.",
+        message:
+          "Facts require cited analysis evidence or immutable web snapshots; relationships require workspace evidence.",
       });
     if (
       v.runKind === "analysis" &&

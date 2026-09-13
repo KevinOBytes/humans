@@ -81,6 +81,55 @@ describe("AI suggestion review validation", () => {
       }),
     ).toThrow();
   });
+  it("permits a catalog-backed text fact from immutable web snapshots", () => {
+    expect(
+      normalizeAiSuggestion({
+        ...proposal,
+        fieldKey: "fact",
+        proposedValue: {
+          version: 1,
+          kind: "fact",
+          definitionId: id,
+          value: { text: "Example Institute" },
+        },
+        evidenceReferences: [
+          {
+            kind: "web",
+            url: "https://example.com",
+            quote: "Example Institute",
+            locator: "profile",
+            snapshotHash: "a".repeat(64),
+          },
+        ],
+        runKind: "web",
+      }),
+    ).toMatchObject({
+      proposedValue: { kind: "fact", value: { text: "Example Institute" } },
+    });
+  });
+  it("refuses non-text web facts", () => {
+    expect(() =>
+      normalizeAiSuggestion({
+        ...proposal,
+        fieldKey: "fact",
+        proposedValue: {
+          version: 1,
+          kind: "fact",
+          definitionId: id,
+          value: { boolean: true },
+        },
+        evidenceReferences: [
+          {
+            kind: "web",
+            url: "https://example.com",
+            quote: "Example Institute",
+            locator: "profile",
+          },
+        ],
+        runKind: "web",
+      }),
+    ).toThrow();
+  });
   it("requires a human confirmation and a rejection reason", () => {
     expect(() =>
       normalizeAiReviewDecision({

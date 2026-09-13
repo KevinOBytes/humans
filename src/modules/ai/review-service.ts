@@ -206,15 +206,32 @@ async function verifyProvenance(
       )
     )
       fail();
-    if (input.proposedValue.kind !== "profile") fail();
-    const value = input.proposedValue.value;
+    if (
+      input.proposedValue.kind !== "profile" &&
+      input.proposedValue.kind !== "fact"
+    )
+      fail();
+    let value: string;
+    if (input.proposedValue.kind === "profile") {
+      value = input.proposedValue.value;
+    } else {
+      if (!("text" in input.proposedValue.value)) fail();
+      value = input.proposedValue.value.text;
+    }
     const original = (
       run.suggestions as Array<{
         field: string;
+        definitionId?: string;
         value: string;
         sourceUrls: string[];
       }>
-    ).find((s) => s.field === input.fieldKey && s.value === value);
+    ).find(
+      (s) =>
+        s.field === input.fieldKey &&
+        s.value === value &&
+        (input.proposedValue.kind !== "fact" ||
+          s.definitionId === input.proposedValue.definitionId),
+    );
     if (!original) fail();
     for (const reference of input.evidenceReferences)
       if (

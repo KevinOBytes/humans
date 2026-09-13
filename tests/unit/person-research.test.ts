@@ -20,6 +20,19 @@ const suggestion = {
   value: "Ada is a researcher.",
   sourceUrls: [sources[0]!.url],
 };
+const employmentDefinition = {
+  id: "019fe224-a0cd-76e4-92ac-9d27a5c62cf6",
+  namespace: "profile",
+  fieldKey: "employment",
+  label: "Employment",
+  category: "work",
+};
+const employmentSuggestion = {
+  field: "fact" as const,
+  definitionId: employmentDefinition.id,
+  value: "Researcher at Example Institute",
+  sourceUrls: [sources[0]!.url],
+};
 const permissions: PermissionKey[] = [
   "person:read",
   "analysis:create",
@@ -34,6 +47,7 @@ function setup(
     foreign?: boolean;
     configured?: boolean;
     answer?: unknown;
+    factDefinitions?: (typeof employmentDefinition)[];
     sources?: unknown;
     persist?: (input: unknown) => Promise<{ runId: string }>;
   } = {},
@@ -64,6 +78,7 @@ function setup(
     workspaceId,
     permissions: new Set(options.permissions ?? permissions),
     loadPerson: async () => (options.missing ? null : person),
+    loadFactDefinitions: async () => options.factDefinitions ?? [],
     operationLimiter: {
       consume: async () => ({
         allowed: true,
@@ -116,6 +131,37 @@ describe("person web research", () => {
     expect(JSON.stringify(persist.mock.calls)).not.toContain(
       "Do not disclose internal biography",
     );
+  });
+  it("permits a source-backed text fact only from the supplied active catalog", async () => {
+    const persist = vi.fn(async () => ({
+      runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
+    }));
+    const { service, generate } = setup({
+      permissions: [...permissions, "fact:read"],
+      factDefinitions: [employmentDefinition],
+      answer: { suggestions: [employmentSuggestion] },
+      persist,
+    });
+
+    await expect(
+      service.run({ personId, consent: true }),
+    ).resolves.toMatchObject({
+      suggestions: [employmentSuggestion],
+    });
+    expect(JSON.stringify(generate.mock.calls)).toContain(
+      employmentDefinition.id,
+    );
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({ suggestions: [employmentSuggestion] }),
+    );
+  });
+  it("rejects a text fact that is absent from the workspace catalog", async () => {
+    await expect(
+      setup({
+        permissions: [...permissions, "fact:read"],
+        answer: { suggestions: [employmentSuggestion] },
+      }).service.run({ personId, consent: true }),
+    ).rejects.toMatchObject({ extensions: { code: "PROVIDER_UNAVAILABLE" } });
   });
   it("fails closed when the provenance snapshot cannot be recorded", async () => {
     const persist = vi.fn(async () => {

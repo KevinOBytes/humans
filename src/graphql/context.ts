@@ -6,6 +6,7 @@ import {
   personWebResearchRuns,
   personWebResearchSources,
 } from "@/db/schema/person-research";
+import { factDefinitions } from "@/db/schema/facts";
 import { workspaces } from "@/db/schema/workspaces";
 import { newId } from "@/db/id";
 import {
@@ -238,6 +239,27 @@ function createServices(input: {
     people,
     personResearch: createPersonResearchService({
       loadPerson: (id) => people.get(id),
+      loadFactDefinitions: async () => {
+        if (!input.context.permissions.has("fact:read")) return [];
+        return input.database
+          .select({
+            id: factDefinitions.id,
+            namespace: factDefinitions.namespace,
+            fieldKey: factDefinitions.fieldKey,
+            label: factDefinitions.label,
+            category: factDefinitions.category,
+          })
+          .from(factDefinitions)
+          .where(
+            and(
+              eq(factDefinitions.workspaceId, input.context.workspaceId),
+              eq(factDefinitions.state, "active"),
+              eq(factDefinitions.allowedValueType, "text"),
+              isNull(factDefinitions.deletedAt),
+            ),
+          )
+          .limit(20);
+      },
       permissions: input.context.permissions,
       workspaceId: input.context.workspaceId,
       operationLimiter: input.operationLimiter,
@@ -327,11 +349,19 @@ function createServices(input: {
                 purpose,
                 caseId: research.caseId,
                 fieldKey: suggestion.field,
-                proposedValue: {
-                  version: 1,
-                  kind: "profile",
-                  value: suggestion.value,
-                },
+                proposedValue:
+                  suggestion.field === "fact"
+                    ? {
+                        version: 1,
+                        kind: "fact",
+                        definitionId: suggestion.definitionId,
+                        value: { text: suggestion.value },
+                      }
+                    : {
+                        version: 1,
+                        kind: "profile",
+                        value: suggestion.value,
+                      },
                 confidence: 0,
                 uncertainty:
                   "The provider did not supply a calibrated confidence estimate. Verify identity and each claim against the sources.",

@@ -13,10 +13,14 @@ import {
 import { z } from "zod";
 
 // Validate only the public display projection here; domain validation stays server-side.
-const aiProposedValueSchema = z.object({
-  kind: z.literal("profile"),
-  value: z.string(),
-});
+const aiProposedValueSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("profile"), value: z.string() }),
+  z.object({
+    kind: z.literal("fact"),
+    definitionId: z.uuid(),
+    value: z.object({ text: z.string() }),
+  }),
+]);
 const aiEvidenceReferenceSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("web"),
@@ -137,8 +141,15 @@ export function AiReviewQueue({
             <p>
               {parsed.success && parsed.data.kind === "profile"
                 ? parsed.data.value
-                : JSON.stringify(row.proposedValue)}
+                : parsed.success && parsed.data.kind === "fact"
+                  ? parsed.data.value.text
+                  : JSON.stringify(row.proposedValue)}
             </p>
+            {parsed.success && parsed.data.kind === "fact" && (
+              <p className="text-muted-foreground mt-1 text-xs">
+                Catalog fact definition {parsed.data.definitionId}
+              </p>
+            )}
             <p className="mt-2 text-sm">{row.uncertainty}</p>
             <p className="text-muted-foreground text-xs">
               Research run {row.researchRunId} · Policy{" "}
