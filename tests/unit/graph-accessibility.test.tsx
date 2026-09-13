@@ -829,7 +829,7 @@ describe("RelationshipEditor", () => {
     );
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Relationship temporal precision" }),
-      "MONTH",
+      "RANGE",
     );
     await user.type(
       screen.getByLabelText("Relationship valid from"),
@@ -856,10 +856,10 @@ describe("RelationshipEditor", () => {
       sensitivity: "INTERNAL",
       sourcePersonId: IDS.alice,
       targetPersonId: IDS.bob,
-      temporalPrecision: "MONTH",
+      temporalPrecision: "RANGE",
       temporalSemantics: "BETWEEN",
-      validFrom: "2025-03-01T14:30:00.000Z",
-      validUntil: "2025-06-30T21:45:00.000Z",
+      validFrom: new Date("2025-03-01T09:30").toISOString(),
+      validUntil: new Date("2025-06-30T17:45").toISOString(),
     });
   });
 
@@ -880,36 +880,157 @@ describe("RelationshipEditor", () => {
 
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Existing relationship" }),
-      IDS.directed,
+      IDS.parallel,
     );
     await user.selectOptions(
       screen.getByRole("combobox", {
         name: "Existing relationship temporal precision",
       }),
-      "MONTH",
+      "INSTANT",
     );
-    await user.clear(
-      screen.getByLabelText("Existing relationship valid until"),
+    await user.selectOptions(
+      screen.getByRole("combobox", {
+        name: "Existing relationship temporal semantics",
+      }),
+      "AFTER",
     );
     await user.type(
-      screen.getByLabelText("Existing relationship valid until"),
-      "2025-12-31T17:45",
+      screen.getByLabelText("Existing relationship valid from"),
+      "2025-01-01T00:00",
     );
     await user.click(screen.getByRole("button", { name: "Review update" }));
     expect(mutationAdapter.update).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Confirm update" }));
 
     expect(mutationAdapter.update).toHaveBeenCalledWith({
-      expectedVersion: 2,
+      expectedVersion: 1,
       explicitConfirmed: true,
       governancePurpose: "research",
-      relationshipId: IDS.directed,
-      sensitivity: "INTERNAL",
-      temporalPrecision: "MONTH",
-      temporalSemantics: "RANGE",
-      validFrom: "2024-01-01T05:00:00.000Z",
-      validUntil: "2025-12-31T22:45:00.000Z",
+      relationshipId: IDS.parallel,
+      sensitivity: "PUBLIC",
+      temporalPrecision: "INSTANT",
+      temporalSemantics: "AFTER",
+      validFrom: new Date("2025-01-01T00:00").toISOString(),
+      validUntil: null,
     });
+  });
+
+  it("preserves exact stored temporal instants when only precision is edited", async () => {
+    const user = userEvent.setup();
+    const mutationAdapter = {
+      update: vi.fn().mockResolvedValue(true),
+    };
+    const storedFrom = "2024-01-01T00:00:00.123Z";
+    const storedUntil = "2024-12-31T23:59:59.987Z";
+    const result: GraphResult = {
+      ...graphResultFixture,
+      edges: graphResultFixture.edges.map((edge) =>
+        edge.id === IDS.directed
+          ? {
+              ...edge,
+              temporalSemantics: "between",
+              temporalPrecision: "day",
+              validFrom: storedFrom,
+              validUntil: storedUntil,
+            }
+          : edge,
+      ),
+    };
+    render(
+      <RelationshipEditor
+        focusId={IDS.alice}
+        mutationAdapter={mutationAdapter}
+        relationshipTypes={[{ id: IDS.typeDirected, label: "knows" }]}
+        result={result}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Existing relationship" }),
+      IDS.directed,
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", {
+        name: "Existing relationship temporal precision",
+      }),
+      "RANGE",
+    );
+    await user.click(screen.getByRole("button", { name: "Review update" }));
+    await user.click(screen.getByRole("button", { name: "Confirm update" }));
+
+    expect(mutationAdapter.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        temporalPrecision: "RANGE",
+        temporalSemantics: "BETWEEN",
+        validFrom: storedFrom,
+        validUntil: storedUntil,
+      }),
+    );
+  });
+
+  it("allows a confirmed update to clear temporal bounds and reset metadata", async () => {
+    const user = userEvent.setup();
+    const mutationAdapter = {
+      update: vi.fn().mockResolvedValue(true),
+    };
+    const result: GraphResult = {
+      ...graphResultFixture,
+      edges: graphResultFixture.edges.map((edge) =>
+        edge.id === IDS.directed
+          ? {
+              ...edge,
+              temporalSemantics: "between",
+              temporalPrecision: "day",
+              validFrom: "2024-01-01T00:00:00.123Z",
+              validUntil: "2024-12-31T23:59:59.987Z",
+            }
+          : edge,
+      ),
+    };
+    render(
+      <RelationshipEditor
+        focusId={IDS.alice}
+        mutationAdapter={mutationAdapter}
+        relationshipTypes={[{ id: IDS.typeDirected, label: "knows" }]}
+        result={result}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Existing relationship" }),
+      IDS.directed,
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", {
+        name: "Existing relationship temporal semantics",
+      }),
+      "UNKNOWN",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", {
+        name: "Existing relationship temporal precision",
+      }),
+      "UNKNOWN",
+    );
+    await user.clear(screen.getByLabelText("Existing relationship valid from"));
+    await user.clear(
+      screen.getByLabelText("Existing relationship valid until"),
+    );
+    await user.click(screen.getByRole("button", { name: "Review update" }));
+
+    expect(mutationAdapter.update).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm update" }));
+
+    expect(mutationAdapter.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        temporalPrecision: "UNKNOWN",
+        temporalSemantics: "UNKNOWN",
+        validFrom: null,
+        validUntil: null,
+      }),
+    );
   });
 
   it("limits every form person and relationship id to the capped editor graph", () => {

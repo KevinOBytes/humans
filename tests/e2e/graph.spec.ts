@@ -663,7 +663,7 @@ test("relationship editor performs only explicitly confirmed mutations", async (
     .selectOption("BETWEEN");
   await page
     .getByRole("combobox", { name: "Relationship temporal precision" })
-    .selectOption("MONTH");
+    .selectOption("RANGE");
   await page.getByLabel("Relationship valid from").fill("2025-03-01T09:30");
   await page.getByLabel("Relationship valid until").fill("2025-06-30T17:45");
   await page.getByRole("button", { name: "Create relationship" }).click();
@@ -678,7 +678,7 @@ test("relationship editor performs only explicitly confirmed mutations", async (
   await page.getByRole("button", { name: "Confirm create" }).click();
   const createPayload = JSON.parse((await createRequest).postData() ?? "{}");
   expect(createPayload.variables.input).toMatchObject({
-    temporalPrecision: "MONTH",
+    temporalPrecision: "RANGE",
     temporalSemantics: "BETWEEN",
     validFrom: expect.stringMatching(/^2025-03-01T/u),
     validUntil: expect.stringMatching(/^2025-06-30T/u),
