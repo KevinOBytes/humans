@@ -157,7 +157,7 @@ describe("BreakGlassAdministration", () => {
     expect(executeBrowserGraphQL).toHaveBeenNthCalledWith(
       2,
       BreakGlassAccessRequestsDocument,
-      { first: 25, after: null },
+      { first: 10, after: null },
     );
   });
 });
