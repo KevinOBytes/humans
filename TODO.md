@@ -1,11 +1,11 @@
 # MVP closure and production hardening backlog
 
-Current release checkpoint (2026-09-13): runtime commit `b90b048` is deployed
-from `main`; checkpoint documentation is pushed to GitHub.
-CI run `34780657189` passed all nine required jobs, and Vercel deployment
-`dpl_GvYqDQDr6Fp4ooCdqCYV6sJXuPpY` is `READY` on Node 24 with
-aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
-`humans-tkoresearch.vercel.app`. The release adds governed, catalog-backed
+Current release checkpoint (2026-09-13): runtime commit `7826483` is deployed
+from `main`; checkpoint documentation is being synchronized with that runtime.
+GitHub Actions run `34784968632` passed all nine required jobs, and Vercel
+deployment `dpl_98V3ADEfRHvTLKmdUjQrbw3kbNQf` is `READY` on Node 24 with
+production aliases `humans-dun.vercel.app` and `humans-tkoresearch.vercel.app`.
+The release adds governed, catalog-backed
 web fact suggestions for consented AI research and fixes the authenticated
 smoke harness to send the trusted same-origin headers required by GraphQL.
 The local Compose stack was also started successfully with PostgreSQL, Redis,
