@@ -14,6 +14,20 @@ cover authoring and readback. This closes only that field-level provenance
 acceptance gap; HUM-FR-028 and the broader hosted/accessibility matrix remain
 incomplete.
 
+Merged closeout tranche (2026-09-13): commits `56d276e`, `19a0a77`, and
+`b062fdb` pass the clean-tree Node 24 quality matrix (186 unit files/1,421
+tests, format, lint, typecheck, Drizzle check/drift, generated GraphQL drift,
+and production build). The tranche adds signed citation support-strength
+display/authoring, stale-retention-policy fail-closed fencing, and durable
+principal-bound person-file attach/archive replay. Focused disposable-
+PostgreSQL suites and independent reviews pass. Deployment
+`dpl_HZhpCKissKs3Ei3KuP8icFBgS3eh` is `READY`; public smoke passes homepage,
+liveness, readiness, unauthenticated GraphQL, and protected jobs. Hosted
+authenticated sign-in still returns `403` because the attended administrator
+rotation cannot be completed without the sensitive production `DATABASE_URL`;
+no hosted authenticated/provider requirement is marked complete from this
+result.
+
 Latest production deployment (2026-09-13): the fully verified `main` tree at
 commit `d369a50` was deployed directly to Vercel as
 `dpl_7sws8qdPjuQj1tuT8n7J85RzyrJo` (`READY`) with aliases

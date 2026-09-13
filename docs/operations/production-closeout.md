@@ -1,5 +1,17 @@
 # Production closeout
 
+## Current release evidence (2026-09-13)
+
+The merged `main` tree (`56d276e`, `19a0a77`, `b062fdb`) was deployed as
+`dpl_HZhpCKissKs3Ei3KuP8icFBgS3eh` (`READY`) with the configured custom
+aliases. Redacted public smoke passed the homepage, liveness, readiness,
+unauthenticated GraphQL, and protected jobs checks. The opt-in authenticated
+smoke returned `403 AUTH_REQUEST_FAILED`; Vercel marks the production
+`DATABASE_URL` sensitive and the CLI will not retrieve it, so the documented
+attended rotation has not been run. Keep hosted authentication and provider
+acceptance open until an authorized operator supplies that URL directly to the
+temporary mode-0600 rotation environment and reruns the authenticated smoke.
+
 The repository includes a redacted smoke harness for a deliberately selected
 deployment. It is safe to run against a local Compose URL, a Vercel preview,
 or the production hostname only when the operator has chosen that target:
