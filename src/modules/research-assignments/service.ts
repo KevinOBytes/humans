@@ -302,7 +302,8 @@ export function createResearchAssignmentsService(
         .limit(1)
         .for("update");
       teamMember = Boolean(member);
-    } else if (investigationId) {
+    }
+    if (investigationId) {
       const [investigation] = await database
         .select({ leadPrincipalId: investigations.leadPrincipalId })
         .from(investigations)
