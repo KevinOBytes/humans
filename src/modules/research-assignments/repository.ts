@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 import {
   researchAssignmentEvents,
@@ -99,6 +99,29 @@ export function createResearchAssignmentsRepository(database: Database) {
                       and i.deleted_at is null
                       and i.lead_principal_id = ${input.principalId}::uuid
                   )`,
+                  and(
+                    isNotNull(researchAssignmentItems.teamId),
+                    sql`exists (
+                      select 1 from team_members tm
+                      inner join teams t on t.workspace_id = tm.workspace_id and t.id = tm.team_id
+                      where tm.workspace_id = ${workspaceId}::uuid
+                        and tm.team_id = ${researchAssignmentItems.teamId}
+                        and tm.principal_id = ${input.principalId}::uuid
+                        and tm.deleted_at is null
+                        and t.deleted_at is null
+                        and t.state = 'active'
+                    )`,
+                  ),
+                  and(
+                    isNotNull(researchAssignmentItems.caseId),
+                    sql`exists (
+                      select 1 from case_members cm
+                      where cm.workspace_id = ${workspaceId}::uuid
+                        and cm.case_id = ${researchAssignmentItems.caseId}
+                        and cm.principal_id = ${input.principalId}::uuid
+                        and cm.deleted_at is null
+                    )`,
+                  ),
                 ),
             input.canReadAllScopes
               ? undefined
@@ -114,6 +137,26 @@ export function createResearchAssignmentsRepository(database: Database) {
                       and t.deleted_at is null
                       and t.state = 'active'
                   )`,
+                  and(
+                    isNotNull(researchAssignmentItems.investigationId),
+                    sql`exists (
+                      select 1 from investigations i
+                      where i.workspace_id = ${workspaceId}::uuid
+                        and i.id = ${researchAssignmentItems.investigationId}
+                        and i.deleted_at is null
+                        and i.lead_principal_id = ${input.principalId}::uuid
+                    )`,
+                  ),
+                  and(
+                    isNotNull(researchAssignmentItems.caseId),
+                    sql`exists (
+                      select 1 from case_members cm
+                      where cm.workspace_id = ${workspaceId}::uuid
+                        and cm.case_id = ${researchAssignmentItems.caseId}
+                        and cm.principal_id = ${input.principalId}::uuid
+                        and cm.deleted_at is null
+                    )`,
+                  ),
                 ),
             input.status
               ? eq(researchAssignmentItems.status, input.status)
