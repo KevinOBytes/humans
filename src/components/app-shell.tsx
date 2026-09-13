@@ -32,6 +32,7 @@ export function AppShell({
   const canViewEvidence = viewer.permissions.includes("file:read");
   const canViewImports = viewer.permissions.includes("import:read");
   const canViewSearch = viewer.permissions.includes("search:read");
+  const canViewAssignments = viewer.permissions.includes("workspace:read");
   const canViewReconciliation = viewer.permissions.includes("person:read");
   const canViewGraph = ["graph:read", "person:read", "relationship:read"].every(
     (permission) => viewer.permissions.includes(permission),
@@ -62,6 +63,7 @@ export function AppShell({
               canViewImports={canViewImports}
               canViewSearch={canViewSearch}
               canViewReconciliation={canViewReconciliation}
+              canViewAssignments={canViewAssignments}
             />
           </div>
           <div className="border-border mt-auto border-t pt-5">
@@ -91,6 +93,7 @@ export function AppShell({
                 canViewImports={canViewImports}
                 canViewSearch={canViewSearch}
                 canViewReconciliation={canViewReconciliation}
+                canViewAssignments={canViewAssignments}
                 organizations={organizations}
               />
               <HumansMark />
@@ -112,6 +115,7 @@ export function AppShell({
                 canViewImports={canViewImports}
                 canViewSearch={canViewSearch}
                 canViewReconciliation={canViewReconciliation}
+                canViewAssignments={canViewAssignments}
               />
               <ThemeToggle />
               <div className="lg:hidden">

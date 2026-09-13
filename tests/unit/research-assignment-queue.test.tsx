@@ -58,6 +58,66 @@ describe("ResearchAssignmentQueue", () => {
     });
   });
 
+  it("supports a workspace-scoped queue without leaking a case filter", async () => {
+    execute.mockResolvedValue(listResult([{ ...assignment, caseId: null }]));
+    render(<ResearchAssignmentQueue />);
+
+    expect(await screen.findByText("Check source")).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Workspace assignments" }),
+    ).toBeVisible();
+    expect(execute).toHaveBeenCalledWith(ResearchAssignmentsDocument, {
+      first: 25,
+      status: undefined,
+      queueKind: undefined,
+    });
+  });
+
+  it("creates a workspace-level item with a null case scope", async () => {
+    const user = userEvent.setup();
+    execute
+      .mockResolvedValueOnce(listResult([]))
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { createResearchAssignment: { assignment } },
+      })
+      .mockResolvedValueOnce(listResult([assignment]));
+    render(<ResearchAssignmentQueue />);
+    await screen.findByText("No assignments are visible for this workspace.");
+    await user.type(
+      screen.getByLabelText("Assignment title"),
+      "Review workspace",
+    );
+    await user.click(screen.getByRole("button", { name: "Create assignment" }));
+
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith(
+        CreateResearchAssignmentDocument,
+        expect.objectContaining({
+          input: expect.objectContaining({
+            caseId: null,
+            title: "Review workspace",
+            idempotencyKey: expect.any(String),
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("does not expose workspace mutations to a read-only member", async () => {
+    execute.mockResolvedValue(listResult([{ ...assignment, caseId: null }]));
+    render(<ResearchAssignmentQueue canManageWorkspace={false} />);
+
+    expect(await screen.findByText("Check source")).toBeVisible();
+    expect(
+      screen.getByText("You have read-only access to this queue."),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Create assignment" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start" })).toBeNull();
+  });
+
   it("creates a case-linked queue item through the generated mutation", async () => {
     const user = userEvent.setup();
     execute

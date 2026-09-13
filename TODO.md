@@ -689,6 +689,19 @@ coverage, external storage/email/AI acceptance, and live Compose evidence.
       browser CI command, but fresh CI, hosted acceptance, and the full
       role/resource matrix remain open.
 
+Bounded workspace assignment surface evidence (2026-09-13): the protected
+`/assignments` route now exposes the existing authorized GraphQL queue without
+requiring a case selection. The browser surface omits the case filter for
+workspace-scoped reads, sends an explicit `null` case ID for workspace-level
+creation, and hides creation/transition/assignment controls from members
+without `workspace:update`; the server remains authoritative for workspace and
+case mutation authorization. Desktop navigation, mobile navigation, and the
+command menu expose the route only to viewers with `workspace:read`. Nine
+focused component tests pass for workspace listing, null-scoped creation,
+read-only controls, case behavior, optimistic transitions, and stale-response
+fencing. This closes the missing workspace queue surface but does not close the
+FR-038 hosted, full role/resource, or fresh browser/provider acceptance matrix.
+
 Bounded extraction security evidence (2026-09-13, HUM-NFR-004/HUM-NFR-007):
 the service now independently requires `file:read` before database work, and
 request/retry GraphQL mutations require it before enqueueing their work.

@@ -26,6 +26,7 @@ export function CommandMenu({
   canViewImports,
   canViewSearch,
   canViewReconciliation,
+  canViewAssignments,
 }: {
   canCreatePerson: boolean;
   canViewAnalyst: boolean;
@@ -34,6 +35,7 @@ export function CommandMenu({
   canViewImports: boolean;
   canViewSearch: boolean;
   canViewReconciliation?: boolean;
+  canViewAssignments?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -58,6 +60,9 @@ export function CommandMenu({
       ...(canViewReconciliation
         ? [{ href: "/reconciliation", label: "Reconciliation" as const }]
         : []),
+      ...(canViewAssignments
+        ? [{ href: "/assignments", label: "Assignments" as const }]
+        : []),
       ...(canViewEvidence
         ? [{ href: "/evidence", label: "Evidence" as const }]
         : []),
@@ -76,6 +81,7 @@ export function CommandMenu({
       canViewImports,
       canViewSearch,
       canViewReconciliation,
+      canViewAssignments,
     ],
   );
   const visible = commands.filter((item) =>
