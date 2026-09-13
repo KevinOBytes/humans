@@ -35,6 +35,18 @@ evidence counts are not treated as proof. Focused component and live-service
 tests pass. This narrows but does not close HUM-FR-023/HUM-FR-028 or the full
 hosted/provider/accessibility matrix.
 
+Bounded temporal fact authoring evidence (2026-09-13, commits `afd2525`,
+`ef96dbc`, `39b26aa`, `9d978a7`, `68ad246`): the fact form now captures
+temporal semantics/precision, valid-from/valid-until bounds, observed-at,
+confidence method and explanation, language, and a workspace/person-scoped
+superseded-fact link. Client and service validation agree on interval and
+YEAR_ONLY calendar boundaries, browser-local date inputs normalize
+deterministically, and accepted/review transitions require an independent
+owner/administrator or reviewer bound to the latest revision author. Focused
+fact-form/governance tests and independent review pass; broader field-level
+provenance, hosted/provider, accessibility, and whole-product matrices remain
+open.
+
 The historical `HUM-FR-035`/`HUM-NFR-018` entries below are superseded for
 deployment identity by `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS` (READY, custom-domain
 aliases), whose Vercel Git metadata points to `379f177` and includes runtime

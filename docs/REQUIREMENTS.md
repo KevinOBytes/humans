@@ -24,6 +24,18 @@ counts. Focused component and live-service tests cover workspace and source
 sensitivity fencing; this is a local bounded slice and does not close
 HUM-FR-023, HUM-FR-028, or the whole-product hosted/accessibility matrix.
 
+Bounded temporal fact authoring evidence (2026-09-13): commits `afd2525`,
+`ef96dbc`, `39b26aa`, `9d978a7`, and `68ad246` extend the generated fact
+authoring boundary with temporal semantics/precision, valid interval bounds,
+observed-at, confidence method/explanation, language, and a
+workspace/person-scoped superseded-fact picker. Client/server validation agree
+on interval and `YEAR_ONLY` calendar rules, datetime-local input is normalized
+deterministically, and review transitions reject self-approval by binding
+approval to an independent authorized reviewer and the latest revision author.
+Focused form/governance tests and an independent review pass. This bounded
+slice does not close broader field-level provenance, hosted/provider,
+accessibility, or whole-product acceptance rows.
+
 The historical `HUM-FR-035`/`HUM-NFR-018` table evidence below predates this
 checkpoint. The current hosted deployment is `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS`
 (READY, aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
