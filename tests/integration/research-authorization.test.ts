@@ -159,7 +159,7 @@ liveDescribe("research authorization", () => {
         changedFields: [],
         metadata: {
           redactionProfile: "person-profile-read-v1",
-          sensitivity: "public",
+          sensitivity: "internal",
         },
       },
     });
