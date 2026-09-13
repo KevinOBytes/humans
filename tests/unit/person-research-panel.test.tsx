@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const execute = vi.hoisted(() => vi.fn());
@@ -180,6 +180,77 @@ describe("PersonResearchPanel governed review", () => {
         "No accepted AI research exists for this person and purpose.",
       ),
     ).toBeVisible();
+  });
+
+  it("discards an accepted-history response after the governed scope changes", async () => {
+    const user = userEvent.setup();
+    let resolveHistory!: (value: {
+      ok: true;
+      data: {
+        acceptedAiResearchHistory: {
+          nodes: Array<Record<string, unknown>>;
+          pageInfo: { endCursor: null; hasNextPage: false };
+        };
+      };
+    }) => void;
+    execute.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+    render(<PersonResearchPanel person={person} canUpdate />);
+    const purposeInput = screen.getByLabelText("Governed purpose");
+    await user.type(purposeInput, "research");
+    await user.click(
+      screen.getByRole("button", { name: "Load accepted history" }),
+    );
+    await waitFor(() => expect(execute).toHaveBeenCalledOnce());
+
+    await user.clear(purposeInput);
+    await user.type(purposeInput, "case-review");
+    await act(async () => {
+      resolveHistory({
+        ok: true,
+        data: {
+          acceptedAiResearchHistory: {
+            nodes: [
+              {
+                __typename: "AcceptedAiResearchHistoryItem",
+                id: "8c23bfeb-ce83-45d4-b29b-b53cbc15d186",
+                personId: person.id,
+                caseId: null,
+                purpose: "research",
+                fieldKey: "stale biography",
+                confidence: 0.8,
+                uncertainty: "This result belongs to the previous purpose.",
+                provider: "COMPATIBLE",
+                model: "research-model",
+                promptPolicyVersion: "review-v1",
+                researchRunId: runId,
+                reviewerPrincipalId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf6",
+                suggestedAt: "2026-09-13T01:00:00.000Z",
+                reviewedAt: "2026-09-13T02:00:00.000Z",
+                decisionReason: null,
+                acceptedResource: {
+                  kind: "person",
+                  id: person.id,
+                  redacted: false,
+                },
+                evidenceReferences: [],
+              },
+            ],
+            pageInfo: { endCursor: null, hasNextPage: false },
+          },
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Load accepted history" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryByText("stale biography")).toBeNull();
   });
 
   it("renders safe accepted metadata and an explicit redacted evidence state", async () => {
