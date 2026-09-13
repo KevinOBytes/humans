@@ -38,3 +38,19 @@ describe("invitation credential rendering boundary", () => {
     expect(await response.text()).not.toContain(id);
   });
 });
+
+describe("protected collaboration routes", () => {
+  it.each(["/cases", "/investigations/018f0000-0000-7000-8000-000000000001"])(
+    "preserves %s through the sign-in redirect",
+    (path) => {
+      const response = proxy(
+        new NextRequest(`https://humans.example.test${path}`),
+      );
+
+      expect(response.status).toBe(307);
+      const location = new URL(response.headers.get("location")!);
+      expect(location.pathname).toBe("/sign-in");
+      expect(location.searchParams.get("returnTo")).toBe(path);
+    },
+  );
+});
