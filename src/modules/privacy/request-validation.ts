@@ -2,6 +2,25 @@ import { z } from "zod";
 import { createGraphQLError } from "@/graphql/errors";
 import { privacyRequestTypes, type PrivacyRequestState } from "./request-types";
 
+export function exportArtifactSatisfiesPrivacyRequest(input: {
+  artifact: {
+    state: string;
+    purpose: string;
+    caseId: string | null;
+    expiresAt: Date;
+  };
+  request: { purpose: string | null; caseId: string | null };
+  now: Date;
+}) {
+  return (
+    input.artifact.state === "ready" &&
+    input.artifact.purpose === input.request.purpose &&
+    input.artifact.caseId === input.request.caseId &&
+    Number.isFinite(input.artifact.expiresAt.getTime()) &&
+    input.artifact.expiresAt.getTime() > input.now.getTime()
+  );
+}
+
 const ids = z
   .array(z.uuid())
   .max(100)
@@ -53,6 +72,11 @@ export function normalizePrivacyRequest(value: unknown, now = new Date()) {
     throw createGraphQLError(
       "VALIDATION_FAILED",
       "A person scope and purpose are required.",
+    );
+  if (result.data.requestType === "export" && !result.data.purpose)
+    throw createGraphQLError(
+      "VALIDATION_FAILED",
+      "An export purpose is required.",
     );
   return { ...result.data, executeAfter: result.data.executeAfter ?? now };
 }

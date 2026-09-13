@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizePrivacyRequest,
   assertPrivacyTransition,
+  exportArtifactSatisfiesPrivacyRequest,
 } from "@/modules/privacy/request-validation";
 import {
   privacyPropagationIsComplete,
@@ -52,6 +53,19 @@ describe("privacy request validation", () => {
     expect(() =>
       normalizePrivacyRequest(
         { ...base, dueAt: "2026-10-11", personIds: [] },
+        now,
+      ),
+    ).toThrow();
+  });
+  it("requires a purpose before creating an export request", () => {
+    expect(() =>
+      normalizePrivacyRequest(
+        {
+          requestType: "export",
+          personIds: [id],
+          dueAt: "2026-10-11T00:00:00Z",
+          idempotencyKey: "export-without-purpose",
+        },
         now,
       ),
     ).toThrow();
@@ -153,5 +167,46 @@ describe("privacy request validation", () => {
         { processor: "files", state: "pending" },
       ]),
     ).toBe(true);
+  });
+
+  it("binds export-request evidence to a ready, unexpired governed artifact", () => {
+    const now = new Date("2026-09-11T00:00:00Z");
+    const base = {
+      state: "ready",
+      purpose: "subject-access",
+      caseId: id,
+      expiresAt: new Date("2026-09-11T00:15:00Z"),
+    };
+    expect(
+      exportArtifactSatisfiesPrivacyRequest({
+        artifact: base,
+        request: { purpose: "subject-access", caseId: id },
+        now,
+      }),
+    ).toBe(true);
+    expect(
+      exportArtifactSatisfiesPrivacyRequest({
+        artifact: { ...base, state: "writing" },
+        request: { purpose: "subject-access", caseId: id },
+        now,
+      }),
+    ).toBe(false);
+    expect(
+      exportArtifactSatisfiesPrivacyRequest({
+        artifact: {
+          ...base,
+          expiresAt: new Date("2026-09-10T23:59:59Z"),
+        },
+        request: { purpose: "subject-access", caseId: id },
+        now,
+      }),
+    ).toBe(false);
+    expect(
+      exportArtifactSatisfiesPrivacyRequest({
+        artifact: base,
+        request: { purpose: "different-purpose", caseId: id },
+        now,
+      }),
+    ).toBe(false);
   });
 });
