@@ -1034,6 +1034,9 @@ service denies missing `file:read` before database access for user and API-key
 actors, independently of the existing GraphQL permission gate. The production
 request/retry GraphQL mutations check the same read authority before enqueueing
 work so their follow-up run read cannot cause a partial mutation/error result.
+Cancellation checks both read and update authority at GraphQL and service
+boundaries before database work, preventing an update-only actor from cancelling
+and receiving the run's structured content.
 The production
 GraphQL extraction diagnostic field now emits only an allowlisted worker code,
 preserves null, and discards provider messages, credentials, stacks, and nested

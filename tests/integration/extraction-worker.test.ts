@@ -231,6 +231,7 @@ liveDescribe("durable extraction worker", () => {
       detectedType: "text/csv",
       extractor: "csv",
     });
+    const permissions = new Set(["file:update"]);
     const service = createExtractionService(
       {
         actor: {
@@ -242,7 +243,7 @@ liveDescribe("durable extraction worker", () => {
           sessionId: newId(),
         },
         database: fixture.database,
-        permissions: new Set(["file:update"]),
+        permissions,
         requestId: newId(),
         searchIndexMaintenance: disabledSearchIndexMaintenance,
         workspaceId: seeded.actor.workspaceId,
@@ -250,6 +251,16 @@ liveDescribe("durable extraction worker", () => {
       { encryptionKey: "31".repeat(32), objectStore: store },
     );
 
+    await expect(service.cancel(seeded.runId)).rejects.toMatchObject({
+      extensions: { code: "FORBIDDEN" },
+    });
+    const [unchangedRun] = await fixture.database
+      .select({ state: extractionRuns.state })
+      .from(extractionRuns)
+      .where(eq(extractionRuns.id, seeded.runId));
+    expect(unchangedRun?.state).toBe("pending");
+
+    permissions.add("file:read");
     const cancelled = await service.cancel(seeded.runId);
     expect(cancelled.state).toBe("cancelled");
     expect(cancelled.errorSummary).toEqual({ code: "extraction_cancelled" });

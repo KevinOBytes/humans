@@ -124,7 +124,10 @@ export function createExtractionService(
       });
     },
     async cancel(runId: string) {
-      if (!context.permissions.has("file:update")) {
+      if (
+        !context.permissions.has("file:update") ||
+        !context.permissions.has("file:read")
+      ) {
         throw createGraphQLError(
           "FORBIDDEN",
           "File extraction is not permitted.",
