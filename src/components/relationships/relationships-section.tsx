@@ -264,6 +264,11 @@ export async function RelationshipsSection({
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Badge>{item.claimLabel}</Badge>
+                <Badge>
+                  {item.relationship.epistemicStatus === "ANALYST_HYPOTHESIS"
+                    ? "Analyst hypothesis"
+                    : "Documented source claim"}
+                </Badge>
                 <Badge>{item.originLabel}</Badge>
                 <Badge>{item.reviewLabel}</Badge>
                 <Badge>{item.confidenceLabel}</Badge>

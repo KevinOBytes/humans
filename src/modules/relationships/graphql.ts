@@ -61,6 +61,10 @@ const RelationshipState = enumType("RelationshipState", [
   "disproven",
   "inactive",
 ]);
+const RelationshipEpistemicStatus = enumType("RelationshipEpistemicStatus", [
+  "documented",
+  "analyst_hypothesis",
+]);
 const RelationshipFilterInput = builder.inputType("RelationshipFilterInput", {
   fields: (t) => ({
     personId: t.field({ type: "UUID" }),
@@ -160,6 +164,10 @@ export const Relationship = builder
         resolve: (row) => row.observedAt?.toISOString() ?? null,
       }),
       creationMethod: t.exposeString("creationMethod"),
+      epistemicStatus: t.field({
+        type: RelationshipEpistemicStatus,
+        resolve: (row) => row.epistemicStatus as never,
+      }),
       reviewState: t.exposeString("reviewState"),
       strength: t.float({
         nullable: true,
@@ -276,6 +284,7 @@ const CreateRelationshipInput = builder.inputType("CreateRelationshipInput", {
     governancePurpose: t.string({ required: true }),
     observedAt: t.field({ type: "DateTime" }),
     creationMethod: t.string(),
+    epistemicStatus: t.field({ type: RelationshipEpistemicStatus }),
     reviewState: t.string(),
     explicitConfirmed: t.boolean({ required: true }),
     idempotencyKey: t.string(),
@@ -300,6 +309,7 @@ const UpdateRelationshipInput = builder.inputType("UpdateRelationshipInput", {
     governancePurpose: t.string({ required: true }),
     observedAt: t.field({ type: "DateTime" }),
     creationMethod: t.string(),
+    epistemicStatus: t.field({ type: RelationshipEpistemicStatus }),
     reviewState: t.string(),
     explicitConfirmed: t.boolean({ required: true }),
     evidenceAssertionId: t.field({ type: "UUID" }),

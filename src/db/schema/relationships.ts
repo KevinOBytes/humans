@@ -81,6 +81,13 @@ export const relationships = pgTable(
     caseId: uuid("case_id"),
     observedAt: domainTimestamp("observed_at"),
     creationMethod: text("creation_method").default("manual").notNull(),
+    /**
+     * Records whether the edge is backed by source documentation or is an
+     * analyst-generated hypothesis.  This is deliberately separate from
+     * `state` and `reviewState`: an approved hypothesis is still a hypothesis
+     * until a source-backed assertion is created.
+     */
+    epistemicStatus: text("epistemic_status").default("documented").notNull(),
     reviewState: text("review_state").default("unreviewed").notNull(),
     strength: numeric("strength", { precision: 4, scale: 3 }),
     confidence: numeric("confidence", { precision: 4, scale: 3 })
@@ -120,6 +127,10 @@ export const relationships = pgTable(
     check(
       "relationships_creation_method_check",
       sql`${table.creationMethod} IN ('manual', 'import', 'ai')`,
+    ),
+    check(
+      "relationships_epistemic_status_check",
+      sql`${table.epistemicStatus} IN ('documented', 'analyst_hypothesis')`,
     ),
     check(
       "relationships_review_state_check",

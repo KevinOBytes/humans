@@ -39,6 +39,10 @@ describe("RelationshipForm", () => {
     );
 
     await user.selectOptions(screen.getByLabelText("Claim state"), "INFERRED");
+    await user.selectOptions(
+      screen.getByLabelText("Evidence status"),
+      "ANALYST_HYPOTHESIS",
+    );
     await user.clear(screen.getByLabelText("Confidence"));
     await user.type(screen.getByLabelText("Confidence"), "0.72");
     await user.selectOptions(
@@ -58,6 +62,7 @@ describe("RelationshipForm", () => {
         confidence: 0.72,
         creationMethod: "import",
         explicitConfirmed: true,
+        epistemicStatus: "ANALYST_HYPOTHESIS",
         governancePurpose: "research",
         observedAt: "2026-09-12T00:00:00.000Z",
         relationshipTypeId: "type-a",

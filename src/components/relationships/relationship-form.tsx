@@ -81,6 +81,8 @@ export function RelationshipForm({
         governancePurpose: "research",
         explicitConfirmed: true,
         state: String(data.get("state")).toLowerCase(),
+        epistemicStatus: String(data.get("epistemicStatus")) as
+          "DOCUMENTED" | "ANALYST_HYPOTHESIS",
         confidence: Number(data.get("confidence")),
         temporalSemantics,
         temporalPrecision,
@@ -195,6 +197,21 @@ export function RelationshipForm({
           defaultValue="1"
           className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
         />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-epistemic-status">Evidence status</Label>
+        <select
+          id="relationship-epistemic-status"
+          name="epistemicStatus"
+          defaultValue="DOCUMENTED"
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        >
+          <option value="DOCUMENTED">Documented in a source</option>
+          <option value="ANALYST_HYPOTHESIS">Analyst hypothesis</option>
+        </select>
+        <p className="text-muted-foreground text-xs">
+          Keep source-backed claims distinct from analyst interpretation.
+        </p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="relationship-origin">Origin</Label>
