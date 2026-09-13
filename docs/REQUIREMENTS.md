@@ -11,10 +11,10 @@ provides generated GraphQL/PostgreSQL acceptance when the live database seam
 is configured. A controlled backfill for workspaces created before this
 checkpoint remains open, as does the broader hosted and whole-profile matrix.
 
-Current release evidence (2026-09-13, latest runtime): commit `bbfa638` is
-pushed to `main` and deployed as Vercel `dpl_3YPDnFiCMKP1goMvUeEFTMxPGjz3`
+Current release evidence (2026-09-13, latest runtime): commit `8ba2713` is
+pushed to `main` and deployed as Vercel `dpl_AkwBLBkULa7YXEMEsTC7j7EcvYVM`
 (`READY`) with aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
-`humans-tkoresearch.vercel.app`. GitHub Actions run `34756730288` passed all
+`humans-tkoresearch.vercel.app`. GitHub Actions run `34758132683` passed all
 nine required jobs (Node 24 quality, PostgreSQL integration, browser
 acceptance, production build, generated drift, Compose lifecycle, image
 security, dependency policy, and secret scanning). Public smoke passed

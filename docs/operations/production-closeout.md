@@ -2,10 +2,10 @@
 
 ## Current release evidence (2026-09-13, latest runtime)
 
-The latest verified runtime tree at commit `bbfa638` is pushed to GitHub and
-deployed as Vercel `dpl_3YPDnFiCMKP1goMvUeEFTMxPGjz3` (`READY`). The deployment
+The latest verified runtime tree at commit `8ba2713` is pushed to GitHub and
+deployed as Vercel `dpl_AkwBLBkULa7YXEMEsTC7j7EcvYVM` (`READY`). The deployment
 aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
-`humans-tkoresearch.vercel.app`. GitHub Actions run `34756730288` passed all
+`humans-tkoresearch.vercel.app`. GitHub Actions run `34758132683` passed all
 nine required jobs: Node 24 quality, PostgreSQL integration, browser
 acceptance, production build, generated drift, Compose lifecycle, image
 security, dependency policy, and secret scanning. Public probes returned
