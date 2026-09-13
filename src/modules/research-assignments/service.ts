@@ -259,6 +259,9 @@ export function createResearchAssignmentsService(
         "NOT_FOUND",
         "The requested assignee was not found.",
       );
+    let caseMember = false;
+    let teamMember = false;
+    let investigationLead = false;
     if (caseId) {
       const [member] = await database
         .select({ id: caseMembers.id })
@@ -273,11 +276,7 @@ export function createResearchAssignmentsService(
         )
         .limit(1)
         .for("update");
-      if (!member)
-        throw createGraphQLError(
-          "FORBIDDEN",
-          "The assignee is not a member of this case.",
-        );
+      caseMember = Boolean(member);
     }
     if (teamId) {
       const [member] = await database
@@ -302,11 +301,7 @@ export function createResearchAssignmentsService(
         )
         .limit(1)
         .for("update");
-      if (!member)
-        throw createGraphQLError(
-          "FORBIDDEN",
-          "The assignee is not a member of this team.",
-        );
+      teamMember = Boolean(member);
     } else if (investigationId) {
       const [investigation] = await database
         .select({ leadPrincipalId: investigations.leadPrincipalId })
@@ -319,15 +314,22 @@ export function createResearchAssignmentsService(
           ),
         )
         .limit(1);
-      if (
-        !investigation ||
-        (investigation.leadPrincipalId !== assigneePrincipalId &&
-          !isWorkspaceManager(context))
-      )
-        throw createGraphQLError(
-          "FORBIDDEN",
-          "The assignee is not authorized for this investigation.",
-        );
+      investigationLead = Boolean(
+        investigation &&
+        (investigation.leadPrincipalId === assigneePrincipalId ||
+          isWorkspaceManager(context)),
+      );
+    }
+    if (
+      (caseId || teamId || investigationId) &&
+      !caseMember &&
+      !teamMember &&
+      !investigationLead
+    ) {
+      throw createGraphQLError(
+        "FORBIDDEN",
+        "The assignee is not authorized for this assignment scope.",
+      );
     }
   }
   function isWorkspaceManager(scoped: ResearchServiceContext): boolean {
