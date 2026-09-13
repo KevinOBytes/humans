@@ -494,6 +494,8 @@ coverage, external storage/email/AI acceptance, and live Compose evidence.
 Bounded extraction security evidence (2026-09-13, HUM-NFR-004/HUM-NFR-007):
 the service now independently requires `file:read` before database work, and
 request/retry GraphQL mutations require it before enqueueing their work.
+Cancellation also requires read/update authority at GraphQL and service
+boundaries before database access or returning structured extraction content.
 GraphQL extraction errors project only an allowlisted worker code. Focused
 unit tests cover user/API-key denial and malformed/secret-bearing diagnostic
 JSON; the existing live files/imports test covers stored diagnostic redaction,

@@ -16,6 +16,48 @@ const { graphql } = createRequire(import.meta.url)(
 ) as typeof import("graphql");
 
 describe("extraction security boundary", () => {
+  it("denies cancellation without read authority before mutation or content disclosure", async () => {
+    const cancel = vi.fn(async () => ({
+      id,
+      structuredOutput: { text: secret },
+    }));
+    const result = await graphql({
+      schema,
+      source: `mutation { cancelExtraction(runId: "${id}") { id structuredOutput } }`,
+      contextValue: {
+        permissions: new Set(["file:update"]),
+        services: { extraction: { cancel } },
+      } as unknown as GraphQLContext,
+    });
+    expect(result.errors?.[0]?.extensions.code).toBe("FORBIDDEN");
+    expect(cancel).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
+  it.each(["user", "apiKey"] as const)(
+    "denies cancellation by a %s without read authority before database work",
+    async (type) => {
+      const select = vi.fn(() => {
+        throw new Error("Database must not be reached");
+      });
+      const service = createExtractionService(
+        {
+          actor: { type },
+          database: { select },
+          permissions: new Set(["file:update"]),
+        } as unknown as ResearchServiceContext,
+        {
+          encryptionKey: "ab".repeat(32),
+          objectStore: {} as ObjectStore,
+        },
+      );
+      await expect(service.cancel(id)).rejects.toMatchObject({
+        extensions: { code: "FORBIDDEN" },
+      });
+      expect(select).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     ["requestExtraction", `fileId: "${id}"`, "request"],
     ["retryExtraction", `runId: "${id}"`, "retry"],

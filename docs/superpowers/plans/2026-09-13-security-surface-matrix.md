@@ -21,6 +21,8 @@ does not close whole-product security acceptance or claim hosted/provider proof.
 2. Add the missing service-level permission guard without changing the existing
    workspace and resource-visibility SQL. Require read permission before
    request/retry GraphQL mutations enqueue work whose response reads the run.
+   Cancellation also requires read authority at GraphQL and service boundaries
+   before changing state or returning the run's structured output.
 3. Prove the real GraphQL `ExtractionRun.errorSummary` field projects only a
    stable allowlisted worker failure code, preserving null and normalizing
    malformed or unknown values. Drop every additional JSON field.

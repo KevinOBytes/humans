@@ -491,6 +491,7 @@ export function registerFilesGraphQL(): void {
       args: { runId: t.arg({ type: "UUID", required: true }) },
       resolve: async (_root, args, context) => {
         requirePermission(context, "file", "update");
+        requirePermission(context, "file", "read");
         if (!context.services.extraction) {
           throw new Error("Extraction storage is not configured");
         }
