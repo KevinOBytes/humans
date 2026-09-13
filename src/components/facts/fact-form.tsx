@@ -48,10 +48,76 @@ export type SupersededFactOption = {
 function optionalUtcDateTime(value: FormDataEntryValue | null) {
   const raw = String(value ?? "").trim();
   if (!raw) return { value: undefined, invalid: false };
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime())
-    ? { value: undefined, invalid: true }
-    : { value: date.toISOString(), invalid: false };
+  // datetime-local is a timezone-less wall-clock value. Treat it as UTC so
+  // the same input produces the same DateTime regardless of the browser's
+  // local timezone (matching the server's UTC-safe date contract).
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
+    raw,
+  );
+  if (!match) return { value: undefined, invalid: true };
+  const [, year, month, day, hour, minute, second = "00"] = match;
+  const date = new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+    ),
+  );
+  const valid =
+    date.getUTCFullYear() === Number(year) &&
+    date.getUTCMonth() === Number(month) - 1 &&
+    date.getUTCDate() === Number(day) &&
+    date.getUTCHours() === Number(hour) &&
+    date.getUTCMinutes() === Number(minute) &&
+    date.getUTCSeconds() === Number(second);
+  return valid
+    ? { value: date.toISOString(), invalid: false }
+    : { value: undefined, invalid: true };
+}
+
+function temporalMetadataIssue(
+  semantics: TemporalSemantics,
+  precision: TemporalPrecision,
+  earliest?: string,
+  latest?: string,
+) {
+  const hasEarliest = Boolean(earliest);
+  const hasLatest = Boolean(latest);
+  if (earliest && latest && earliest > latest) {
+    return {
+      code: "INVALID_TEMPORAL_RANGE",
+      message: "Earliest validity must be before latest validity.",
+      path: ["validEarliestAt", "validLatestAt"],
+    };
+  }
+  const sameBound = !earliest || !latest || earliest === latest;
+  const valid =
+    semantics === "UNKNOWN"
+      ? !hasEarliest && !hasLatest && precision === "UNKNOWN"
+      : semantics === "EXACT"
+        ? hasEarliest && sameBound
+        : semantics === "BEFORE"
+          ? !hasEarliest && hasLatest
+          : semantics === "AFTER"
+            ? hasEarliest && !hasLatest
+            : semantics === "BETWEEN"
+              ? hasEarliest && hasLatest && precision === "RANGE"
+              : semantics === "APPROXIMATE"
+                ? hasEarliest && hasLatest && precision !== "UNKNOWN"
+                : semantics === "YEAR_ONLY"
+                  ? hasEarliest && hasLatest && precision === "YEAR"
+                  : false;
+  return valid
+    ? null
+    : {
+        code: "INVALID_TEMPORAL_METADATA",
+        message:
+          "Choose compatible temporal bounds and precision for this interpretation.",
+        path: ["temporalSemantics", "temporalPrecision"],
+      };
 }
 
 export function FactForm({
@@ -134,22 +200,24 @@ export function FactForm({
       );
       return;
     }
-    if (
-      validEarliestAt.value &&
-      validLatestAt.value &&
-      validEarliestAt.value > validLatestAt.value
-    ) {
+    const temporalSemantics = String(
+      form.get("temporalSemantics") ?? "UNKNOWN",
+    ) as TemporalSemantics;
+    const temporalPrecision = String(
+      form.get("temporalPrecision") ?? "UNKNOWN",
+    ) as TemporalPrecision;
+    const temporalIssue = temporalMetadataIssue(
+      temporalSemantics,
+      temporalPrecision,
+      validEarliestAt.value,
+      validLatestAt.value,
+    );
+    if (temporalIssue) {
       setFeedback(
         mutationFeedback({
           code: "CLIENT_VALIDATION",
-          fallback: "The earliest validity time must be before the latest.",
-          issues: [
-            {
-              code: "INVALID_TEMPORAL_RANGE",
-              message: "Earliest validity must be before latest validity.",
-              path: ["validEarliestAt", "validLatestAt"],
-            },
-          ],
+          fallback: temporalIssue.message,
+          issues: [temporalIssue],
         }),
       );
       return;
@@ -169,12 +237,8 @@ export function FactForm({
           String(form.get("confidenceMethod") ?? "").trim() || undefined,
         confidenceExplanation:
           String(form.get("confidenceExplanation") ?? "").trim() || undefined,
-        temporalSemantics: String(
-          form.get("temporalSemantics") ?? "UNKNOWN",
-        ) as TemporalSemantics,
-        temporalPrecision: String(
-          form.get("temporalPrecision") ?? "UNKNOWN",
-        ) as TemporalPrecision,
+        temporalSemantics,
+        temporalPrecision,
         ...(validEarliestAt.value
           ? { validEarliestAt: validEarliestAt.value }
           : {}),

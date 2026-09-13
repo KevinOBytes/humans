@@ -131,7 +131,7 @@ describe("FactForm", () => {
     );
     await user.selectOptions(
       screen.getByLabelText("Temporal precision"),
-      "DAY",
+      "RANGE",
     );
     fireEvent.change(screen.getByLabelText("Valid earliest"), {
       target: { value: "2024-01-01T09:30" },
@@ -165,10 +165,10 @@ describe("FactForm", () => {
       input: {
         value: { text: "Updated source claim" },
         temporalSemantics: "BETWEEN",
-        temporalPrecision: "DAY",
-        validEarliestAt: new Date("2024-01-01T09:30").toISOString(),
-        validLatestAt: new Date("2024-01-03T17:45").toISOString(),
-        observedAt: new Date("2024-01-04T12:00").toISOString(),
+        temporalPrecision: "RANGE",
+        validEarliestAt: "2024-01-01T09:30:00.000Z",
+        validLatestAt: "2024-01-03T17:45:00.000Z",
+        observedAt: "2024-01-04T12:00:00.000Z",
         language: "en",
         confidenceMethod: "source comparison",
         confidenceExplanation: "Two independent records agree.",
@@ -200,6 +200,34 @@ describe("FactForm", () => {
     );
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Earliest validity must be before latest validity",
+    );
+  });
+
+  it("blocks incompatible temporal semantics before submitting", async () => {
+    const user = userEvent.setup();
+    render(<FactForm definitions={[definition("TEXT")]} personId="person-a" />);
+    await user.type(screen.getByLabelText("Value"), "Keep this draft");
+    await user.selectOptions(
+      screen.getByLabelText("Temporal interpretation"),
+      "BETWEEN",
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Temporal precision"),
+      "DAY",
+    );
+    fireEvent.change(screen.getByLabelText("Valid earliest"), {
+      target: { value: "2025-01-01T00:00" },
+    });
+    fireEvent.change(screen.getByLabelText("Valid latest"), {
+      target: { value: "2025-01-02T00:00" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Add fact" }));
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Value")).toHaveValue("Keep this draft");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "compatible temporal bounds and precision",
     );
   });
 
