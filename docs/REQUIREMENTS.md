@@ -15,6 +15,15 @@ PATCH GraphQL 405), each with a correlation ID and `private, no-store`.
 Hosted authenticated/provider acceptance and the 24 explicitly incomplete
 rows remain open.
 
+Bounded relationship provenance evidence (2026-09-13): commit `88ecf4c`
+extends the generated `PersonRelationships` projection with a permission-
+filtered, cursor-paginated first page of relationship evidence. Profile cards
+now show reviewed source title, canonical URL when authorized, locator/page,
+assertion role, and redacted/empty states without inferring documentation from
+counts. Focused component and live-service tests cover workspace and source
+sensitivity fencing; this is a local bounded slice and does not close
+HUM-FR-023, HUM-FR-028, or the whole-product hosted/accessibility matrix.
+
 The historical `HUM-FR-035`/`HUM-NFR-018` table evidence below predates this
 checkpoint. The current hosted deployment is `dpl_GqTM1W9UR68rRfk7vAvYgPyeXpJS`
 (READY, aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
