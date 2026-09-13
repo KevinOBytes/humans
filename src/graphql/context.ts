@@ -209,6 +209,12 @@ function createServices(input: {
     actor: input.context.actor,
     database: input.database,
     idempotencyHmacKey: input.aiRuntime.hmacKey,
+    protectedExactRuntime: input.searchRuntime.encryptionKey
+      ? {
+          blindIndexKey: input.searchRuntime.protectedLookupHmacKey,
+          encryptionKey: input.searchRuntime.encryptionKey,
+        }
+      : undefined,
     permissions: input.context.permissions,
     requestId: input.context.requestId,
     searchIndexMaintenance: input.searchIndexMaintenance,

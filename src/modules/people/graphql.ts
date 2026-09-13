@@ -711,6 +711,68 @@ const ArchivePersonInput = builder.inputType("ArchivePersonInput", {
   }),
 });
 
+const CreatePersonIdentifierInput = builder.inputType(
+  "CreatePersonIdentifierInput",
+  {
+    fields: (t) => ({
+      personId: t.field({ type: "UUID", required: true }),
+      idempotencyKey: t.string(),
+      namespace: t.string({ required: true }),
+      identifierType: t.string({ required: true }),
+      value: t.string({ required: true }),
+      issuer: t.string(),
+      sensitivity: t.field({ type: Sensitivity }),
+      verificationState: t.field({ type: PersonIdentifierVerificationState }),
+      validFrom: t.field({ type: "DateTime" }),
+      validUntil: t.field({ type: "DateTime" }),
+    }),
+  },
+);
+const UpdatePersonIdentifierInput = builder.inputType(
+  "UpdatePersonIdentifierInput",
+  {
+    fields: (t) => ({
+      id: t.field({ type: "UUID", required: true }),
+      expectedVersion: t.int({ required: true }),
+      idempotencyKey: t.string(),
+      namespace: t.string(),
+      identifierType: t.string(),
+      value: t.string(),
+      issuer: t.string(),
+      sensitivity: t.field({ type: Sensitivity }),
+      verificationState: t.field({ type: PersonIdentifierVerificationState }),
+      validFrom: t.field({ type: "DateTime" }),
+      validUntil: t.field({ type: "DateTime" }),
+    }),
+  },
+);
+const ArchivePersonIdentifierInput = builder.inputType(
+  "ArchivePersonIdentifierInput",
+  {
+    fields: (t) => ({
+      id: t.field({ type: "UUID", required: true }),
+      expectedVersion: t.int({ required: true }),
+      idempotencyKey: t.string(),
+    }),
+  },
+);
+const PersonIdentifierPayload = builder
+  .objectRef<MutationOutcome<PersonIdentifierView>>("PersonIdentifierPayload")
+  .implement({
+    fields: (t) => ({
+      identifier: t.expose("resource", {
+        type: PersonIdentifier,
+        nullable: true,
+      }),
+      issues: t.expose("issues", {
+        type: [ValidationIssue],
+        nullable: { items: false, list: false },
+      }),
+      code: t.exposeString("code", { nullable: true }),
+      currentVersion: t.exposeInt("currentVersion", { nullable: true }),
+    }),
+  });
+
 const CreatePersonNameInput = builder.inputType("CreatePersonNameInput", {
   fields: (t) => ({
     idempotencyKey: t.string(),
@@ -1119,6 +1181,44 @@ export function registerPeopleGraphQL(): void {
         return namePayload(
           await context.services.people.createName(args.input),
         );
+      },
+    }),
+    createPersonIdentifier: t.field({
+      type: PersonIdentifierPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: CreatePersonIdentifierInput, required: true }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        return context.services.people.createIdentifier(args.input);
+      },
+    }),
+    updatePersonIdentifier: t.field({
+      type: PersonIdentifierPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: UpdatePersonIdentifierInput, required: true }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "update");
+        return context.services.people.updateIdentifier({
+          ...args.input,
+          namespace: args.input.namespace ?? undefined,
+          identifierType: args.input.identifierType ?? undefined,
+          value: args.input.value ?? undefined,
+        });
+      },
+    }),
+    archivePersonIdentifier: t.field({
+      type: PersonIdentifierPayload,
+      nullable: false,
+      args: {
+        input: t.arg({ type: ArchivePersonIdentifierInput, required: true }),
+      },
+      resolve: async (_root, args, context) => {
+        requirePermission(context, "person", "delete");
+        return context.services.people.archiveIdentifier(args.input);
       },
     }),
     updatePersonName: t.field({
