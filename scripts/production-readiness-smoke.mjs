@@ -68,6 +68,11 @@ export async function runProductionSmoke({
       clearTimeout(timer);
     }
   };
+  const sameOrigin = {
+    origin: base.origin,
+    referer: new URL("/sign-in", base).toString(),
+    "sec-fetch-site": "same-origin",
+  };
   const checkJson = async (path, expected, init) => {
     const response = await call(path, init);
     const body = await response.json().catch(() => null);
@@ -141,7 +146,11 @@ export async function runProductionSmoke({
     const verifyViewer = async (session) => {
       const viewer = await call("/api/graphql", {
         method: "POST",
-        headers: { ...session.headers, "content-type": "application/json" },
+        headers: {
+          ...sameOrigin,
+          ...session.headers,
+          "content-type": "application/json",
+        },
         body: JSON.stringify({
           operationName: "SmokeViewer",
           query: "query SmokeViewer { viewer { id workspace { id } } }",
@@ -176,7 +185,11 @@ export async function runProductionSmoke({
     const idempotencyKey = randomUUID();
     const create = await call("/api/graphql", {
       method: "POST",
-      headers: { ...sessionHeaders, "content-type": "application/json" },
+      headers: {
+        ...sameOrigin,
+        ...sessionHeaders,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         operationName: "SmokeCreatePerson",
         query:
@@ -201,7 +214,11 @@ export async function runProductionSmoke({
     );
     const read = await call("/api/graphql", {
       method: "POST",
-      headers: { ...sessionHeaders, "content-type": "application/json" },
+      headers: {
+        ...sameOrigin,
+        ...sessionHeaders,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         operationName: "SmokePerson",
         query:
