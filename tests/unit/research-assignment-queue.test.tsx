@@ -17,6 +17,8 @@ vi.mock("@/graphql/client", () => ({ executeBrowserGraphQL: execute }));
 const assignment: ResearchAssignmentFieldsFragment = {
   id: "018f0000-0000-7000-8000-000000000001",
   caseId: "case-a",
+  investigationId: null,
+  teamId: null,
   queueKind: "REVIEW" as const,
   title: "Check source",
   description: null,

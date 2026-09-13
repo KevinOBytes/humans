@@ -1,0 +1,6 @@
+ALTER TABLE "research_assignment_items" ADD COLUMN "investigation_id" uuid;--> statement-breakpoint
+ALTER TABLE "research_assignment_items" ADD COLUMN "team_id" uuid;--> statement-breakpoint
+ALTER TABLE "research_assignment_items" ADD CONSTRAINT "research_assignment_items_investigation_fk" FOREIGN KEY ("workspace_id","investigation_id") REFERENCES "public"."investigations"("workspace_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "research_assignment_items" ADD CONSTRAINT "research_assignment_items_team_fk" FOREIGN KEY ("workspace_id","team_id") REFERENCES "public"."teams"("workspace_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "research_assignment_items_investigation_idx" ON "research_assignment_items" USING btree ("workspace_id","investigation_id","status","id");--> statement-breakpoint
+CREATE INDEX "research_assignment_items_team_idx" ON "research_assignment_items" USING btree ("workspace_id","team_id","status","id");

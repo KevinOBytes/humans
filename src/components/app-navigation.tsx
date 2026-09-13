@@ -58,6 +58,7 @@ export function NavigationLinks({
   canViewSearch,
   canViewReconciliation,
   canViewAssignments,
+  canViewInvestigations,
   onNavigate,
 }: {
   canViewAnalyst: boolean;
@@ -68,6 +69,7 @@ export function NavigationLinks({
   canViewSearch: boolean;
   canViewReconciliation?: boolean;
   canViewAssignments?: boolean;
+  canViewInvestigations?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -88,6 +90,12 @@ export function NavigationLinks({
       shown: canViewEvidence,
     },
     { href: "/search", label: "Search", icon: Search, shown: canViewSearch },
+    {
+      href: "/investigations",
+      label: "Investigations",
+      icon: ClipboardList,
+      shown: canViewInvestigations ?? false,
+    },
   ];
 
   const tools: NavDestination[] = [
@@ -188,6 +196,7 @@ export function MobileNavigation({
   canViewSearch,
   canViewReconciliation,
   canViewAssignments,
+  canViewInvestigations,
   organizations,
 }: {
   activeWorkspace: WorkspaceOption;
@@ -199,6 +208,7 @@ export function MobileNavigation({
   canViewSearch: boolean;
   canViewReconciliation?: boolean;
   canViewAssignments?: boolean;
+  canViewInvestigations?: boolean;
   organizations: readonly WorkspaceOption[];
 }) {
   const [open, setOpen] = useState(false);
@@ -263,6 +273,7 @@ export function MobileNavigation({
             canViewSearch={canViewSearch}
             canViewReconciliation={canViewReconciliation}
             canViewAssignments={canViewAssignments}
+            canViewInvestigations={canViewInvestigations}
             onNavigate={() => setOpen(false)}
           />
         </div>

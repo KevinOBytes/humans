@@ -1,0 +1,239 @@
+query CollaborationInvestigations($first: Int, $after: String) {
+  investigations(first: $first, after: $after) {
+    nodes {
+      id
+      number
+      slug
+      title
+      objective
+      purpose
+      sensitivity
+      state
+      leadPrincipalId
+      startedAt
+      endedAt
+      closedAt
+      closureReason
+      version
+      createdAt
+      updatedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+query CollaborationInvestigation($id: UUID!) {
+  investigation(id: $id) {
+    id
+    number
+    slug
+    title
+    objective
+    purpose
+    sensitivity
+    state
+    leadPrincipalId
+    startedAt
+    endedAt
+    closedAt
+    closureReason
+    version
+    createdAt
+    updatedAt
+  }
+}
+
+query CollaborationInvestigationCases($investigationId: UUID!) {
+  investigationCases(investigationId: $investigationId) {
+    nodes {
+      id
+      investigationId
+      caseId
+      version
+      createdAt
+    }
+  }
+}
+
+query CollaborationTeams($first: Int, $after: String) {
+  teams(first: $first, after: $after) {
+    nodes {
+      id
+      name
+      description
+      state
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+query CollaborationTeam($id: UUID!) {
+  team(id: $id) {
+    id
+    name
+    description
+    state
+    version
+    createdAt
+  }
+}
+
+query CollaborationTeamMembers($teamId: UUID!, $first: Int, $after: String) {
+  teamMembers(teamId: $teamId, first: $first, after: $after) {
+    nodes {
+      id
+      teamId
+      principalId
+      role
+      version
+      deletedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+query CollaborationCases($first: Int, $after: String) {
+  researchCases(first: $first, after: $after) {
+    nodes {
+      id
+      title
+      purpose
+      state
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+
+mutation CollaborationCreateInvestigation(
+  $title: String!
+  $objective: String!
+  $purpose: String!
+  $slug: String
+  $sensitivity: String
+  $state: String
+  $startedAt: DateTime
+  $endedAt: DateTime
+  $idempotencyKey: String
+) {
+  createInvestigation(
+    title: $title
+    objective: $objective
+    purpose: $purpose
+    slug: $slug
+    sensitivity: $sensitivity
+    state: $state
+    startedAt: $startedAt
+    endedAt: $endedAt
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    number
+    slug
+    title
+    objective
+    purpose
+    sensitivity
+    state
+    leadPrincipalId
+    startedAt
+    endedAt
+    closedAt
+    closureReason
+    version
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CollaborationLinkCaseToInvestigation(
+  $investigationId: UUID!
+  $caseId: UUID!
+  $idempotencyKey: String
+) {
+  linkCaseToInvestigation(
+    investigationId: $investigationId
+    caseId: $caseId
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    investigationId
+    caseId
+    version
+    createdAt
+  }
+}
+
+mutation CollaborationCreateTeam(
+  $name: String!
+  $description: String
+  $idempotencyKey: String
+) {
+  createTeam(
+    name: $name
+    description: $description
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    name
+    description
+    state
+    version
+    createdAt
+  }
+}
+
+mutation CollaborationAddTeamMember(
+  $teamId: UUID!
+  $principalId: UUID!
+  $role: String
+  $idempotencyKey: String
+) {
+  addTeamMember(
+    teamId: $teamId
+    principalId: $principalId
+    role: $role
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    teamId
+    principalId
+    role
+    version
+    deletedAt
+  }
+}
+
+mutation CollaborationRemoveTeamMember(
+  $teamId: UUID!
+  $memberId: UUID!
+  $idempotencyKey: String
+) {
+  removeTeamMember(
+    teamId: $teamId
+    memberId: $memberId
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    teamId
+    principalId
+    role
+    version
+    deletedAt
+  }
+}

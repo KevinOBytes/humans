@@ -33,6 +33,8 @@ export function AppShell({
   const canViewImports = viewer.permissions.includes("import:read");
   const canViewSearch = viewer.permissions.includes("search:read");
   const canViewAssignments = viewer.permissions.includes("workspace:read");
+  const canViewInvestigations =
+    viewer.permissions.includes("investigation:read");
   const canViewReconciliation = viewer.permissions.includes("person:read");
   const canViewGraph = ["graph:read", "person:read", "relationship:read"].every(
     (permission) => viewer.permissions.includes(permission),
@@ -64,6 +66,7 @@ export function AppShell({
               canViewSearch={canViewSearch}
               canViewReconciliation={canViewReconciliation}
               canViewAssignments={canViewAssignments}
+              canViewInvestigations={canViewInvestigations}
             />
           </div>
           <div className="border-border mt-auto border-t pt-5">
@@ -94,6 +97,7 @@ export function AppShell({
                 canViewSearch={canViewSearch}
                 canViewReconciliation={canViewReconciliation}
                 canViewAssignments={canViewAssignments}
+                canViewInvestigations={canViewInvestigations}
                 organizations={organizations}
               />
               <HumansMark />

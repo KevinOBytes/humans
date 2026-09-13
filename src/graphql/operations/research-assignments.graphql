@@ -1,6 +1,8 @@
 fragment ResearchAssignmentFields on ResearchAssignment {
   id
   caseId
+  investigationId
+  teamId
   queueKind
   title
   description
@@ -16,6 +18,8 @@ fragment ResearchAssignmentFields on ResearchAssignment {
 
 query ResearchAssignments(
   $caseId: UUID
+  $investigationId: UUID
+  $teamId: UUID
   $status: ResearchAssignmentStatus
   $queueKind: ResearchAssignmentQueueKind
   $first: Int
@@ -23,6 +27,8 @@ query ResearchAssignments(
 ) {
   researchAssignments(
     caseId: $caseId
+    investigationId: $investigationId
+    teamId: $teamId
     status: $status
     queueKind: $queueKind
     first: $first

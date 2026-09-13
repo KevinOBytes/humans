@@ -45,6 +45,16 @@ external provider acceptance remain open because protected Vercel secrets were
 not exported; the remaining hosted/provider/privacy/accessibility/performance
 matrix is intentionally still tracked below.
 
+Assignment scope checkpoint (2026-09-13): research assignment items now carry
+optional immutable investigation and reusable-team scopes in migration `0050`.
+Creation validates workspace ownership, active lifecycle, investigation lead or
+team membership, and linked case boundaries; assignee validation requires case
+membership, team membership, or investigation-lead authority. Reads apply the
+same scope boundary and expose investigation/team filters through generated
+GraphQL. Existing workspace- and case-scoped queues remain compatible. Focused
+schema and service tests cover the contract; hosted/provider and whole-role
+acceptance remain tracked as incomplete.
+
 The deployment was built from the current `main` tree after the latest
 documentation-only commit. Vercel's manual deployment metadata does not expose
 a Git SHA, so the local commit and Ready deployment ID are recorded together;

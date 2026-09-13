@@ -494,8 +494,10 @@ export type CreateResearchAssignmentInput = {
   description?: string | null | undefined;
   dueAt?: string | null | undefined;
   idempotencyKey: string;
+  investigationId?: string | null | undefined;
   priority?: number | null | undefined;
   queueKind: ResearchAssignmentQueueKind;
+  teamId?: string | null | undefined;
   title: string;
 };
 
@@ -1873,6 +1875,250 @@ export type ReviewEvidenceAssertionMutation = {
     reviewState: string | null;
     version: number | null;
     auditReference: string | null;
+  } | null;
+};
+
+export type CollaborationInvestigationsQueryVariables = Exact<{
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type CollaborationInvestigationsQuery = {
+  investigations: {
+    nodes: Array<{
+      id: string | null;
+      number: number | null;
+      slug: string | null;
+      title: string | null;
+      objective: string | null;
+      purpose: string | null;
+      sensitivity: string | null;
+      state: string | null;
+      leadPrincipalId: string | null;
+      startedAt: string | null;
+      endedAt: string | null;
+      closedAt: string | null;
+      closureReason: string | null;
+      version: number | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type CollaborationInvestigationQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type CollaborationInvestigationQuery = {
+  investigation: {
+    id: string | null;
+    number: number | null;
+    slug: string | null;
+    title: string | null;
+    objective: string | null;
+    purpose: string | null;
+    sensitivity: string | null;
+    state: string | null;
+    leadPrincipalId: string | null;
+    startedAt: string | null;
+    endedAt: string | null;
+    closedAt: string | null;
+    closureReason: string | null;
+    version: number | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+  } | null;
+};
+
+export type CollaborationInvestigationCasesQueryVariables = Exact<{
+  investigationId: string;
+}>;
+
+export type CollaborationInvestigationCasesQuery = {
+  investigationCases: {
+    nodes: Array<{
+      id: string | null;
+      investigationId: string | null;
+      caseId: string | null;
+      version: number | null;
+      createdAt: string | null;
+    }> | null;
+  } | null;
+};
+
+export type CollaborationTeamsQueryVariables = Exact<{
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type CollaborationTeamsQuery = {
+  teams: {
+    nodes: Array<{
+      id: string | null;
+      name: string | null;
+      description: string | null;
+      state: string | null;
+      version: number | null;
+      createdAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type CollaborationTeamQueryVariables = Exact<{
+  id: string;
+}>;
+
+export type CollaborationTeamQuery = {
+  team: {
+    id: string | null;
+    name: string | null;
+    description: string | null;
+    state: string | null;
+    version: number | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type CollaborationTeamMembersQueryVariables = Exact<{
+  teamId: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type CollaborationTeamMembersQuery = {
+  teamMembers: {
+    nodes: Array<{
+      id: string | null;
+      teamId: string | null;
+      principalId: string | null;
+      role: string | null;
+      version: number | null;
+      deletedAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type CollaborationCasesQueryVariables = Exact<{
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type CollaborationCasesQuery = {
+  researchCases: {
+    nodes: Array<{
+      id: string | null;
+      title: string | null;
+      purpose: string | null;
+      state: string | null;
+      version: number | null;
+      createdAt: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
+export type CollaborationCreateInvestigationMutationVariables = Exact<{
+  title: string;
+  objective: string;
+  purpose: string;
+  slug?: string | null | undefined;
+  sensitivity?: string | null | undefined;
+  state?: string | null | undefined;
+  startedAt?: string | null | undefined;
+  endedAt?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
+}>;
+
+export type CollaborationCreateInvestigationMutation = {
+  createInvestigation: {
+    id: string | null;
+    number: number | null;
+    slug: string | null;
+    title: string | null;
+    objective: string | null;
+    purpose: string | null;
+    sensitivity: string | null;
+    state: string | null;
+    leadPrincipalId: string | null;
+    startedAt: string | null;
+    endedAt: string | null;
+    closedAt: string | null;
+    closureReason: string | null;
+    version: number | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+  } | null;
+};
+
+export type CollaborationLinkCaseToInvestigationMutationVariables = Exact<{
+  investigationId: string;
+  caseId: string;
+  idempotencyKey?: string | null | undefined;
+}>;
+
+export type CollaborationLinkCaseToInvestigationMutation = {
+  linkCaseToInvestigation: {
+    id: string | null;
+    investigationId: string | null;
+    caseId: string | null;
+    version: number | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type CollaborationCreateTeamMutationVariables = Exact<{
+  name: string;
+  description?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
+}>;
+
+export type CollaborationCreateTeamMutation = {
+  createTeam: {
+    id: string | null;
+    name: string | null;
+    description: string | null;
+    state: string | null;
+    version: number | null;
+    createdAt: string | null;
+  } | null;
+};
+
+export type CollaborationAddTeamMemberMutationVariables = Exact<{
+  teamId: string;
+  principalId: string;
+  role?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
+}>;
+
+export type CollaborationAddTeamMemberMutation = {
+  addTeamMember: {
+    id: string | null;
+    teamId: string | null;
+    principalId: string | null;
+    role: string | null;
+    version: number | null;
+    deletedAt: string | null;
+  } | null;
+};
+
+export type CollaborationRemoveTeamMemberMutationVariables = Exact<{
+  teamId: string;
+  memberId: string;
+  idempotencyKey?: string | null | undefined;
+}>;
+
+export type CollaborationRemoveTeamMemberMutation = {
+  removeTeamMember: {
+    id: string | null;
+    teamId: string | null;
+    principalId: string | null;
+    role: string | null;
+    version: number | null;
+    deletedAt: string | null;
   } | null;
 };
 
@@ -3796,6 +4042,8 @@ export type ReviewExportApprovalMutation = {
 export type ResearchAssignmentFieldsFragment = {
   id: string | null;
   caseId: string | null;
+  investigationId: string | null;
+  teamId: string | null;
   queueKind: ResearchAssignmentQueueKind | null;
   title: string | null;
   description: string | null;
@@ -3811,6 +4059,8 @@ export type ResearchAssignmentFieldsFragment = {
 
 export type ResearchAssignmentsQueryVariables = Exact<{
   caseId?: string | null | undefined;
+  investigationId?: string | null | undefined;
+  teamId?: string | null | undefined;
   status?: ResearchAssignmentStatus | null | undefined;
   queueKind?: ResearchAssignmentQueueKind | null | undefined;
   first?: number | null | undefined;
@@ -6357,6 +6607,8 @@ export const ResearchAssignmentFieldsFragmentDoc = new TypedDocumentString(
     fragment ResearchAssignmentFields on ResearchAssignment {
   id
   caseId
+  investigationId
+  teamId
   queueKind
   title
   description
@@ -7292,6 +7544,328 @@ export const ReviewEvidenceAssertionDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ReviewEvidenceAssertionMutation,
   ReviewEvidenceAssertionMutationVariables
+>;
+export const CollaborationInvestigationsDocument = new TypedDocumentString(
+  `
+    query CollaborationInvestigations($first: Int, $after: String) {
+  investigations(first: $first, after: $after) {
+    nodes {
+      id
+      number
+      slug
+      title
+      objective
+      purpose
+      sensitivity
+      state
+      leadPrincipalId
+      startedAt
+      endedAt
+      closedAt
+      closureReason
+      version
+      createdAt
+      updatedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:dbea097029366d8b7b316d2999e164eb05f05ea3449fcf0153d4ea211f2f166b",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationInvestigationsQuery,
+  CollaborationInvestigationsQueryVariables
+>;
+export const CollaborationInvestigationDocument = new TypedDocumentString(
+  `
+    query CollaborationInvestigation($id: UUID!) {
+  investigation(id: $id) {
+    id
+    number
+    slug
+    title
+    objective
+    purpose
+    sensitivity
+    state
+    leadPrincipalId
+    startedAt
+    endedAt
+    closedAt
+    closureReason
+    version
+    createdAt
+    updatedAt
+  }
+}
+    `,
+  {
+    hash: "sha256:2c8e6bcceb170f23f2796ba51defb24af0b9b7477ae0812f343213d2a74e14f5",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationInvestigationQuery,
+  CollaborationInvestigationQueryVariables
+>;
+export const CollaborationInvestigationCasesDocument = new TypedDocumentString(
+  `
+    query CollaborationInvestigationCases($investigationId: UUID!) {
+  investigationCases(investigationId: $investigationId) {
+    nodes {
+      id
+      investigationId
+      caseId
+      version
+      createdAt
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:548fcccfb13c5c36c34628260e3c0ca9dcf51c3ff8fbf3a8f9c6e7177c82cba3",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationInvestigationCasesQuery,
+  CollaborationInvestigationCasesQueryVariables
+>;
+export const CollaborationTeamsDocument = new TypedDocumentString(
+  `
+    query CollaborationTeams($first: Int, $after: String) {
+  teams(first: $first, after: $after) {
+    nodes {
+      id
+      name
+      description
+      state
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:618068a648dece99317c9ac12cd2e97c4160b14494d31b611dfbe0c2c185bfa4",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationTeamsQuery,
+  CollaborationTeamsQueryVariables
+>;
+export const CollaborationTeamDocument = new TypedDocumentString(
+  `
+    query CollaborationTeam($id: UUID!) {
+  team(id: $id) {
+    id
+    name
+    description
+    state
+    version
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:b11747d210de1dde859dff0def8e60808f199f12290a847a584e75c07f599c7d",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationTeamQuery,
+  CollaborationTeamQueryVariables
+>;
+export const CollaborationTeamMembersDocument = new TypedDocumentString(
+  `
+    query CollaborationTeamMembers($teamId: UUID!, $first: Int, $after: String) {
+  teamMembers(teamId: $teamId, first: $first, after: $after) {
+    nodes {
+      id
+      teamId
+      principalId
+      role
+      version
+      deletedAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:88dc0a064aecc96a40a08cb0f6d3fe2b9e2a0ed82e5446c37dd9805ee0f21e8b",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationTeamMembersQuery,
+  CollaborationTeamMembersQueryVariables
+>;
+export const CollaborationCasesDocument = new TypedDocumentString(
+  `
+    query CollaborationCases($first: Int, $after: String) {
+  researchCases(first: $first, after: $after) {
+    nodes {
+      id
+      title
+      purpose
+      state
+      version
+      createdAt
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:2990204ca37347983fbf0d72be0e9aad60e4e247b3794377ca506a929d62e0fc",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationCasesQuery,
+  CollaborationCasesQueryVariables
+>;
+export const CollaborationCreateInvestigationDocument = new TypedDocumentString(
+  `
+    mutation CollaborationCreateInvestigation($title: String!, $objective: String!, $purpose: String!, $slug: String, $sensitivity: String, $state: String, $startedAt: DateTime, $endedAt: DateTime, $idempotencyKey: String) {
+  createInvestigation(
+    title: $title
+    objective: $objective
+    purpose: $purpose
+    slug: $slug
+    sensitivity: $sensitivity
+    state: $state
+    startedAt: $startedAt
+    endedAt: $endedAt
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    number
+    slug
+    title
+    objective
+    purpose
+    sensitivity
+    state
+    leadPrincipalId
+    startedAt
+    endedAt
+    closedAt
+    closureReason
+    version
+    createdAt
+    updatedAt
+  }
+}
+    `,
+  {
+    hash: "sha256:97ffc129f2e3642d2a476729e7f50b07555bb2fc073fe7dbebfd78b6dd31ec01",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationCreateInvestigationMutation,
+  CollaborationCreateInvestigationMutationVariables
+>;
+export const CollaborationLinkCaseToInvestigationDocument =
+  new TypedDocumentString(
+    `
+    mutation CollaborationLinkCaseToInvestigation($investigationId: UUID!, $caseId: UUID!, $idempotencyKey: String) {
+  linkCaseToInvestigation(
+    investigationId: $investigationId
+    caseId: $caseId
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    investigationId
+    caseId
+    version
+    createdAt
+  }
+}
+    `,
+    {
+      hash: "sha256:279c78bcc5bd364ff433edef2ae61e98712d0f3fd15b0ded539ff62a766a233f",
+    },
+  ) as unknown as TypedDocumentString<
+    CollaborationLinkCaseToInvestigationMutation,
+    CollaborationLinkCaseToInvestigationMutationVariables
+  >;
+export const CollaborationCreateTeamDocument = new TypedDocumentString(
+  `
+    mutation CollaborationCreateTeam($name: String!, $description: String, $idempotencyKey: String) {
+  createTeam(
+    name: $name
+    description: $description
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    name
+    description
+    state
+    version
+    createdAt
+  }
+}
+    `,
+  {
+    hash: "sha256:08cd2b419ed11550118a3f3cd1ee6c9fce0af63108363a1886013ca05b35c551",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationCreateTeamMutation,
+  CollaborationCreateTeamMutationVariables
+>;
+export const CollaborationAddTeamMemberDocument = new TypedDocumentString(
+  `
+    mutation CollaborationAddTeamMember($teamId: UUID!, $principalId: UUID!, $role: String, $idempotencyKey: String) {
+  addTeamMember(
+    teamId: $teamId
+    principalId: $principalId
+    role: $role
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    teamId
+    principalId
+    role
+    version
+    deletedAt
+  }
+}
+    `,
+  {
+    hash: "sha256:6963bbec59cac52fe6fbaac1bc93189b340e826680f9522f6ef210e9c2eb0cab",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationAddTeamMemberMutation,
+  CollaborationAddTeamMemberMutationVariables
+>;
+export const CollaborationRemoveTeamMemberDocument = new TypedDocumentString(
+  `
+    mutation CollaborationRemoveTeamMember($teamId: UUID!, $memberId: UUID!, $idempotencyKey: String) {
+  removeTeamMember(
+    teamId: $teamId
+    memberId: $memberId
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    teamId
+    principalId
+    role
+    version
+    deletedAt
+  }
+}
+    `,
+  {
+    hash: "sha256:122f485b56fade82dc76bf8f25929f4a176b8952099274c86a19d92d0925acff",
+  },
+) as unknown as TypedDocumentString<
+  CollaborationRemoveTeamMemberMutation,
+  CollaborationRemoveTeamMemberMutationVariables
 >;
 export const DashboardOverviewDocument = new TypedDocumentString(
   `
@@ -9940,9 +10514,11 @@ export const ReviewExportApprovalDocument = new TypedDocumentString(
 >;
 export const ResearchAssignmentsDocument = new TypedDocumentString(
   `
-    query ResearchAssignments($caseId: UUID, $status: ResearchAssignmentStatus, $queueKind: ResearchAssignmentQueueKind, $first: Int, $after: String) {
+    query ResearchAssignments($caseId: UUID, $investigationId: UUID, $teamId: UUID, $status: ResearchAssignmentStatus, $queueKind: ResearchAssignmentQueueKind, $first: Int, $after: String) {
   researchAssignments(
     caseId: $caseId
+    investigationId: $investigationId
+    teamId: $teamId
     status: $status
     queueKind: $queueKind
     first: $first
@@ -9960,6 +10536,8 @@ export const ResearchAssignmentsDocument = new TypedDocumentString(
     fragment ResearchAssignmentFields on ResearchAssignment {
   id
   caseId
+  investigationId
+  teamId
   queueKind
   title
   description
@@ -9973,7 +10551,7 @@ export const ResearchAssignmentsDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:06f624a81d52a1e2aacaa1fd8a1ca4f62df6f1729229cc0201855e18067dfff9",
+    hash: "sha256:1460d113328f43d32bb3d4fdc5f0eec1470b00de31825aa8bdedfd69c8636708",
   },
 ) as unknown as TypedDocumentString<
   ResearchAssignmentsQuery,
@@ -10013,6 +10591,8 @@ export const ResearchAssignmentDocument = new TypedDocumentString(
     fragment ResearchAssignmentFields on ResearchAssignment {
   id
   caseId
+  investigationId
+  teamId
   queueKind
   title
   description
@@ -10026,7 +10606,7 @@ export const ResearchAssignmentDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:94ea1052c0608ddaa2b0b9247c6fb38329decc6b860dcb33391424ebf9b6c2af",
+    hash: "sha256:54036f872598709cfd81aba5d26eff8636661a4dee4a90a6a7cdc13223c2d2c1",
   },
 ) as unknown as TypedDocumentString<
   ResearchAssignmentQuery,
@@ -10044,6 +10624,8 @@ export const CreateResearchAssignmentDocument = new TypedDocumentString(
     fragment ResearchAssignmentFields on ResearchAssignment {
   id
   caseId
+  investigationId
+  teamId
   queueKind
   title
   description
@@ -10057,7 +10639,7 @@ export const CreateResearchAssignmentDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:d728db3174d2884ef3ab7ad11b97c8c04b8fd33781396271fdcb9eccbcd57228",
+    hash: "sha256:9258af39cefba21dce1f017d4fff62188085e75cc8dd127b12c0d1fb52802f56",
   },
 ) as unknown as TypedDocumentString<
   CreateResearchAssignmentMutation,
@@ -10075,6 +10657,8 @@ export const AssignResearchAssignmentDocument = new TypedDocumentString(
     fragment ResearchAssignmentFields on ResearchAssignment {
   id
   caseId
+  investigationId
+  teamId
   queueKind
   title
   description
@@ -10088,7 +10672,7 @@ export const AssignResearchAssignmentDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:e69bb9996b18ab4ab81dce04316b953e29a866b4a074ec6e14fd72f765d120f3",
+    hash: "sha256:79a3f31dc6146a5ce7939f03474e98e67dbc9f1e7066c628fe592a454207182d",
   },
 ) as unknown as TypedDocumentString<
   AssignResearchAssignmentMutation,
@@ -10106,6 +10690,8 @@ export const TransitionResearchAssignmentDocument = new TypedDocumentString(
     fragment ResearchAssignmentFields on ResearchAssignment {
   id
   caseId
+  investigationId
+  teamId
   queueKind
   title
   description
@@ -10119,7 +10705,7 @@ export const TransitionResearchAssignmentDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:74d6a8754d67246622c9e4fd2d05d3201a39c9bcc182f6cc7eae1992b0943946",
+    hash: "sha256:56567bf77df9794d7cd86c0fa454277b16b02cc20af32179396cae17a44cbada",
   },
 ) as unknown as TypedDocumentString<
   TransitionResearchAssignmentMutation,
@@ -10137,6 +10723,8 @@ export const EscalateResearchAssignmentDocument = new TypedDocumentString(
     fragment ResearchAssignmentFields on ResearchAssignment {
   id
   caseId
+  investigationId
+  teamId
   queueKind
   title
   description
@@ -10150,7 +10738,7 @@ export const EscalateResearchAssignmentDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:29aa51fdab9372f6a60d42da526d9d5f38739d5373e92e6909a33f8bcaee9659",
+    hash: "sha256:463056b8cb5cb26dc58f37faea84a50c6cae72b18590058f5cff3b464a8c9981",
   },
 ) as unknown as TypedDocumentString<
   EscalateResearchAssignmentMutation,
