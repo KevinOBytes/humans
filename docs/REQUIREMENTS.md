@@ -233,6 +233,21 @@ break-glass access, administrator review, hosted-provider acceptance, and the
 whole-product audit/privacy matrices remain open; `HUM-NFR-007` remains
 Incomplete.
 
+Bounded break-glass checkpoint (2026-09-13): explicit workspace-scoped,
+principal-bound exceptional-access requests enumerate resource kind/UUID pairs,
+require a purpose, bounded justification, and expiry of at most seven days, and
+persist request/review/revoke state with optimistic versions. Only a different
+owner or administrator can approve or revoke a request; API-key actors cannot
+use the path. Approved grants participate in ordinary resource visibility and
+restricted-fact authorization only while unexpired, and each request/review/
+revoke/use writes a redacted audit event. Focused validation and disposable
+PostgreSQL lifecycle coverage prove replay, independent review, visibility
+grant/revocation, audit attribution, and least-privilege denial. This is a
+bounded local implementation seam; administrator review surfaces, universal
+read-access logging, hosted-provider evidence, and the whole-product
+audit/privacy matrix remain open, so `HUM-FR-005` and `HUM-NFR-018` remain
+incomplete.
+
 Task 4 local checkpoint (2026-09-11): the generalized privacy lifecycle covers six request types with workspace/resource/case checks, verification-file evidence, independent reviewer approval, deadlines, optimistic transitions, idempotent creation replay, and completion evidence. Retention evaluation is deterministic and non-destructive; legal holds take precedence, and hard-delete/anonymization policies require review. New deletion fulfillment queues the existing worker instead of deleting synchronously. Processor results remain visible and retryable, with unconfigured external adapters explicitly failed rather than assumed complete. Historical deletion rows are preserved and represented explicitly without manufacturing verification evidence. Unit tests and gated lifecycle tests cover the new boundary. Live PostgreSQL migration/lifecycle proof, external search/cache/email/AI propagation adapters, complete retention enforcement, legacy-settings-path convergence, and browser acceptance remain open; HUM-FR-005 is not closed.
 
 Task 3 local checkpoint (2026-09-11): AI proposals are retained in `ai_review_suggestions` with versioned typed values, source/evidence references, confidence, uncertainty, provider/model, originating run, and prompt-policy version. Explicit human accept/reject/defer and approved batch decisions retain the original proposal and link accepted resources back to that record. Current workspace, case, source visibility and purpose coverage for AI/write are checked before acceptance; fact/relationship writes and Task 2 evidence assertions share the decision transaction. AI-created relationships remain inferred; acceptance is not independent evidence approval or an adverse decision. This supersedes the older web-research description below: the browser no longer sends AI suggestions directly to `UpdatePerson`, and original proposals are not editable in the review queue. Focused validation/queue tests, updated panel tests, and gated `ai-review-lifecycle.test.ts` cover this boundary. Live PostgreSQL/browser/provider verification, retention deletion/expiry for retained provenance, and HUM-FR-023 closure remain open.

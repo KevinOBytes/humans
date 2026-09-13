@@ -217,6 +217,19 @@ evidence, not a workspace-wide count: whole-query counting across arbitrary
 pagination, break-glass access, administrator review, hosted-provider proof,
 and the complete audit/privacy matrix remain open.
 
+Bounded break-glass access checkpoint (2026-09-13): workspace-scoped,
+principal-bound exceptional-access requests now require a purpose, a 20–4,000
+character justification, an enumerated resource kind/UUID list, and an expiry
+of no more than seven days. Only a different owner/administrator can approve
+or revoke a request; API-key actors cannot use the path. Optimistic versions,
+idempotent request/review/revoke mutations, approved-grant visibility, expiry,
+revocation, and redacted request/review/revoke/use audits are covered by the
+focused validation and disposable PostgreSQL GraphQL lifecycle tests. The
+workflow is intentionally time-limited and does not bypass ordinary workspace,
+case, purpose, consent, sensitivity, or redaction checks. Administrator review
+UI, universal read-access audit coverage, hosted/provider acceptance, and the
+complete audit/privacy matrix remain open.
+
 Task 6 bounded analysis/import/export checkpoint (2026-09-11): governed timeline,
 source-comparison, duplicate, contradiction and descriptive graph analysis now
 apply workspace, sensitivity, temporal, reliability, review and relationship

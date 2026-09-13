@@ -21,7 +21,6 @@ import { normalizePagination } from "@/graphql/limits";
 import {
   normalizeBreakGlassRequest,
   normalizeBreakGlassResources,
-  type BreakGlassResourceKind,
 } from "./break-glass-validation";
 
 type RequestRow = typeof breakGlassAccessRequests.$inferSelect;
