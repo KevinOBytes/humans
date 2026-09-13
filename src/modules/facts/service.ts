@@ -1699,10 +1699,21 @@ export function createFactsService(
         );
       const requestedReviewState = input.reviewState?.toLowerCase();
       const contentMutation = hasFactContentMutation(input);
+      const latestRevision =
+        requestedReviewState === "accepted" ||
+        (current.reviewState === "accepted" && contentMutation)
+          ? await repository.listRevisions({
+              workspaceId: context.workspaceId,
+              factId: current.id,
+              limit: 1,
+            })
+          : [];
+      const latestContentAuthor =
+        latestRevision[0]?.createdBy ?? current.createdBy;
       if (
         requestedReviewState === "accepted" &&
         (contentMutation ||
-          !canIndependentlyReviewFact(context, current.createdBy))
+          !canIndependentlyReviewFact(context, latestContentAuthor))
       ) {
         throw createGraphQLError(
           "FORBIDDEN",
@@ -1715,7 +1726,7 @@ export function createFactsService(
         current.reviewState === "accepted" &&
         contentMutation &&
         (requestedReviewState !== "in_review" ||
-          !canIndependentlyReviewFact(context, current.createdBy))
+          !canIndependentlyReviewFact(context, latestContentAuthor))
       ) {
         throw createGraphQLError(
           "FORBIDDEN",
