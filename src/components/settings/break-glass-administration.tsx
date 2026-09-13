@@ -71,7 +71,7 @@ export function BreakGlassAdministration({
     setFeedback(null);
     const result = await executeBrowserGraphQL(
       BreakGlassAccessRequestsDocument,
-      { first: 50, after },
+      { first: 25, after },
     );
     setLoading(false);
     if (!result.ok) {
