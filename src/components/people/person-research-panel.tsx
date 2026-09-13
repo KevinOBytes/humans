@@ -81,6 +81,10 @@ export function PersonResearchPanel({
   }
   async function loadAcceptedHistory(after: string | null = null) {
     const requestGeneration = ++acceptedHistoryRequestGeneration.current;
+    if (!after) {
+      setAcceptedHistory([]);
+      setAcceptedHistoryPage({ endCursor: null, hasNextPage: false });
+    }
     setAcceptedHistoryPersonId(person.id);
     setAcceptedHistoryState("loading");
     try {
