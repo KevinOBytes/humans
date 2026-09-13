@@ -21,6 +21,7 @@ const SEARCH = /* GraphQL */ `
         id
       }
       pageInfo {
+        endCursor
         hasNextPage
       }
     }
@@ -30,7 +31,7 @@ const SEARCH = /* GraphQL */ `
 type SearchResult = {
   search: {
     nodes: Array<{ id: string }>;
-    pageInfo: { hasNextPage: boolean };
+    pageInfo: { endCursor: string | null; hasNextPage: boolean };
   };
 };
 
@@ -125,6 +126,19 @@ liveDescribe("bulk search audit alert", () => {
     );
     expect(first.body?.data?.search.pageInfo.hasNextPage).toBe(true);
 
+    const nextPage = await fixture.execute<SearchResult>({
+      jar: actor.jar,
+      query: SEARCH,
+      variables: {
+        input: {
+          ...variables.input,
+          after: first.body?.data?.search.pageInfo.endCursor,
+        },
+      },
+    });
+    expect(nextPage.body?.errors).toBeUndefined();
+    expect(nextPage.body?.data?.search.nodes).toHaveLength(1);
+
     const alerts = await fixture.database
       .select({
         redactedDiff: auditEvents.redactedDiff,
@@ -144,9 +158,10 @@ liveDescribe("bulk search audit alert", () => {
     expect(alerts[0]?.redactedDiff).toEqual({
       changedFields: ["resultCount"],
       metadata: {
+        countScope: "whole_query",
         hasNextPage: true,
         queryMode: "TEXT",
-        rowCount: BULK_QUERY_ALERT_RESULT_THRESHOLD,
+        rowCount: BULK_QUERY_ALERT_RESULT_THRESHOLD + 1,
         threshold: BULK_QUERY_ALERT_RESULT_THRESHOLD,
       },
     });

@@ -349,6 +349,7 @@ liveDescribe("protected exact lookup", () => {
     });
     expect(firstPhone.nodes).toHaveLength(1);
     expect(firstPhone.nextPersonId).toBe(firstPhone.nodes[0]!.personId);
+    expect(firstPhone.totalCount).toBe(3);
     const remainingPhone = await service.lookup({
       afterPersonId: firstPhone.nextPersonId,
       first: 100,
@@ -358,10 +359,12 @@ liveDescribe("protected exact lookup", () => {
       {
         nodes: [...firstPhone.nodes, ...remainingPhone.nodes],
         nextPersonId: null,
+        totalCount: 3,
       },
       [publicPerson, internalPerson, grantedPerson],
     );
     expect(remainingPhone.nextPersonId).toBeNull();
+    expect(remainingPhone.totalCount).toBe(3);
 
     const identifierPage = await service.lookup({
       first: 100,
@@ -369,6 +372,7 @@ liveDescribe("protected exact lookup", () => {
     });
     expectIds(identifierPage, [publicPerson, grantedPerson]);
     expect(identifierPage.nextPersonId).toBeNull();
+    expect(identifierPage.totalCount).toBe(2);
     expect(JSON.stringify(identifierPage)).toEqual(
       expect.not.stringContaining(identifier.value),
     );
@@ -394,7 +398,7 @@ liveDescribe("protected exact lookup", () => {
         first: 1,
         lookup: { kind: "PHONE", value: "+12125550000" },
       }),
-    ).resolves.toEqual({ nodes: [], nextPersonId: null });
+    ).resolves.toEqual({ nodes: [], nextPersonId: null, totalCount: 0 });
   });
 
   it("keeps member grants unavailable to API-key principals", async () => {
