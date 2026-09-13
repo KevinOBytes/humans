@@ -3,6 +3,10 @@ import {
   normalizePrivacyRequest,
   assertPrivacyTransition,
 } from "@/modules/privacy/request-validation";
+import {
+  privacyPropagationIsComplete,
+  privacyProcessors,
+} from "@/modules/privacy/request-types";
 
 const id = "019f0000-0000-7000-8000-000000000001";
 const now = new Date("2026-09-11T00:00:00Z");
@@ -120,5 +124,34 @@ describe("privacy request validation", () => {
         held: true,
       }),
     ).not.toThrow();
+  });
+
+  it("requires every processor result before destructive privacy completion", () => {
+    const pending = privacyProcessors.map((processor) => ({
+      processor,
+      state: "pending" as const,
+    }));
+    expect(privacyPropagationIsComplete("deletion", [])).toBe(false);
+    expect(privacyPropagationIsComplete("deletion", pending)).toBe(false);
+    expect(
+      privacyPropagationIsComplete(
+        "deletion",
+        pending.map((row) => ({ ...row, state: "succeeded" as const })),
+      ),
+    ).toBe(true);
+    expect(
+      privacyPropagationIsComplete(
+        "deletion",
+        pending.map((row, index) => ({
+          ...row,
+          state: index === 0 ? ("failed" as const) : ("succeeded" as const),
+        })),
+      ),
+    ).toBe(false);
+    expect(
+      privacyPropagationIsComplete("access", [
+        { processor: "files", state: "pending" },
+      ]),
+    ).toBe(true);
   });
 });
