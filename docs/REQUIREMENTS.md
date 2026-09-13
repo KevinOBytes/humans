@@ -1,5 +1,13 @@
 # MVP requirements
 
+Current evidence correction (2026-09-13): the historical deployment and CI
+identifiers embedded in the requirement table for HUM-FR-035 and HUM-NFR-018
+are superseded by the verified runtime deployment
+`dpl_FND3s4vZ9tLEoHBY5SNegNCG6HM8` (runtime parent `c739f4d`) and GitHub
+Actions run `34749135777` for the reviewed tree. The table rows remain
+**Incomplete** because hosted authenticated/provider acceptance and the other
+explicitly listed release gates are still outstanding.
+
 Bounded fact-citation strength evidence (2026-09-13): the rich-profile audit of
 HUM-FR-008/009/012/013/015/016/028 found that signed fact-evidence support
 strength was already constrained in PostgreSQL, validated by the authorized
