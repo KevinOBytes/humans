@@ -2,7 +2,10 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuthRouteHandlers } from "@/app/api/auth/[...all]/handlers";
+import {
+  createAuthRouteHandlers,
+  createPreparedAuthHandler,
+} from "@/app/api/auth/[...all]/handlers";
 import {
   AUTH_REQUEST_ID_HEADER,
   decorateAuthBoundaryResponse,
@@ -238,6 +241,50 @@ describe("Better Auth administration boundary", () => {
     expect(response.headers.get("x-request-id")).toBe(preparedRequestId);
     expect(body).toMatchObject({ requestId: preparedRequestId });
   });
+
+  it.each([undefined, "not-a-request-id"])(
+    "preserves the prepared ID when a delegated handler throws with inbound ID %s",
+    async (inboundRequestId) => {
+      const logger = { log: vi.fn() };
+      let preparedRequestId: string | undefined;
+      const handler = createPreparedAuthHandler({
+        handler: async () => Promise.reject(new Error("private failure")),
+        logger,
+        prepare: async (request) => {
+          const prepared = await prepareAuthBoundaryRequest(request, {
+            authSecret: "test-auth-secret",
+            clientAddressConfig: { deploymentMode: "docker", mode: "none" },
+          });
+          preparedRequestId =
+            prepared.headers.get(AUTH_REQUEST_ID_HEADER) ?? undefined;
+          return prepared;
+        },
+      });
+
+      const response = await handler(
+        new Request("https://humans.example.test/api/auth/sign-in/email", {
+          headers: inboundRequestId
+            ? { "x-request-id": inboundRequestId }
+            : undefined,
+          method: "POST",
+        }),
+      );
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("x-request-id")).toBe(preparedRequestId);
+      await expect(response.json()).resolves.toEqual({
+        code: "AUTH_SERVICE_UNAVAILABLE",
+        message: "Authentication service is temporarily unavailable.",
+        requestId: preparedRequestId,
+      });
+      expect(logger.log).toHaveBeenCalledWith({
+        event: "auth.infrastructure.failure",
+        requestId: preparedRequestId,
+        severity: "error",
+      });
+    },
+  );
 
   it.each(["/api/auth/sign-in/email", "/api/auth/sign-in/username"])(
     "bootstraps the configured administrator before %s",
