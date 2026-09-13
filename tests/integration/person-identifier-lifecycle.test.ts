@@ -23,7 +23,7 @@ liveDescribe("governed identifier lifecycle", () => {
   });
   beforeEach(async () => fixture.reset());
   afterAll(async () => fixture.close());
-  it("executes the generated public lifecycle operations and rejects a viewer", async () => {
+  it("executes the generated public lifecycle operations and rejects read-only roles", async () => {
     const actor = await fixture.createActor();
     const person = await fixture.createPerson(actor, {
       displayName: "Generated identifier fixture",
@@ -57,7 +57,10 @@ liveDescribe("governed identifier lifecycle", () => {
       redacted: false,
       version: 1,
     });
-    const otherMember = await fixture.createWorkspaceMember(actor, "analyst");
+    const otherMember = await fixture.createWorkspaceMember(
+      actor,
+      "contributor",
+    );
     const otherCreate = await fixture.execute<{
       createPersonIdentifier: { identifier: Result };
     }>({
@@ -97,14 +100,16 @@ liveDescribe("governed identifier lifecycle", () => {
       version: 2,
       value: "Public-43",
     });
-    const viewer = await fixture.createWorkspaceMember(actor, "viewer");
-    const denied = await fixture.execute({
-      jar: viewer.jar,
-      query: CreatePersonIdentifierDocument,
-      operationName: "CreatePersonIdentifier",
-      variables: { input },
-    });
-    expect(denied.body?.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
+    for (const role of ["analyst", "viewer"] as const) {
+      const readOnlyMember = await fixture.createWorkspaceMember(actor, role);
+      const denied = await fixture.execute({
+        jar: readOnlyMember.jar,
+        query: CreatePersonIdentifierDocument,
+        operationName: "CreatePersonIdentifier",
+        variables: { input },
+      });
+      expect(denied.body?.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
+    }
     const archived = await fixture.execute<{
       archivePersonIdentifier: { identifier: Result };
     }>({
