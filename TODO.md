@@ -490,3 +490,13 @@ coverage, external storage/email/AI acceptance, and live Compose evidence.
       no-overflow, and queue-region axe results. It is included in the required
       browser CI command, but fresh CI, hosted acceptance, and the full
       role/resource matrix remain open.
+
+Bounded extraction security evidence (2026-09-13, HUM-NFR-004/HUM-NFR-007):
+the service now independently requires `file:read` before database work, and
+request/retry GraphQL mutations require it before enqueueing their work.
+GraphQL extraction errors project only an allowlisted worker code. Focused
+unit tests cover user/API-key denial and malformed/secret-bearing diagnostic
+JSON; the existing live files/imports test covers stored diagnostic redaction,
+authorized structured output, foreign-workspace denial, correlation, and
+private caching. The whole-product actor/tenant and producer/provider redaction
+matrices remain open; this evidence does not close either requirement.
