@@ -35,6 +35,15 @@ passes and the harness remains redacted. This strengthens local acceptance
 coverage only; hosted credentials, attended rotation/recovery, and external
 provider contracts remain open.
 
+Bounded hosted-transport configuration evidence (2026-09-13): production
+Vercel configuration now fails closed unless `DATABASE_URL` explicitly
+requests PostgreSQL TLS (`sslmode=require`, `verify-ca`, or `verify-full`) and
+`REDIS_URL` uses `rediss://`. The private Docker deployment remains allowed to
+use its internal `postgres` and `redis` network without TLS. Focused
+`tests/unit/env.test.ts` coverage passes without inspecting or exposing any
+credential material; Neon/Upstash reachability and external provider lifecycle
+acceptance still require an operator-run environment.
+
 Bounded administrator review UI evidence (2026-09-13): owner/admin users now
 have `/settings/break-glass`, backed by the generated workspace-scoped query
 and versioned approve/reject/revoke mutations. The surface requires a

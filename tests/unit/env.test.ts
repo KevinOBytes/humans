@@ -273,6 +273,39 @@ describe("parseServerEnv", () => {
     ).toThrow(/AUTH_SECURE_COOKIES/);
   });
 
+  it("requires encrypted database and Redis transport for Vercel production", () => {
+    expect(() =>
+      parseServerEnv({
+        ...productionEnv,
+        DATABASE_URL:
+          "postgresql://humans:Db9vN4xQ7kL2mR8sP5wT@db.example.com/humans",
+      }),
+    ).toThrow(/DATABASE_URL/);
+    expect(() =>
+      parseServerEnv({
+        ...productionEnv,
+        REDIS_URL:
+          "redis://default:Rd8pL5vN2xQ9mK4sT7wC@redis.example.com:6379",
+      }),
+    ).toThrow(/REDIS_URL/);
+  });
+
+  it("permits plaintext transport for the private Docker network", () => {
+    expect(() =>
+      parseServerEnv({
+        ...productionEnv,
+        DEPLOYMENT_MODE: "docker",
+        TRUSTED_PROXY_MODE: "none",
+        NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+        AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+        AUTH_SECURE_COOKIES: "false",
+        DATABASE_URL:
+          "postgresql://humans:Db9vN4xQ7kL2mR8sP5wT@postgres:5432/humans",
+        REDIS_URL: "redis://:Rd8pL5vN2xQ9mK4sT7wC@redis:6379",
+      }),
+    ).not.toThrow();
+  });
+
   it("allows an explicit insecure-cookie exception for loopback Docker HTTP", () => {
     expect(() =>
       parseServerEnv({

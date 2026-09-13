@@ -33,6 +33,15 @@ journey. The focused redaction/contract suite passes. This is local harness
 evidence only; hosted credentialed sign-in, attended password rotation/recovery,
 and external-provider acceptance remain incomplete.
 
+Bounded hosted-transport configuration evidence (2026-09-13): production
+Vercel configuration now fails closed unless `DATABASE_URL` explicitly
+requests PostgreSQL TLS (`sslmode=require`, `verify-ca`, or `verify-full`) and
+`REDIS_URL` uses `rediss://`. The private Docker deployment remains allowed to
+use its internal `postgres` and `redis` network without TLS. Focused
+`tests/unit/env.test.ts` coverage passes without inspecting or exposing any
+credential material; Neon/Upstash reachability and external provider lifecycle
+acceptance still require an operator-run environment.
+
 Bounded administrator review UI evidence (2026-09-13): the owner/admin-only
 `/settings/break-glass` route now loads the workspace-scoped generated
 `BreakGlassAccessRequests` operation and provides versioned approve, reject,

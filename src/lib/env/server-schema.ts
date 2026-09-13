@@ -159,6 +159,19 @@ const storageEndpoint = z.url().superRefine((value, context) => {
   }
 });
 
+function hasEncryptedPostgresTransport(value: string): boolean {
+  try {
+    const sslMode = new URL(value).searchParams.get("sslmode")?.toLowerCase();
+    return (
+      sslMode === "require" ||
+      sslMode === "verify-ca" ||
+      sslMode === "verify-full"
+    );
+  } catch {
+    return false;
+  }
+}
+
 const commonServerEnv = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -316,6 +329,24 @@ export const serverEnvSchema = z
     }
 
     if (env.NODE_ENV !== "production") return;
+
+    if (env.DEPLOYMENT_MODE === "vercel") {
+      if (!hasEncryptedPostgresTransport(env.DATABASE_URL)) {
+        context.addIssue({
+          code: "custom",
+          path: ["DATABASE_URL"],
+          message:
+            "DATABASE_URL must request encrypted PostgreSQL transport in Vercel production",
+        });
+      }
+      if (!env.REDIS_URL.startsWith("rediss:")) {
+        context.addIssue({
+          code: "custom",
+          path: ["REDIS_URL"],
+          message: "REDIS_URL must use TLS in Vercel production",
+        });
+      }
+    }
 
     if (env.DEPLOYMENT_MODE === "vercel" && !env.CRON_SECRET) {
       context.addIssue({
