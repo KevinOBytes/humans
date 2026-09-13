@@ -1,5 +1,24 @@
 # Production closeout
 
+## Current release evidence (2026-09-13, latest)
+
+The clean `main` tree at commit `f74c82a` is pushed to GitHub and has a green
+GitHub Actions run `34751719602` (dependency policy, secret scan, generated
+drift, Compose lifecycle, production build, PostgreSQL integration, quality,
+browser acceptance, and image security all passed). It was deployed directly
+to Vercel as `dpl_A5jgMwiP6CqAdjZxHaLsGCZZfPsX` (`READY`) with aliases
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`.
+
+Fresh public probes against `https://humans.kevinbytes.com` returned homepage
+`200`, liveness `200`, readiness `200` with PostgreSQL/Redis/storage healthy,
+and unauthenticated GraphQL `401` with a correlated request ID. This proves
+the deployed public boundary and provider readiness only. Hosted credentialed
+sign-in, administrator bootstrap/rotation, person creation, and external
+provider-contract acceptance remain unverified because protected Vercel
+secrets are not exported into the local environment. Do not mark those rows
+complete without an attended operator run using temporary mode-0600 values.
+
 ## Current release evidence (2026-09-13)
 
 The merged `main` tree (`56d276e`, `19a0a77`, `b062fdb`) was deployed as

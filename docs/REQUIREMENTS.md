@@ -1,5 +1,17 @@
 # MVP requirements
 
+Current release evidence (2026-09-13, latest): the clean `main` tree at
+commit `f74c82a` is pushed and its GitHub Actions run `34751719602` passed all
+nine jobs, including browser acceptance, real PostgreSQL integration,
+production build, Compose lifecycle, generated drift, quality, image
+security, dependency policy, and secret scanning. Vercel deployment
+`dpl_A5jgMwiP6CqAdjZxHaLsGCZZfPsX` is `READY` and serves the three configured
+aliases, including `humans.kevinbytes.com`. Public probes passed homepage,
+liveness, readiness with PostgreSQL/Redis/storage, and unauthenticated
+GraphQL. Hosted credentialed sign-in/person creation and external-provider
+acceptance remain intentionally incomplete because protected Vercel secrets
+were not exported for an attended credential-rotation run.
+
 Current evidence correction (2026-09-13): the historical deployment and CI
 identifiers embedded in the requirement table for HUM-FR-035 and HUM-NFR-018
 are superseded by the verified runtime deployment

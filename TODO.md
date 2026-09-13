@@ -1,5 +1,16 @@
 # MVP closure and production hardening backlog
 
+Latest release evidence (2026-09-13): clean `main` commit `f74c82a` is pushed
+to GitHub. GitHub Actions run `34751719602` passed all nine jobs, including
+the real PostgreSQL matrix and browser acceptance. Vercel deployment
+`dpl_A5jgMwiP6CqAdjZxHaLsGCZZfPsX` is `READY`, aliased to
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. Fresh public smoke passed homepage,
+liveness, readiness with PostgreSQL/Redis/storage, and unauthenticated
+GraphQL. Hosted credentialed authentication/person creation and external
+provider-contract acceptance remain open because protected Vercel secrets
+were not exported for an attended administrator rotation.
+
 Bounded fact-citation strength evidence (2026-09-13): the rich-profile audit of
 HUM-FR-008/009/012/013/015/016/028 found that signed fact-evidence support
 strength was already constrained in PostgreSQL, validated by the authorized
