@@ -400,10 +400,17 @@ export function createWebhooksService(input: {
           return result.reference;
         },
       );
-      const response = await replayWebhookMutation(executed.responseReference, {
-        action: "webhook.create",
-        state: "active",
-      });
+      const response = executed.replayed
+        ? await replayWebhookMutation(executed.responseReference, {
+            action: "webhook.create",
+            state: "active",
+          })
+        : {
+            code: "APPLIED" as const,
+            id: executed.responseReference.webhookId as string,
+            requestId: executed.responseReference.requestId as string,
+            version: executed.responseReference.version as number,
+          };
       return {
         id: response.id,
         code: response.code,
@@ -549,10 +556,23 @@ export function createWebhooksService(input: {
           return result.reference;
         },
       );
-      const response = await replayWebhookMutation(executed.responseReference, {
-        action: "webhook.rotate",
-        state: "active",
-      });
+      const response = executed.replayed
+        ? await replayWebhookMutation(executed.responseReference, {
+            action: "webhook.rotate",
+            state: "active",
+          })
+        : {
+            code: executed.responseReference.code as "APPLIED" | "INVALID",
+            id:
+              typeof executed.responseReference.webhookId === "string"
+                ? executed.responseReference.webhookId
+                : null,
+            requestId: executed.responseReference.requestId as string,
+            version:
+              typeof executed.responseReference.version === "number"
+                ? executed.responseReference.version
+                : null,
+          };
       return {
         id: response.id,
         code: response.code,
@@ -678,10 +698,23 @@ export function createWebhooksService(input: {
         ["webhook:delete"],
         async (scopedContext) => run(scopedContext.database),
       );
-      const response = await replayWebhookMutation(executed.responseReference, {
-        action: "webhook.disable",
-        state: "disabled",
-      });
+      const response = executed.replayed
+        ? await replayWebhookMutation(executed.responseReference, {
+            action: "webhook.disable",
+            state: "disabled",
+          })
+        : {
+            code: executed.responseReference.code as "APPLIED" | "INVALID",
+            id:
+              typeof executed.responseReference.webhookId === "string"
+                ? executed.responseReference.webhookId
+                : null,
+            requestId: executed.responseReference.requestId as string,
+            version:
+              typeof executed.responseReference.version === "number"
+                ? executed.responseReference.version
+                : null,
+          };
       return {
         id: response.id,
         code: response.code,

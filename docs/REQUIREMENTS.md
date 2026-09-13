@@ -1126,3 +1126,19 @@ safe projection of a secret-bearing stored diagnostic, unchanged authorized
 structured output, foreign-workspace non-disclosure, correlation, and private
 response caching. This is a local extraction boundary, not a whole-product
 authorization/redaction sweep or external-provider acceptance.
+
+Bounded HUM-FR-024/HUM-NFR-008 webhook-administration evidence (2026-09-13):
+generated `createWebhook`, `rotateWebhookSecret`, and `disableWebhook` now
+accept optional principal-bound durable HMAC idempotency keys. Create and
+rotate return the webhook secret only to the transaction executor; replays are
+explicitly secretless. Keyed rotate and disable require optimistic
+`expectedVersion`, and replay rechecks workspace, lifecycle, version, and the
+actor-bound audit reference. The live PostgreSQL webhook lifecycle matrix
+covers concurrent convergence, one-time secret presentation, malformed and
+changed material, stale-version and replay fencing, tenant/principal
+isolation, encrypted secret storage, and redacted audit deduplication. The
+first executor uses its transaction-produced reference directly so a
+concurrent lifecycle mutation cannot strand a newly issued secret after
+commit. External delivery/provider, DNS rebinding, migration, browser, and
+whole-domain retry matrices remain open; `HUM-FR-024` and `HUM-NFR-008` stay
+Incomplete.
