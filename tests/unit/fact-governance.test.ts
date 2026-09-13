@@ -30,7 +30,10 @@ vi.mock("@/modules/facts/repository", async (original) => ({
 }));
 vi.mock("@/modules/people/repository", () => ({
   createPeopleRepository: () => ({
-    getById: async () => ({ id: "person", sensitivity: "public" }),
+    getById: async ({ id }: { id: string }) => ({
+      id,
+      sensitivity: "public",
+    }),
   }),
 }));
 vi.mock("@/modules/audit/service", async (original) => ({
@@ -70,6 +73,28 @@ beforeEach(() => {
   doubles.material = {};
 });
 describe("fact governance service boundary", () => {
+  it("does not let an ordinary caller self-assign accepted review state", async () => {
+    await expect(
+      createFactsService(context).create({
+        personId: "person",
+        definitionId: "field",
+        value: { text: "claim" },
+        reviewState: "accepted",
+      }),
+    ).rejects.toThrow("Only an authorized reviewer may accept");
+  });
+
+  it("does not allow a supersession link to cross people", async () => {
+    await expect(
+      createFactsService(context).create({
+        personId: "another-person",
+        definitionId: "field",
+        value: { text: "claim" },
+        supersedesFactId: factId,
+      }),
+    ).rejects.toThrow("The requested resource was not found");
+  });
+
   it("does not bypass consent by downgrading a restricted fact", async () => {
     await expect(
       createFactsService(context).revise({

@@ -1435,6 +1435,15 @@ export function createFactsService(
       }
       const state = (input.state ?? "asserted").toLowerCase();
       const reviewState = (input.reviewState ?? "unreviewed").toLowerCase();
+      if (
+        reviewState === "accepted" &&
+        !context.permissions.has("fact:supersede")
+      ) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Only an authorized reviewer may accept a fact claim.",
+        );
+      }
       const sensitivity = (
         input.sensitivity ?? definition.defaultSensitivity
       ).toLowerCase();
@@ -1482,7 +1491,11 @@ export function createFactsService(
           workspaceId: context.workspaceId,
           id: input.supersedesFactId,
         });
-        if (!superseded || !(await visibleFact(superseded)))
+        if (
+          !superseded ||
+          superseded.personId !== input.personId ||
+          !(await visibleFact(superseded))
+        )
           throw createGraphQLError(
             "NOT_FOUND",
             "The requested resource was not found.",
