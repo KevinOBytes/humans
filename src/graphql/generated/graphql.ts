@@ -1464,6 +1464,53 @@ export type PendingAiSuggestionsQuery = {
   }>;
 };
 
+export type AcceptedAiResearchHistoryFieldsFragment = {
+  id: string;
+  personId: string;
+  caseId: string | null;
+  purpose: string;
+  fieldKey: string;
+  confidence: number;
+  uncertainty: string;
+  provider: string;
+  model: string;
+  promptPolicyVersion: string;
+  researchRunId: string;
+  reviewerPrincipalId: string;
+  suggestedAt: string;
+  reviewedAt: string;
+  decisionReason: string | null;
+  acceptedResource: { kind: string; id: string | null; redacted: boolean };
+  evidenceReferences: Array<{
+    kind: string;
+    evidenceId: string | null;
+    url: string | null;
+    locator: string | null;
+    quote: string | null;
+    snapshotHash: string | null;
+    redacted: boolean;
+  }>;
+} & { " $fragmentName"?: "AcceptedAiResearchHistoryFieldsFragment" };
+
+export type AcceptedAiResearchHistoryQueryVariables = Exact<{
+  personId: string;
+  purpose: string;
+  caseId?: string | null | undefined;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type AcceptedAiResearchHistoryQuery = {
+  acceptedAiResearchHistory: {
+    nodes: Array<{
+      " $fragmentRefs"?: {
+        AcceptedAiResearchHistoryFieldsFragment: AcceptedAiResearchHistoryFieldsFragment;
+      };
+    }>;
+    pageInfo: { endCursor: string | null; hasNextPage: boolean };
+  };
+};
+
 export type AcceptAiSuggestionMutationVariables = Exact<{
   input: AcceptAiSuggestionInput;
 }>;
@@ -5964,6 +6011,46 @@ export const AiReviewFieldsFragmentDoc = new TypedDocumentString(
     `,
   { fragmentName: "AiReviewFields" },
 ) as unknown as TypedDocumentString<AiReviewFieldsFragment, unknown>;
+export const AcceptedAiResearchHistoryFieldsFragmentDoc =
+  new TypedDocumentString(
+    `
+    fragment AcceptedAiResearchHistoryFields on AcceptedAiResearchHistoryItem {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  confidence
+  uncertainty
+  provider
+  model
+  promptPolicyVersion
+  researchRunId
+  reviewerPrincipalId
+  suggestedAt
+  reviewedAt
+  decisionReason
+  acceptedResource {
+    kind
+    id
+    redacted
+  }
+  evidenceReferences {
+    kind
+    evidenceId
+    url
+    locator
+    quote
+    snapshotHash
+    redacted
+  }
+}
+    `,
+    { fragmentName: "AcceptedAiResearchHistoryFields" },
+  ) as unknown as TypedDocumentString<
+    AcceptedAiResearchHistoryFieldsFragment,
+    unknown
+  >;
 export const AnalystPublicRunFragmentDoc = new TypedDocumentString(
   `
     fragment AnalystPublicRun on AiRun {
@@ -6413,6 +6500,63 @@ export const PendingAiSuggestionsDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   PendingAiSuggestionsQuery,
   PendingAiSuggestionsQueryVariables
+>;
+export const AcceptedAiResearchHistoryDocument = new TypedDocumentString(
+  `
+    query AcceptedAiResearchHistory($personId: UUID!, $purpose: String!, $caseId: UUID, $first: Int, $after: String) {
+  acceptedAiResearchHistory(
+    personId: $personId
+    purpose: $purpose
+    caseId: $caseId
+    first: $first
+    after: $after
+  ) {
+    nodes {
+      ...AcceptedAiResearchHistoryFields
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}
+    fragment AcceptedAiResearchHistoryFields on AcceptedAiResearchHistoryItem {
+  id
+  personId
+  caseId
+  purpose
+  fieldKey
+  confidence
+  uncertainty
+  provider
+  model
+  promptPolicyVersion
+  researchRunId
+  reviewerPrincipalId
+  suggestedAt
+  reviewedAt
+  decisionReason
+  acceptedResource {
+    kind
+    id
+    redacted
+  }
+  evidenceReferences {
+    kind
+    evidenceId
+    url
+    locator
+    quote
+    snapshotHash
+    redacted
+  }
+}`,
+  {
+    hash: "sha256:3aa36dbc535c7624e4aae304e58a78ca601a4c0437238caf6294bbad1619a5d6",
+  },
+) as unknown as TypedDocumentString<
+  AcceptedAiResearchHistoryQuery,
+  AcceptedAiResearchHistoryQueryVariables
 >;
 export const AcceptAiSuggestionDocument = new TypedDocumentString(
   `

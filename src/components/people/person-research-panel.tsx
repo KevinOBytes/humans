@@ -9,8 +9,11 @@ import { executeBrowserGraphQL } from "@/graphql/client";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
   AiReviewFieldsFragmentDoc,
+  AcceptedAiResearchHistoryDocument,
+  AcceptedAiResearchHistoryFieldsFragmentDoc,
   PendingAiSuggestionsDocument,
   PersonWebResearchDocument,
+  type AcceptedAiResearchHistoryFieldsFragment,
   type AiReviewFieldsFragment,
 } from "@/graphql/generated/graphql";
 
@@ -35,6 +38,16 @@ export function PersonResearchPanel({
   const [caseId, setCaseId] = useState("");
   const [busy, setBusy] = useState(false);
   const [suggestions, setSuggestions] = useState<AiReviewFieldsFragment[]>([]);
+  const [acceptedHistory, setAcceptedHistory] = useState<
+    AcceptedAiResearchHistoryFieldsFragment[]
+  >([]);
+  const [acceptedHistoryState, setAcceptedHistoryState] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [acceptedHistoryPage, setAcceptedHistoryPage] = useState<{
+    endCursor: string | null;
+    hasNextPage: boolean;
+  }>({ endCursor: null, hasNextPage: false });
   const [feedback, setFeedback] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   async function loadQueue() {
@@ -55,6 +68,40 @@ export function PersonResearchPanel({
         readFragment(AiReviewFieldsFragmentDoc, s),
       ),
     );
+  }
+  async function loadAcceptedHistory(after: string | null = null) {
+    setAcceptedHistoryState("loading");
+    try {
+      const result = await executeBrowserGraphQL(
+        AcceptedAiResearchHistoryDocument,
+        {
+          personId: person.id,
+          purpose: purpose.trim().toLowerCase(),
+          caseId: caseId || null,
+          first: 10,
+          after,
+        },
+      );
+      if (!result.ok) {
+        if (!after) setAcceptedHistory([]);
+        setAcceptedHistoryState("error");
+        return;
+      }
+      const nodes = result.data.acceptedAiResearchHistory.nodes.map((node) =>
+        readFragment(AcceptedAiResearchHistoryFieldsFragmentDoc, node),
+      );
+      setAcceptedHistory((current) => (after ? [...current, ...nodes] : nodes));
+      setAcceptedHistoryPage(result.data.acceptedAiResearchHistory.pageInfo);
+      setAcceptedHistoryState("loaded");
+    } catch {
+      if (!after) setAcceptedHistory([]);
+      setAcceptedHistoryState("error");
+    }
+  }
+  function clearAcceptedHistory() {
+    setAcceptedHistory([]);
+    setAcceptedHistoryPage({ endCursor: null, hasNextPage: false });
+    setAcceptedHistoryState("idle");
   }
   async function research() {
     setBusy(true);
@@ -112,6 +159,7 @@ export function PersonResearchPanel({
         onChange={(e) => {
           setPurpose(e.target.value);
           setSuggestions([]);
+          clearAcceptedHistory();
         }}
         maxLength={200}
         disabled={busy}
@@ -125,6 +173,7 @@ export function PersonResearchPanel({
         onChange={(e) => {
           setCaseId(e.target.value);
           setSuggestions([]);
+          clearAcceptedHistory();
         }}
         disabled={busy}
       />
@@ -183,6 +232,143 @@ export function PersonResearchPanel({
           }}
         />
       )}
+      <div className="border-border mt-6 border-t pt-5">
+        <h3 className="text-base font-semibold">Accepted research history</h3>
+        <p className="text-muted-foreground mt-1 text-sm leading-6">
+          Human-approved AI suggestions retain their original run, reviewer,
+          evidence, confidence, and uncertainty. This history is read-only.
+        </p>
+        <Button
+          className="mt-3"
+          variant="outline"
+          disabled={!purpose.trim() || acceptedHistoryState === "loading"}
+          onClick={() => void loadAcceptedHistory()}
+        >
+          {acceptedHistoryState === "loading"
+            ? "Loading accepted history…"
+            : "Load accepted history"}
+        </Button>
+        {!purpose.trim() && acceptedHistoryState === "idle" && (
+          <p className="text-muted-foreground mt-3 text-sm">
+            Enter a governed purpose to load accepted history.
+          </p>
+        )}
+        {acceptedHistoryState === "error" && (
+          <p role="alert" className="mt-3 text-sm">
+            Accepted research history could not be loaded. Check current purpose
+            coverage and access.
+          </p>
+        )}
+        {acceptedHistoryState === "loaded" && acceptedHistory.length === 0 && (
+          <p className="text-muted-foreground mt-3 text-sm">
+            No accepted AI research exists for this person and purpose.
+          </p>
+        )}
+        {acceptedHistory.length > 0 && (
+          <ol className="mt-4 space-y-3">
+            {acceptedHistory.map((item) => (
+              <li
+                key={item.id}
+                className="border-border bg-background rounded-xl border p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium">{item.fieldKey}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {item.provider} / {item.model}
+                  </p>
+                </div>
+                <dl className="text-muted-foreground mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                  <div>
+                    <dt className="font-medium">Confidence</dt>
+                    <dd>{Math.round(item.confidence * 100)}%</dd>
+                  </div>
+                  <div>
+                    <dt className="font-medium">Reviewed</dt>
+                    <dd>
+                      <time dateTime={item.reviewedAt}>
+                        {new Date(item.reviewedAt).toLocaleString()}
+                      </time>
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="font-medium">Uncertainty</dt>
+                    <dd>{item.uncertainty}</dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="font-medium">Reviewer</dt>
+                    <dd className="break-all">{item.reviewerPrincipalId}</dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="font-medium">Research run</dt>
+                    <dd className="break-all">{item.researchRunId}</dd>
+                  </div>
+                  {item.decisionReason && (
+                    <div className="sm:col-span-2">
+                      <dt className="font-medium">Decision reason</dt>
+                      <dd>{item.decisionReason}</dd>
+                    </div>
+                  )}
+                </dl>
+                <div className="mt-3 text-xs">
+                  <p className="font-medium">Accepted resource</p>
+                  {item.acceptedResource.redacted ? (
+                    <p className="text-muted-foreground mt-1">
+                      Accepted resource details are redacted for your access.
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground mt-1 break-all">
+                      {item.acceptedResource.kind} {item.acceptedResource.id}
+                    </p>
+                  )}
+                </div>
+                <div className="mt-3 text-xs">
+                  <p className="font-medium">Accepted evidence</p>
+                  <ul className="mt-1 space-y-2">
+                    {item.evidenceReferences.map((reference, index) => (
+                      <li key={`${item.id}-evidence-${index}`}>
+                        {reference.redacted ? (
+                          <span className="text-muted-foreground">
+                            Evidence details are redacted for your access.
+                          </span>
+                        ) : reference.kind === "web" && reference.url ? (
+                          <span>
+                            <a
+                              className="underline underline-offset-2"
+                              href={reference.url}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {reference.url}
+                            </a>
+                            {reference.locator ? ` — ${reference.locator}` : ""}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            Evidence {reference.evidenceId}
+                            {reference.locator ? ` — ${reference.locator}` : ""}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+        {acceptedHistoryPage.hasNextPage && acceptedHistoryPage.endCursor && (
+          <Button
+            className="mt-3"
+            variant="outline"
+            disabled={acceptedHistoryState === "loading"}
+            onClick={() =>
+              void loadAcceptedHistory(acceptedHistoryPage.endCursor)
+            }
+          >
+            Load more accepted history
+          </Button>
+        )}
+      </div>
     </section>
   );
 }
