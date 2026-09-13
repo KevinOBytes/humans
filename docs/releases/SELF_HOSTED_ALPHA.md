@@ -1,12 +1,18 @@
 # Self-hosted alpha and MVP release-candidate boundary
 
-Latest verified application runtime checkpoint (2026-09-13): commit `d0c2f41`
-passed GitHub Actions run `34734985662` with all 9 checks successful. Vercel
-deployment `dpl_QnPERn5WUAd4GHmSkd4Y2ZQp8dpX` is `READY` and serves
-`humans.kevinbytes.com`; public smoke passed homepage, liveness, readiness,
-unauthenticated GraphQL, and protected jobs. The direct-route error contract
-production initialization-recovery tests, and extraction read-boundary fixes
-are included in this tree.
+Latest verified application runtime checkpoint (2026-09-13): commit `c3139ab`
+passed GitHub Actions run `34737257196` with all 9 required jobs successful,
+including PostgreSQL integration, browser acceptance (38 passed, 3 skipped),
+Compose lifecycle, production build, generated drift, quality, image security,
+dependency policy, and secret scanning. Vercel deployment
+`dpl_3RCBQcxsrNdAnfaLgfFXtwjbr9Nk` is `READY`, serves
+`humans.kevinbytes.com`, and Vercel metadata confirms it was built from
+`c3139ab`. Public smoke passed homepage, liveness, readiness, unauthenticated
+GraphQL, and protected jobs; direct-route method checks returned DELETE jobs
+405, OPTIONS storage 204, and PATCH GraphQL 405 with correlation IDs and
+`private, no-store`. The direct-route error contract, production
+initialization-recovery tests, extraction read-boundary fixes, temporal graph
+editor, and retention-policy revalidation are included in this tree.
 Hosted authenticated/provider acceptance remains outside the verified alpha
 boundary.
 

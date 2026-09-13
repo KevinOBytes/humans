@@ -12,18 +12,18 @@ action controls to wrap. Existing facts/relationships/evidence/notes/contacts/
 files suites are not replaced. This is local Chromium evidence; hosted and
 whole-product accessibility acceptance remain open, as do both requirements.
 
-Latest verified application runtime checkpoint (2026-09-13): commit `d0c2f41`
-passed GitHub Actions run `34734985662` with all 9 checks successful, including
-PostgreSQL/Redis/MinIO integration, browser acceptance, production build,
-generated drift, quality, image security, dependency policy, and secret
-scanning. Vercel deployment `dpl_QnPERn5WUAd4GHmSkd4Y2ZQp8dpX` is `READY`,
-serves `humans.kevinbytes.com`, and the redacted production smoke passed
-homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs.
-Live direct-route method checks passed against the alias (DELETE jobs 405,
-OPTIONS storage 204, PATCH GraphQL 405); rejected-initialization recovery is
-verified locally through exported-route tests and is included in this
-deployment. Hosted authenticated/provider acceptance and the 24 rows below
-remain open.
+Latest verified application runtime checkpoint (2026-09-13): commit `c3139ab`
+passed GitHub Actions run `34737257196` with all 9 required jobs successful:
+PostgreSQL integration, browser acceptance (38 passed, 3 skipped), production
+build, generated drift, quality, Compose lifecycle, image security, dependency
+policy, and secret scanning. Vercel deployment
+`dpl_3RCBQcxsrNdAnfaLgfFXtwjbr9Nk` is `READY`, serves
+`humans.kevinbytes.com`, and is confirmed by Vercel metadata to have been built
+from `c3139ab`. The redacted production smoke passed homepage, liveness,
+readiness, unauthenticated GraphQL, and protected jobs. Live direct-route
+method checks passed against the alias (DELETE jobs 405, OPTIONS storage 204,
+PATCH GraphQL 405), each with a correlation ID and `private, no-store`.
+Hosted authenticated/provider acceptance and the 24 rows below remain open.
 
 Bounded HUM-FR-032 direct-route evidence (2026-09-13): all 10 API route modules are inventoried by a 43-case method-boundary suite. Unsupported standard methods now return stable correlated 405 responses with explicit `Allow` and `private, no-store`; HEAD denials and OPTIONS remain bodyless, GraphQL retains its own error shape and origin-aware preflight, and the other OPTIONS responses do not grant CORS or initialize providers. Jobs now return a JSON method-denial code, health and jobs responses use the private cache policy, and readiness failures add `PROVIDER_UNAVAILABLE` without dependency details. Twelve direct-account input/authentication-boundary cases prove malformed JSON, schema rejection, origin denial, and API-key denial before mutation; existing route-specific failure codes are preserved. The focused route suite passes 138 tests and the full unit suite passes 183 files/1,377 tests. This is local handler evidence, not hosted/provider or whole-product failure-matrix closure; HUM-FR-032 remains incomplete.
 
