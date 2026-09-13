@@ -72,6 +72,22 @@ function invalid<T>(issues: ValidationIssue[]): MutationOutcome<T> {
   return { resource: null, issues, code: "VALIDATION_FAILED" };
 }
 
+/**
+ * Accepted review state is a human approval action, not a normal data edit.
+ * Keep this deliberately narrower than the general fact:supersede grant so a
+ * contributor/API key cannot approve their own or another user's claim.
+ */
+export function canIndependentlyReviewFact(
+  context: Pick<ResearchServiceContext, "actor">,
+  originalCreator: string,
+): boolean {
+  return (
+    context.actor.type === "user" &&
+    (context.actor.role === "owner" || context.actor.role === "admin") &&
+    context.actor.principalId !== originalCreator
+  );
+}
+
 function conflict<T>(currentVersion?: number): MutationOutcome<T> {
   return { resource: null, issues: [], code: "CONFLICT", currentVersion };
 }
@@ -1435,13 +1451,10 @@ export function createFactsService(
       }
       const state = (input.state ?? "asserted").toLowerCase();
       const reviewState = (input.reviewState ?? "unreviewed").toLowerCase();
-      if (
-        reviewState === "accepted" &&
-        !context.permissions.has("fact:supersede")
-      ) {
+      if (reviewState === "accepted") {
         throw createGraphQLError(
           "FORBIDDEN",
-          "Only an authorized reviewer may accept a fact claim.",
+          "Accepted review state is only available through independent review.",
         );
       }
       const sensitivity = (
@@ -1670,6 +1683,15 @@ export function createFactsService(
           "NOT_FOUND",
           "The requested resource was not found.",
         );
+      if (
+        input.reviewState?.toLowerCase() === "accepted" &&
+        !canIndependentlyReviewFact(context, current.createdBy)
+      ) {
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Only an independent owner or administrator may accept a fact claim.",
+        );
+      }
       const effectiveSensitivity = effectiveGovernanceSensitivity(
         current.sensitivity,
         input.sensitivity,

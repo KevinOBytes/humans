@@ -94,6 +94,22 @@ function temporalMetadataIssue(
     };
   }
   const sameBound = !earliest || !latest || earliest === latest;
+  const yearOnlyBounds = (() => {
+    if (!earliest || !latest) return false;
+    const start = new Date(earliest);
+    const end = new Date(latest);
+    return (
+      start.getUTCMonth() === 0 &&
+      start.getUTCDate() === 1 &&
+      start.getUTCHours() === 0 &&
+      start.getUTCMinutes() === 0 &&
+      start.getUTCSeconds() === 0 &&
+      end.getUTCMonth() === 11 &&
+      end.getUTCDate() === 31 &&
+      end.getUTCHours() === 23 &&
+      end.getUTCFullYear() === start.getUTCFullYear()
+    );
+  })();
   const valid =
     semantics === "UNKNOWN"
       ? !hasEarliest && !hasLatest && precision === "UNKNOWN"
@@ -108,7 +124,10 @@ function temporalMetadataIssue(
               : semantics === "APPROXIMATE"
                 ? hasEarliest && hasLatest && precision !== "UNKNOWN"
                 : semantics === "YEAR_ONLY"
-                  ? hasEarliest && hasLatest && precision === "YEAR"
+                  ? hasEarliest &&
+                    hasLatest &&
+                    precision === "YEAR" &&
+                    yearOnlyBounds
                   : false;
   return valid
     ? null

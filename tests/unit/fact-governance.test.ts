@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResearchServiceContext } from "@/modules/audit/service";
-import { createFactsService } from "@/modules/facts/service";
+import {
+  canIndependentlyReviewFact,
+  createFactsService,
+} from "@/modules/facts/service";
 
 const doubles = vi.hoisted(() => ({
   coverage: vi.fn(),
@@ -19,6 +22,7 @@ vi.mock("@/modules/facts/repository", async (original) => ({
       factDefinitionId: "field",
       sensitivity: "restricted",
       version: 1,
+      createdBy: "original-principal",
     }),
     getDefinitionForUpdate: async () => ({
       id: "field",
@@ -73,7 +77,7 @@ beforeEach(() => {
   doubles.material = {};
 });
 describe("fact governance service boundary", () => {
-  it("does not let an ordinary caller self-assign accepted review state", async () => {
+  it("does not let a contributor/API caller self-assign accepted review state", async () => {
     await expect(
       createFactsService(context).create({
         personId: "person",
@@ -81,7 +85,60 @@ describe("fact governance service boundary", () => {
         value: { text: "claim" },
         reviewState: "accepted",
       }),
-    ).rejects.toThrow("Only an authorized reviewer may accept");
+    ).rejects.toThrow("Accepted review state is only available");
+  });
+
+  it("does not let a contributor accept an existing fact during revision", async () => {
+    await expect(
+      createFactsService({
+        ...context,
+        actor: {
+          type: "user",
+          id: "contributor-user",
+          principalId: "contributor-principal",
+          sessionId: "session",
+          memberId: "member",
+          role: "contributor",
+        },
+      }).revise({
+        id: factId,
+        expectedVersion: 1,
+        reviewState: "accepted",
+      }),
+    ).rejects.toThrow("Only an independent owner or administrator");
+  });
+
+  it("recognizes an independent owner or administrator as a valid reviewer", () => {
+    expect(
+      canIndependentlyReviewFact(
+        {
+          actor: {
+            type: "user",
+            id: "admin-user",
+            principalId: "reviewer-principal",
+            sessionId: "session",
+            memberId: "member",
+            role: "admin",
+          },
+        },
+        "original-principal",
+      ),
+    ).toBe(true);
+    expect(
+      canIndependentlyReviewFact(
+        {
+          actor: {
+            type: "user",
+            id: "admin-user",
+            principalId: "original-principal",
+            sessionId: "session",
+            memberId: "member",
+            role: "admin",
+          },
+        },
+        "original-principal",
+      ),
+    ).toBe(false);
   });
 
   it("does not allow a supersession link to cross people", async () => {
