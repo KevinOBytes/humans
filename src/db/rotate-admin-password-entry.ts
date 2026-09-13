@@ -6,6 +6,17 @@ import postgres from "postgres";
 import * as schema from "@/db/schema";
 import { parseAdminOperationEnv } from "@/lib/env/server-schema";
 import { bootstrapAdmin } from "@/modules/auth/bootstrap-admin";
+import type { BootstrapAdminResult } from "@/modules/auth/bootstrap-admin";
+
+export function formatAdminRotationResult(
+  result: BootstrapAdminResult,
+): string {
+  return JSON.stringify({
+    created: result.created,
+    reconciled: result.reconciled,
+    passwordRotated: result.passwordRotated === true,
+  });
+}
 
 /**
  * Explicitly rotates the configured administrator's credential.
@@ -26,7 +37,7 @@ export async function main(): Promise<void> {
     const result = await bootstrapAdmin(database, env, {
       rotatePassword: true,
     });
-    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.stdout.write(`${formatAdminRotationResult(result)}\n`);
   } finally {
     await connection.end();
   }
