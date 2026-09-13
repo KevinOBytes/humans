@@ -805,6 +805,36 @@ export function createPeopleService(context: ResearchServiceContext) {
     ]);
   }
 
+  /**
+   * Record ordinary profile reads only after the visibility-scoped query has
+   * returned a row. The audit event deliberately contains identifiers and
+   * classification metadata only; person fields (including names, notes, and
+   * protected values) never enter the redacted diff.
+   *
+   * Import workers use a narrower, allow-listed audit action set. They are not
+   * ordinary interactive profile readers, so leave their internal reads on
+   * that existing boundary instead of making a profile read fail closed.
+   */
+  async function auditProfileReads(
+    rows: readonly Pick<PersonRow, "id" | "sensitivity">[],
+  ): Promise<void> {
+    if (rows.length === 0 || context.actor.type === "worker") return;
+    await Promise.all(
+      rows.map((row) =>
+        audit.write(context.database, {
+          action: "person.read",
+          changedFields: [],
+          metadata: {
+            redactionProfile: "person-profile-read-v1",
+            sensitivity: row.sensitivity,
+          },
+          resourceId: row.id,
+          resourceKind: "person",
+        }),
+      ),
+    );
+  }
+
   return {
     async get(id: string): Promise<PersonRow | null> {
       const row = await repository.getById({
@@ -812,6 +842,7 @@ export function createPeopleService(context: ResearchServiceContext) {
         id,
         visibility,
       });
+      if (row) await auditProfileReads([row]);
       return row;
     },
 
@@ -824,6 +855,7 @@ export function createPeopleService(context: ResearchServiceContext) {
         visibility,
       });
       const byId = new Map(rows.map((row) => [row.id, row]));
+      await auditProfileReads(rows);
       return ids.map((id) => byId.get(id) ?? null);
     },
 
@@ -903,6 +935,7 @@ export function createPeopleService(context: ResearchServiceContext) {
         visibility,
       });
       const nodes = rows.slice(0, page.first);
+      await auditProfileReads(nodes);
       return {
         nodes,
         pageInfo: {
@@ -931,6 +964,7 @@ export function createPeopleService(context: ResearchServiceContext) {
         visibility,
       });
       const nodes = rows.slice(0, page.first);
+      await auditProfileReads(nodes);
       return {
         nodes,
         pageInfo: {

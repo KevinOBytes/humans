@@ -108,6 +108,100 @@ liveDescribe("research authorization", () => {
     expectGraphQLError(result, "FORBIDDEN");
   });
 
+  it("audits authorized profile reads without recording profile fields", async () => {
+    const owner = await fixture.createActor();
+    const person = await fixture.createPerson(owner, {
+      biography: "A biography that must never enter read metadata.",
+      displayName: "Audited Profile Subject",
+    });
+    const personId = required(person.body?.data?.createPerson?.person?.id);
+
+    const read = await fixture.execute({
+      jar: owner.jar,
+      query: /* GraphQL */ `
+        query ($id: UUID!) {
+          person(id: $id) {
+            id
+            displayName
+            biography
+          }
+        }
+      `,
+      variables: { id: personId },
+    });
+    expect(read.body?.errors).toBeUndefined();
+    expect(read.body?.data?.person).toMatchObject({
+      id: personId,
+      displayName: "Audited Profile Subject",
+    });
+
+    const events = await fixture.database
+      .select({
+        action: auditEvents.action,
+        redactedDiff: auditEvents.redactedDiff,
+        resourceId: auditEvents.resourceId,
+        workspaceId: auditEvents.workspaceId,
+      })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.action, "person.read"),
+          eq(auditEvents.resourceId, personId),
+        ),
+      );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: "person.read",
+      resourceId: personId,
+      workspaceId: owner.workspaceId,
+      redactedDiff: {
+        changedFields: [],
+        metadata: {
+          redactionProfile: "person-profile-read-v1",
+          sensitivity: "public",
+        },
+      },
+    });
+    expect(JSON.stringify(events[0]?.redactedDiff)).not.toContain(
+      "Audited Profile Subject",
+    );
+    expect(JSON.stringify(events[0]?.redactedDiff)).not.toContain("biography");
+
+    const foreign = await fixture.createActor();
+    const foreignPerson = await fixture.createPerson(foreign, {
+      displayName: "Foreign Profile Subject",
+    });
+    const foreignPersonId = required(
+      foreignPerson.body?.data?.createPerson?.person?.id,
+    );
+    const denied = await fixture.execute({
+      jar: owner.jar,
+      query: /* GraphQL */ `
+        query ($id: UUID!) {
+          person(id: $id) {
+            id
+          }
+        }
+      `,
+      variables: { id: foreignPersonId },
+    });
+    expect(denied.body?.errors).toBeUndefined();
+    expect(denied.body?.data?.person).toBeNull();
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.action, "person.read"),
+            eq(auditEvents.resourceId, foreignPersonId),
+          ),
+        ),
+    ).toHaveLength(0);
+  });
+
   it("restricts audit browsing to audit readers", async () => {
     const contributor = await fixture.createActor("contributor");
     const denied = await fixture.execute({
