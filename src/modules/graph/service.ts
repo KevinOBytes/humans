@@ -2340,6 +2340,8 @@ export function createGraphService(context: GraphServiceContext) {
               snapshotId: transientSnapshot.id,
             };
           },
+          undefined,
+          { isolationLevel: "repeatable read" },
         );
         if (!executed.replayed && transientSnapshot) return transientSnapshot;
         await context.operationLimiter.consume({
@@ -2525,6 +2527,8 @@ export function createGraphService(context: GraphServiceContext) {
               valid: transientResult.valid,
             };
           },
+          undefined,
+          { isolationLevel: "repeatable read" },
         );
         if (!executed.replayed && transientResult) return transientResult;
         await context.operationLimiter.consume({
@@ -2783,6 +2787,8 @@ export function createGraphService(context: GraphServiceContext) {
               snapshotId: snapshot.id,
             };
           },
+          undefined,
+          { isolationLevel: "repeatable read" },
         );
         if (!executed.replayed && transientAnalysis) return transientAnalysis;
         await context.operationLimiter.consume({
@@ -2937,6 +2943,8 @@ export function createGraphService(context: GraphServiceContext) {
               snapshotId: snapshot.id,
             };
           },
+          undefined,
+          { isolationLevel: "repeatable read" },
         );
         if (!executed.replayed && transientAnalysis) return transientAnalysis;
         await context.operationLimiter.consume({

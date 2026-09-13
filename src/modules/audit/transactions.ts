@@ -221,6 +221,15 @@ function unavailableTransaction(): never {
   );
 }
 
+function isSerializationFailure(error: unknown): boolean {
+  return (
+    error != null &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "40001"
+  );
+}
+
 function retryableLeaseLoss(): never {
   throw new JobExecutionError("lease_lost", "retryable");
 }
@@ -1468,6 +1477,7 @@ export async function runDurableImportRowResearchTransaction<T>(
 export async function runResearchTransaction<T>(
   context: ResearchServiceContext,
   input: {
+    isolationLevel?: "read committed" | "repeatable read" | "serializable";
     requiredPermissions: readonly string[];
     workspaceSerialization?: "placeHierarchy";
   },
@@ -1483,7 +1493,11 @@ export async function runResearchTransaction<T>(
   ) {
     return unavailableTransaction();
   }
-  return context.database.transaction(async (transaction) => {
+  const execute = async (
+    transaction: Parameters<
+      Parameters<typeof context.database.transaction>[0]
+    >[0],
+  ) => {
     const database = transaction as unknown as Database;
     callerOwnedDatabases.add(database);
     try {
@@ -1525,7 +1539,12 @@ export async function runResearchTransaction<T>(
       callerOwnedDatabases.delete(database);
       retiredTransactionDatabases.add(database);
     }
-  });
+  };
+  return input.isolationLevel
+    ? context.database.transaction(execute, {
+        isolationLevel: input.isolationLevel,
+      })
+    : context.database.transaction(execute);
 }
 
 /**
@@ -1676,6 +1695,9 @@ export async function runPrincipalIdempotentResearchWrite<
   requiredPermissions: readonly string[],
   write: (context: ResearchServiceContext) => Promise<T>,
   legacyCorePersonIdempotency?: DerivedResearchIdempotency,
+  transactionOptions?: Readonly<{
+    isolationLevel?: "read committed" | "repeatable read" | "serializable";
+  }>,
 ): Promise<{
   legacyReplayed: boolean;
   replayed: boolean;
@@ -1722,153 +1744,167 @@ export async function runPrincipalIdempotentResearchWrite<
   ) {
     return invalidIdempotency();
   }
-  return runResearchTransaction(
-    context,
-    {
-      requiredPermissions,
-      ...(metadata.operation.startsWith("location.place.")
-        ? { workspaceSerialization: "placeHierarchy" as const }
-        : {}),
-    },
-    async (scopedContext) => {
-      const database = scopedContext.database;
-      const lockIdentity = `${metadata.workspaceId}:${metadata.actorPrincipalId}:${metadata.operation}:${metadata.keyHash}`;
-      await database.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${lockIdentity}, 0))`,
-      );
-      const now = new Date();
-      if (legacyMetadata) {
-        const legacyIdentity = and(
-          eq(idempotencyKeys.workspaceId, legacyMetadata.workspaceId),
-          eq(idempotencyKeys.actorId, legacyMetadata.actorId),
-          eq(idempotencyKeys.operation, legacyMetadata.operation),
-          eq(idempotencyKeys.keyHash, legacyMetadata.keyHash),
+  const execute = () =>
+    runResearchTransaction(
+      context,
+      {
+        ...transactionOptions,
+        requiredPermissions,
+        ...(metadata.operation.startsWith("location.place.")
+          ? { workspaceSerialization: "placeHierarchy" as const }
+          : {}),
+      },
+      async (scopedContext) => {
+        const database = scopedContext.database;
+        const lockIdentity = `${metadata.workspaceId}:${metadata.actorPrincipalId}:${metadata.operation}:${metadata.keyHash}`;
+        await database.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${lockIdentity}, 0))`,
         );
-        const [legacyClaim] = await database
+        const now = new Date();
+        if (legacyMetadata) {
+          const legacyIdentity = and(
+            eq(idempotencyKeys.workspaceId, legacyMetadata.workspaceId),
+            eq(idempotencyKeys.actorId, legacyMetadata.actorId),
+            eq(idempotencyKeys.operation, legacyMetadata.operation),
+            eq(idempotencyKeys.keyHash, legacyMetadata.keyHash),
+          );
+          const [legacyClaim] = await database
+            .select()
+            .from(idempotencyKeys)
+            .where(and(legacyIdentity, gt(idempotencyKeys.expiresAt, now)))
+            .for("update");
+          if (legacyClaim) {
+            if (legacyClaim.requestHash !== legacyMetadata.requestHash) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The idempotency key is already bound to another request.",
+              );
+            }
+            if (
+              legacyClaim.status !== "completed" ||
+              legacyClaim.responseReference == null
+            ) {
+              throw createGraphQLError(
+                "CONFLICT",
+                "The idempotent operation is not replayable.",
+              );
+            }
+            return {
+              legacyReplayed: true,
+              replayed: true,
+              responseReference: validateResponseReference(
+                legacyClaim.responseReference,
+              ) as T,
+            };
+          }
+        }
+        const identity = and(
+          eq(locationMutationIdempotency.workspaceId, metadata.workspaceId),
+          eq(
+            locationMutationIdempotency.actorPrincipalId,
+            metadata.actorPrincipalId,
+          ),
+          eq(locationMutationIdempotency.operation, metadata.operation),
+          eq(locationMutationIdempotency.keyHash, metadata.keyHash),
+        );
+        const [prior] = await database
           .select()
-          .from(idempotencyKeys)
-          .where(and(legacyIdentity, gt(idempotencyKeys.expiresAt, now)))
+          .from(locationMutationIdempotency)
+          .where(identity)
           .for("update");
-        if (legacyClaim) {
-          if (legacyClaim.requestHash !== legacyMetadata.requestHash) {
+        let claim: typeof locationMutationIdempotency.$inferSelect | null =
+          prior ?? null;
+        if (claim && claim.expiresAt <= now) {
+          await database
+            .delete(locationMutationIdempotency)
+            .where(
+              and(
+                eq(
+                  locationMutationIdempotency.workspaceId,
+                  metadata.workspaceId,
+                ),
+                eq(locationMutationIdempotency.id, claim.id),
+                lte(locationMutationIdempotency.expiresAt, now),
+              ),
+            );
+          claim = null;
+        }
+        if (claim) {
+          if (claim.requestHash !== metadata.requestHash) {
             throw createGraphQLError(
               "CONFLICT",
               "The idempotency key is already bound to another request.",
             );
           }
-          if (
-            legacyClaim.status !== "completed" ||
-            legacyClaim.responseReference == null
-          ) {
+          if (claim.status !== "completed" || claim.responseReference == null) {
             throw createGraphQLError(
               "CONFLICT",
               "The idempotent operation is not replayable.",
             );
           }
           return {
-            legacyReplayed: true,
+            legacyReplayed: false,
             replayed: true,
             responseReference: validateResponseReference(
-              legacyClaim.responseReference,
+              claim.responseReference,
             ) as T,
           };
         }
-      }
-      const identity = and(
-        eq(locationMutationIdempotency.workspaceId, metadata.workspaceId),
-        eq(
-          locationMutationIdempotency.actorPrincipalId,
-          metadata.actorPrincipalId,
-        ),
-        eq(locationMutationIdempotency.operation, metadata.operation),
-        eq(locationMutationIdempotency.keyHash, metadata.keyHash),
-      );
-      const [prior] = await database
-        .select()
-        .from(locationMutationIdempotency)
-        .where(identity)
-        .for("update");
-      let claim: typeof locationMutationIdempotency.$inferSelect | null =
-        prior ?? null;
-      if (claim && claim.expiresAt <= now) {
-        await database
-          .delete(locationMutationIdempotency)
+        const [inserted] = await database
+          .insert(locationMutationIdempotency)
+          .values({
+            id: newId(),
+            workspaceId: metadata.workspaceId,
+            actorPrincipalId: metadata.actorPrincipalId,
+            operation: metadata.operation,
+            keyHash: metadata.keyHash,
+            requestHash: metadata.requestHash,
+            status: "pending",
+            expiresAt: new Date(metadata.expiresAtMs),
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: locationMutationIdempotency.id });
+        if (!inserted) {
+          throw createGraphQLError(
+            "CONFLICT",
+            "The idempotent operation could not be claimed.",
+          );
+        }
+        const responseReference = validateResponseReference(
+          await write(scopedContext),
+        ) as T;
+        const [completed] = await database
+          .update(locationMutationIdempotency)
+          .set({
+            responseReference,
+            status: "completed",
+            updatedAt: new Date(),
+          })
           .where(
             and(
               eq(locationMutationIdempotency.workspaceId, metadata.workspaceId),
-              eq(locationMutationIdempotency.id, claim.id),
-              lte(locationMutationIdempotency.expiresAt, now),
+              eq(locationMutationIdempotency.id, inserted.id),
+              eq(locationMutationIdempotency.status, "pending"),
             ),
-          );
-        claim = null;
-      }
-      if (claim) {
-        if (claim.requestHash !== metadata.requestHash) {
+          )
+          .returning({ id: locationMutationIdempotency.id });
+        if (!completed) {
           throw createGraphQLError(
             "CONFLICT",
-            "The idempotency key is already bound to another request.",
+            "The idempotent operation could not be completed.",
           );
         }
-        if (claim.status !== "completed" || claim.responseReference == null) {
-          throw createGraphQLError(
-            "CONFLICT",
-            "The idempotent operation is not replayable.",
-          );
-        }
-        return {
-          legacyReplayed: false,
-          replayed: true,
-          responseReference: validateResponseReference(
-            claim.responseReference,
-          ) as T,
-        };
-      }
-      const [inserted] = await database
-        .insert(locationMutationIdempotency)
-        .values({
-          id: newId(),
-          workspaceId: metadata.workspaceId,
-          actorPrincipalId: metadata.actorPrincipalId,
-          operation: metadata.operation,
-          keyHash: metadata.keyHash,
-          requestHash: metadata.requestHash,
-          status: "pending",
-          expiresAt: new Date(metadata.expiresAtMs),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: locationMutationIdempotency.id });
-      if (!inserted) {
-        throw createGraphQLError(
-          "CONFLICT",
-          "The idempotent operation could not be claimed.",
-        );
-      }
-      const responseReference = validateResponseReference(
-        await write(scopedContext),
-      ) as T;
-      const [completed] = await database
-        .update(locationMutationIdempotency)
-        .set({
-          responseReference,
-          status: "completed",
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(locationMutationIdempotency.workspaceId, metadata.workspaceId),
-            eq(locationMutationIdempotency.id, inserted.id),
-            eq(locationMutationIdempotency.status, "pending"),
-          ),
-        )
-        .returning({ id: locationMutationIdempotency.id });
-      if (!completed) {
-        throw createGraphQLError(
-          "CONFLICT",
-          "The idempotent operation could not be completed.",
-        );
-      }
-      return { legacyReplayed: false, replayed: false, responseReference };
-    },
-  );
+        return { legacyReplayed: false, replayed: false, responseReference };
+      },
+    );
+  const attempts = transactionOptions?.isolationLevel ? 3 : 1;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await execute();
+    } catch (error) {
+      if (!isSerializationFailure(error) || attempt === attempts) throw error;
+    }
+  }
+  throw new Error("unreachable principal idempotency retry");
 }

@@ -9,7 +9,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { members, sessions } from "@/db/schema/auth";
@@ -82,7 +82,10 @@ type DeriveResearchIdempotency = (
 
 type RunResearchTransaction = <T>(
   context: ResearchServiceContext,
-  input: { requiredPermissions: readonly string[] },
+  input: {
+    isolationLevel?: "read committed" | "repeatable read" | "serializable";
+    requiredPermissions: readonly string[];
+  },
   write: (context: ResearchServiceContext) => Promise<T>,
 ) => Promise<T>;
 
@@ -1015,6 +1018,28 @@ liveDescribe("research write transactions", () => {
     expect(await workspaceCounts(fixture, actor.workspaceId)).toEqual([
       0, 0, 0, 0, 0,
     ]);
+  });
+
+  it("forwards an explicit repeatable-read isolation contract to PostgreSQL", async () => {
+    const { runResearchTransaction } = transactionFunctions();
+    const actor = await fixture.createActor();
+    const context = await serviceContext(fixture, actor);
+
+    const isolation = await runResearchTransaction(
+      context,
+      {
+        isolationLevel: "repeatable read",
+        requiredPermissions: ["person:create"],
+      },
+      async (scoped) => {
+        const rows = (await scoped.database.execute(
+          sql`show transaction_isolation`,
+        )) as unknown as Array<{ transaction_isolation: string }>;
+        return rows[0]?.transaction_isolation;
+      },
+    );
+
+    expect(isolation).toBe("repeatable read");
   });
 
   it("fails closed when a composed fact write targets another workspace", async () => {

@@ -167,6 +167,17 @@ liveDescribe("graph analysis mutation idempotency", () => {
       "analysis run",
     );
     expect(runReplay.body?.data?.runGraphAnalysis).toEqual(analysis);
+    expectGraphQLError(
+      await fixture.execute({
+        jar: actor.jar,
+        operationName: "RunGraphAnalysis",
+        query: RunGraphAnalysisDocument,
+        variables: {
+          input: { ...runInput, algorithm: "PAGERANK" as const },
+        },
+      }),
+      "CONFLICT",
+    );
 
     const rerunInput = {
       algorithm: "PAGERANK" as const,
@@ -193,6 +204,17 @@ liveDescribe("graph analysis mutation idempotency", () => {
     expect(rerunReplay.body?.data?.rerunGraphAnalysis).toEqual(
       rerunFirst.body?.data?.rerunGraphAnalysis,
     );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: actor.jar,
+        operationName: "RerunGraphAnalysis",
+        query: RerunGraphAnalysisDocument,
+        variables: {
+          input: { ...rerunInput, algorithm: "DEGREE" as const },
+        },
+      }),
+      "CONFLICT",
+    );
 
     const replayInput = {
       idempotencyKey: "graph-snapshot-validation-replay-v1",
@@ -214,6 +236,20 @@ liveDescribe("graph analysis mutation idempotency", () => {
     const replayAgain = await replaySnapshot();
     expect(replayFirst.body?.errors).toBeUndefined();
     expect(replayAgain.body).toEqual(replayFirst.body);
+    expectGraphQLError(
+      await fixture.execute({
+        jar: actor.jar,
+        operationName: "ReplayGraphSnapshot",
+        query: ReplayGraphSnapshotDocument,
+        variables: {
+          input: {
+            ...replayInput,
+            snapshotId: analysis.run.graphSnapshotId,
+          },
+        },
+      }),
+      "CONFLICT",
+    );
 
     expect(await fixture.database.select().from(graphSnapshots)).toHaveLength(
       3,
@@ -317,5 +353,100 @@ liveDescribe("graph analysis mutation idempotency", () => {
           ),
         ),
     ).toHaveLength(0);
+  });
+
+  it("fails closed on malformed snapshot, analysis, and replay references", async () => {
+    const actor = await fixture.createActor();
+    await seedGraph(actor);
+    const snapshotInput = {
+      algorithm: "DEGREE" as const,
+      filter: { mode: "WORKSPACE" as const },
+      idempotencyKey: "malformed-snapshot-reference-v1",
+    };
+    const createSnapshot = () =>
+      fixture.execute<{ createGraphSnapshot: { id: string } }>({
+        jar: actor.jar,
+        operationName: "CreateGraphSnapshot",
+        query: CreateGraphSnapshotDocument,
+        variables: { input: snapshotInput },
+      });
+    const created = await createSnapshot();
+    const snapshotId = required(
+      created.body?.data?.createGraphSnapshot.id,
+      "snapshot",
+    );
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({ responseReference: { snapshotId } })
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, actor.workspaceId),
+          eq(
+            locationMutationIdempotency.operation,
+            "graph_snapshot.create.graphql",
+          ),
+        ),
+      );
+    expectGraphQLError(await createSnapshot(), "PRECONDITION_FAILED");
+
+    const runInput = {
+      algorithm: "DEGREE" as const,
+      filter: { mode: "WORKSPACE" as const },
+      idempotencyKey: "malformed-analysis-reference-v1",
+    };
+    const run = () =>
+      fixture.execute<{ runGraphAnalysis: { run: { id: string } } }>({
+        jar: actor.jar,
+        operationName: "RunGraphAnalysis",
+        query: RunGraphAnalysisDocument,
+        variables: { input: runInput },
+      });
+    const analysis = await run();
+    expect(analysis.body?.errors).toBeUndefined();
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({ responseReference: { runId: "not-a-uuid" } })
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, actor.workspaceId),
+          eq(
+            locationMutationIdempotency.operation,
+            "graph_analysis.run.graphql",
+          ),
+        ),
+      );
+    expectGraphQLError(await run(), "PRECONDITION_FAILED");
+
+    const replayInput = {
+      idempotencyKey: "malformed-replay-reference-v1",
+      snapshotId,
+    };
+    const replay = () =>
+      fixture.execute({
+        jar: actor.jar,
+        operationName: "ReplayGraphSnapshot",
+        query: ReplayGraphSnapshotDocument,
+        variables: { input: replayInput },
+      });
+    expect((await replay()).body?.errors).toBeUndefined();
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({
+        responseReference: {
+          manifestHash: "11".repeat(32),
+          snapshotId,
+          valid: false,
+        },
+      })
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, actor.workspaceId),
+          eq(
+            locationMutationIdempotency.operation,
+            "graph_snapshot.replay.graphql",
+          ),
+        ),
+      );
+    expectGraphQLError(await replay(), "PRECONDITION_FAILED");
   });
 });
