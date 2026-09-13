@@ -1,8 +1,9 @@
 import { createHmac } from "node:crypto";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
+import { exportArtifacts } from "@/db/schema/search";
 import {
   consentRecords,
   deletionRequests,
@@ -19,6 +20,7 @@ import { createCasesService } from "@/modules/cases/service";
 import {
   normalizePrivacyRequest,
   assertPrivacyTransition,
+  exportArtifactSatisfiesPrivacyRequest,
 } from "./request-validation";
 import {
   privacyProcessors,
@@ -65,7 +67,11 @@ async function requireScope(
       includeDeleted,
     );
 }
-async function evidence(context: ResearchServiceContext, id: string) {
+async function evidence(
+  context: ResearchServiceContext,
+  id: string,
+  request?: Pick<PrivacyRequestRow, "requestType" | "purpose" | "caseId">,
+) {
   await requirePrivacyResource(context, {
     resourceKind: "file",
     resourceId: id,
@@ -81,6 +87,34 @@ async function evidence(context: ResearchServiceContext, id: string) {
     !["clean", "not_required"].includes(row.scan)
   )
     precondition();
+  if (request?.requestType === "export") {
+    const [artifact] = await context.database
+      .select({
+        caseId: exportArtifacts.caseId,
+        expiresAt: exportArtifacts.expiresAt,
+        purpose: exportArtifacts.purpose,
+        state: exportArtifacts.state,
+      })
+      .from(exportArtifacts)
+      .where(
+        and(
+          eq(exportArtifacts.workspaceId, context.workspaceId),
+          eq(exportArtifacts.fileId, id),
+          eq(exportArtifacts.state, "ready"),
+          gt(exportArtifacts.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    if (
+      !artifact ||
+      !exportArtifactSatisfiesPrivacyRequest({
+        artifact,
+        request: { purpose: request.purpose, caseId: request.caseId },
+        now: new Date(),
+      })
+    )
+      precondition();
+  }
 }
 export async function privacyRequestHeld(
   context: Pick<ResearchServiceContext, "database" | "workspaceId">,
@@ -330,7 +364,7 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
         }
         if (row.state === "fulfilling") {
           if (!input.completionEvidenceId) precondition();
-          await evidence(scoped, input.completionEvidenceId);
+          await evidence(scoped, input.completionEvidenceId, row);
           if (row.legacyDeletionRequestId) {
             const [legacy] = await scoped.database
               .select({ state: deletionRequests.state })
