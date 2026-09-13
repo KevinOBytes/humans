@@ -10,7 +10,7 @@ import { executeServerGraphQL } from "@/graphql/server-client";
 export default async function BreakGlassSettingsPage() {
   await getAdministrativeSettingsContext();
   const data = await executeServerGraphQL(BreakGlassAccessRequestsDocument, {
-    first: 25,
+    first: 10,
     after: null,
   });
   const connection = data.breakGlassAccessRequests;
