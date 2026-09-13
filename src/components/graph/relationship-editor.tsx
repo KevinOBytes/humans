@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import type {
+  RelationshipTemporalPrecision,
+  RelationshipTemporalSemantics,
+} from "@/graphql/generated/graphql";
 import { toRelationshipEditorGraph } from "@/modules/graph/transform";
 import type { GraphResult } from "@/modules/graph/types";
 import { relationshipStateStyle } from "./relationship-state-style";
@@ -44,6 +48,10 @@ export type RelationshipEditorMutationAdapter = {
     sensitivity: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
     sourcePersonId: string;
     targetPersonId: string;
+    temporalPrecision?: RelationshipTemporalPrecision;
+    temporalSemantics?: RelationshipTemporalSemantics;
+    validFrom?: string | null;
+    validUntil?: string | null;
   }) => Promise<boolean>;
   update?: (input: {
     expectedVersion: number;
@@ -51,10 +59,93 @@ export type RelationshipEditorMutationAdapter = {
     governancePurpose: string;
     relationshipId: string;
     sensitivity: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+    temporalPrecision?: RelationshipTemporalPrecision;
+    temporalSemantics?: RelationshipTemporalSemantics;
+    validFrom?: string | null;
+    validUntil?: string | null;
   }) => Promise<boolean>;
 };
 
 export type RelationshipTypeOption = { id: string; label: string };
+
+const TEMPORAL_SEMANTICS = [
+  "UNKNOWN",
+  "EXACT",
+  "APPROXIMATE",
+  "BETWEEN",
+  "BEFORE",
+  "AFTER",
+  "YEAR_ONLY",
+] as const satisfies readonly RelationshipTemporalSemantics[];
+const TEMPORAL_PRECISIONS = [
+  "UNKNOWN",
+  "INSTANT",
+  "SECOND",
+  "MINUTE",
+  "HOUR",
+  "DAY",
+  "MONTH",
+  "YEAR",
+  "RANGE",
+] as const satisfies readonly RelationshipTemporalPrecision[];
+
+function dateTimeLocal(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isFinite(date.valueOf()) ? date.toISOString().slice(0, 16) : "";
+}
+
+function dateTimeIso(value: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isFinite(date.valueOf()) ? date.toISOString() : undefined;
+}
+
+function temporalFields(input: {
+  precision: RelationshipTemporalPrecision;
+  semantics: RelationshipTemporalSemantics;
+  validFrom: string;
+  validUntil: string;
+  includeEmpty?: boolean;
+}) {
+  const validFrom = dateTimeIso(input.validFrom);
+  const validUntil = dateTimeIso(input.validUntil);
+  return {
+    ...(input.semantics !== "UNKNOWN"
+      ? { temporalSemantics: input.semantics }
+      : input.includeEmpty
+        ? { temporalSemantics: "UNKNOWN" as const }
+        : {}),
+    ...(input.precision !== "UNKNOWN"
+      ? { temporalPrecision: input.precision }
+      : input.includeEmpty
+        ? { temporalPrecision: "UNKNOWN" as const }
+        : {}),
+    ...(validFrom
+      ? { validFrom }
+      : input.includeEmpty
+        ? { validFrom: null }
+        : {}),
+    ...(validUntil
+      ? { validUntil }
+      : input.includeEmpty
+        ? { validUntil: null }
+        : {}),
+  };
+}
+
+function temporalSummary(input: {
+  precision: RelationshipTemporalPrecision;
+  semantics: RelationshipTemporalSemantics;
+  validFrom: string;
+  validUntil: string;
+}) {
+  const bounds =
+    input.validFrom || input.validUntil
+      ? `, ${input.validFrom || "open"} to ${input.validUntil || "open"}`
+      : "";
+  return `${input.semantics} semantics at ${input.precision} precision${bounds}`;
+}
 
 function PersonNode({ data }: NodeProps<EditorNode>) {
   return (
@@ -183,6 +274,12 @@ export function RelationshipEditor({
   const [createSensitivity, setCreateSensitivity] = useState<
     "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED"
   >("INTERNAL");
+  const [createTemporalSemantics, setCreateTemporalSemantics] =
+    useState<RelationshipTemporalSemantics>("UNKNOWN");
+  const [createTemporalPrecision, setCreateTemporalPrecision] =
+    useState<RelationshipTemporalPrecision>("UNKNOWN");
+  const [createValidFrom, setCreateValidFrom] = useState("");
+  const [createValidUntil, setCreateValidUntil] = useState("");
   const [selectedRelationshipId, setSelectedRelationshipId] = useState("");
   const selectedRelationship = selectedRelationshipId
     ? relationships.get(selectedRelationshipId)
@@ -190,6 +287,13 @@ export function RelationshipEditor({
   const [existingSensitivity, setExistingSensitivity] = useState<
     "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED"
   >("INTERNAL");
+  const [existingTemporalSemantics, setExistingTemporalSemantics] =
+    useState<RelationshipTemporalSemantics>("UNKNOWN");
+  const [existingTemporalPrecision, setExistingTemporalPrecision] =
+    useState<RelationshipTemporalPrecision>("UNKNOWN");
+  const [existingValidFrom, setExistingValidFrom] = useState("");
+  const [existingValidUntil, setExistingValidUntil] = useState("");
+  const [existingTemporalDirty, setExistingTemporalDirty] = useState(false);
   const [pendingChange, setPendingChange] = useState<
     | {
         kind: "create";
@@ -197,6 +301,10 @@ export function RelationshipEditor({
         sensitivity: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
         sourcePersonId: string;
         targetPersonId: string;
+        temporalPrecision: RelationshipTemporalPrecision;
+        temporalSemantics: RelationshipTemporalSemantics;
+        validFrom: string;
+        validUntil: string;
       }
     | { kind: "archive"; edge: EditorEdge }
     | {
@@ -236,6 +344,10 @@ export function RelationshipEditor({
       sensitivity: createSensitivity,
       sourcePersonId,
       targetPersonId,
+      temporalPrecision: createTemporalPrecision,
+      temporalSemantics: createTemporalSemantics,
+      validFrom: createValidFrom,
+      validUntil: createValidUntil,
     });
     setStatus("Confirm the new relationship before saving.");
   }
@@ -252,6 +364,12 @@ export function RelationshipEditor({
         sensitivity: pendingChange.sensitivity,
         sourcePersonId: pendingChange.sourcePersonId,
         targetPersonId: pendingChange.targetPersonId,
+        ...temporalFields({
+          precision: pendingChange.temporalPrecision,
+          semantics: pendingChange.temporalSemantics,
+          validFrom: pendingChange.validFrom,
+          validUntil: pendingChange.validUntil,
+        }),
       });
     } else {
       const expectedVersion = pendingChange.edge.data?.version;
@@ -275,6 +393,15 @@ export function RelationshipEditor({
               governancePurpose: "research",
               relationshipId,
               sensitivity: pendingChange.sensitivity,
+              ...(existingTemporalDirty
+                ? temporalFields({
+                    precision: existingTemporalPrecision,
+                    semantics: existingTemporalSemantics,
+                    validFrom: existingValidFrom,
+                    validUntil: existingValidUntil,
+                    includeEmpty: true,
+                  })
+                : {}),
             });
     }
     setPending(false);
@@ -298,11 +425,20 @@ export function RelationshipEditor({
   function chooseExistingRelationship(id: string) {
     setSelectedRelationshipId(id);
     setPendingChange(null);
+    setExistingTemporalDirty(false);
     const relationship = relationships.get(id);
     if (relationship) {
       setExistingSensitivity(
         relationship.sensitivity.toUpperCase() as typeof existingSensitivity,
       );
+      setExistingTemporalSemantics(
+        relationship.temporalSemantics.toUpperCase() as RelationshipTemporalSemantics,
+      );
+      setExistingTemporalPrecision(
+        relationship.temporalPrecision.toUpperCase() as RelationshipTemporalPrecision,
+      );
+      setExistingValidFrom(dateTimeLocal(relationship.validFrom));
+      setExistingValidUntil(dateTimeLocal(relationship.validUntil));
     }
   }
 
@@ -480,6 +616,87 @@ export function RelationshipEditor({
                   <option>RESTRICTED</option>
                 </select>
               </div>
+              <fieldset className="border-border space-y-3 rounded-xl border p-3">
+                <legend className="px-1 text-sm font-semibold">
+                  Temporal validity
+                </legend>
+                <div className="space-y-2">
+                  <Label htmlFor="editor-relationship-temporal-semantics">
+                    Semantics
+                  </Label>
+                  <select
+                    id="editor-relationship-temporal-semantics"
+                    aria-label="Relationship temporal semantics"
+                    value={createTemporalSemantics}
+                    onChange={(event) =>
+                      setCreateTemporalSemantics(
+                        event.target.value as RelationshipTemporalSemantics,
+                      )
+                    }
+                    className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+                  >
+                    {TEMPORAL_SEMANTICS.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editor-relationship-temporal-precision">
+                    Precision
+                  </Label>
+                  <select
+                    id="editor-relationship-temporal-precision"
+                    aria-label="Relationship temporal precision"
+                    value={createTemporalPrecision}
+                    onChange={(event) =>
+                      setCreateTemporalPrecision(
+                        event.target.value as RelationshipTemporalPrecision,
+                      )
+                    }
+                    className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+                  >
+                    {TEMPORAL_PRECISIONS.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="editor-relationship-valid-from">
+                      Valid from
+                    </Label>
+                    <input
+                      id="editor-relationship-valid-from"
+                      aria-label="Relationship valid from"
+                      type="datetime-local"
+                      value={createValidFrom}
+                      onChange={(event) =>
+                        setCreateValidFrom(event.target.value)
+                      }
+                      className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editor-relationship-valid-until">
+                      Valid until
+                    </Label>
+                    <input
+                      id="editor-relationship-valid-until"
+                      aria-label="Relationship valid until"
+                      type="datetime-local"
+                      value={createValidUntil}
+                      onChange={(event) =>
+                        setCreateValidUntil(event.target.value)
+                      }
+                      className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+                    />
+                  </div>
+                </div>
+              </fieldset>
               <Button
                 type="button"
                 className="w-full"
@@ -551,6 +768,91 @@ export function RelationshipEditor({
                       <option>RESTRICTED</option>
                     </select>
                   </div>
+                  <fieldset className="border-border space-y-3 rounded-xl border p-3">
+                    <legend className="px-1 text-sm font-semibold">
+                      Temporal validity
+                    </legend>
+                    <div className="space-y-2">
+                      <Label htmlFor="editor-existing-temporal-semantics">
+                        Semantics
+                      </Label>
+                      <select
+                        id="editor-existing-temporal-semantics"
+                        aria-label="Existing relationship temporal semantics"
+                        value={existingTemporalSemantics}
+                        onChange={(event) => {
+                          setExistingTemporalDirty(true);
+                          setExistingTemporalSemantics(
+                            event.target.value as RelationshipTemporalSemantics,
+                          );
+                        }}
+                        className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+                      >
+                        {TEMPORAL_SEMANTICS.map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="editor-existing-temporal-precision">
+                        Precision
+                      </Label>
+                      <select
+                        id="editor-existing-temporal-precision"
+                        aria-label="Existing relationship temporal precision"
+                        value={existingTemporalPrecision}
+                        onChange={(event) => {
+                          setExistingTemporalDirty(true);
+                          setExistingTemporalPrecision(
+                            event.target.value as RelationshipTemporalPrecision,
+                          );
+                        }}
+                        className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+                      >
+                        {TEMPORAL_PRECISIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="editor-existing-valid-from">
+                          Valid from
+                        </Label>
+                        <input
+                          id="editor-existing-valid-from"
+                          aria-label="Existing relationship valid from"
+                          type="datetime-local"
+                          value={existingValidFrom}
+                          onChange={(event) => {
+                            setExistingTemporalDirty(true);
+                            setExistingValidFrom(event.target.value);
+                          }}
+                          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="editor-existing-valid-until">
+                          Valid until
+                        </Label>
+                        <input
+                          id="editor-existing-valid-until"
+                          aria-label="Existing relationship valid until"
+                          type="datetime-local"
+                          value={existingValidUntil}
+                          onChange={(event) => {
+                            setExistingTemporalDirty(true);
+                            setExistingValidUntil(event.target.value);
+                          }}
+                          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+                        />
+                      </div>
+                    </div>
+                  </fieldset>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button
                       type="button"
@@ -604,12 +906,33 @@ export function RelationshipEditor({
                     <>
                       {people.get(pendingChange.sourcePersonId)} →{" "}
                       {people.get(pendingChange.targetPersonId)} will use the
-                      selected relationship type and sensitivity.
+                      selected relationship type and sensitivity. Temporal
+                      validity:{" "}
+                      {temporalSummary({
+                        precision: pendingChange.temporalPrecision,
+                        semantics: pendingChange.temporalSemantics,
+                        validFrom: pendingChange.validFrom,
+                        validUntil: pendingChange.validUntil,
+                      })}
+                      .
                     </>
                   ) : (
                     <>
                       The request will include expected version{" "}
                       {pendingChange.edge.data?.version}.
+                      {existingTemporalDirty ? (
+                        <>
+                          {" "}
+                          Temporal validity:{" "}
+                          {temporalSummary({
+                            precision: existingTemporalPrecision,
+                            semantics: existingTemporalSemantics,
+                            validFrom: existingValidFrom,
+                            validUntil: existingValidUntil,
+                          })}
+                          .
+                        </>
+                      ) : null}
                     </>
                   )}{" "}
                   The canonical graph changes only after server success.

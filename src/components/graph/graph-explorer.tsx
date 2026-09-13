@@ -321,7 +321,15 @@ export function GraphExplorer({
           }
         : undefined,
       update: mayUpdate
-        ? async ({ expectedVersion, relationshipId, sensitivity }) => {
+        ? async ({
+            expectedVersion,
+            relationshipId,
+            sensitivity,
+            temporalPrecision,
+            temporalSemantics,
+            validFrom,
+            validUntil,
+          }) => {
             const generation = generationRef.current;
             const response = await executeBrowserGraphQL(
               UpdateRelationshipDocument,
@@ -332,6 +340,10 @@ export function GraphExplorer({
                   governancePurpose: "research",
                   id: relationshipId,
                   sensitivity,
+                  temporalPrecision,
+                  temporalSemantics,
+                  validFrom,
+                  validUntil,
                 },
               },
             );
