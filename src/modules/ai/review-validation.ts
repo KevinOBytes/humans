@@ -69,6 +69,38 @@ export const aiEvidenceReferenceSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
 ]);
+
+/**
+ * Accepted web references receive a server-generated pointer to the ordinary
+ * evidence item created during review. It is intentionally separate from the
+ * proposal schema so an upstream provider cannot select an evidence record.
+ */
+export const acceptedAiEvidenceReferenceSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("evidence"),
+      evidenceId: z.uuid(),
+      locator: text(2000),
+      quote: text(4000),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("web"),
+      url: z
+        .url()
+        .max(2048)
+        .refine((v) => new URL(v).protocol === "https:"),
+      locator: text(2000),
+      quote: text(4000),
+      snapshotHash: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/)
+        .optional(),
+      promotedEvidenceId: z.uuid().optional(),
+    })
+    .strict(),
+]);
 const suggestionSchema = z
   .object({
     personId: z.uuid(),
