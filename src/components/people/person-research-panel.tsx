@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AiReviewQueue } from "@/components/ai/ai-review-queue";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,9 @@ export function PersonResearchPanel({
   const [acceptedHistory, setAcceptedHistory] = useState<
     AcceptedAiResearchHistoryFieldsFragment[]
   >([]);
+  const [acceptedHistoryPersonId, setAcceptedHistoryPersonId] = useState(
+    person.id,
+  );
   const [acceptedHistoryState, setAcceptedHistoryState] = useState<
     "idle" | "loading" | "loaded" | "error"
   >("idle");
@@ -49,6 +52,12 @@ export function PersonResearchPanel({
     hasNextPage: boolean;
   }>({ endCursor: null, hasNextPage: false });
   const acceptedHistoryRequestGeneration = useRef(0);
+  useEffect(
+    () => () => {
+      acceptedHistoryRequestGeneration.current += 1;
+    },
+    [person.id],
+  );
   const [feedback, setFeedback] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   async function loadQueue() {
@@ -72,6 +81,7 @@ export function PersonResearchPanel({
   }
   async function loadAcceptedHistory(after: string | null = null) {
     const requestGeneration = ++acceptedHistoryRequestGeneration.current;
+    setAcceptedHistoryPersonId(person.id);
     setAcceptedHistoryState("loading");
     try {
       const result = await executeBrowserGraphQL(
@@ -106,6 +116,7 @@ export function PersonResearchPanel({
   }
   function clearAcceptedHistory() {
     acceptedHistoryRequestGeneration.current += 1;
+    setAcceptedHistoryPersonId(person.id);
     setAcceptedHistory([]);
     setAcceptedHistoryPage({ endCursor: null, hasNextPage: false });
     setAcceptedHistoryState("idle");
@@ -147,6 +158,16 @@ export function PersonResearchPanel({
       setBusy(false);
     }
   }
+  const acceptedHistoryMatchesPerson = acceptedHistoryPersonId === person.id;
+  const currentAcceptedHistory = acceptedHistoryMatchesPerson
+    ? acceptedHistory
+    : [];
+  const currentAcceptedHistoryState = acceptedHistoryMatchesPerson
+    ? acceptedHistoryState
+    : "idle";
+  const currentAcceptedHistoryPage = acceptedHistoryMatchesPerson
+    ? acceptedHistoryPage
+    : { endCursor: null, hasNextPage: false };
   return (
     <section className="border-border bg-muted/30 mt-6 rounded-2xl border p-5">
       <h2 className="text-lg font-semibold">Web research</h2>
@@ -248,32 +269,35 @@ export function PersonResearchPanel({
         <Button
           className="mt-3"
           variant="outline"
-          disabled={!purpose.trim() || acceptedHistoryState === "loading"}
+          disabled={
+            !purpose.trim() || currentAcceptedHistoryState === "loading"
+          }
           onClick={() => void loadAcceptedHistory()}
         >
-          {acceptedHistoryState === "loading"
+          {currentAcceptedHistoryState === "loading"
             ? "Loading accepted history…"
             : "Load accepted history"}
         </Button>
-        {!purpose.trim() && acceptedHistoryState === "idle" && (
+        {!purpose.trim() && currentAcceptedHistoryState === "idle" && (
           <p className="text-muted-foreground mt-3 text-sm">
             Enter a governed purpose to load accepted history.
           </p>
         )}
-        {acceptedHistoryState === "error" && (
+        {currentAcceptedHistoryState === "error" && (
           <p role="alert" className="mt-3 text-sm">
             Accepted research history could not be loaded. Check current purpose
             coverage and access.
           </p>
         )}
-        {acceptedHistoryState === "loaded" && acceptedHistory.length === 0 && (
-          <p className="text-muted-foreground mt-3 text-sm">
-            No accepted AI research exists for this person and purpose.
-          </p>
-        )}
-        {acceptedHistory.length > 0 && (
+        {currentAcceptedHistoryState === "loaded" &&
+          currentAcceptedHistory.length === 0 && (
+            <p className="text-muted-foreground mt-3 text-sm">
+              No accepted AI research exists for this person and purpose.
+            </p>
+          )}
+        {currentAcceptedHistory.length > 0 && (
           <ol className="mt-4 space-y-3">
-            {acceptedHistory.map((item) => (
+            {currentAcceptedHistory.map((item) => (
               <li
                 key={item.id}
                 className="border-border bg-background rounded-xl border p-4"
@@ -363,18 +387,19 @@ export function PersonResearchPanel({
             ))}
           </ol>
         )}
-        {acceptedHistoryPage.hasNextPage && acceptedHistoryPage.endCursor && (
-          <Button
-            className="mt-3"
-            variant="outline"
-            disabled={acceptedHistoryState === "loading"}
-            onClick={() =>
-              void loadAcceptedHistory(acceptedHistoryPage.endCursor)
-            }
-          >
-            Load more accepted history
-          </Button>
-        )}
+        {currentAcceptedHistoryPage.hasNextPage &&
+          currentAcceptedHistoryPage.endCursor && (
+            <Button
+              className="mt-3"
+              variant="outline"
+              disabled={currentAcceptedHistoryState === "loading"}
+              onClick={() =>
+                void loadAcceptedHistory(currentAcceptedHistoryPage.endCursor)
+              }
+            >
+              Load more accepted history
+            </Button>
+          )}
       </div>
     </section>
   );

@@ -52,6 +52,28 @@ const suggestion = {
   acceptedResourceKind: null,
   decisionReason: null,
 };
+function acceptedHistoryNode(fieldKey: string, personId = person.id) {
+  return {
+    __typename: "AcceptedAiResearchHistoryItem" as const,
+    id: "8c23bfeb-ce83-45d4-b29b-b53cbc15d186",
+    personId,
+    caseId: null,
+    purpose: "research",
+    fieldKey,
+    confidence: 0.8,
+    uncertainty: "Synthetic accepted-history fixture.",
+    provider: "COMPATIBLE",
+    model: "research-model",
+    promptPolicyVersion: "review-v1",
+    researchRunId: runId,
+    reviewerPrincipalId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf6",
+    suggestedAt: "2026-09-13T01:00:00.000Z",
+    reviewedAt: "2026-09-13T02:00:00.000Z",
+    decisionReason: null,
+    acceptedResource: { kind: "person", id: personId, redacted: false },
+    evidenceReferences: [],
+  };
+}
 async function research(user: ReturnType<typeof userEvent.setup>) {
   execute
     .mockResolvedValueOnce({ ok: true, data: { personWebResearch: { runId } } })
@@ -251,6 +273,72 @@ describe("PersonResearchPanel governed review", () => {
       ).toBeEnabled(),
     );
     expect(screen.queryByText("stale biography")).toBeNull();
+  });
+
+  it("clears prior rows and discards an in-flight response when the person changes", async () => {
+    const user = userEvent.setup();
+    execute.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        acceptedAiResearchHistory: {
+          nodes: [acceptedHistoryNode("old person biography")],
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
+    });
+    const nextPerson = {
+      ...person,
+      id: "c1ee46a9-e2ca-47d6-8c28-cc250d0bc823",
+      displayName: "Grace Researcher",
+    };
+    let resolveHistory!: (value: {
+      ok: true;
+      data: {
+        acceptedAiResearchHistory: {
+          nodes: ReturnType<typeof acceptedHistoryNode>[];
+          pageInfo: { endCursor: null; hasNextPage: false };
+        };
+      };
+    }) => void;
+    const { rerender } = render(
+      <PersonResearchPanel person={person} canUpdate />,
+    );
+    await user.type(screen.getByLabelText("Governed purpose"), "research");
+    await user.click(
+      screen.getByRole("button", { name: "Load accepted history" }),
+    );
+    expect(await screen.findByText("old person biography")).toBeVisible();
+
+    execute.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Load accepted history" }),
+    );
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    rerender(<PersonResearchPanel person={nextPerson} canUpdate />);
+    expect(screen.queryByText("old person biography")).toBeNull();
+
+    await act(async () => {
+      resolveHistory({
+        ok: true,
+        data: {
+          acceptedAiResearchHistory: {
+            nodes: [
+              acceptedHistoryNode("late old person biography", person.id),
+            ],
+            pageInfo: { endCursor: null, hasNextPage: false },
+          },
+        },
+      });
+    });
+    expect(screen.queryByText("old person biography")).toBeNull();
+    expect(screen.queryByText("late old person biography")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Load accepted history" }),
+    ).toBeEnabled();
   });
 
   it("renders safe accepted metadata and an explicit redacted evidence state", async () => {
