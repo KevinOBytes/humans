@@ -101,15 +101,32 @@ function dateTimeIso(value: string) {
   return Number.isFinite(date.valueOf()) ? date.toISOString() : undefined;
 }
 
+function storedTemporalValue<T extends string>(
+  value: string,
+  values: readonly T[],
+  fallback: T,
+): T {
+  const normalized = value.toUpperCase() as T;
+  return values.includes(normalized) ? normalized : fallback;
+}
+
 function temporalFields(input: {
   precision: RelationshipTemporalPrecision;
   semantics: RelationshipTemporalSemantics;
   validFrom: string;
   validUntil: string;
+  validFromOriginal?: string | null;
+  validUntilOriginal?: string | null;
   includeEmpty?: boolean;
 }) {
-  const validFrom = dateTimeIso(input.validFrom);
-  const validUntil = dateTimeIso(input.validUntil);
+  const validFrom =
+    input.validFromOriginal !== undefined
+      ? input.validFromOriginal
+      : dateTimeIso(input.validFrom);
+  const validUntil =
+    input.validUntilOriginal !== undefined
+      ? input.validUntilOriginal
+      : dateTimeIso(input.validUntil);
   return {
     ...(input.semantics !== "UNKNOWN"
       ? { temporalSemantics: input.semantics }
@@ -293,6 +310,12 @@ export function RelationshipEditor({
     useState<RelationshipTemporalPrecision>("UNKNOWN");
   const [existingValidFrom, setExistingValidFrom] = useState("");
   const [existingValidUntil, setExistingValidUntil] = useState("");
+  const [existingValidFromOriginal, setExistingValidFromOriginal] = useState<
+    string | null | undefined
+  >(undefined);
+  const [existingValidUntilOriginal, setExistingValidUntilOriginal] = useState<
+    string | null | undefined
+  >(undefined);
   const [existingTemporalDirty, setExistingTemporalDirty] = useState(false);
   const [pendingChange, setPendingChange] = useState<
     | {
@@ -399,6 +422,8 @@ export function RelationshipEditor({
                     semantics: existingTemporalSemantics,
                     validFrom: existingValidFrom,
                     validUntil: existingValidUntil,
+                    validFromOriginal: existingValidFromOriginal,
+                    validUntilOriginal: existingValidUntilOriginal,
                     includeEmpty: true,
                   })
                 : {}),
@@ -432,13 +457,23 @@ export function RelationshipEditor({
         relationship.sensitivity.toUpperCase() as typeof existingSensitivity,
       );
       setExistingTemporalSemantics(
-        relationship.temporalSemantics.toUpperCase() as RelationshipTemporalSemantics,
+        storedTemporalValue(
+          relationship.temporalSemantics,
+          TEMPORAL_SEMANTICS,
+          "UNKNOWN",
+        ),
       );
       setExistingTemporalPrecision(
-        relationship.temporalPrecision.toUpperCase() as RelationshipTemporalPrecision,
+        storedTemporalValue(
+          relationship.temporalPrecision,
+          TEMPORAL_PRECISIONS,
+          "UNKNOWN",
+        ),
       );
       setExistingValidFrom(dateTimeLocal(relationship.validFrom));
       setExistingValidUntil(dateTimeLocal(relationship.validUntil));
+      setExistingValidFromOriginal(relationship.validFrom);
+      setExistingValidUntilOriginal(relationship.validUntil);
     }
   }
 
@@ -830,6 +865,7 @@ export function RelationshipEditor({
                           value={existingValidFrom}
                           onChange={(event) => {
                             setExistingTemporalDirty(true);
+                            setExistingValidFromOriginal(undefined);
                             setExistingValidFrom(event.target.value);
                           }}
                           className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
@@ -846,6 +882,7 @@ export function RelationshipEditor({
                           value={existingValidUntil}
                           onChange={(event) => {
                             setExistingTemporalDirty(true);
+                            setExistingValidUntilOriginal(undefined);
                             setExistingValidUntil(event.target.value);
                           }}
                           className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
