@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { PersonRecordEditor } from "@/components/people/person-record-editor";
+import { PersonIdentifierEditor } from "@/components/people/person-identifier-editor";
 import {
   PersonEventRowEditor,
   PersonNameRowEditor,
@@ -162,6 +163,11 @@ export async function NamesTimelineSection({
     <div className="space-y-7">
       {canUpdate ? <PersonRecordEditor personId={personId} /> : null}
       <section className="space-y-3">
+        <PersonIdentifierEditor
+          personId={personId}
+          canUpdate={canUpdate}
+          canDelete={false}
+        />
         <ResearchList
           title="Identifiers"
           empty="No authorized identifiers have been recorded."
@@ -169,7 +175,7 @@ export async function NamesTimelineSection({
           {identifiers.map((identifier) => (
             <li
               key={identifier.id}
-              className="border-border bg-card rounded-2xl border p-4"
+              className="border-border bg-card min-w-0 rounded-2xl border p-4 [overflow-wrap:anywhere]"
               aria-label={`${identifier.identifierType} identifier`}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -200,6 +206,13 @@ export async function NamesTimelineSection({
                   </dd>
                 </div>
               </dl>
+              <PersonIdentifierEditor
+                key={`${identifier.id}:${identifier.version}`}
+                personId={personId}
+                identifier={identifier}
+                canUpdate={canUpdate}
+                canDelete={canDelete}
+              />
             </li>
           ))}
         </ResearchList>

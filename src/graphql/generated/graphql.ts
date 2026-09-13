@@ -91,6 +91,12 @@ export type ArchivePersonFileInput = {
   idempotencyKey?: string | null | undefined;
 };
 
+export type ArchivePersonIdentifierInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+};
+
 export type ArchivePersonInput = {
   expectedVersion: number;
   id: string;
@@ -377,6 +383,19 @@ export type CreatePersonEventInput = {
   temporalPrecision?: PersonTemporalPrecision | null | undefined;
   temporalSemantics?: PersonTemporalSemantics | null | undefined;
   title: string;
+};
+
+export type CreatePersonIdentifierInput = {
+  idempotencyKey?: string | null | undefined;
+  identifierType: string;
+  issuer?: string | null | undefined;
+  namespace: string;
+  personId: string;
+  sensitivity?: Sensitivity | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
+  value: string;
+  verificationState?: PersonIdentifierVerificationState | null | undefined;
 };
 
 export type CreatePersonInput = {
@@ -1275,6 +1294,20 @@ export type UpdatePersonEventInput = {
   temporalPrecision?: PersonTemporalPrecision | null | undefined;
   temporalSemantics?: PersonTemporalSemantics | null | undefined;
   title?: string | null | undefined;
+};
+
+export type UpdatePersonIdentifierInput = {
+  expectedVersion: number;
+  id: string;
+  idempotencyKey?: string | null | undefined;
+  identifierType?: string | null | undefined;
+  issuer?: string | null | undefined;
+  namespace?: string | null | undefined;
+  sensitivity?: Sensitivity | null | undefined;
+  validFrom?: string | null | undefined;
+  validUntil?: string | null | undefined;
+  value?: string | null | undefined;
+  verificationState?: PersonIdentifierVerificationState | null | undefined;
 };
 
 export type UpdatePersonInput = {
@@ -3630,6 +3663,57 @@ export type ArchivePersonAddressMutation = {
         LocationMutationOutcomeFragment: LocationMutationOutcomeFragment;
       };
     }>;
+  };
+};
+
+export type CreatePersonIdentifierMutationVariables = Exact<{
+  input: CreatePersonIdentifierInput;
+}>;
+
+export type CreatePersonIdentifierMutation = {
+  createPersonIdentifier: {
+    code: string | null;
+    currentVersion: number | null;
+    identifier: {
+      " $fragmentRefs"?: {
+        PersonIdentifierSummaryFragment: PersonIdentifierSummaryFragment;
+      };
+    } | null;
+    issues: Array<{ path: Array<string>; code: string; message: string }>;
+  };
+};
+
+export type UpdatePersonIdentifierMutationVariables = Exact<{
+  input: UpdatePersonIdentifierInput;
+}>;
+
+export type UpdatePersonIdentifierMutation = {
+  updatePersonIdentifier: {
+    code: string | null;
+    currentVersion: number | null;
+    identifier: {
+      " $fragmentRefs"?: {
+        PersonIdentifierSummaryFragment: PersonIdentifierSummaryFragment;
+      };
+    } | null;
+    issues: Array<{ path: Array<string>; code: string; message: string }>;
+  };
+};
+
+export type ArchivePersonIdentifierMutationVariables = Exact<{
+  input: ArchivePersonIdentifierInput;
+}>;
+
+export type ArchivePersonIdentifierMutation = {
+  archivePersonIdentifier: {
+    code: string | null;
+    currentVersion: number | null;
+    identifier: {
+      " $fragmentRefs"?: {
+        PersonIdentifierSummaryFragment: PersonIdentifierSummaryFragment;
+      };
+    } | null;
+    issues: Array<{ path: Array<string>; code: string; message: string }>;
   };
 };
 
@@ -9958,6 +10042,123 @@ export const ArchivePersonAddressDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ArchivePersonAddressMutation,
   ArchivePersonAddressMutationVariables
+>;
+export const CreatePersonIdentifierDocument = new TypedDocumentString(
+  `
+    mutation CreatePersonIdentifier($input: CreatePersonIdentifierInput!) {
+  createPersonIdentifier(input: $input) {
+    identifier {
+      ...PersonIdentifierSummary
+    }
+    code
+    currentVersion
+    issues {
+      path
+      code
+      message
+    }
+  }
+}
+    fragment PersonIdentifierSummary on PersonIdentifier {
+  id
+  personId
+  namespace
+  identifierType
+  issuer
+  validFrom
+  validUntil
+  verificationState
+  sensitivity
+  value
+  redacted
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:30c35ebfcadda151a245fa5ec9244f2766b1b84d679f86f0017495f508f6711c",
+  },
+) as unknown as TypedDocumentString<
+  CreatePersonIdentifierMutation,
+  CreatePersonIdentifierMutationVariables
+>;
+export const UpdatePersonIdentifierDocument = new TypedDocumentString(
+  `
+    mutation UpdatePersonIdentifier($input: UpdatePersonIdentifierInput!) {
+  updatePersonIdentifier(input: $input) {
+    identifier {
+      ...PersonIdentifierSummary
+    }
+    code
+    currentVersion
+    issues {
+      path
+      code
+      message
+    }
+  }
+}
+    fragment PersonIdentifierSummary on PersonIdentifier {
+  id
+  personId
+  namespace
+  identifierType
+  issuer
+  validFrom
+  validUntil
+  verificationState
+  sensitivity
+  value
+  redacted
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:b9dacfa398ed726c0a528425ce187c151110aa094e7b3b2e6fbf494b6f8c5521",
+  },
+) as unknown as TypedDocumentString<
+  UpdatePersonIdentifierMutation,
+  UpdatePersonIdentifierMutationVariables
+>;
+export const ArchivePersonIdentifierDocument = new TypedDocumentString(
+  `
+    mutation ArchivePersonIdentifier($input: ArchivePersonIdentifierInput!) {
+  archivePersonIdentifier(input: $input) {
+    identifier {
+      ...PersonIdentifierSummary
+    }
+    code
+    currentVersion
+    issues {
+      path
+      code
+      message
+    }
+  }
+}
+    fragment PersonIdentifierSummary on PersonIdentifier {
+  id
+  personId
+  namespace
+  identifierType
+  issuer
+  validFrom
+  validUntil
+  verificationState
+  sensitivity
+  value
+  redacted
+  version
+  createdAt
+  updatedAt
+}`,
+  {
+    hash: "sha256:e53802adbcc4688ab80843db9f834700b15632246d173a2767d30ec166b1550e",
+  },
+) as unknown as TypedDocumentString<
+  ArchivePersonIdentifierMutation,
+  ArchivePersonIdentifierMutationVariables
 >;
 export const PrivacyRequestsDocument = new TypedDocumentString(
   `
