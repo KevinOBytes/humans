@@ -767,6 +767,7 @@ export type LinkEvidenceAssertionInput = {
   confidence: number;
   evidenceId: string;
   explicitConfirmed: boolean;
+  fieldPath?: string | null | undefined;
   idempotencyKey?: string | null | undefined;
   locator: string;
   purpose: string;
@@ -1849,6 +1850,7 @@ export type LinkEvidenceAssertionMutation = {
     evidenceId: string | null;
     resourceKind: string | null;
     resourceId: string | null;
+    fieldPath: string | null;
     locator: string | null;
     quote: string | null;
     role: string | null;
@@ -7502,6 +7504,7 @@ export const LinkEvidenceAssertionDocument = new TypedDocumentString(
     evidenceId
     resourceKind
     resourceId
+    fieldPath
     locator
     quote
     role
@@ -7515,7 +7518,7 @@ export const LinkEvidenceAssertionDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:c8b50ed88ede001fa0f2eb0776029e1df1ab5a3e70487cdf09e601af44f12dbb",
+    hash: "sha256:9219ad85899aaa1e50ef1e6760bc92d4818888a4275e4416a33822bbb6eb2f22",
   },
 ) as unknown as TypedDocumentString<
   LinkEvidenceAssertionMutation,

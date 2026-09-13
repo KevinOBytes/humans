@@ -42,6 +42,16 @@ workspaces still require a controlled operator backfill before this is a
 complete historical migration; aliases, biography, contacts, addresses,
 identifiers, notes, and files remain on their existing dedicated boundaries.
 
+Rich-profile entry guidance checkpoint (2026-09-13): the profile fact editor
+now preserves and presents each catalog definition's category and description
+(for example, “Work · Employment — An employment role, employer, or employment
+period”) with an accessible description relationship. This makes the existing
+audited fact path discoverable for pronouns, employment, education, languages,
+organizations, birth dates, and custom JSON without adding an ungoverned write
+path. `tests/unit/fact-form.test.tsx` and `tests/unit/facts-section.test.tsx`
+pass for the focused behavior. Identifier create/update/archive controls and
+the full rich-profile browser/accessibility matrix remain open.
+
 Latest main-tree evidence (2026-09-13): commit `591c1d7` is pushed and deployed
 as Vercel `dpl_HSK2gk4swq1gvyiBYawCrx3UiJaT` (`READY`) with aliases
 `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
@@ -64,6 +74,17 @@ same scope boundary and expose investigation/team filters through generated
 GraphQL. Existing workspace- and case-scoped queues remain compatible. Focused
 schema and service tests cover the contract; hosted/provider and whole-role
 acceptance remain tracked as incomplete.
+
+Field-level provenance checkpoint (2026-09-13): evidence assertions now accept
+an optional normalized `fieldPath` and expose it through the generated
+GraphQL assertion mutation. PostgreSQL migration `0051` bounds the stored path
+to 256 bytes and rejects control characters; service validation trims the path
+before the audited, workspace-scoped assertion write. This allows citations to
+address profile fields and nested fields without weakening legacy resource,
+review, confidence, sensitivity, or redaction behavior. Focused unit
+normalization and live-when-configured PostgreSQL persistence coverage are
+included; source-to-field authoring UX, live migration execution outside CI,
+and the whole-product provenance matrix remain open.
 
 The deployment was built from the current `main` tree after the latest
 documentation-only commit. Vercel's manual deployment metadata does not expose

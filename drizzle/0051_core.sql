@@ -1,0 +1,2 @@
+ALTER TABLE "evidence_assertions" ADD COLUMN "field_path" text;--> statement-breakpoint
+ALTER TABLE "evidence_assertions" ADD CONSTRAINT "evidence_assertions_field_path_check" CHECK ("evidence_assertions"."field_path" IS NULL OR (octet_length("evidence_assertions"."field_path") BETWEEN 1 AND 256 AND "evidence_assertions"."field_path" !~ '[[:cntrl:]]'));

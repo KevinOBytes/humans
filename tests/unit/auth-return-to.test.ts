@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  returnToFromRequestHeaders,
   returnToFromSearch,
   twoFactorRedirectPath,
 } from "@/modules/auth/return-to";
@@ -47,5 +48,26 @@ describe("auth return paths", () => {
     expect(twoFactorRedirectPath(search)).toBe(
       `/two-factor?returnTo=${encodeURIComponent("/")}`,
     );
+  });
+
+  it("accepts only same-origin UI paths from internal request headers", () => {
+    expect(
+      returnToFromRequestHeaders(
+        new Headers({ "next-url": "/investigations?state=active" }),
+      ),
+    ).toBe("/investigations?state=active");
+    expect(
+      returnToFromRequestHeaders(
+        new Headers({ "x-invoke-path": "/settings/teams" }),
+      ),
+    ).toBe("/settings/teams");
+    expect(
+      returnToFromRequestHeaders(
+        new Headers({ "next-url": "https://attacker.example/phish" }),
+      ),
+    ).toBe("/dashboard");
+    expect(
+      returnToFromRequestHeaders(new Headers({ "next-url": "/api/graphql" })),
+    ).toBe("/dashboard");
   });
 });

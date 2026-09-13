@@ -28,6 +28,8 @@ import {
 } from "@/graphql/generated/graphql";
 
 export type FactDefinitionOption = {
+  category?: string | null;
+  description?: string | null;
   id: string;
   label: string;
   valueType: FactValueType;
@@ -325,6 +327,14 @@ export function FactForm({
   const valueEndIssue = fieldMutationIssue(feedback, "valueEnd", "dateEnd");
   const unitIssue = fieldMutationIssue(feedback, "unit");
   const confidenceIssue = fieldMutationIssue(feedback, "confidence");
+  const definitionGuidance = [selected.category, selected.label]
+    .filter(Boolean)
+    .map((value) =>
+      String(value)
+        .replace(/[_-]+/gu, " ")
+        .replace(/\b\w/gu, (character) => character.toUpperCase()),
+    )
+    .join(" · ");
 
   return (
     <form
@@ -356,6 +366,9 @@ export function FactForm({
             id="fact-definition"
             name="definitionId"
             value={selected.id}
+            aria-describedby={
+              selected.description ? "fact-definition-guidance" : undefined
+            }
             onChange={(event) => {
               const next = supported.find(
                 (definition) => definition.id === event.target.value,
@@ -373,6 +386,16 @@ export function FactForm({
               </option>
             ))}
           </select>
+          {selected.description ? (
+            <p
+              id="fact-definition-guidance"
+              className="text-muted-foreground text-xs leading-5"
+            >
+              <span className="font-medium">{definitionGuidance}</span>
+              {" — "}
+              {selected.description}
+            </p>
+          ) : null}
         </div>
         <FactValueEditor
           key={selected.id}

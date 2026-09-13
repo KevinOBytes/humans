@@ -37,6 +37,8 @@ export const evidenceAssertions = pgTable(
     evidenceId: uuid("evidence_id").notNull(),
     resourceKind: text("resource_kind").notNull(),
     resourceId: uuid("resource_id").notNull(),
+    /** Optional canonical path into the cited resource (for example `biography` or `names.aliases`). */
+    fieldPath: text("field_path"),
     caseId: uuid("case_id"),
     purpose: text("purpose").notNull(),
     locator: text("locator").notNull(),
@@ -88,6 +90,10 @@ export const evidenceAssertions = pgTable(
     check(
       "evidence_assertions_text_check",
       sql`length(${t.locator}) BETWEEN 1 AND 2048 AND length(${t.quote}) BETWEEN 1 AND 8000 AND length(${t.purpose}) BETWEEN 1 AND 200`,
+    ),
+    check(
+      "evidence_assertions_field_path_check",
+      sql`${t.fieldPath} IS NULL OR (octet_length(${t.fieldPath}) BETWEEN 1 AND 256 AND ${t.fieldPath} !~ '[[:cntrl:]]')`,
     ),
     check("evidence_assertions_version_check", sql`${t.version} > 0`),
   ],

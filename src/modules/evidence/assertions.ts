@@ -38,6 +38,7 @@ type AssertionInput = {
   evidenceId: string;
   resourceKind: string;
   resourceId: string;
+  fieldPath?: string | null;
   locator: string;
   quote: string;
   role: string;
@@ -243,6 +244,7 @@ export async function linkEvidenceAssertion(
           confidence: normalized.confidence,
           evidenceId: input.evidenceId,
           explicitConfirmed: input.explicitConfirmed,
+          fieldPath: normalized.fieldPath,
           locator: normalized.locator,
           quote: normalized.quote,
           purpose: governance.governancePurpose!,
@@ -318,7 +320,7 @@ export async function linkEvidenceAssertion(
       action: "evidence.assertion.link",
       resourceKind: "evidence_assertion",
       resourceId: row.id,
-      changedFields: ["locator", "quote", "role", "confidence"],
+      changedFields: ["fieldPath", "locator", "quote", "role", "confidence"],
       sensitivity: resource.sensitivity,
     });
     return {
