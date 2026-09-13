@@ -2,12 +2,17 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { caseMembers, cases } from "@/db/schema/cases";
+import {
+  investigationCaseLinks,
+  investigations,
+} from "@/db/schema/investigations";
 import { members } from "@/db/schema/auth";
 import { workspacePrincipals } from "@/db/schema/principals";
 import {
   researchAssignmentEvents,
   researchAssignmentItems,
 } from "@/db/schema/research-assignments";
+import { caseTeamLinks, teamMembers, teams } from "@/db/schema/teams";
 import { createGraphQLError } from "@/graphql/errors";
 import { normalizePagination } from "@/graphql/limits";
 import {
@@ -226,6 +231,8 @@ export function createResearchAssignmentsService(
     database: ResearchServiceContext["database"],
     assigneePrincipalId: string | null,
     caseId: string | null,
+    teamId: string | null,
+    investigationId: string | null,
   ) {
     if (!assigneePrincipalId) return;
     const [principal] = await database
@@ -272,11 +279,272 @@ export function createResearchAssignmentsService(
           "The assignee is not a member of this case.",
         );
     }
+    if (teamId) {
+      const [member] = await database
+        .select({ id: teamMembers.id })
+        .from(teamMembers)
+        .innerJoin(
+          teams,
+          and(
+            eq(teams.workspaceId, teamMembers.workspaceId),
+            eq(teams.id, teamMembers.teamId),
+            eq(teams.state, "active"),
+            isNull(teams.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(teamMembers.workspaceId, context.workspaceId),
+            eq(teamMembers.teamId, teamId),
+            eq(teamMembers.principalId, assigneePrincipalId),
+            isNull(teamMembers.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!member)
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "The assignee is not a member of this team.",
+        );
+    } else if (investigationId) {
+      const [investigation] = await database
+        .select({ leadPrincipalId: investigations.leadPrincipalId })
+        .from(investigations)
+        .where(
+          and(
+            eq(investigations.workspaceId, context.workspaceId),
+            eq(investigations.id, investigationId),
+            isNull(investigations.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (
+        !investigation ||
+        (investigation.leadPrincipalId !== assigneePrincipalId &&
+          !isWorkspaceManager(context))
+      )
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "The assignee is not authorized for this investigation.",
+        );
+    }
+  }
+  function isWorkspaceManager(scoped: ResearchServiceContext): boolean {
+    return (
+      scoped.actor.type === "user" &&
+      (scoped.actor.role === "owner" || scoped.actor.role === "admin")
+    );
+  }
+  async function validateScope(
+    scoped: ResearchServiceContext,
+    caseId: string | null,
+    investigationId: string | null,
+    teamId: string | null,
+  ) {
+    if (investigationId) {
+      const [row] = await scoped.database
+        .select({
+          state: investigations.state,
+          leadPrincipalId: investigations.leadPrincipalId,
+        })
+        .from(investigations)
+        .where(
+          and(
+            eq(investigations.workspaceId, scoped.workspaceId),
+            eq(investigations.id, investigationId),
+            isNull(investigations.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!row)
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested investigation was not found.",
+        );
+      if (row.state === "archived")
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "An archived investigation cannot receive assignments.",
+        );
+      if (
+        !isWorkspaceManager(scoped) &&
+        row.leadPrincipalId !== scoped.actor.principalId
+      )
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Investigation lead approval is required.",
+        );
+    }
+    if (teamId) {
+      const [row] = await scoped.database
+        .select({ id: teams.id, memberId: teamMembers.id })
+        .from(teams)
+        .leftJoin(
+          teamMembers,
+          and(
+            eq(teamMembers.workspaceId, teams.workspaceId),
+            eq(teamMembers.teamId, teams.id),
+            eq(teamMembers.principalId, scoped.actor.principalId),
+            isNull(teamMembers.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(teams.workspaceId, scoped.workspaceId),
+            eq(teams.id, teamId),
+            eq(teams.state, "active"),
+            isNull(teams.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!row)
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested team was not found.",
+        );
+      if (!isWorkspaceManager(scoped) && !row.memberId)
+        throw createGraphQLError("FORBIDDEN", "Team membership is required.");
+    }
+    if (caseId && investigationId) {
+      const [link] = await scoped.database
+        .select({ id: investigationCaseLinks.id })
+        .from(investigationCaseLinks)
+        .where(
+          and(
+            eq(investigationCaseLinks.workspaceId, scoped.workspaceId),
+            eq(investigationCaseLinks.investigationId, investigationId),
+            eq(investigationCaseLinks.caseId, caseId),
+            isNull(investigationCaseLinks.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!link)
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "The case is not linked to this investigation.",
+        );
+    }
+    if (caseId && teamId) {
+      const [link] = await scoped.database
+        .select({ id: caseTeamLinks.id })
+        .from(caseTeamLinks)
+        .where(
+          and(
+            eq(caseTeamLinks.workspaceId, scoped.workspaceId),
+            eq(caseTeamLinks.caseId, caseId),
+            eq(caseTeamLinks.teamId, teamId),
+            isNull(caseTeamLinks.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!link)
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "The case is not shared with this team.",
+        );
+    }
+  }
+  async function visibleScope(scoped: ResearchServiceContext, row: ItemRow) {
+    if (row.caseId) {
+      try {
+        await visibleCase(scoped, row.caseId);
+      } catch {
+        return false;
+      }
+    }
+    if (isWorkspaceManager(scoped)) return true;
+    if (row.investigationId) {
+      const [lead] = await scoped.database
+        .select({ id: investigations.id })
+        .from(investigations)
+        .where(
+          and(
+            eq(investigations.workspaceId, scoped.workspaceId),
+            eq(investigations.id, row.investigationId),
+            eq(investigations.leadPrincipalId, scoped.actor.principalId),
+            isNull(investigations.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!lead) return false;
+    }
+    if (row.teamId) {
+      const [member] = await scoped.database
+        .select({ id: teamMembers.id })
+        .from(teamMembers)
+        .innerJoin(
+          teams,
+          and(
+            eq(teams.workspaceId, teamMembers.workspaceId),
+            eq(teams.id, teamMembers.teamId),
+            eq(teams.state, "active"),
+            isNull(teams.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(teamMembers.workspaceId, scoped.workspaceId),
+            eq(teamMembers.teamId, row.teamId),
+            eq(teamMembers.principalId, scoped.actor.principalId),
+            isNull(teamMembers.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!member) return false;
+    }
+    return true;
   }
   async function authorizeMutation(
     scoped: ResearchServiceContext,
     caseId: string | null,
+    teamId: string | null = null,
+    investigationId: string | null = null,
   ) {
+    if (!caseId && !teamId && !investigationId) {
+      permission(scoped, "workspace:update");
+      return;
+    }
+    if (!caseId && teamId && !isWorkspaceManager(scoped)) {
+      const [membership] = await scoped.database
+        .select({ role: teamMembers.role })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.workspaceId, scoped.workspaceId),
+            eq(teamMembers.teamId, teamId),
+            eq(teamMembers.principalId, scoped.actor.principalId),
+            isNull(teamMembers.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!membership || !["owner", "reviewer"].includes(membership.role))
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "A team owner or reviewer is required.",
+        );
+      return;
+    }
+    if (!caseId && investigationId && !isWorkspaceManager(scoped)) {
+      const [lead] = await scoped.database
+        .select({ id: investigations.id })
+        .from(investigations)
+        .where(
+          and(
+            eq(investigations.workspaceId, scoped.workspaceId),
+            eq(investigations.id, investigationId),
+            eq(investigations.leadPrincipalId, scoped.actor.principalId),
+            isNull(investigations.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!lead)
+        throw createGraphQLError(
+          "FORBIDDEN",
+          "Investigation lead approval is required.",
+        );
+      return;
+    }
     if (!caseId) {
       permission(scoped, "workspace:update");
       return;
@@ -324,7 +592,11 @@ export function createResearchAssignmentsService(
         "NOT_FOUND",
         "The requested assignment was not found.",
       );
-    await visibleCase(scoped, row.caseId);
+    if (!(await visibleScope(scoped, row)))
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested assignment was not found.",
+      );
     return row;
   }
   async function mutate(
@@ -345,7 +617,12 @@ export function createResearchAssignmentsService(
       context,
       referenceId(result.responseReference),
     );
-    await authorizeMutation(context, row.caseId);
+    await authorizeMutation(
+      context,
+      row.caseId,
+      row.teamId,
+      row.investigationId,
+    );
     return row;
   }
 
@@ -353,6 +630,8 @@ export function createResearchAssignmentsService(
     async list(
       input: {
         caseId?: string | null;
+        investigationId?: string | null;
+        teamId?: string | null;
         status?: string | null;
         queueKind?: string | null;
         first?: number | null;
@@ -361,9 +640,19 @@ export function createResearchAssignmentsService(
     ) {
       permission(context, "workspace:read");
       await visibleCase(context, input.caseId);
+      if (input.investigationId || input.teamId)
+        await validateScope(
+          context,
+          input.caseId ?? null,
+          input.investigationId ?? null,
+          input.teamId ?? null,
+        );
       const page = normalizePagination(input);
       const rows = await repository.list(context.workspaceId, {
         caseId: input.caseId,
+        investigationId: input.investigationId,
+        teamId: input.teamId,
+        canReadAllScopes: isWorkspaceManager(context),
         principalId: context.actor.principalId,
         status: input.status == null ? null : status(input.status),
         queueKind: input.queueKind == null ? null : kind(input.queueKind),
@@ -411,6 +700,8 @@ export function createResearchAssignmentsService(
     },
     async create(input: {
       caseId?: string | null;
+      investigationId?: string | null;
+      teamId?: string | null;
       queueKind: string;
       title: string;
       description?: string | null;
@@ -421,8 +712,12 @@ export function createResearchAssignmentsService(
     }) {
       permission(context, "workspace:read");
       const caseId = input.caseId ?? null;
+      const investigationId = input.investigationId ?? null;
+      const teamId = input.teamId ?? null;
       const normalized = {
         caseId,
+        investigationId,
+        teamId,
         queueKind: kind(input.queueKind),
         title: text(input.title, "Title", 200)!,
         description: text(input.description, "Description", 4000, false),
@@ -435,11 +730,14 @@ export function createResearchAssignmentsService(
         input.idempotencyKey,
         { ...normalized, dueAt: normalized.dueAt?.toISOString() ?? null },
         async (scoped) => {
-          await authorizeMutation(scoped, caseId);
+          await validateScope(scoped, caseId, investigationId, teamId);
+          await authorizeMutation(scoped, caseId, teamId, investigationId);
           await validateAssignee(
             scoped.database,
             normalized.assigneePrincipalId,
             caseId,
+            teamId,
+            investigationId,
           );
           const [row] = await scoped.database
             .insert(researchAssignmentItems)
@@ -471,6 +769,8 @@ export function createResearchAssignmentsService(
             changedFields: [
               "queueKind",
               "caseId",
+              "investigationId",
+              "teamId",
               "title",
               "description",
               "priority",
@@ -509,11 +809,18 @@ export function createResearchAssignmentsService(
               "NOT_FOUND",
               "The requested assignment was not found.",
             );
-          await authorizeMutation(scoped, row.caseId);
+          await authorizeMutation(
+            scoped,
+            row.caseId,
+            row.teamId,
+            row.investigationId,
+          );
           await validateAssignee(
             scoped.database,
             input.assigneePrincipalId ?? null,
             row.caseId,
+            row.teamId,
+            row.investigationId,
           );
           if (row.version !== input.expectedVersion)
             throw createGraphQLError("CONFLICT", "The assignment has changed.");
@@ -591,7 +898,12 @@ export function createResearchAssignmentsService(
               "NOT_FOUND",
               "The requested assignment was not found.",
             );
-          await authorizeMutation(scoped, row.caseId);
+          await authorizeMutation(
+            scoped,
+            row.caseId,
+            row.teamId,
+            row.investigationId,
+          );
           if (row.version !== input.expectedVersion)
             throw createGraphQLError("CONFLICT", "The assignment has changed.");
           if (!transitions[row.status]?.includes(next))
@@ -665,7 +977,12 @@ export function createResearchAssignmentsService(
               "NOT_FOUND",
               "The requested assignment was not found.",
             );
-          await authorizeMutation(scoped, row.caseId);
+          await authorizeMutation(
+            scoped,
+            row.caseId,
+            row.teamId,
+            row.investigationId,
+          );
           if (row.version !== input.expectedVersion)
             throw createGraphQLError("CONFLICT", "The assignment has changed.");
           if (["completed", "cancelled"].includes(row.status))

@@ -12,7 +12,9 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { cases } from "./cases";
+import { investigations } from "./investigations";
 import { workspacePrincipals } from "./principals";
+import { teams } from "./teams";
 import { workspaces } from "./workspaces";
 
 const time = (name: string) =>
@@ -34,6 +36,10 @@ export const researchAssignmentItems = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     caseId: uuid("case_id"),
+    /** Optional investigation scope; immutable after creation. */
+    investigationId: uuid("investigation_id"),
+    /** Optional reusable-team scope; immutable after creation. */
+    teamId: uuid("team_id"),
     queueKind: text("queue_kind").notNull(),
     title: text("title").notNull(),
     description: text("description"),
@@ -64,10 +70,32 @@ export const researchAssignmentItems = pgTable(
       t.status,
       t.id,
     ),
+    index("research_assignment_items_investigation_idx").on(
+      t.workspaceId,
+      t.investigationId,
+      t.status,
+      t.id,
+    ),
+    index("research_assignment_items_team_idx").on(
+      t.workspaceId,
+      t.teamId,
+      t.status,
+      t.id,
+    ),
     foreignKey({
       name: "research_assignment_items_case_fk",
       columns: [t.workspaceId, t.caseId],
       foreignColumns: [cases.workspaceId, cases.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "research_assignment_items_investigation_fk",
+      columns: [t.workspaceId, t.investigationId],
+      foreignColumns: [investigations.workspaceId, investigations.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "research_assignment_items_team_fk",
+      columns: [t.workspaceId, t.teamId],
+      foreignColumns: [teams.workspaceId, teams.id],
     }).onDelete("restrict"),
     foreignKey({
       name: "research_assignment_items_assignee_fk",

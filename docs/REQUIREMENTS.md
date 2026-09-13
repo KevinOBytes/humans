@@ -29,6 +29,16 @@ live PostgreSQL migration execution, hosted authentication/provider checks,
 and the full cross-role/browser/accessibility matrix remain incomplete and are
 still tracked below.
 
+Assignment scope checkpoint (2026-09-13): research assignment items now carry
+optional immutable investigation and reusable-team scopes in migration `0050`.
+Creation validates workspace ownership, active lifecycle, investigation lead or
+team membership, and linked case boundaries; assignee validation requires case
+membership, team membership, or investigation-lead authority. Reads apply the
+same scope boundary and expose investigation/team filters through generated
+GraphQL. Existing workspace- and case-scoped queues remain compatible. Focused
+schema and service tests cover the contract; hosted/provider and whole-role
+acceptance remain tracked as incomplete.
+
 Rich-profile definition catalog checkpoint (2026-09-13): newly provisioned
 workspaces receive active, workspace-scoped fact-definition templates for
 pronouns, employment, education, languages, organizations, birth dates, and

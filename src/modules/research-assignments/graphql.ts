@@ -29,6 +29,11 @@ const Assignment = builder
     fields: (t) => ({
       id: t.expose("id", { type: "UUID" }),
       caseId: t.expose("caseId", { type: "UUID", nullable: true }),
+      investigationId: t.expose("investigationId", {
+        type: "UUID",
+        nullable: true,
+      }),
+      teamId: t.expose("teamId", { type: "UUID", nullable: true }),
       queueKind: t.field({
         type: QueueKind,
         resolve: (r) => r.queueKind as never,
@@ -145,6 +150,8 @@ const AssignmentPayload = builder
 const CreateInput = builder.inputType("CreateResearchAssignmentInput", {
   fields: (t) => ({
     caseId: t.field({ type: "UUID" }),
+    investigationId: t.field({ type: "UUID" }),
+    teamId: t.field({ type: "UUID" }),
     queueKind: t.field({ type: QueueKind, required: true }),
     title: t.string({ required: true }),
     description: t.string(),
@@ -187,6 +194,8 @@ export function registerResearchAssignmentsGraphQL() {
       type: AssignmentConnection,
       args: {
         caseId: t.arg({ type: "UUID" }),
+        investigationId: t.arg({ type: "UUID" }),
+        teamId: t.arg({ type: "UUID" }),
         status: t.arg({ type: AssignmentStatus }),
         queueKind: t.arg({ type: QueueKind }),
         first: t.arg.int(),
@@ -197,7 +206,11 @@ export function registerResearchAssignmentsGraphQL() {
         multiplier: normalizePagination(args).first,
       }),
       resolve: (_root, args, context) =>
-        context.services.researchAssignments.list(args),
+        context.services.researchAssignments.list({
+          ...args,
+          investigationId: args.investigationId,
+          teamId: args.teamId,
+        }),
     }),
     researchAssignment: t.field({
       type: Assignment,

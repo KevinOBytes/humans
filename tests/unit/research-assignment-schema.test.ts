@@ -8,10 +8,12 @@ describe("research assignment queue schema contract", () => {
       "src/db/schema/research-assignments.ts",
       "utf8",
     );
-    const migration = `${await readFile("drizzle/0040_core.sql", "utf8")}\n${await readFile("drizzle/0041_core.sql", "utf8")}`;
+    const migration = `${await readFile("drizzle/0040_core.sql", "utf8")}\n${await readFile("drizzle/0041_core.sql", "utf8")}\n${await readFile("drizzle/0050_core.sql", "utf8")}`;
     for (const field of [
       "workspaceId",
       "caseId",
+      "investigationId",
+      "teamId",
       "queueKind",
       "priority",
       "status",
@@ -30,6 +32,8 @@ describe("research assignment queue schema contract", () => {
     expect(migration).toContain("research_assignment_events_no_update");
     expect(migration).toContain("research_assignment_events_no_delete");
     expect(migration).toContain("research_assignment_items_case_fk");
+    expect(migration).toContain("research_assignment_items_investigation_fk");
+    expect(migration).toContain("research_assignment_items_team_fk");
     expect(migration).toContain("research_assignment_items_assignee_fk");
     expect(migration).toContain(
       "research_assignment_items_deleted_attribution_check",
@@ -58,6 +62,8 @@ describe("research assignment queue schema contract", () => {
     }
     expect(operations).toContain("fromEscalationCount");
     expect(operations).toContain("toEscalationCount");
+    expect(operations).toContain("investigationId");
+    expect(operations).toContain("teamId");
     expect(generatedSchema).toContain("researchAssignmentEvents: {");
     expect(generatedSchema).toContain("fromEscalationCount: number | null");
   });

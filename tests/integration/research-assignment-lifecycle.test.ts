@@ -1,8 +1,11 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
 import { caseMembers, caseResourceLinks, cases } from "@/db/schema/cases";
+import { createInvestigationsService } from "@/modules/investigations/service";
+import { createTeamsService } from "@/modules/teams/service";
+import { teamMembers } from "@/db/schema/teams";
 import {
   researchAssignmentEvents,
   researchAssignmentItems,
@@ -409,6 +412,77 @@ liveDescribe("research assignment queue lifecycle", () => {
     await expect(
       createResearchAssignmentsService(otherContext).get(item.id),
     ).rejects.toMatchObject({
+      extensions: { code: "NOT_FOUND" },
+    });
+  });
+
+  it("binds assignments to investigation and team scopes and enforces membership", async () => {
+    const team = await createTeamsService(context).createTeam({
+      name: "Verification team",
+    });
+    const investigation = await createInvestigationsService(
+      context,
+    ).createInvestigation({
+      title: "Scoped investigation",
+      objective: "Validate scoped work",
+      purpose: "research",
+    });
+    await createTeamsService(context).linkCase({
+      caseId,
+      teamId: team.id,
+    });
+    await createInvestigationsService(context).linkCase({
+      investigationId: investigation.id,
+      caseId,
+    });
+    const analyst = await fixture.createWorkspaceMember(owner, "analyst");
+    await createTeamsService(context).addMember({
+      teamId: team.id,
+      principalId: analyst.principalId,
+      role: "reviewer",
+    });
+    const assignment = await createResearchAssignmentsService(context).create({
+      caseId,
+      investigationId: investigation.id,
+      teamId: team.id,
+      queueKind: "verification",
+      title: "Verify scoped source",
+      assigneePrincipalId: analyst.principalId,
+      idempotencyKey: "scoped-assignment-create",
+    });
+    expect(assignment).toMatchObject({
+      caseId,
+      investigationId: investigation.id,
+      teamId: team.id,
+      assigneePrincipalId: analyst.principalId,
+    });
+
+    const analystContext = await caseContext(fixture, analyst);
+    analystContext.actor.role = "analyst";
+    analystContext.permissions = new Set(rolePermissionKeys("analyst"));
+    const analystService = createResearchAssignmentsService(analystContext);
+    expect(
+      (await analystService.list({ teamId: team.id })).nodes.map(
+        (row) => row.id,
+      ),
+    ).toEqual([assignment.id]);
+    expect((await analystService.get(assignment.id)).id).toBe(assignment.id);
+
+    await createTeamsService(context).removeMember({
+      teamId: team.id,
+      memberId: (
+        await fixture.database
+          .select({ id: teamMembers.id })
+          .from(teamMembers)
+          .where(
+            and(
+              eq(teamMembers.teamId, team.id),
+              eq(teamMembers.principalId, analyst.principalId),
+            ),
+          )
+      )[0]!.id,
+    });
+    await expect(analystService.get(assignment.id)).rejects.toMatchObject({
       extensions: { code: "NOT_FOUND" },
     });
   });

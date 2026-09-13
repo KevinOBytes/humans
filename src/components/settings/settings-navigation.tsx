@@ -12,6 +12,7 @@ const personalDestinations = [
 
 const administrationDestinations = [
   { href: "/settings/members", label: "Members" },
+  { href: "/settings/teams", label: "Teams" },
   { href: "/settings/api-keys", label: "API keys" },
   { href: "/settings/policies", label: "Policies" },
   { href: "/settings/audit", label: "Audit" },
