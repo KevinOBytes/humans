@@ -243,4 +243,53 @@ describe("research record forms", () => {
     expect(String(execute.mock.calls[3]?.[0])).toContain("LinkFactEvidence");
     expect(refresh).toHaveBeenCalledOnce();
   });
+
+  it("sends the researcher-entered signed support strength with the fact citation", async () => {
+    const user = userEvent.setup();
+    execute
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { createSource: { source: { id: "source-a" }, issues: [] } },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          createEvidenceItem: {
+            evidenceItem: { id: "evidence-a" },
+            issues: [],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          linkFactEvidence: {
+            factEvidence: { id: "fact-evidence-a" },
+            issues: [],
+          },
+        },
+      });
+    render(
+      <EvidenceAssociationForm
+        facts={[{ id: "fact-a", label: "Birth date" }]}
+      />,
+    );
+    await user.type(screen.getByLabelText("Source title"), "Archive register");
+    await user.type(screen.getByLabelText("Excerpt"), "Conflicting entry");
+    const strength = screen.getByLabelText("Evidence support strength");
+    await user.clear(strength);
+    await user.type(strength, "-0.75");
+    await user.click(screen.getByRole("button", { name: "Add evidence" }));
+
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
+    expect(execute.mock.calls[2]?.[1]).toEqual({
+      input: {
+        evidenceItemId: "evidence-a",
+        excerpt: "Conflicting entry",
+        factId: "fact-a",
+        locator: undefined,
+        supportStrength: -0.75,
+      },
+    });
+  });
 });

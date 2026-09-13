@@ -236,6 +236,13 @@ export function PersonProfile({
                               {evidence.locator}
                             </p>
                           ) : null}
+                          {evidence.supportStrength !== null &&
+                          evidence.supportStrength !== undefined ? (
+                            <p className="text-muted-foreground mt-1">
+                              Evidence support strength:{" "}
+                              {Math.round(evidence.supportStrength * 100)}%
+                            </p>
+                          ) : null}
                           {evidence.excerpt ? (
                             <blockquote className="border-primary mt-2 border-l-2 pl-3">
                               {evidence.excerpt}

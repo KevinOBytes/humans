@@ -344,6 +344,7 @@ export async function FactsSection({
                         title: evidence.evidenceItem.source.title,
                         excerpt: evidence.excerpt,
                         locator: evidence.locator,
+                        supportStrength: evidence.supportStrength,
                         url: evidence.evidenceItem.source.canonicalUrl,
                       },
                     ]

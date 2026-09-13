@@ -1,5 +1,19 @@
 # MVP closure and production hardening backlog
 
+Bounded fact-citation strength evidence (2026-09-13): the rich-profile audit of
+HUM-FR-008/009/012/013/015/016/028 found that signed fact-evidence support
+strength was already constrained in PostgreSQL, validated by the authorized
+workspace-scoped evidence service, and exposed through bounded generated
+GraphQL, but the evidence form hardcoded `0.5` and the profile discarded the
+stored value. The evidence form now accepts an explicit value from -1
+(strongest contradiction) through 0 (neutral context) to 1 (strongest support),
+and fact cards show the signed percentage beside the authorized citation. The
+display does not change or infer the fact's state, review state, confidence, or
+presentation selection. Focused form/profile and live generated-GraphQL tests
+cover authoring and readback. This closes only that field-level provenance
+acceptance gap; HUM-FR-028 and the broader hosted/accessibility matrix remain
+incomplete.
+
 Latest production deployment (2026-09-13): the fully verified `main` tree at
 commit `d369a50` was deployed directly to Vercel as
 `dpl_7sws8qdPjuQj1tuT8n7J85RzyrJo` (`READY`) with aliases

@@ -30,7 +30,24 @@ vi.mock("@/components/facts/fact-display-value", () => ({
   factDisplayValue: () => "fact value",
 }));
 vi.mock("@/components/people/person-profile", () => ({
-  PersonProfile: () => <div data-testid="person-profile" />,
+  PersonProfile: (props: {
+    person: {
+      facts: readonly {
+        evidence: readonly {
+          id: string;
+          supportStrength?: number | null;
+        }[];
+      }[];
+    };
+  }) => (
+    <div data-testid="person-profile">
+      {props.person.facts.flatMap((fact) =>
+        fact.evidence.map((evidence) => (
+          <span key={evidence.id}>{evidence.supportStrength}</span>
+        )),
+      )}
+    </div>
+  ),
 }));
 vi.mock("@/components/research/paginated-research-list", () => ({
   PageControls: () => null,
@@ -120,5 +137,69 @@ describe("FactsSection", () => {
     );
     expect(executeServer).toHaveBeenCalledTimes(4);
     expect(String(executeServer.mock.calls[3]?.[0])).toContain("PeopleOptions");
+  });
+
+  it("carries authorized citation strength from generated fact detail into the profile", async () => {
+    executeServer
+      .mockResolvedValueOnce({
+        person: {
+          ...person(),
+          facts: {
+            nodes: [
+              {
+                id: "fact-a",
+                namespace: "person",
+                fieldKey: "date_of_birth",
+                label: "Date of birth",
+                sensitivity: "PUBLIC",
+                state: "ASSERTED",
+                version: 1,
+                value: { dateStart: "1815-12-10" },
+              },
+            ],
+            pageInfo: pageInfo(),
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        person: { contradictoryFacts: { nodes: [], pageInfo: pageInfo() } },
+      })
+      .mockResolvedValueOnce({
+        fact: {
+          id: "fact-a",
+          revisions: { nodes: [], pageInfo: pageInfo() },
+          evidence: {
+            nodes: [
+              {
+                id: "fact-evidence-a",
+                excerpt: "Conflicting register entry",
+                locator: "page 42",
+                supportStrength: -0.75,
+                evidenceItem: {
+                  source: {
+                    title: "Archive register",
+                    canonicalUrl: null,
+                  },
+                },
+              },
+            ],
+            pageInfo: pageInfo(),
+          },
+        },
+      });
+
+    render(
+      await FactsSection({
+        canCreate: false,
+        canSelect: false,
+        person: person() as never,
+        personId,
+        search: {},
+      }),
+    );
+
+    expect(screen.getByText("-0.75")).toBeVisible();
+    expect(executeServer).toHaveBeenCalledTimes(3);
+    expect(String(executeServer.mock.calls[2]?.[0])).toContain("FactDetail");
   });
 });

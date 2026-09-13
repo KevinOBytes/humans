@@ -39,6 +39,7 @@ export const personWithContradictoryFacts: PersonProfileView = {
           title: "Archive register",
           excerpt: "Recorded in the December register.",
           locator: "page 42",
+          supportStrength: -0.75,
         },
       ],
     },
