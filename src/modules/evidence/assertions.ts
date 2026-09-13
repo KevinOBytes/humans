@@ -33,6 +33,7 @@ import {
   requireReviewedPromotion,
   requiresRelationshipPromotionReview,
 } from "./assertions-validation";
+import { requireIdentifierCitation } from "./identifier-citations";
 
 type AssertionInput = {
   evidenceId: string;
@@ -102,13 +103,18 @@ async function replayAssertion(
     "auditReference",
     "assertion",
   );
-  const { row, evidence } = await requireAssertion(context, assertionId);
-  return {
-    ...row,
-    auditReference,
-    sourceReliability: evidence.sourceReliability,
-    informationCredibility: row.confidence,
-  };
+  return withResearchWriteTransaction(context, async (database) => {
+    const { row, evidence } = await requireAssertion(
+      { ...context, database },
+      assertionId,
+    );
+    return {
+      ...row,
+      auditReference,
+      sourceReliability: evidence.sourceReliability,
+      informationCredibility: row.confidence,
+    };
+  });
 }
 
 function requireIndependentReviewer(
@@ -207,6 +213,7 @@ async function requireAssertion(context: ResearchServiceContext, id: string) {
     row.resourceKind as CaseResourceKind,
     row.resourceId,
   );
+  await requireIdentifierCitation(context, row, false);
   await requireResourceCoverage(
     context,
     resource,
@@ -254,13 +261,15 @@ export async function linkEvidenceAssertion(
         },
       }),
       [
-        "evidence:update",
-        "evidence:read",
-        "source:read",
-        `${normalized.resourceKind}:update`,
-        `${normalized.resourceKind}:read`,
-        "person:read",
-        "workspace:read",
+        ...new Set([
+          "evidence:update",
+          "evidence:read",
+          "source:read",
+          `${normalized.resourceKind}:update`,
+          `${normalized.resourceKind}:read`,
+          "person:read",
+          "workspace:read",
+        ]),
       ],
       async (scopedContext): Promise<AssertionReference> => {
         const row = await linkEvidenceAssertion(scopedContext, {
@@ -292,6 +301,15 @@ export async function linkEvidenceAssertion(
       scoped,
       normalized.resourceKind,
       input.resourceId,
+    );
+    await requireIdentifierCitation(
+      scoped,
+      {
+        resourceKind: normalized.resourceKind,
+        resourceId: input.resourceId,
+        fieldPath: normalized.fieldPath,
+      },
+      true,
     );
     await requireResourceCoverage(
       scoped,
