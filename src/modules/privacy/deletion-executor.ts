@@ -22,6 +22,7 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 import { ensureArchivedFileCleanupJob } from "@/modules/files/cleanup";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { planPersonArtifactDeletion } from "./artifact-retention";
+import { retentionRequestPolicyIsCurrent } from "./retention-request-policy";
 
 const MAX_DELETION_BATCH = 100;
 const WORKER_ACTOR = "worker:deletion";
@@ -207,6 +208,47 @@ export async function executeApprovedDeletionRequests(input: {
           redactedDiff: { reason: "invalid_scope" },
           outcome: "failure",
         });
+        return;
+      }
+
+      if (
+        governed &&
+        !(await retentionRequestPolicyIsCurrent(
+          {
+            database: transaction as unknown as Database,
+            workspaceId: request.workspaceId,
+          },
+          { ...governed, scope },
+        ))
+      ) {
+        const blockedMarker = "Deletion requires the current retention policy.";
+        if (request.reviewNotes !== blockedMarker) {
+          await transaction
+            .update(deletionRequests)
+            .set({
+              reviewNotes: blockedMarker,
+              updatedAt: now,
+              updatedBy: WORKER_ACTOR,
+              version: sql`${deletionRequests.version} + 1`,
+            })
+            .where(
+              and(
+                eq(deletionRequests.workspaceId, request.workspaceId),
+                eq(deletionRequests.id, request.id),
+                eq(deletionRequests.state, "approved"),
+                eq(deletionRequests.version, request.version),
+              ),
+            );
+          await auditRequest({
+            database: transaction as unknown as Database,
+            action: "deletion_request.blocked",
+            requestId,
+            resourceId: request.id,
+            workspaceId: request.workspaceId,
+            redactedDiff: { reason: "retention_policy_changed" },
+            outcome: "failure",
+          });
+        }
         return;
       }
 
