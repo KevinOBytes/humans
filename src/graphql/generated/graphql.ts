@@ -534,6 +534,7 @@ export type CreateUploadSessionInput = {
 
 export type CreateWebhookInput = {
   events: Array<string>;
+  idempotencyKey?: string | null | undefined;
   url: string;
 };
 
@@ -1412,7 +1413,9 @@ export type UpsertRetentionPolicyInput = {
 };
 
 export type WebhookIdInput = {
+  expectedVersion?: number | null | undefined;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type WithdrawalEffect =
@@ -5915,6 +5918,7 @@ export type CreateWorkspaceWebhookMutation = {
   createWebhook: {
     id: string | null;
     code: string | null;
+    replayed: boolean;
     requestId: string | null;
     secret: string | null;
   };
@@ -5928,6 +5932,7 @@ export type RotateWorkspaceWebhookSecretMutation = {
   rotateWebhookSecret: {
     id: string | null;
     code: string | null;
+    replayed: boolean;
     requestId: string | null;
     secret: string | null;
   };
@@ -5941,6 +5946,7 @@ export type DisableWorkspaceWebhookMutation = {
   disableWebhook: {
     id: string | null;
     code: string | null;
+    replayed: boolean;
     requestId: string | null;
   };
 };
@@ -13091,13 +13097,14 @@ export const CreateWorkspaceWebhookDocument = new TypedDocumentString(
   createWebhook(input: $input) {
     id
     code
+    replayed
     requestId
     secret
   }
 }
     `,
   {
-    hash: "sha256:6c786f5c2521027e813425f9c3fcc65d62b97b4b7bbb267f2e140c699cbd7757",
+    hash: "sha256:5883c4f4167cd1439f97b8f045672a8de3fecdc7e85869d82b2b16695fcb7623",
   },
 ) as unknown as TypedDocumentString<
   CreateWorkspaceWebhookMutation,
@@ -13109,13 +13116,14 @@ export const RotateWorkspaceWebhookSecretDocument = new TypedDocumentString(
   rotateWebhookSecret(input: $input) {
     id
     code
+    replayed
     requestId
     secret
   }
 }
     `,
   {
-    hash: "sha256:8330a47021846a6a42a3a3b4fba9c16efeb5ab09adcdb90a7def42a6cfff94e4",
+    hash: "sha256:b824215d33be4f0363e0a8a4b749ee8f44977f8ac00bf347ade644371e57007a",
   },
 ) as unknown as TypedDocumentString<
   RotateWorkspaceWebhookSecretMutation,
@@ -13127,12 +13135,13 @@ export const DisableWorkspaceWebhookDocument = new TypedDocumentString(
   disableWebhook(input: $input) {
     id
     code
+    replayed
     requestId
   }
 }
     `,
   {
-    hash: "sha256:87f1dd44c64da868a38ec1d9d6157215559a39ecbf76cf451418b20f0f81831a",
+    hash: "sha256:4d1e939c8a59a2050a8b1a7981e8040d20d0e568e36d95286d0bb00143815f04",
   },
 ) as unknown as TypedDocumentString<
   DisableWorkspaceWebhookMutation,

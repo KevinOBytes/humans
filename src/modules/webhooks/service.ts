@@ -14,7 +14,9 @@ import { createGraphQLError } from "@/graphql/errors";
 import { sealEnvelope } from "@/lib/security/sealed-envelope";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import {
+  derivePrincipalResearchIdempotency,
   deriveResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
   runIdempotentResearchWrite,
 } from "@/modules/audit/transactions";
 import type { ResearchServiceContext } from "@/modules/audit/service";
@@ -102,6 +104,7 @@ export type WebhookMutationResult = {
   id: string | null;
   deliveryId?: string | null;
   code: "APPLIED" | "INVALID";
+  replayed?: boolean;
   requestId: string;
   secret?: string;
 };
@@ -157,9 +160,10 @@ export function createWebhooksService(input: {
     action: string,
     resourceId: string,
     outcome = "success",
-  ) {
+  ): Promise<string> {
+    const id = newId();
     await transaction.insert(auditEvents).values({
-      id: newId(),
+      id,
       workspaceId: input.workspaceId,
       actorUserId: input.actor.type === "user" ? input.actor.id : null,
       sessionId: input.actor.type === "user" ? input.actor.sessionId : null,
@@ -170,6 +174,138 @@ export function createWebhooksService(input: {
       requestId: input.requestId,
       outcome,
       redactedDiff: null,
+    });
+    return id;
+  }
+
+  function idempotencyContext(
+    actor: Extract<GraphQLActor, { type: "user" }>,
+  ): ResearchServiceContext {
+    const secret = input.idempotencyHmacKey;
+    if (!secret) {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "Idempotent webhook administration is not configured.",
+      );
+    }
+    return {
+      actor,
+      database: input.database,
+      idempotencyHmacKey: secret,
+      permissions: input.permissions,
+      requestId: input.requestId,
+      searchIndexMaintenance: input.searchIndexMaintenance,
+      workspaceId: input.workspaceId,
+    };
+  }
+
+  async function replayWebhookMutation(
+    reference: Readonly<Record<string, string | number | boolean | null>>,
+    options: {
+      action: "webhook.create" | "webhook.disable" | "webhook.rotate";
+      state: "active" | "disabled";
+    },
+  ): Promise<{
+    code: "APPLIED" | "INVALID";
+    id: string | null;
+    requestId: string;
+    version: number | null;
+  }> {
+    const auditEventId = reference.auditEventId;
+    const requestId = reference.requestId;
+    const version = reference.version;
+    const webhookId = reference.webhookId;
+    if (
+      Object.keys(reference).sort().join(":") !==
+        "auditEventId:code:requestId:version:webhookId" ||
+      typeof requestId !== "string" ||
+      !WEBHOOK_REFERENCE_UUID.test(requestId) ||
+      (reference.code !== "APPLIED" && reference.code !== "INVALID") ||
+      (reference.code === "APPLIED" &&
+        (typeof auditEventId !== "string" ||
+          !WEBHOOK_REFERENCE_UUID.test(auditEventId) ||
+          typeof version !== "number" ||
+          !Number.isSafeInteger(version) ||
+          version < 1 ||
+          typeof webhookId !== "string" ||
+          !WEBHOOK_REFERENCE_UUID.test(webhookId))) ||
+      (reference.code === "INVALID" &&
+        (auditEventId !== null || version !== null || webhookId !== null))
+    ) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    if (reference.code === "INVALID") {
+      return { code: "INVALID", id: null, requestId, version: null };
+    }
+    return input.database.transaction(async (transaction) => {
+      const [webhook] = await transaction
+        .select({
+          deletedAt: webhooks.deletedAt,
+          id: webhooks.id,
+          state: webhooks.state,
+          version: webhooks.version,
+        })
+        .from(webhooks)
+        .where(
+          and(
+            eq(webhooks.workspaceId, input.workspaceId),
+            eq(webhooks.id, webhookId as string),
+            eq(webhooks.state, options.state),
+            options.state === "active" ? isNull(webhooks.deletedAt) : undefined,
+          ),
+        )
+        .limit(1)
+        .for("share");
+      if (!webhook) {
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      }
+      if (options.state === "disabled" && webhook.deletedAt == null) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The operation response reference is invalid.",
+        );
+      }
+      if (webhook.version !== version) {
+        throw createGraphQLError(
+          "CONFLICT",
+          "The idempotent operation response is no longer current.",
+        );
+      }
+      const [auditEvent] = await transaction
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, input.workspaceId),
+            eq(auditEvents.id, auditEventId as string),
+            eq(auditEvents.actorUserId, requireUser(input.actor).id),
+            eq(auditEvents.action, options.action),
+            eq(auditEvents.resourceKind, "webhook"),
+            eq(auditEvents.resourceId, webhookId as string),
+            eq(auditEvents.requestId, requestId),
+            eq(auditEvents.outcome, "success"),
+            isNull(auditEvents.redactedDiff),
+          ),
+        )
+        .limit(1);
+      if (!auditEvent) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The operation response reference is invalid.",
+        );
+      }
+      return {
+        code: "APPLIED" as const,
+        id: webhook.id,
+        requestId,
+        version: version as number,
+      };
     });
   }
 
@@ -191,18 +327,19 @@ export function createWebhooksService(input: {
     async create(
       urlValue: string,
       eventsValue: readonly string[],
+      idempotencyKey?: string | null,
     ): Promise<WebhookMutationResult> {
       await requireAdmin();
       const url = normalizeUrl(urlValue);
       const subscribedEvents = normalizeEvents(eventsValue);
       const actor = requireUser(input.actor);
-      const id = newId();
-      const secret = createSecret();
-      const fingerprint = createHash("sha256")
-        .update(secret, "utf8")
-        .digest("hex");
-      await input.database.transaction(async (transaction) => {
-        await transaction.insert(webhooks).values({
+      const run = async (database: Database) => {
+        const id = newId();
+        const secret = createSecret();
+        const fingerprint = createHash("sha256")
+          .update(secret, "utf8")
+          .digest("hex");
+        await database.insert(webhooks).values({
           id,
           workspaceId: input.workspaceId,
           url,
@@ -216,21 +353,127 @@ export function createWebhooksService(input: {
           createdBy: actor.id,
           updatedBy: actor.id,
         });
-        await audit(transaction, "webhook.create", id);
+        const auditEventId = await audit(
+          database as unknown as TransactionDatabase,
+          "webhook.create",
+          id,
+        );
+        return {
+          reference: {
+            auditEventId,
+            code: "APPLIED" as const,
+            requestId: input.requestId,
+            version: 1,
+            webhookId: id,
+          },
+          secret,
+        };
+      };
+      if (idempotencyKey == null) {
+        const result = await input.database.transaction((transaction) =>
+          run(transaction as unknown as Database),
+        );
+        return {
+          id: result.reference.webhookId,
+          code: "APPLIED",
+          replayed: false,
+          requestId: result.reference.requestId,
+          secret: result.secret,
+        };
+      }
+      const context = idempotencyContext(actor);
+      const derived = derivePrincipalResearchIdempotency(context, {
+        expiresAt: new Date(Date.now() + WEBHOOK_IDEMPOTENCY_TTL_MS),
+        idempotencyKey,
+        operation: "webhook.create.graphql",
+        requestMaterial: { subscribedEvents, url },
+        secret: input.idempotencyHmacKey!,
       });
-      return { id, code: "APPLIED", requestId: input.requestId, secret };
+      let transientSecret: string | undefined;
+      const executed = await runPrincipalIdempotentResearchWrite(
+        context,
+        derived,
+        ["webhook:create"],
+        async (scopedContext) => {
+          const result = await run(scopedContext.database);
+          transientSecret = result.secret;
+          return result.reference;
+        },
+      );
+      const response = await replayWebhookMutation(executed.responseReference, {
+        action: "webhook.create",
+        state: "active",
+      });
+      return {
+        id: response.id,
+        code: response.code,
+        replayed: executed.replayed,
+        requestId: response.requestId,
+        ...(!executed.replayed && transientSecret
+          ? { secret: transientSecret }
+          : {}),
+      };
     },
-    async rotate(id: string): Promise<WebhookMutationResult> {
+    async rotate(
+      id: string,
+      expectedVersion?: number | null,
+      idempotencyKey?: string | null,
+    ): Promise<WebhookMutationResult> {
       await requireAdmin();
       if (!UUID.test(id))
         return { id: null, code: "INVALID", requestId: input.requestId };
+      if (
+        expectedVersion != null &&
+        (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+      ) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The webhook version is invalid.",
+        );
+      }
+      if (idempotencyKey != null && expectedVersion == null) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "An expected webhook version is required for idempotent rotation.",
+        );
+      }
       const actor = requireUser(input.actor);
-      const secret = createSecret();
-      const fingerprint = createHash("sha256")
-        .update(secret, "utf8")
-        .digest("hex");
-      const result = await input.database.transaction(async (transaction) => {
-        const updated = await transaction
+      const run = async (database: Database) => {
+        const [current] = await database
+          .select({ id: webhooks.id, version: webhooks.version })
+          .from(webhooks)
+          .where(
+            and(
+              eq(webhooks.id, id),
+              eq(webhooks.workspaceId, input.workspaceId),
+              eq(webhooks.state, "active"),
+              isNull(webhooks.deletedAt),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!current) {
+          return {
+            reference: {
+              auditEventId: null,
+              code: "INVALID" as const,
+              requestId: input.requestId,
+              version: null,
+              webhookId: null,
+            },
+          };
+        }
+        if (expectedVersion != null && current.version !== expectedVersion) {
+          throw createGraphQLError(
+            "CONFLICT",
+            "The webhook has changed since it was read.",
+          );
+        }
+        const secret = createSecret();
+        const fingerprint = createHash("sha256")
+          .update(secret, "utf8")
+          .digest("hex");
+        const [updated] = await database
           .update(webhooks)
           .set({
             encryptedSecret: sealEnvelope({
@@ -248,33 +491,106 @@ export function createWebhooksService(input: {
               eq(webhooks.id, id),
               eq(webhooks.workspaceId, input.workspaceId),
               eq(webhooks.state, "active"),
+              eq(webhooks.version, current.version),
               isNull(webhooks.deletedAt),
             ),
           )
-          .returning({ id: webhooks.id });
-        if (updated.length !== 1) return false;
-        await audit(transaction, "webhook.rotate", id);
-        return true;
+          .returning({ id: webhooks.id, version: webhooks.version });
+        if (!updated) {
+          throw createGraphQLError(
+            "CONFLICT",
+            "The webhook has changed since it was read.",
+          );
+        }
+        const auditEventId = await audit(
+          database as unknown as TransactionDatabase,
+          "webhook.rotate",
+          id,
+        );
+        return {
+          reference: {
+            auditEventId,
+            code: "APPLIED" as const,
+            requestId: input.requestId,
+            version: updated.version,
+            webhookId: updated.id,
+          },
+          secret,
+        };
+      };
+      if (idempotencyKey == null) {
+        const result = await input.database.transaction((transaction) =>
+          run(transaction as unknown as Database),
+        );
+        return {
+          id: result.reference.webhookId,
+          code: result.reference.code,
+          replayed: false,
+          requestId: result.reference.requestId,
+          ...(result.secret ? { secret: result.secret } : {}),
+        };
+      }
+      const context = idempotencyContext(actor);
+      const derived = derivePrincipalResearchIdempotency(context, {
+        expiresAt: new Date(Date.now() + WEBHOOK_IDEMPOTENCY_TTL_MS),
+        idempotencyKey,
+        operation: "webhook.rotate.graphql",
+        requestMaterial: { expectedVersion: expectedVersion!, webhookId: id },
+        secret: input.idempotencyHmacKey!,
       });
-      return result
-        ? { id, code: "APPLIED", requestId: input.requestId, secret }
-        : { id: null, code: "INVALID", requestId: input.requestId };
+      let transientSecret: string | undefined;
+      const executed = await runPrincipalIdempotentResearchWrite(
+        context,
+        derived,
+        ["webhook:update"],
+        async (scopedContext) => {
+          const result = await run(scopedContext.database);
+          transientSecret = result.secret;
+          return result.reference;
+        },
+      );
+      const response = await replayWebhookMutation(executed.responseReference, {
+        action: "webhook.rotate",
+        state: "active",
+      });
+      return {
+        id: response.id,
+        code: response.code,
+        replayed: executed.replayed,
+        requestId: response.requestId,
+        ...(!executed.replayed && transientSecret
+          ? { secret: transientSecret }
+          : {}),
+      };
     },
-    async disable(id: string): Promise<WebhookMutationResult> {
+    async disable(
+      id: string,
+      expectedVersion?: number | null,
+      idempotencyKey?: string | null,
+    ): Promise<WebhookMutationResult> {
       await requireAdmin();
       if (!UUID.test(id))
         return { id: null, code: "INVALID", requestId: input.requestId };
+      if (
+        expectedVersion != null &&
+        (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+      ) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "The webhook version is invalid.",
+        );
+      }
+      if (idempotencyKey != null && expectedVersion == null) {
+        throw createGraphQLError(
+          "VALIDATION_FAILED",
+          "An expected webhook version is required for idempotent disable.",
+        );
+      }
       const actor = requireUser(input.actor);
-      const result = await input.database.transaction(async (transaction) => {
-        const updated = await transaction
-          .update(webhooks)
-          .set({
-            state: "disabled",
-            deletedAt: new Date(),
-            deletedBy: actor.id,
-            updatedAt: new Date(),
-            updatedBy: actor.id,
-          })
+      const run = async (database: Database) => {
+        const [current] = await database
+          .select({ id: webhooks.id, version: webhooks.version })
+          .from(webhooks)
           .where(
             and(
               eq(webhooks.id, id),
@@ -282,14 +598,96 @@ export function createWebhooksService(input: {
               isNull(webhooks.deletedAt),
             ),
           )
-          .returning({ id: webhooks.id });
-        if (updated.length !== 1) return false;
-        await audit(transaction, "webhook.disable", id);
-        return true;
+          .limit(1)
+          .for("update");
+        if (!current) {
+          return {
+            auditEventId: null,
+            code: "INVALID" as const,
+            requestId: input.requestId,
+            version: null,
+            webhookId: null,
+          };
+        }
+        if (expectedVersion != null && current.version !== expectedVersion) {
+          throw createGraphQLError(
+            "CONFLICT",
+            "The webhook has changed since it was read.",
+          );
+        }
+        const [updated] = await database
+          .update(webhooks)
+          .set({
+            state: "disabled",
+            deletedAt: new Date(),
+            deletedBy: actor.id,
+            version: sql`${webhooks.version} + 1`,
+            updatedAt: new Date(),
+            updatedBy: actor.id,
+          })
+          .where(
+            and(
+              eq(webhooks.id, id),
+              eq(webhooks.workspaceId, input.workspaceId),
+              eq(webhooks.version, current.version),
+              isNull(webhooks.deletedAt),
+            ),
+          )
+          .returning({ id: webhooks.id, version: webhooks.version });
+        if (!updated) {
+          throw createGraphQLError(
+            "CONFLICT",
+            "The webhook has changed since it was read.",
+          );
+        }
+        const auditEventId = await audit(
+          database as unknown as TransactionDatabase,
+          "webhook.disable",
+          id,
+        );
+        return {
+          auditEventId,
+          code: "APPLIED" as const,
+          requestId: input.requestId,
+          version: updated.version,
+          webhookId: updated.id,
+        };
+      };
+      if (idempotencyKey == null) {
+        const response = await input.database.transaction((transaction) =>
+          run(transaction as unknown as Database),
+        );
+        return {
+          id: response.webhookId,
+          code: response.code,
+          replayed: false,
+          requestId: response.requestId,
+        };
+      }
+      const context = idempotencyContext(actor);
+      const derived = derivePrincipalResearchIdempotency(context, {
+        expiresAt: new Date(Date.now() + WEBHOOK_IDEMPOTENCY_TTL_MS),
+        idempotencyKey,
+        operation: "webhook.disable.graphql",
+        requestMaterial: { expectedVersion: expectedVersion!, webhookId: id },
+        secret: input.idempotencyHmacKey!,
       });
-      return result
-        ? { id, code: "APPLIED", requestId: input.requestId }
-        : { id: null, code: "INVALID", requestId: input.requestId };
+      const executed = await runPrincipalIdempotentResearchWrite(
+        context,
+        derived,
+        ["webhook:delete"],
+        async (scopedContext) => run(scopedContext.database),
+      );
+      const response = await replayWebhookMutation(executed.responseReference, {
+        action: "webhook.disable",
+        state: "disabled",
+      });
+      return {
+        id: response.id,
+        code: response.code,
+        replayed: executed.replayed,
+        requestId: response.requestId,
+      };
     },
     async enqueueEvent(
       event: string,

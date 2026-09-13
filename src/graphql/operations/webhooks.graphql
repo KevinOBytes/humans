@@ -17,6 +17,7 @@ mutation CreateWorkspaceWebhook($input: CreateWebhookInput!) {
   createWebhook(input: $input) {
     id
     code
+    replayed
     requestId
     secret
   }
@@ -26,6 +27,7 @@ mutation RotateWorkspaceWebhookSecret($input: WebhookIdInput!) {
   rotateWebhookSecret(input: $input) {
     id
     code
+    replayed
     requestId
     secret
   }
@@ -35,6 +37,7 @@ mutation DisableWorkspaceWebhook($input: WebhookIdInput!) {
   disableWebhook(input: $input) {
     id
     code
+    replayed
     requestId
   }
 }
