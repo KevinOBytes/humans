@@ -1,5 +1,19 @@
 # MVP requirements
 
+Latest collaboration/runtime release evidence (2026-09-13): commits `4b55c33`
+and `556ad33` are pushed to `main`; GitHub Actions run `34767480893` passed all
+nine required jobs, including real PostgreSQL integration and browser
+acceptance. The current runtime tree is Vercel deployment
+`dpl_7aCx1WrcHPbyVAMyEPTeL6neumvk` (`READY`) with aliases
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. Redacted production smoke passed homepage,
+liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL,
+and protected jobs. The release adds the first-class team, case-team sharing,
+investigation, and investigation-case schema/GraphQL/auth/audit boundaries.
+Hosted credentialed sign-in/person creation, external provider acceptance,
+dedicated collaboration UI, and the remaining whole-product privacy,
+accessibility, performance, and recovery evidence remain incomplete below.
+
 Collaboration hierarchy checkpoint (2026-09-13): first-class
 workspace-scoped `teams`, `teamMembers`, and `caseTeamLinks` now provide
 reusable team membership plus an explicit case-sharing grant. First-class

@@ -1,5 +1,27 @@
 # Production closeout
 
+## Current release evidence (2026-09-13, collaboration/runtime release)
+
+Commits `4b55c33` and `556ad33` are pushed to `main`. GitHub Actions run
+`34767480893` passed all nine required jobs: Node 24 quality, real PostgreSQL
+integration, browser acceptance, production build, generated drift, Compose
+lifecycle, image security, dependency policy, and secret scanning. The current
+runtime tree was deployed as Vercel `dpl_7aCx1WrcHPbyVAMyEPTeL6neumvk`
+(`READY`) with aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. Redacted production smoke passed homepage,
+liveness, readiness with PostgreSQL/Redis/storage, unauthenticated GraphQL,
+and the protected jobs boundary. Vercel inspection reports Node 24 runtime
+functions.
+
+This release adds first-class workspace-scoped teams, team membership, explicit
+case-team sharing grants, investigations, and investigation-case links. Their
+schema, migration, authorization, principal-bound idempotency, audit, and
+GraphQL contract tests are green. There is not yet a dedicated investigations/
+teams administration UI, and hosted credentialed sign-in/person creation plus
+external provider-contract acceptance remain unverified. Vercel's protected
+secret values were not exported; the attended administrator password-rotation
+procedure below is still required before accepting hosted authentication.
+
 ## Current release evidence (2026-09-13, latest runtime)
 
 The latest verified `main` tree at commit `591c1d7` is pushed to GitHub and
