@@ -1,5 +1,16 @@
 # MVP requirements
 
+Latest verified application runtime checkpoint (2026-09-13): commit `ad2251e`
+passed GitHub Actions run `34733012670` with all 9 checks successful, including
+PostgreSQL/Redis/MinIO integration, browser acceptance, production build,
+generated drift, quality, image security, dependency policy, and secret
+scanning. Vercel deployment `dpl_AgyXV5czkyHDZ6Zww84cn9a1V1ia` is `READY`,
+serves `humans.kevinbytes.com`, and the redacted production smoke passed
+homepage, liveness, readiness, unauthenticated GraphQL, and protected jobs.
+Direct-route and rejected-initialization recovery checks were also exercised
+against the live alias; hosted authenticated/provider acceptance and the 24
+explicitly incomplete rows remain open.
+
 Bounded HUM-FR-032 direct-route evidence (2026-09-13): all 10 API route modules are inventoried by a 43-case method-boundary suite. Unsupported standard methods now return stable correlated 405 responses with explicit `Allow` and `private, no-store`; HEAD denials and OPTIONS remain bodyless, GraphQL retains its own error shape and origin-aware preflight, and the other OPTIONS responses do not grant CORS or initialize providers. Jobs now return a JSON method-denial code, health and jobs responses use the private cache policy, and readiness failures add `PROVIDER_UNAVAILABLE` without dependency details. Twelve direct-account input/authentication-boundary cases prove malformed JSON, schema rejection, origin denial, and API-key denial before mutation; existing route-specific failure codes are preserved. The focused route suite passes 138 tests and the full unit suite passes 183 files/1,377 tests. This is local handler evidence, not hosted/provider or whole-product failure-matrix closure; HUM-FR-032 remains incomplete.
 
 Local production-build route verification for this tranche: Next.js 16.3.4 built successfully with Node 24; a loopback-only standalone server (`node .next/standalone/server.js`) returned the expected status, request header/body correlation, and private cache policy for all 42 applicable method-denial/OPTIONS responses across the 10 routes. HEAD and OPTIONS bodies were empty. This does not verify hosted dependencies or authenticated user journeys.
