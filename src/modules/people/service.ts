@@ -556,8 +556,9 @@ export function createPeopleService(context: ResearchServiceContext) {
 
   async function visibleFileAttachment(
     row: PersonFileAttachmentRow,
+    allowArchived = false,
   ): Promise<boolean> {
-    if (row.deletedAt) return false;
+    if (row.deletedAt && !allowArchived) return false;
     try {
       await requireRecordPerson(row.personId);
       await requireAttachableFile(row.fileId);
@@ -565,6 +566,47 @@ export function createPeopleService(context: ResearchServiceContext) {
     } catch {
       return false;
     }
+  }
+
+  async function replayPersonFileAttachment(
+    responseReference: Readonly<
+      Record<string, string | number | boolean | null>
+    >,
+    allowArchived = false,
+  ): Promise<PersonFileAttachmentRow> {
+    const attachmentId = responseReference.attachmentId;
+    const version = responseReference.version;
+    if (
+      Object.keys(responseReference).sort().join(":") !==
+        "attachmentId:version" ||
+      typeof attachmentId !== "string" ||
+      !PERSON_REFERENCE_UUID.test(attachmentId) ||
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1
+    ) {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The operation response reference is invalid.",
+      );
+    }
+    const row = await repository.getFileAttachment({
+      workspaceId: context.workspaceId,
+      id: attachmentId,
+    });
+    if (!row || !(await visibleFileAttachment(row, allowArchived))) {
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    }
+    if (row.version !== version) {
+      throw createGraphQLError(
+        "CONFLICT",
+        "The idempotent operation response is no longer current.",
+      );
+    }
+    return row;
   }
 
   async function visibleRecord(
@@ -2138,28 +2180,6 @@ export function createPeopleService(context: ResearchServiceContext) {
           },
         ]);
       }
-      const existing = await repository.getActiveFileAttachment({
-        workspaceId: context.workspaceId,
-        personId: input.personId,
-        fileId: input.fileId,
-      });
-      if (existing) {
-        if ((existing.label ?? null) !== (label.value ?? null)) {
-          return {
-            resource: null,
-            issues: [
-              {
-                path: ["fileId"],
-                code: "CONFLICT",
-                message: "This file is already attached with another label.",
-              },
-            ],
-            code: "CONFLICT",
-            currentVersion: existing.version,
-          };
-        }
-        return { resource: existing, issues: [], code: null };
-      }
       if (input.idempotencyKey != null) {
         const secret = context.idempotencyHmacKey;
         if (!secret) {
@@ -2203,27 +2223,35 @@ export function createPeopleService(context: ResearchServiceContext) {
             };
           },
         );
-        const reference = executed.responseReference;
-        if (
-          typeof reference.attachmentId !== "string" ||
-          !PERSON_REFERENCE_UUID.test(reference.attachmentId)
-        ) {
-          throw createGraphQLError(
-            "PRECONDITION_FAILED",
-            "The stored person file attachment reference is invalid.",
-          );
+        return {
+          resource: await replayPersonFileAttachment(
+            executed.responseReference,
+          ),
+          issues: [],
+          code: null,
+        };
+      }
+      const existing = await repository.getActiveFileAttachment({
+        workspaceId: context.workspaceId,
+        personId: input.personId,
+        fileId: input.fileId,
+      });
+      if (existing) {
+        if ((existing.label ?? null) !== (label.value ?? null)) {
+          return {
+            resource: null,
+            issues: [
+              {
+                path: ["fileId"],
+                code: "CONFLICT",
+                message: "This file is already attached with another label.",
+              },
+            ],
+            code: "CONFLICT",
+            currentVersion: existing.version,
+          };
         }
-        const replay = await repository.getFileAttachment({
-          workspaceId: context.workspaceId,
-          id: reference.attachmentId,
-        });
-        if (!replay || !(await visibleFileAttachment(replay))) {
-          throw createGraphQLError(
-            "NOT_FOUND",
-            "The requested resource was not found.",
-          );
-        }
-        return { resource: replay, issues: [], code: null };
+        return { resource: existing, issues: [], code: null };
       }
       const now = new Date();
       const created = await writeTransaction(context, async (database) => {
@@ -2260,17 +2288,6 @@ export function createPeopleService(context: ResearchServiceContext) {
       expectedVersion: number;
       idempotencyKey?: string | null;
     }): Promise<MutationOutcome<PersonFileAttachmentRow>> {
-      const existing = await repository.getFileAttachment({
-        workspaceId: context.workspaceId,
-        id: input.id,
-      });
-      if (!existing || !(await visibleFileAttachment(existing))) {
-        throw createGraphQLError(
-          "NOT_FOUND",
-          "The requested resource was not found.",
-        );
-      }
-      const person = await requireRecordPerson(existing.personId);
       if (input.idempotencyKey != null) {
         const secret = context.idempotencyHmacKey;
         if (!secret) {
@@ -2312,28 +2329,26 @@ export function createPeopleService(context: ResearchServiceContext) {
             };
           },
         );
-        const reference = executed.responseReference;
-        if (
-          typeof reference.attachmentId !== "string" ||
-          !PERSON_REFERENCE_UUID.test(reference.attachmentId)
-        ) {
-          throw createGraphQLError(
-            "PRECONDITION_FAILED",
-            "The stored person file attachment reference is invalid.",
-          );
-        }
-        const replay = await repository.getFileAttachment({
-          workspaceId: context.workspaceId,
-          id: reference.attachmentId,
-        });
-        if (!replay) {
-          throw createGraphQLError(
-            "NOT_FOUND",
-            "The requested resource was not found.",
-          );
-        }
-        return { resource: replay, issues: [], code: null };
+        return {
+          resource: await replayPersonFileAttachment(
+            executed.responseReference,
+            true,
+          ),
+          issues: [],
+          code: null,
+        };
       }
+      const existing = await repository.getFileAttachment({
+        workspaceId: context.workspaceId,
+        id: input.id,
+      });
+      if (!existing || !(await visibleFileAttachment(existing))) {
+        throw createGraphQLError(
+          "NOT_FOUND",
+          "The requested resource was not found.",
+        );
+      }
+      const person = await requireRecordPerson(existing.personId);
       const now = new Date();
       const archived = await writeTransaction(context, async (database) => {
         const row = await createPeopleRepository(
