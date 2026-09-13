@@ -9,9 +9,13 @@ import {
 } from "@/db/schema/evidence";
 import { auditEvents } from "@/db/schema/operations";
 import { personIdentifiers } from "@/db/schema/people";
+import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 import type { ResearchServiceContext } from "@/modules/audit/service";
 import { linkEvidenceAssertion } from "@/modules/evidence/assertions";
-import { createIdentifierService } from "@/modules/people/identifier-service";
+import {
+  createIdentifierService,
+  prepareIdentifierWrite,
+} from "@/modules/people/identifier-service";
 import { LinkEvidenceAssertionDocument } from "@/graphql/generated/graphql";
 import type { SessionActor } from "../support/graphql";
 import { caseContext, coveredPerson } from "../support/cases";
@@ -162,6 +166,91 @@ liveDescribe("version-bound public identifier provenance", () => {
     const events = await fixture.database.select().from(auditEvents);
     expect(JSON.stringify(events)).not.toContain("SYNTHETIC-PROTECTED-SECRET");
   });
+  it("reaches the protected-storage precondition for an explicitly granted confidential identifier", async () => {
+    const created = await createIdentifierService(context).createIdentifier({
+      personId,
+      namespace: "fictional",
+      identifierType: "Membership",
+      value: "SYNTHETIC-PROTECTED-SECRET",
+      sensitivity: "internal",
+    });
+    const protectedId = created.resource!.id;
+    const policyId = newId();
+    await fixture.database.insert(accessPolicies).values({
+      id: policyId,
+      workspaceId: context.workspaceId,
+      name: "Citation fixture readers",
+      sensitivityCeiling: "confidential",
+      resourceKinds: ["personIdentifier"],
+      state: "active",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    await fixture.database.insert(resourceGrants).values({
+      id: newId(),
+      workspaceId: context.workspaceId,
+      policyId,
+      memberId: actor.memberId,
+      resourceKind: "personIdentifier",
+      resourceId: protectedId,
+      state: "active",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    const changed = await createIdentifierService(context).updateIdentifier({
+      id: protectedId,
+      expectedVersion: 1,
+      sensitivity: "confidential",
+      value: "SYNTHETIC-PROTECTED-SECRET",
+    });
+    expect(changed.resource?.sensitivity).toBe("confidential");
+    await expect(
+      linkEvidenceAssertion(context, {
+        ...input(),
+        fieldPath: `identifiers.${protectedId}.v2.value`,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+    expect(
+      await fixture.database.select().from(evidenceAssertions),
+    ).toHaveLength(0);
+  });
+  it.each([undefined, "SYNTHETIC-PUBLIC-100", "SYNTHETIC-REPLACEMENT-200"])(
+    "rejects reclassifying a cited public identifier with replacement %s",
+    async (value) => {
+      const quote = "SYNTHETIC-PUBLIC-100";
+      await linkEvidenceAssertion(context, { ...input(), quote });
+      await expect(
+        createIdentifierService(context).updateIdentifier({
+          id: identifierId,
+          expectedVersion: 1,
+          sensitivity: "internal",
+          value,
+          idempotencyKey: "cited-identifier-reclassification",
+        }),
+      ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+      const [stored] = await fixture.database
+        .select()
+        .from(personIdentifiers)
+        .where(eq(personIdentifiers.id, identifierId));
+      expect(stored).toMatchObject({
+        version: 1,
+        sensitivity: "public",
+        normalizedValue: quote,
+        encryptedRawValue: null,
+        blindIndex: null,
+      });
+      const assertions = await fixture.database
+        .select()
+        .from(evidenceAssertions);
+      expect(assertions).toHaveLength(1);
+      expect(assertions[0]!.quote).toBe(quote);
+      const events = await fixture.database
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "personIdentifier.update"));
+      expect(events).toHaveLength(0);
+    },
+  );
   it("rejects stale identifier versions and does not silently bind evidence to edited values", async () => {
     await createIdentifierService(context).updateIdentifier({
       id: identifierId,
@@ -175,14 +264,25 @@ liveDescribe("version-bound public identifier provenance", () => {
       await fixture.database.select().from(evidenceAssertions),
     ).toHaveLength(0);
   });
-  it("rechecks identifier authorization on idempotent replay after sensitivity changes", async () => {
+  it("rechecks identifier authorization on idempotent replay after an out-of-band sensitivity change", async () => {
     const linked = await linkEvidenceAssertion(context, input());
-    await createIdentifierService(context).updateIdentifier({
-      id: identifierId,
-      expectedVersion: 1,
-      sensitivity: "internal",
-      value: "SYNTHETIC-PROTECTED-SECRET",
-    });
+    // The authoring API rejects this transition once cited. Simulate a legacy
+    // or out-of-band database change to exercise replay's independent guard.
+    await fixture.database
+      .update(personIdentifiers)
+      .set({
+        ...prepareIdentifierWrite(
+          {
+            namespace: "fictional-membership",
+            identifierType: "Membership",
+            sensitivity: "internal",
+            value: "SYNTHETIC-PROTECTED-SECRET",
+          },
+          context,
+        ),
+        version: 2,
+      })
+      .where(eq(personIdentifiers.id, identifierId));
     await expect(linkEvidenceAssertion(context, input())).rejects.toMatchObject(
       { extensions: { code: "PRECONDITION_FAILED" } },
     );
