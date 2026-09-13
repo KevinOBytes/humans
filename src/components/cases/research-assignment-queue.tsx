@@ -69,7 +69,17 @@ function assigneePrincipalId(value: string | null | undefined) {
   return value?.trim() || null;
 }
 
-export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
+export function ResearchAssignmentQueue({
+  caseId,
+  canManageWorkspace = true,
+}: {
+  /** Omit to list and create assignments owned by the active workspace. */
+  caseId?: string;
+  /** Workspace-scoped mutations require workspace:update. Case mutations use case membership. */
+  canManageWorkspace?: boolean;
+}) {
+  const workspaceScoped = !caseId;
+  const canMutate = Boolean(caseId) || canManageWorkspace;
   const [rows, setRows] = useState<ResearchAssignmentFieldsFragment[]>([]);
   const [page, setPage] = useState<{
     hasNextPage: boolean;
@@ -102,7 +112,7 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
         const result = await executeBrowserGraphQL(
           ResearchAssignmentsDocument,
           {
-            caseId,
+            ...(caseId ? { caseId } : {}),
             first: 25,
             status: status || undefined,
             queueKind: queueKind || undefined,
@@ -167,7 +177,7 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
     const saved = await mutate(() =>
       executeBrowserGraphQL(CreateResearchAssignmentDocument, {
         input: {
-          caseId,
+          caseId: caseId ?? null,
           queueKind: form.queueKind,
           title: form.title,
           description: form.description || null,
@@ -196,12 +206,18 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
     >
       <div>
         <h2 id="assignment-queue-heading" className="text-xl font-semibold">
-          Research assignments
+          {workspaceScoped ? "Workspace assignments" : "Research assignments"}
         </h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          This queue is limited to the selected case. A row records work state
-          only; it never grants access to case resources.
+          {workspaceScoped
+            ? "This queue includes workspace-level work items and case items you are authorized to see. A row never grants access to case resources."
+            : "This queue is limited to the selected case. A row records work state only; it never grants access to case resources."}
         </p>
+        {!canMutate ? (
+          <p className="text-muted-foreground mt-2 text-sm">
+            You have read-only access to this queue.
+          </p>
+        ) : null}
       </div>
       {error ? <p role="alert">{error}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -248,91 +264,95 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
           </select>
         </div>
       </div>
-      <form
-        className="grid gap-3 border-t pt-5"
-        onSubmit={(event) => void create(event)}
-      >
-        <h3 className="font-semibold">Create assignment</h3>
-        <div>
-          <Label htmlFor="assignment-title">Assignment title</Label>
-          <Input
-            id="assignment-title"
-            maxLength={200}
-            required
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-          />
-        </div>
-        <div>
-          <Label htmlFor="assignment-description">Description</Label>
-          <textarea
-            id="assignment-description"
-            className="border-input bg-background min-h-24 w-full rounded-xl border p-3"
-            maxLength={4000}
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+      {canMutate ? (
+        <form
+          className="grid gap-3 border-t pt-5"
+          onSubmit={(event) => void create(event)}
+        >
+          <h3 className="font-semibold">Create assignment</h3>
           <div>
-            <Label htmlFor="assignment-kind">Kind</Label>
-            <select
-              id="assignment-kind"
-              className="border-input bg-background min-h-11 w-full rounded-xl border px-3"
-              value={form.queueKind}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  queueKind: e.target.value as ResearchAssignmentQueueKind,
-                })
-              }
-            >
-              {queueKinds.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="assignment-priority">Priority (0–100)</Label>
+            <Label htmlFor="assignment-title">Assignment title</Label>
             <Input
-              id="assignment-priority"
-              type="number"
-              min="0"
-              max="100"
-              value={form.priority}
-              onChange={(e) => setForm({ ...form, priority: e.target.value })}
+              id="assignment-title"
+              maxLength={200}
+              required
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
             />
           </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <Label htmlFor="assignment-assignee">
-              Assignee principal ID (optional)
-            </Label>
-            <Input
-              id="assignment-assignee"
-              value={form.assigneePrincipalId}
+            <Label htmlFor="assignment-description">Description</Label>
+            <textarea
+              id="assignment-description"
+              className="border-input bg-background min-h-24 w-full rounded-xl border p-3"
+              maxLength={4000}
+              value={form.description}
               onChange={(e) =>
-                setForm({ ...form, assigneePrincipalId: e.target.value })
+                setForm({ ...form, description: e.target.value })
               }
             />
           </div>
-          <div>
-            <Label htmlFor="assignment-due">Due date (optional)</Label>
-            <Input
-              id="assignment-due"
-              type="datetime-local"
-              value={form.dueAt}
-              onChange={(e) => setForm({ ...form, dueAt: e.target.value })}
-            />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="assignment-kind">Kind</Label>
+              <select
+                id="assignment-kind"
+                className="border-input bg-background min-h-11 w-full rounded-xl border px-3"
+                value={form.queueKind}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    queueKind: e.target.value as ResearchAssignmentQueueKind,
+                  })
+                }
+              >
+                {queueKinds.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="assignment-priority">Priority (0–100)</Label>
+              <Input
+                id="assignment-priority"
+                type="number"
+                min="0"
+                max="100"
+                value={form.priority}
+                onChange={(e) => setForm({ ...form, priority: e.target.value })}
+              />
+            </div>
           </div>
-        </div>
-        <Button disabled={busy} type="submit">
-          Create assignment
-        </Button>
-      </form>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="assignment-assignee">
+                Assignee principal ID (optional)
+              </Label>
+              <Input
+                id="assignment-assignee"
+                value={form.assigneePrincipalId}
+                onChange={(e) =>
+                  setForm({ ...form, assigneePrincipalId: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="assignment-due">Due date (optional)</Label>
+              <Input
+                id="assignment-due"
+                type="datetime-local"
+                value={form.dueAt}
+                onChange={(e) => setForm({ ...form, dueAt: e.target.value })}
+              />
+            </div>
+          </div>
+          <Button disabled={busy} type="submit">
+            Create assignment
+          </Button>
+        </form>
+      ) : null}
       {busy ? <p role="status">Loading assignment queue…</p> : null}
       <ul className="space-y-3" aria-label="Assignments">
         {rows.map((row) => (
@@ -348,37 +368,65 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
             {row.description ? (
               <p className="mt-2 text-sm">{row.description}</p>
             ) : null}
-            <Label
-              className="mt-3 block"
-              htmlFor={`assignment-reason-${row.id}`}
-            >
-              Reason for {row.title}
-            </Label>
-            <Input
-              id={`assignment-reason-${row.id}`}
-              maxLength={2000}
-              value={reason[row.id ?? ""] ?? ""}
-              onChange={(e) =>
-                setReason({ ...reason, [row.id ?? ""]: e.target.value })
-              }
-            />
-            <div className="mt-3 flex flex-wrap gap-2">
-              {row.status
-                ? transitions[row.status].map((next) => (
+            {canMutate ? (
+              <>
+                <Label
+                  className="mt-3 block"
+                  htmlFor={`assignment-reason-${row.id}`}
+                >
+                  Reason for {row.title}
+                </Label>
+                <Input
+                  id={`assignment-reason-${row.id}`}
+                  maxLength={2000}
+                  value={reason[row.id ?? ""] ?? ""}
+                  onChange={(e) =>
+                    setReason({ ...reason, [row.id ?? ""]: e.target.value })
+                  }
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {row.status
+                    ? transitions[row.status].map((next) => (
+                        <Button
+                          key={next.status}
+                          type="button"
+                          variant="outline"
+                          disabled={busy || !reason[row.id ?? ""]?.trim()}
+                          onClick={() =>
+                            void mutate(() =>
+                              executeBrowserGraphQL(
+                                TransitionResearchAssignmentDocument,
+                                {
+                                  input: {
+                                    id: row.id!,
+                                    expectedVersion: row.version!,
+                                    status: next.status,
+                                    reason: reason[row.id!]!,
+                                    idempotencyKey: idempotencyKey(),
+                                  },
+                                },
+                              ),
+                            )
+                          }
+                        >
+                          {next.label}
+                        </Button>
+                      ))
+                    : null}
+                  {row.status &&
+                  !["COMPLETED", "CANCELLED"].includes(row.status) ? (
                     <Button
-                      key={next.status}
                       type="button"
                       variant="outline"
                       disabled={busy || !reason[row.id ?? ""]?.trim()}
                       onClick={() =>
                         void mutate(() =>
                           executeBrowserGraphQL(
-                            TransitionResearchAssignmentDocument,
+                            EscalateResearchAssignmentDocument,
                             {
                               input: {
                                 id: row.id!,
                                 expectedVersion: row.version!,
-                                status: next.status,
                                 reason: reason[row.id!]!,
                                 idempotencyKey: idempotencyKey(),
                               },
@@ -387,82 +435,66 @@ export function ResearchAssignmentQueue({ caseId }: { caseId: string }) {
                         )
                       }
                     >
-                      {next.label}
+                      Escalate
                     </Button>
-                  ))
-                : null}
-              {row.status &&
-              !["COMPLETED", "CANCELLED"].includes(row.status) ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy || !reason[row.id ?? ""]?.trim()}
-                  onClick={() =>
-                    void mutate(() =>
-                      executeBrowserGraphQL(
-                        EscalateResearchAssignmentDocument,
-                        {
-                          input: {
-                            id: row.id!,
-                            expectedVersion: row.version!,
-                            reason: reason[row.id!]!,
-                            idempotencyKey: idempotencyKey(),
+                  ) : null}
+                </div>
+                <div className="mt-3">
+                  <p className="text-muted-foreground mb-1 text-sm">
+                    Current assignee: {row.assigneePrincipalId ?? "Unassigned"}
+                  </p>
+                  <Label htmlFor={`assignment-assignee-${row.id}`}>
+                    Assignee principal ID (clear to unassign)
+                  </Label>
+                  <Input
+                    id={`assignment-assignee-${row.id}`}
+                    value={
+                      assignee[row.id ?? ""] ?? row.assigneePrincipalId ?? ""
+                    }
+                    onChange={(e) =>
+                      setAssignee({
+                        ...assignee,
+                        [row.id ?? ""]: e.target.value,
+                      })
+                    }
+                  />
+                  <Button
+                    className="mt-2"
+                    type="button"
+                    variant="outline"
+                    disabled={busy || !reason[row.id ?? ""]?.trim()}
+                    onClick={() =>
+                      void mutate(() =>
+                        executeBrowserGraphQL(
+                          AssignResearchAssignmentDocument,
+                          {
+                            input: {
+                              id: row.id!,
+                              expectedVersion: row.version!,
+                              assigneePrincipalId: assigneePrincipalId(
+                                assignee[row.id!] ?? row.assigneePrincipalId,
+                              ),
+                              reason: reason[row.id!]!,
+                              idempotencyKey: idempotencyKey(),
+                            },
                           },
-                        },
-                      ),
-                    )
-                  }
-                >
-                  Escalate
-                </Button>
-              ) : null}
-            </div>
-            <div className="mt-3">
-              <p className="text-muted-foreground mb-1 text-sm">
-                Current assignee: {row.assigneePrincipalId ?? "Unassigned"}
-              </p>
-              <Label htmlFor={`assignment-assignee-${row.id}`}>
-                Assignee principal ID (clear to unassign)
-              </Label>
-              <Input
-                id={`assignment-assignee-${row.id}`}
-                value={assignee[row.id ?? ""] ?? row.assigneePrincipalId ?? ""}
-                onChange={(e) =>
-                  setAssignee({
-                    ...assignee,
-                    [row.id ?? ""]: e.target.value,
-                  })
-                }
-              />
-              <Button
-                className="mt-2"
-                type="button"
-                variant="outline"
-                disabled={busy || !reason[row.id ?? ""]?.trim()}
-                onClick={() =>
-                  void mutate(() =>
-                    executeBrowserGraphQL(AssignResearchAssignmentDocument, {
-                      input: {
-                        id: row.id!,
-                        expectedVersion: row.version!,
-                        assigneePrincipalId: assigneePrincipalId(
-                          assignee[row.id!] ?? row.assigneePrincipalId,
                         ),
-                        reason: reason[row.id!]!,
-                        idempotencyKey: idempotencyKey(),
-                      },
-                    }),
-                  )
-                }
-              >
-                Save assignee
-              </Button>
-            </div>
+                      )
+                    }
+                  >
+                    Save assignee
+                  </Button>
+                </div>
+              </>
+            ) : null}
           </li>
         ))}
       </ul>
       {!busy && !rows.length ? (
-        <p>No assignments are visible for this case.</p>
+        <p>
+          No assignments are visible for this{" "}
+          {workspaceScoped ? "workspace" : "case"}.
+        </p>
       ) : null}
       {page.hasNextPage && page.endCursor ? (
         <Button

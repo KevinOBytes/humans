@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BrainCircuit,
+  ClipboardList,
   Database,
   FileText,
   GitMerge,
@@ -56,6 +57,7 @@ export function NavigationLinks({
   canViewImports,
   canViewSearch,
   canViewReconciliation,
+  canViewAssignments,
   onNavigate,
 }: {
   canViewAnalyst: boolean;
@@ -65,6 +67,7 @@ export function NavigationLinks({
   canViewImports: boolean;
   canViewSearch: boolean;
   canViewReconciliation?: boolean;
+  canViewAssignments?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -105,6 +108,12 @@ export function NavigationLinks({
       label: "Reconciliation",
       icon: GitMerge,
       shown: canViewReconciliation ?? false,
+    },
+    {
+      href: "/assignments",
+      label: "Assignments",
+      icon: ClipboardList,
+      shown: canViewAssignments ?? false,
     },
   ];
 
@@ -178,6 +187,7 @@ export function MobileNavigation({
   canViewImports,
   canViewSearch,
   canViewReconciliation,
+  canViewAssignments,
   organizations,
 }: {
   activeWorkspace: WorkspaceOption;
@@ -188,6 +198,7 @@ export function MobileNavigation({
   canViewImports: boolean;
   canViewSearch: boolean;
   canViewReconciliation?: boolean;
+  canViewAssignments?: boolean;
   organizations: readonly WorkspaceOption[];
 }) {
   const [open, setOpen] = useState(false);
@@ -251,6 +262,7 @@ export function MobileNavigation({
             canViewImports={canViewImports}
             canViewSearch={canViewSearch}
             canViewReconciliation={canViewReconciliation}
+            canViewAssignments={canViewAssignments}
             onNavigate={() => setOpen(false)}
           />
         </div>
