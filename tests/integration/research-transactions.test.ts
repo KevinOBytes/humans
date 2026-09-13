@@ -16,6 +16,7 @@ import { members, sessions } from "@/db/schema/auth";
 import { personTags, tags } from "@/db/schema/evidence";
 import { factDefinitions, facts } from "@/db/schema/facts";
 import { contactPoints } from "@/db/schema/locations";
+import { locationMutationIdempotency } from "@/db/schema/locations";
 import { auditEvents, idempotencyKeys } from "@/db/schema/operations";
 import {
   externalRecords,
@@ -746,20 +747,20 @@ liveDescribe("research write transactions", () => {
     const firstClaim = (
       await fixture.database
         .select()
-        .from(idempotencyKeys)
-        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId))
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.workspaceId, actor.workspaceId))
     ).find(
       (claim) =>
-        claim.operation === "person.create" &&
+        claim.operation === "person.create.graphql" &&
         (claim.responseReference as { personId?: unknown } | null)?.personId ===
           first.resource?.id,
     );
     if (!firstClaim)
       throw new Error("The person idempotency claim is missing.");
     await fixture.database
-      .update(idempotencyKeys)
+      .update(locationMutationIdempotency)
       .set({ responseReference: { personId: ["invalid"] } })
-      .where(eq(idempotencyKeys.id, firstClaim.id));
+      .where(eq(locationMutationIdempotency.id, firstClaim.id));
     await expect(peopleService.create(replayInput)).rejects.toMatchObject({
       extensions: { code: "VALIDATION_FAILED" },
     });
@@ -774,19 +775,19 @@ liveDescribe("research write transactions", () => {
     const expiredClaim = (
       await fixture.database
         .select()
-        .from(idempotencyKeys)
-        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId))
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.workspaceId, actor.workspaceId))
     ).find(
       (claim) =>
-        claim.operation === "person.create" &&
+        claim.operation === "person.create.graphql" &&
         (claim.responseReference as { personId?: unknown } | null)?.personId ===
           expiredFirst.resource?.id,
     );
     if (!expiredClaim) throw new Error("The expired person claim is missing.");
     await fixture.database
-      .update(idempotencyKeys)
+      .update(locationMutationIdempotency)
       .set({ expiresAt: new Date(Date.now() - 1) })
-      .where(eq(idempotencyKeys.id, expiredClaim.id));
+      .where(eq(locationMutationIdempotency.id, expiredClaim.id));
     const expiredTakeover = await peopleService.create(expiredInput);
     if (!expiredTakeover.resource)
       throw new Error("The expired claim did not take over.");
@@ -824,9 +825,9 @@ liveDescribe("research write transactions", () => {
     ).toHaveLength(1);
     expect(
       await fixture.database
-        .select({ id: idempotencyKeys.id })
-        .from(idempotencyKeys)
-        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId)),
+        .select({ id: locationMutationIdempotency.id })
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.workspaceId, actor.workspaceId)),
     ).toHaveLength(4);
   });
 
@@ -866,14 +867,14 @@ liveDescribe("research write transactions", () => {
     const updateClaim = (
       await fixture.database
         .select()
-        .from(idempotencyKeys)
-        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId))
-    ).find((claim) => claim.operation === "person.update");
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.workspaceId, actor.workspaceId))
+    ).find((claim) => claim.operation === "person.update.graphql");
     if (!updateClaim) throw new Error("The person update claim is missing.");
     await fixture.database
-      .update(idempotencyKeys)
+      .update(locationMutationIdempotency)
       .set({ responseReference: { personId: created.resource.id } })
-      .where(eq(idempotencyKeys.id, updateClaim.id));
+      .where(eq(locationMutationIdempotency.id, updateClaim.id));
     await expect(peopleService.update(updateInput)).rejects.toMatchObject({
       extensions: { code: "VALIDATION_FAILED" },
     });
@@ -927,9 +928,9 @@ liveDescribe("research write transactions", () => {
     ).toHaveLength(1);
     expect(
       await fixture.database
-        .select({ id: idempotencyKeys.id })
-        .from(idempotencyKeys)
-        .where(eq(idempotencyKeys.workspaceId, actor.workspaceId)),
+        .select({ id: locationMutationIdempotency.id })
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.workspaceId, actor.workspaceId)),
     ).toHaveLength(2);
   });
 
