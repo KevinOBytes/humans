@@ -104,6 +104,13 @@ function pagedRelationshipsGraph(): GraphResult {
   };
 }
 
+function localDateTimeInputValue(value: string) {
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${milliseconds}`;
+}
+
 describe("GraphTable", () => {
   it("renders captioned native tables with direction and non-color state text", () => {
     render(
@@ -964,6 +971,60 @@ describe("RelationshipEditor", () => {
         temporalPrecision: "RANGE",
         temporalSemantics: "BETWEEN",
         validFrom: storedFrom,
+        validUntil: storedUntil,
+      }),
+    );
+  });
+
+  it("edits temporal bounds in the browser local timezone without losing precision", async () => {
+    const user = userEvent.setup();
+    const mutationAdapter = {
+      update: vi.fn().mockResolvedValue(true),
+    };
+    const storedFrom = "2024-01-01T06:00:30.123Z";
+    const storedUntil = "2024-12-31T23:59:59.987Z";
+    const editedInstant = "2024-01-01T07:15:30.456Z";
+    const editedLocal = localDateTimeInputValue(editedInstant);
+    const result: GraphResult = {
+      ...graphResultFixture,
+      edges: graphResultFixture.edges.map((edge) =>
+        edge.id === IDS.directed
+          ? {
+              ...edge,
+              temporalSemantics: "between",
+              temporalPrecision: "day",
+              validFrom: storedFrom,
+              validUntil: storedUntil,
+            }
+          : edge,
+      ),
+    };
+    render(
+      <RelationshipEditor
+        focusId={IDS.alice}
+        mutationAdapter={mutationAdapter}
+        relationshipTypes={[{ id: IDS.typeDirected, label: "knows" }]}
+        result={result}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Existing relationship" }),
+      IDS.directed,
+    );
+    const validFrom = screen.getByLabelText("Existing relationship valid from");
+    expect(validFrom).toHaveValue(localDateTimeInputValue(storedFrom));
+    await user.clear(validFrom);
+    await user.type(validFrom, editedLocal);
+    await user.click(screen.getByRole("button", { name: "Review update" }));
+    await user.click(screen.getByRole("button", { name: "Confirm update" }));
+
+    const normalizedEditedInstant = new Date(editedLocal).toISOString();
+    expect(normalizedEditedInstant).toBe(editedInstant);
+    expect(mutationAdapter.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validFrom: normalizedEditedInstant,
         validUntil: storedUntil,
       }),
     );
