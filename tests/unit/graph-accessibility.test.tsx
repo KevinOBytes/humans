@@ -800,6 +800,118 @@ describe("RelationshipEditor", () => {
     });
   });
 
+  it("reviews temporal relationship fields before sending a create mutation", async () => {
+    const user = userEvent.setup();
+    const mutationAdapter = {
+      create: vi.fn().mockResolvedValue(true),
+    };
+    render(
+      <RelationshipEditor
+        focusId={IDS.alice}
+        mutationAdapter={mutationAdapter}
+        relationshipTypes={[{ id: IDS.typeDirected, label: "knows" }]}
+        result={graphResultFixture}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Relationship target" }),
+      IDS.bob,
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Relationship type" }),
+      IDS.typeDirected,
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Relationship temporal semantics" }),
+      "BETWEEN",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Relationship temporal precision" }),
+      "MONTH",
+    );
+    await user.type(
+      screen.getByLabelText("Relationship valid from"),
+      "2025-03-01T09:30",
+    );
+    await user.type(
+      screen.getByLabelText("Relationship valid until"),
+      "2025-06-30T17:45",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Create relationship" }),
+    );
+
+    expect(mutationAdapter.create).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Confirm create" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Confirm create" }));
+
+    expect(mutationAdapter.create).toHaveBeenCalledWith({
+      explicitConfirmed: true,
+      governancePurpose: "research",
+      relationshipTypeId: IDS.typeDirected,
+      sensitivity: "INTERNAL",
+      sourcePersonId: IDS.alice,
+      targetPersonId: IDS.bob,
+      temporalPrecision: "MONTH",
+      temporalSemantics: "BETWEEN",
+      validFrom: "2025-03-01T14:30:00.000Z",
+      validUntil: "2025-06-30T21:45:00.000Z",
+    });
+  });
+
+  it("includes edited temporal validity in the explicitly confirmed update", async () => {
+    const user = userEvent.setup();
+    const mutationAdapter = {
+      update: vi.fn().mockResolvedValue(true),
+    };
+    render(
+      <RelationshipEditor
+        focusId={IDS.alice}
+        mutationAdapter={mutationAdapter}
+        relationshipTypes={[{ id: IDS.typeDirected, label: "knows" }]}
+        result={graphResultFixture}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Existing relationship" }),
+      IDS.directed,
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", {
+        name: "Existing relationship temporal precision",
+      }),
+      "MONTH",
+    );
+    await user.clear(
+      screen.getByLabelText("Existing relationship valid until"),
+    );
+    await user.type(
+      screen.getByLabelText("Existing relationship valid until"),
+      "2025-12-31T17:45",
+    );
+    await user.click(screen.getByRole("button", { name: "Review update" }));
+    expect(mutationAdapter.update).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm update" }));
+
+    expect(mutationAdapter.update).toHaveBeenCalledWith({
+      expectedVersion: 2,
+      explicitConfirmed: true,
+      governancePurpose: "research",
+      relationshipId: IDS.directed,
+      sensitivity: "INTERNAL",
+      temporalPrecision: "MONTH",
+      temporalSemantics: "RANGE",
+      validFrom: "2024-01-01T05:00:00.000Z",
+      validUntil: "2025-12-31T22:45:00.000Z",
+    });
+  });
+
   it("limits every form person and relationship id to the capped editor graph", () => {
     const nodes = Array.from({ length: 102 }, (_, index) => ({
       ...graphResultFixture.nodes[0]!,

@@ -658,11 +658,31 @@ test("relationship editor performs only explicitly confirmed mutations", async (
   await page
     .getByRole("combobox", { name: "Relationship target" })
     .selectOption({ label: "Beta Person" });
+  await page
+    .getByRole("combobox", { name: "Relationship temporal semantics" })
+    .selectOption("BETWEEN");
+  await page
+    .getByRole("combobox", { name: "Relationship temporal precision" })
+    .selectOption("MONTH");
+  await page.getByLabel("Relationship valid from").fill("2025-03-01T09:30");
+  await page.getByLabel("Relationship valid until").fill("2025-06-30T17:45");
   await page.getByRole("button", { name: "Create relationship" }).click();
   await expect(
     page.getByRole("button", { name: "Confirm create" }),
   ).toBeVisible();
+  const createRequest = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/api/graphql") &&
+      request.postData()?.includes("mutation CreateRelationship") === true,
+  );
   await page.getByRole("button", { name: "Confirm create" }).click();
+  const createPayload = JSON.parse((await createRequest).postData() ?? "{}");
+  expect(createPayload.variables.input).toMatchObject({
+    temporalPrecision: "MONTH",
+    temporalSemantics: "BETWEEN",
+    validFrom: expect.stringMatching(/^2025-03-01T/u),
+    validUntil: expect.stringMatching(/^2025-06-30T/u),
+  });
   await expect(
     page.getByText("2 relationships loaded", { exact: true }),
   ).toBeVisible();
