@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { readFileSync } from "node:fs";
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
@@ -13,7 +14,13 @@ import {
 import { people } from "@/db/schema/people";
 import { retentionPolicies } from "@/db/schema/workspaces";
 import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
+import {
+  assertPrivacyExecutionClaim,
+  claimPrivacyExecution,
+  finishPrivacyExecution,
+} from "@/modules/privacy/execution-outcome";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
+import { createGovernanceService } from "@/modules/governance/service";
 import {
   createCachePrivacyProcessorAdapter,
   executePrivacyPropagations,
@@ -85,6 +92,378 @@ live("privacy request lifecycle", () => {
       database: fixture.database,
       encryptionKey: "ab".repeat(32),
     });
+
+  it.each([
+    "purpose",
+    "consent",
+    "withdrawal",
+    "consent_after_archive",
+  ] as const)(
+    "serializes %s snapshot writes behind the privacy execution lock",
+    async (kind) => {
+      const person = await coveredPerson(context);
+      const locked = Promise.withResolvers<number>();
+      const release = Promise.withResolvers<void>();
+      const holding = fixture.database.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 0))`,
+        );
+        const pid = await tx.execute(sql`select pg_backend_pid() as pid`);
+        locked.resolve(Number(pid[0]!.pid));
+        await release.promise;
+        if (kind === "consent_after_archive")
+          await tx
+            .update(people)
+            .set({ deletedAt: new Date(), status: "archived" })
+            .where(eq(people.id, person.id));
+      });
+      const holderPid = await locked.promise;
+      const governance = createGovernanceService(context);
+      const writing =
+        kind === "purpose"
+          ? governance.createPurposePolicy({
+              idempotencyKey: newId(),
+              purpose: "privacy-race",
+              lawfulBases: ["consent"],
+              effectiveFrom: new Date(Date.now() - 60_000),
+              state: "active",
+            })
+          : kind !== "withdrawal"
+            ? governance.recordConsent({
+                idempotencyKey: newId(),
+                personId: person.id,
+                purpose: "research",
+                scopes: ["read"],
+                lawfulBasis: "consent",
+                effectiveFrom: new Date(Date.now() - 60_000),
+              })
+            : governance.withdrawConsent({
+                idempotencyKey: newId(),
+                id: person.consentId,
+                expectedVersion: 1,
+              });
+      try {
+        const blocked = async () => {
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const rows = await fixture.database.execute(
+              sql`select pid from pg_stat_activity where ${holderPid}::integer = any(pg_blocking_pids(pid))`,
+            );
+            if (rows.length) return "blocked";
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          return "not_blocked";
+        };
+        expect(
+          await Promise.race([
+            writing.then(
+              () => "completed",
+              () => "rejected",
+            ),
+            blocked(),
+          ]),
+        ).toBe("blocked");
+      } finally {
+        release.resolve();
+        await holding;
+        if (kind === "consent_after_archive") {
+          await expect(writing).rejects.toMatchObject({
+            extensions: { code: "NOT_FOUND" },
+          });
+          expect(
+            await fixture.database
+              .select()
+              .from(consentRecords)
+              .where(eq(consentRecords.personId, person.id)),
+          ).toHaveLength(1);
+        } else await writing;
+      }
+    },
+  );
+
+  it("upgrades pre-contract approvals without inventing snapshots or execution receipts", async () => {
+    const person = await coveredPerson(context);
+    const request = await createPrivacyRequestService(context).createRequest({
+      requestType: "deletion",
+      personIds: [person.id],
+      dueAt: new Date(Date.now() + 86_400_000),
+      idempotencyKey: newId(),
+    });
+    const service = createPrivacyRequestService(reviewer);
+    const approved = await service.reviewRequest({
+      id: request.id,
+      expectedVersion: request.version,
+      state: "approved",
+      verificationEvidenceId: evidenceId,
+    });
+    // Recreate the immediately preceding schema while retaining real approved
+    // history, then exercise the reviewed forward migration statement by statement.
+    await fixture.database.execute(sql`drop table privacy_execution_outcomes`);
+    await fixture.database.execute(
+      sql`alter table privacy_requests drop column execution_contract`,
+    );
+    for (const statement of readFileSync(
+      "drizzle/0054_privacy_execution_contract.sql",
+      "utf8",
+    )
+      .split("--> statement-breakpoint")
+      .map((part) => part.trim())
+      .filter(Boolean))
+      await fixture.database.execute(sql.raw(statement));
+    const upgraded = await service.getRequest(request.id);
+    expect(upgraded).toEqual({ ...approved, executionContract: null });
+    expect(await service.getLocalExecution(request.id)).toBeNull();
+    await expect(
+      service.fulfillRequest({
+        id: approved.id,
+        expectedVersion: approved.version,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+    expect(await fixture.database.select().from(deletionRequests)).toHaveLength(
+      0,
+    );
+  });
+
+  it("freezes the reviewed action contract and persists a value-free local execution receipt", async () => {
+    const person = await coveredPerson(context);
+    const request = await startDeletion([person.id]);
+    expect(request).toHaveProperty(
+      "executionContract",
+      expect.objectContaining({
+        action: "soft_delete",
+        processorCapabilityVersion: 1,
+        requiredProcessors: [
+          "files",
+          "search",
+          "cache",
+          "email",
+          "ai_provider",
+        ],
+        policyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        legalBasisDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+    expect(await execute()).toBe(1);
+    const receipts = await fixture.database.execute(sql`
+      select state, generation, result_code, audit_reference, manifest
+      from privacy_execution_outcomes where workspace_id = ${context.workspaceId}::uuid
+      and privacy_request_id = ${request.id}::uuid
+    `);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toMatchObject({
+      state: "completed",
+      generation: 1,
+      result_code: "soft_deleted",
+    });
+    expect(receipts[0]!.audit_reference).toBeTruthy();
+    expect(receipts[0]!.manifest).toMatchObject({
+      person: {
+        count: 1,
+        identityHashes: [expect.stringMatching(/^[a-f0-9]{64}$/)],
+      },
+    });
+    expect(JSON.stringify(receipts[0]!.manifest)).not.toContain(person.id);
+    expect(JSON.stringify(receipts[0]!.manifest)).not.toContain(
+      "Case fixture person",
+    );
+    expect(await execute()).toBe(0);
+    expect(
+      await fixture.database.execute(
+        sql`select * from privacy_execution_outcomes`,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("rejects policy drift after independent approval instead of changing the approved action", async () => {
+    const person = await coveredPerson(context);
+    const request = await startDeletion([person.id]);
+    await fixture.database.insert(retentionPolicies).values({
+      id: newId(),
+      workspaceId: context.workspaceId,
+      resourceKind: "person",
+      retentionDays: 30,
+      deletionBehavior: "soft_delete",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    expect(await execute()).toBe(0);
+    const result = await fixture.database.execute(
+      sql`select state, result_code from privacy_execution_outcomes where privacy_request_id = ${request.id}::uuid`,
+    );
+    expect(result[0]).toMatchObject({
+      state: "rejected",
+      result_code: "execution_contract_changed",
+    });
+    const receipt = await claimPrivacyExecution(
+      fixture.database,
+      context.workspaceId,
+      request.id,
+    );
+    expect(receipt?.state).toBe("rejected");
+    expect(
+      await claimPrivacyExecution(
+        fixture.database,
+        context.workspaceId,
+        request.id,
+      ),
+    ).toEqual(receipt);
+    const [subject] = await fixture.database
+      .select()
+      .from(people)
+      .where(eq(people.id, person.id));
+    expect(subject!.deletedAt).toBeNull();
+    expect(await execute()).toBe(0);
+    expect(
+      await fixture.database.execute(
+        sql`select * from privacy_execution_outcomes`,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it.each(["malformed", "foreign"])(
+    "rejects a %s execution snapshot without touching resources",
+    async (kind) => {
+      const person = await coveredPerson(context);
+      const request = await startDeletion([person.id]);
+      if (kind === "malformed") {
+        await fixture.database.execute(
+          sql`update privacy_requests set execution_contract = '{"action":"soft_delete"}'::jsonb where id = ${request.id}::uuid`,
+        );
+      } else {
+        const other = await startDeletion([person.id]);
+        await fixture.database.execute(
+          sql`update privacy_requests set execution_contract = (select execution_contract from privacy_requests where id = ${other.id}::uuid) where id = ${request.id}::uuid`,
+        );
+        await fixture.database
+          .update(deletionRequests)
+          .set({ state: "rejected" })
+          .where(eq(deletionRequests.id, other.legacyDeletionRequestId!));
+      }
+      expect(await execute()).toBe(0);
+      const result = await fixture.database.execute(
+        sql`select state, result_code from privacy_execution_outcomes where privacy_request_id = ${request.id}::uuid`,
+      );
+      expect(result[0]).toMatchObject({
+        state: "rejected",
+        result_code: "execution_contract_changed",
+      });
+      const [subject] = await fixture.database
+        .select()
+        .from(people)
+        .where(eq(people.id, person.id));
+      expect(subject!.deletedAt).toBeNull();
+    },
+  );
+
+  it("converges concurrent execution claims and takes over only expired generations", async () => {
+    const person = await coveredPerson(context);
+    const request = await startDeletion([person.id]);
+    await fixture.database.execute(
+      sql`update privacy_execution_outcomes set state = 'claimed', generation = 4, claim_expires_at = clock_timestamp() + interval '1 hour' where privacy_request_id = ${request.id}::uuid`,
+    );
+    expect(await execute()).toBe(0);
+    await fixture.database.execute(
+      sql`update privacy_execution_outcomes set claim_expires_at = clock_timestamp() - interval '1 second' where privacy_request_id = ${request.id}::uuid`,
+    );
+    const results = await Promise.all([execute(), execute()]);
+    expect(results.reduce((a, b) => a + b, 0)).toBe(1);
+    const rows = await fixture.database.execute(
+      sql`select state, generation from privacy_execution_outcomes where privacy_request_id = ${request.id}::uuid`,
+    );
+    expect(rows).toEqual([{ state: "completed", generation: 5 }]);
+    const audits = await fixture.database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, request.legacyDeletionRequestId!),
+          eq(auditEvents.action, "deletion_request.completed"),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+  });
+
+  it("denies stale and expired generation writes and replays terminal receipts unchanged", async () => {
+    const person = await coveredPerson(context);
+    const request = await startDeletion([person.id]);
+    const claim = await claimPrivacyExecution(
+      fixture.database,
+      context.workspaceId,
+      request.id,
+    );
+    expect(claim?.state).toBe("claimed");
+    await expect(
+      fixture.database.transaction(async (tx) => {
+        await assertPrivacyExecutionClaim(
+          tx as unknown as typeof fixture.database,
+          { ...claim!, generation: claim!.generation + 1 },
+        );
+      }),
+    ).rejects.toThrow("Privacy execution claim is stale");
+    await fixture.database.execute(
+      sql`update privacy_execution_outcomes set claim_expires_at = clock_timestamp() - interval '1 second' where privacy_request_id = ${request.id}::uuid`,
+    );
+    await expect(
+      fixture.database.transaction(async (tx) => {
+        await finishPrivacyExecution(
+          tx as unknown as typeof fixture.database,
+          claim!,
+          {
+            state: "completed",
+            resultCode: "soft_deleted",
+            auditReference: request.auditReference!,
+            manifest: {},
+          },
+        );
+      }),
+    ).rejects.toThrow("Privacy execution claim is stale");
+    expect(await execute()).toBe(1);
+    const first = await claimPrivacyExecution(
+      fixture.database,
+      context.workspaceId,
+      request.id,
+    );
+    const second = await claimPrivacyExecution(
+      fixture.database,
+      context.workspaceId,
+      request.id,
+    );
+    expect(first?.state).toBe("completed");
+    expect(first?.generation).toBe(2);
+    expect(second).toEqual(first);
+    expect(
+      await claimPrivacyExecution(fixture.database, newId(), request.id),
+    ).toBeNull();
+  });
+
+  it("refuses fulfillment after the reviewed policy or consent snapshot changes", async () => {
+    const person = await coveredPerson(context);
+    const service = createPrivacyRequestService(reviewer);
+    const request = await createPrivacyRequestService(context).createRequest({
+      requestType: "deletion",
+      personIds: [person.id],
+      dueAt: new Date(Date.now() + 86_400_000),
+      idempotencyKey: newId(),
+    });
+    const approved = await service.reviewRequest({
+      id: request.id,
+      expectedVersion: request.version,
+      state: "approved",
+      verificationEvidenceId: evidenceId,
+    });
+    await fixture.database
+      .update(consentRecords)
+      .set({ version: 2, status: "withdrawn" })
+      .where(eq(consentRecords.id, person.consentId));
+    await expect(
+      service.fulfillRequest({
+        id: approved.id,
+        expectedVersion: approved.version,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+    expect(await fixture.database.select().from(deletionRequests)).toHaveLength(
+      0,
+    );
+  });
 
   it("rejects an approved deletion queue row without its canonical request and processors", async () => {
     const person = await coveredPerson(context);
@@ -378,6 +757,18 @@ live("privacy request lifecycle", () => {
       .execute(sql`create trigger fail_privacy_audit before insert on audit_events
       for each row execute function fail_privacy_audit()`);
     await expect(execute()).rejects.toThrow();
+    expect(
+      await fixture.database.execute(
+        sql`select state, result_code, audit_reference, manifest from privacy_execution_outcomes where privacy_request_id = ${request.id}::uuid`,
+      ),
+    ).toEqual([
+      {
+        state: "pending",
+        result_code: null,
+        audit_reference: null,
+        manifest: null,
+      },
+    ]);
     const [governed] = await fixture.database
       .select()
       .from(privacyRequests)
@@ -462,6 +853,18 @@ live("privacy request lifecycle", () => {
       for each row execute function fail_completion_audit()`);
     await expect(execute()).rejects.toThrow();
     expect(await fixture.database.select().from(people)).toEqual(before);
+    expect(
+      await fixture.database.execute(
+        sql`select state, result_code, audit_reference, manifest from privacy_execution_outcomes where privacy_request_id = ${request.id}::uuid`,
+      ),
+    ).toEqual([
+      {
+        state: "pending",
+        result_code: null,
+        audit_reference: null,
+        manifest: null,
+      },
+    ]);
     expect(await fixture.database.select().from(consentRecords)).toEqual(
       consentBefore,
     );

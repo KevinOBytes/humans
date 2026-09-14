@@ -27,7 +27,20 @@ import { ensureArchivedFileCleanupJob } from "@/modules/files/cleanup";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { planPersonArtifactDeletion } from "./artifact-retention";
 import { privacyProcessors } from "./request-types";
-import { currentRetentionRequestPolicy } from "./retention-request-policy";
+import {
+  currentPrivacyExecutionContract,
+  currentRetentionRequestPolicy,
+} from "./retention-request-policy";
+import {
+  createExecutionManifest,
+  executionContractsMatch,
+} from "./execution-manifest";
+import {
+  assertPrivacyExecutionClaim,
+  claimPrivacyExecution,
+  finishPrivacyExecution,
+  releasePrivacyExecution,
+} from "./execution-outcome";
 
 const MAX_DELETION_BATCH = 100;
 const WORKER_ACTOR = "worker:deletion";
@@ -147,7 +160,28 @@ export async function executeApprovedDeletionRequests(input: {
     .limit(limit);
 
   for (const candidate of requests) {
-    await input.database.transaction(async (transaction) => {
+    const [parent] = await input.database
+      .select({
+        id: privacyRequests.id,
+        idempotencyHash: privacyRequests.idempotencyHash,
+      })
+      .from(privacyRequests)
+      .where(
+        and(
+          eq(privacyRequests.workspaceId, candidate.workspaceId),
+          eq(privacyRequests.legacyDeletionRequestId, candidate.id),
+        ),
+      );
+    const claimable = parent && !parent.idempotencyHash.startsWith("legacy:");
+    const claim = claimable
+      ? await claimPrivacyExecution(
+          input.database,
+          candidate.workspaceId,
+          parent.id,
+        )
+      : null;
+    if (claimable && (!claim || claim.state !== "claimed")) continue;
+    const execution = input.database.transaction(async (transaction) => {
       await transaction.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${candidate.workspaceId}, 0))`,
       );
@@ -165,6 +199,11 @@ export async function executeApprovedDeletionRequests(input: {
         .limit(1)
         .for("update", { skipLocked: true });
       if (!request) return;
+      if (claim)
+        await assertPrivacyExecutionClaim(
+          transaction as unknown as Database,
+          claim,
+        );
 
       // Every executable queue row must belong to the canonical privacy
       // workflow. Orphaned historical rows are terminally rejected rather than
@@ -219,6 +258,17 @@ export async function executeApprovedDeletionRequests(input: {
           outcome: "failure",
         });
         if (!audit) throw new Error("Deletion rejection audit missing");
+        if (claim)
+          await finishPrivacyExecution(
+            transaction as unknown as Database,
+            claim,
+            {
+              state: "rejected",
+              resultCode: reason,
+              auditReference: audit.id,
+              manifest: {},
+            },
+          );
         if (governed && governed.state === "fulfilling") {
           const [terminal] = await transaction
             .update(privacyRequests)
@@ -486,7 +536,10 @@ export async function executeApprovedDeletionRequests(input: {
           id: row.id,
           kind: "ai_citation" as const,
         })),
-        ...webRunRows.map((row) => ({ id: row.id, kind: "web_run" as const })),
+        ...webRunRows.map((row) => ({
+          id: row.id,
+          kind: "web_run" as const,
+        })),
         ...webSourceRows.map((row) => ({
           id: row.id,
           kind: "web_source" as const,
@@ -648,6 +701,26 @@ export async function executeApprovedDeletionRequests(input: {
             outcome: "failure",
           });
         }
+        return;
+      }
+
+      if (
+        !executionContractsMatch(
+          governed.executionContract,
+          await currentPrivacyExecutionContract(
+            {
+              database: transaction as unknown as Database,
+              workspaceId: request.workspaceId,
+              secret: input.encryptionKey,
+            },
+            governed,
+          ),
+        )
+      ) {
+        await reject(
+          "Deletion requires an unchanged reviewed execution contract.",
+          "execution_contract_changed",
+        );
         return;
       }
 
@@ -961,7 +1034,7 @@ export async function executeApprovedDeletionRequests(input: {
             eq(deletionRequests.state, "deleting"),
           ),
         );
-      await auditRequest({
+      const [completionAudit] = await auditRequest({
         database: transaction as unknown as Database,
         action: "deletion_request.completed",
         requestId,
@@ -973,7 +1046,25 @@ export async function executeApprovedDeletionRequests(input: {
         },
         outcome: "success",
       });
+      if (!completionAudit || !claim)
+        throw new Error("Privacy execution outcome missing");
+      await finishPrivacyExecution(transaction as unknown as Database, claim, {
+        state: "completed",
+        resultCode: "soft_deleted",
+        auditReference: completionAudit.id,
+        manifest: createExecutionManifest({
+          secret: input.encryptionKey,
+          workspaceId: request.workspaceId,
+          requestId: governed.id,
+          scope,
+        }),
+      });
       completed += 1;
+    });
+    await execution.finally(async () => {
+      // A reported transaction rollback can retry immediately. Process death
+      // before this point leaves the durable lease to expire for takeover.
+      if (claim) await releasePrivacyExecution(input.database, claim);
     });
   }
   return completed;

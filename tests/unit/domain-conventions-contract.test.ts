@@ -13,6 +13,7 @@ type Column = {
 
 const workspaceTableNames = [
   "privacyRequests",
+  "privacyExecutionOutcomes",
   "privacyProcessorPropagations",
   "aiReviewSuggestions",
   "cases",

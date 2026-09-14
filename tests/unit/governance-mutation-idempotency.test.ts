@@ -64,6 +64,8 @@ vi.mock("@/modules/audit/transactions", () => ({
 
 function database() {
   const tx = {
+    // Lock contention is exercised against PostgreSQL in the privacy suite.
+    execute: async () => [],
     insert: () => ({
       values: (value: Record<string, unknown>) => ({
         returning: async () => {

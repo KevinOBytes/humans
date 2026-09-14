@@ -320,6 +320,11 @@ export function createGovernanceService(context: ResearchServiceContext) {
         );
       }
       const [row] = await context.database.transaction(async (tx) => {
+        // Shared with privacy review/execution: row locks alone cannot fence
+        // newly inserted policy/consent rows in a frozen legal-basis snapshot.
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 0))`,
+        );
         const [created] = await tx
           .insert(purposePolicies)
           .values({
@@ -478,6 +483,16 @@ export function createGovernanceService(context: ResearchServiceContext) {
         );
       }
       const [row] = await context.database.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 0))`,
+        );
+        await requireVisiblePerson(
+          {
+            ...context,
+            database: tx as unknown as ResearchServiceContext["database"],
+          },
+          input.personId,
+        );
         const [created] = await tx
           .insert(consentRecords)
           .values({
@@ -559,6 +574,9 @@ export function createGovernanceService(context: ResearchServiceContext) {
         );
       }
       const [row] = await context.database.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${context.workspaceId}, 0))`,
+        );
         // Consent records are themselves sensitive subject data.  Keep this
         // mutation subject-scoped so a workspace administrator cannot use an
         // opaque consent UUID to mutate a person outside their record-level

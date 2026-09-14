@@ -2,6 +2,7 @@ import { builder } from "@/graphql/builder";
 import type { privacyProcessorPropagations } from "@/db/schema/privacy";
 import type { legalHolds } from "@/db/schema/workspaces";
 import type { PrivacyRequestRow } from "./request-types";
+import type { createPrivacyRequestService } from "./request-service";
 import {
   privacyResourceKinds,
   type retentionDecision,
@@ -97,6 +98,29 @@ const Propagation = builder
       }),
     }),
   });
+const LocalExecution = builder
+  .objectRef<
+    NonNullable<
+      Awaited<
+        ReturnType<
+          ReturnType<typeof createPrivacyRequestService>["getLocalExecution"]
+        >
+      >
+    >
+  >("PrivacyLocalExecution")
+  .implement({
+    description:
+      "Durable local execution outcome only; completion does not prove processor erasure or privacy request completion.",
+    fields: (t) => ({
+      state: t.exposeString("state"),
+      generation: t.exposeInt("generation"),
+      resultCode: t.exposeString("resultCode", { nullable: true }),
+      auditReference: t.expose("auditReference", {
+        type: "UUID",
+        nullable: true,
+      }),
+    }),
+  });
 const Hold = builder
   .objectRef<typeof legalHolds.$inferSelect & { auditReference?: string }>(
     "PrivacyLegalHold",
@@ -137,6 +161,13 @@ const Create = builder.inputType("CreatePrivacyRequestInput", {
 
 export function registerPrivacyGraphQL() {
   builder.queryFields((t) => ({
+    privacyLocalExecution: t.field({
+      type: LocalExecution,
+      nullable: true,
+      args: { requestId: t.arg({ type: "UUID", required: true }) },
+      resolve: (_, args, ctx) =>
+        ctx.services.privacy.getLocalExecution(args.requestId),
+    }),
     privacyRequest: t.field({
       type: Request,
       args: { id: t.arg({ type: "UUID", required: true }) },

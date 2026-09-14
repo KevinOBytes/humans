@@ -61,6 +61,42 @@ live("privacy request transition idempotency", () => {
     });
   });
   afterAll(async () => fixture.close());
+  it("exposes only authorized local execution status without the frozen contract or identity manifest", async () => {
+    const row = await request("deletion");
+    const service = createPrivacyRequestService(reviewer);
+    const approved = await service.reviewRequest({
+      id: row.id,
+      expectedVersion: row.version,
+      state: "approved",
+      verificationEvidenceId: evidenceId,
+    });
+    await service.fulfillRequest({
+      id: row.id,
+      expectedVersion: approved.version,
+    });
+    const document = `query LocalExecution($id: UUID!) { privacyLocalExecution(requestId: $id) { state generation resultCode auditReference } }`;
+    const result = await fixture.execute({
+      query: document,
+      variables: { id: row.id },
+      jar: reviewerActor.jar,
+    });
+    expect(result.body?.errors).toBeUndefined();
+    expect(result.body?.data).toEqual({
+      privacyLocalExecution: {
+        state: "pending",
+        generation: 0,
+        resultCode: null,
+        auditReference: null,
+      },
+    });
+    const foreign = await fixture.createActor();
+    const denied = await fixture.execute({
+      query: document,
+      variables: { id: row.id },
+      jar: foreign.jar,
+    });
+    expect(denied.body?.errors?.[0]?.extensions?.code).toBe("NOT_FOUND");
+  });
   async function request(requestType = "correction", scoped = context) {
     const person = await coveredPerson(scoped);
     return createPrivacyRequestService(scoped).createRequest({
