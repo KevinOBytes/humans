@@ -19,6 +19,7 @@ import {
   PeopleOptionsDocument,
   PersonIdentityDocument,
   PersonRelationshipsDocument,
+  RelationshipEvidenceDocument,
   RelationshipTypeDetailDocument,
   RelationshipTypeOptionsDocument,
 } from "@/graphql/generated/graphql";
@@ -28,6 +29,7 @@ import {
   personIdPattern,
   type SearchState,
   stringParam,
+  uuidParam,
 } from "@/lib/person-profile-params";
 import { profilePageHref } from "@/lib/research-pagination";
 
@@ -41,6 +43,14 @@ export async function RelationshipsSection({
   search: SearchState;
 }) {
   const relationshipAfter = cursorParam(search, "relationshipAfter");
+  const relationshipEvidenceAfter = cursorParam(
+    search,
+    "relationshipEvidenceAfter",
+  );
+  const requestedRelationshipEvidence = uuidParam(
+    search,
+    "relationshipEvidence",
+  );
   const typeAfter = cursorParam(search, "relationshipTypeAfter");
   const personAfter = cursorParam(search, "relationshipPersonAfter");
   const personSearch = stringParam(search, "relationshipPersonSearch")
@@ -79,11 +89,25 @@ export async function RelationshipsSection({
       ),
     ),
   ];
-  const typeDetails = await Promise.all(
-    typeIds.map((id) =>
-      executeServerGraphQL(RelationshipTypeDetailDocument, { id }),
+  const relationshipEvidenceAnchor = relationships.some(
+    (relationship) => relationship?.id === requestedRelationshipEvidence,
+  )
+    ? requestedRelationshipEvidence
+    : undefined;
+  const [typeDetails, relationshipEvidenceDetail] = await Promise.all([
+    Promise.all(
+      typeIds.map((id) =>
+        executeServerGraphQL(RelationshipTypeDetailDocument, { id }),
+      ),
     ),
-  );
+    relationshipEvidenceAnchor
+      ? executeServerGraphQL(RelationshipEvidenceDocument, {
+          id: relationshipEvidenceAnchor,
+          first: 1,
+          after: relationshipEvidenceAfter,
+        })
+      : Promise.resolve(null),
+  ]);
   const typeById = new Map(
     typeDetails.flatMap((detail) =>
       detail.relationshipType?.id
@@ -238,8 +262,18 @@ export async function RelationshipsSection({
           const counterpartName = item.counterpartId
             ? counterpartById.get(item.counterpartId)
             : undefined;
-          const evidence = (item.relationship.evidence?.nodes ?? []).flatMap(
-            (entry) => (entry?.id ? [entry] : []),
+          const evidenceConnection =
+            item.relationship.id === relationshipEvidenceAnchor &&
+            relationshipEvidenceDetail?.relationship?.id ===
+              relationshipEvidenceAnchor
+              ? relationshipEvidenceDetail.relationship.evidence
+              : item.relationship.evidence;
+          const evidence = (evidenceConnection?.nodes ?? []).flatMap((entry) =>
+            entry?.id ? [entry] : [],
+          );
+          const evidencePage = readFragment(
+            PageDetailsFragmentDoc,
+            evidenceConnection?.pageInfo,
           );
           return (
             <li
@@ -319,6 +353,28 @@ export async function RelationshipsSection({
                     No evidence linked.
                   </p>
                 )}
+                <PageControls
+                  label="Relationship evidence"
+                  resetHref={
+                    item.relationship.id === relationshipEvidenceAnchor &&
+                    relationshipEvidenceAfter
+                      ? profilePageHref(personId, "relationships", {
+                          ...commonOptions,
+                          relationshipEvidence: item.relationship.id,
+                        })
+                      : null
+                  }
+                  nextHref={
+                    evidencePage?.hasNextPage && evidencePage.endCursor
+                      ? profilePageHref(personId, "relationships", {
+                          ...commonOptions,
+                          relationshipEvidence: item.relationship.id,
+                          relationshipEvidenceAfter: evidencePage.endCursor,
+                        })
+                      : null
+                  }
+                  nextLabel="More evidence"
+                />
               </section>
             </li>
           );
