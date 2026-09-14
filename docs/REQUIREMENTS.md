@@ -2,20 +2,20 @@
 
 ## Production deployment verification (2026-09-14)
 
-The reviewed application commit `dcbb36431abec2793d66930f8b5c188705bc6517` is now
-deployed to Vercel production as `dpl_BkV534V7M832BTkt1ahb3YX76btc` with
-`READY` status. The deployment is aliased to `humans.kevinbytes.com`,
-`humans-dun.vercel.app`, and `humans-tkoresearch.vercel.app`. Public probes
-returned 200 for `/`, `/sign-in`, `/api/health/live`, and
-`/api/health/ready`; an unauthenticated GraphQL request returned the expected
-401 `UNAUTHENTICATED` envelope with a request ID. GitHub Actions run
-`34850702071` passed all nine required jobs, including the real PostgreSQL
-integration seam, browser acceptance, production build, Compose lifecycle,
-generated drift, image security, dependency policy, and secret scanning.
-This proves the reviewed code is built, tested, and publicly reachable; it
-does not prove hosted administrator credentials, recovery/2FA, or live
-external-provider contracts, which still require an attended credential-safe
-acceptance run.
+The reviewed application commit `f15f235c6f1a1b29c654eff47c3ce37fa06febd5` is
+deployed to Vercel production as `dpl_DqwTBiVrRd6nCW7xx69f4t4YjfTQ` with
+`READY` status on Node `24.x`. The deployment is aliased to
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. GitHub Actions run `34883551069` passed all
+nine required jobs: quality, image-security, dependency policy, Compose
+lifecycle, secret scanning, generated-artifact drift, browser integration,
+production build, and database integration against real PostgreSQL. The final
+profile/fact surface also has paginated person-reference options with
+workspace authorization and malformed-cursor rejection covered by focused
+tests. This proves the reviewed code is built, tested, and READY on Vercel; it
+does not prove hosted administrator credentials, recovery/2FA, or live external
+provider contracts, which still require an attended credential-safe acceptance
+run.
 
 ## Full-MVP closeout tranche verification (2026-09-14)
 
