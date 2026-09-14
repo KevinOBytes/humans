@@ -563,6 +563,18 @@ Catalog-backed web-fact checkpoint (2026-09-13): consented person web research m
 
 Accepted-history checkpoint (2026-09-13): reviewed AI suggestions are now discoverable from the person research panel through a generated, permission-gated GraphQL connection scoped to the active workspace, person, governed purpose, and optional case. The bounded newest-first page exposes only immutable acceptance metadata, accepted resource references, and access-checked evidence projections; inaccessible workspace evidence is represented explicitly as redacted, while pending and deferred suggestions remain confined to the review queue. Focused live PostgreSQL service and generated-GraphQL tests plus component tests cover status/purpose separation, tenant denial, cursor pagination, evidence redaction, and empty/redacted UI states. Hosted-provider and whole-product accessibility evidence remain open, so HUM-FR-023 is still incomplete.
 
+Pre-provider person-research reauthorization checkpoint (2026-09-13): after
+the asynchronous search/catalog boundary, person web research reloads the
+workspace-scoped person, reruns purpose/consent authorization, and builds the
+provider projection from that current row. Missing, foreign, deleted, and
+restricted rows or withdrawn `ai_operation` authority stop before provider or
+persistence; a public-to-internal change omits stale biography and alternate
+names. Deterministic unit cases and a disposable PostgreSQL GraphQL race test
+that changes sensitivity in the injected search callback prove closed
+non-disclosure and no run/source provenance rows. This does not make the
+network send atomic with a revocation after that final check, and it does not
+close HUM-FR-023, HUM-NFR-004, hosted provider, or broader browser evidence.
+
 Source provenance checkpoint (2026-09-12): source records now expose first-class
 publication timestamp, collector, and extraction method fields, plus an
 append-only workspace-scoped custody ledger with collected/verified/transferred/

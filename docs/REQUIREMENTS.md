@@ -1342,6 +1342,21 @@ Focused provenance/retention tests, schema checks, typecheck, and formatting
 pass; live PostgreSQL trigger/worker execution and external provider acceptance
 remain required.
 
+Bounded pre-provider person-research reauthorization evidence (2026-09-13,
+HUM-FR-023/HUM-NFR-004): after remote search and catalog work, the service
+reloads the active-workspace person and reruns purpose/consent authorization
+before provider disclosure. It derives the provider profile from that current
+row, fails closed for missing/foreign/deleted/restricted rows and withdrawn
+authority, and prevents a public-to-internal transition from carrying stale
+biography, preferred-name, or sort-name content into the provider call.
+`tests/unit/person-research.test.ts` covers each deterministic boundary;
+`tests/integration/graphql-product-acceptance.test.ts` changes sensitivity in
+an injected search callback and verifies the closed GraphQL response, zero
+provider calls, and no persisted run/source provenance rows against disposable
+PostgreSQL. This does not provide atomicity for revocation after the final
+check, hosted-provider evidence, or the complete authorization/browser matrix;
+the parent requirements remain Incomplete.
+
 Bounded accepted-web-citation evidence (2026-09-13): accepting a web-backed
 AI suggestion now promotes only its persisted workspace/person/run snapshot in
 the same review transaction into an internal source, collection-custody event,

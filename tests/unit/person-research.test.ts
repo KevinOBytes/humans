@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { GraphQLError } from "graphql";
 import {
   createPersonResearchService,
   createBravePersonSearch,
@@ -49,12 +50,21 @@ function setup(
     answer?: unknown;
     factDefinitions?: (typeof employmentDefinition)[];
     sources?: unknown;
+    onSearch?: () => void | Promise<void>;
+    authorizeResearch?: (request: {
+      personId: string;
+      purpose?: string | null;
+      caseId?: string | null;
+    }) => Promise<void>;
     persist?: (input: unknown) => Promise<{ runId: string }>;
   } = {},
 ) {
   const search = vi.fn<
     (query: string, signal: AbortSignal) => Promise<unknown>
-  >(async () => options.sources ?? sources);
+  >(async () => {
+    await options.onSearch?.();
+    return options.sources ?? sources;
+  });
   const generate = vi.fn<AiProvider["generate"]>(async () => ({
     type: "answer" as const,
     answer: JSON.stringify(options.answer ?? { suggestions: [suggestion] }),
@@ -65,7 +75,15 @@ function setup(
     baseUrlFingerprint: "fingerprint",
     generate,
   };
-  const person = {
+  let person: {
+    id: string;
+    workspaceId: string;
+    displayName: string;
+    preferredName: string | null;
+    sortName: string | null;
+    biography: string | null;
+    sensitivity: string;
+  } | null = {
     id: personId,
     workspaceId: options.foreign ? "other" : workspaceId,
     displayName: "Ada",
@@ -90,9 +108,17 @@ function setup(
       options.configured === false
         ? undefined
         : { search: { search }, provider },
+    authorizeResearch: options.authorizeResearch,
     persistResearch: options.persist,
   });
-  return { service, search, generate };
+  return {
+    service,
+    search,
+    generate,
+    setPerson: (next: typeof person) => {
+      person = next;
+    },
+  };
 }
 
 describe("person web research", () => {
@@ -224,6 +250,121 @@ describe("person web research", () => {
         "Web research is not configured. Ask an administrator to enable it.",
       extensions: { code: "PROVIDER_UNAVAILABLE" },
     });
+  });
+  it("rechecks withdrawn ai-operation authority before provider disclosure", async () => {
+    const persist = vi.fn(async () => ({
+      runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
+    }));
+    let authorizationCalls = 0;
+    const { service, search, generate } = setup({
+      persist,
+      authorizeResearch: async () => {
+        authorizationCalls += 1;
+        if (authorizationCalls === 2)
+          throw new GraphQLError("The operation is no longer permitted.", {
+            extensions: { code: "FORBIDDEN" },
+          });
+      },
+    });
+
+    await expect(
+      service.run({ personId, consent: true, purpose: "research" }),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+    expect(authorizationCalls).toBe(2);
+    expect(search).toHaveBeenCalledOnce();
+    expect(generate).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["deleted", null, "NOT_FOUND"],
+    ["foreign", { workspaceId: "other" }, "NOT_FOUND"],
+    ["restricted", { sensitivity: "restricted" }, "FORBIDDEN"],
+  ] as const)(
+    "does not disclose when the current person is %s",
+    async (_state, change, code) => {
+      const persist = vi.fn(async () => ({
+        runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
+      }));
+      const { service, search, generate, setPerson } = setup({
+        persist,
+        onSearch: () => {
+          if (change === null) {
+            setPerson(null);
+            return;
+          }
+          setPerson({
+            id: personId,
+            workspaceId,
+            displayName: "Ada",
+            preferredName: "Stale preferred name",
+            sortName: "Stale sort name",
+            biography: "Stale public biography",
+            sensitivity: "public",
+            ...change,
+          });
+        },
+      });
+
+      await expect(
+        service.run({ personId, consent: true, purpose: "research" }),
+      ).rejects.toMatchObject({ extensions: { code } });
+      expect(search).toHaveBeenCalledOnce();
+      expect(generate).not.toHaveBeenCalled();
+      expect(persist).not.toHaveBeenCalled();
+    },
+  );
+  it("uses the refreshed internal projection after a public sensitivity change", async () => {
+    const { service, generate, setPerson } = setup({
+      sensitivity: "public",
+      onSearch: () => {
+        setPerson({
+          id: personId,
+          workspaceId,
+          displayName: "Ada",
+          preferredName: "Stale preferred name",
+          sortName: "Stale sort name",
+          biography: "Stale public biography",
+          sensitivity: "internal",
+        });
+      },
+    });
+
+    await expect(
+      service.run({ personId, consent: true, purpose: "research" }),
+    ).resolves.toMatchObject({ suggestions: [suggestion] });
+    expect(JSON.stringify(generate.mock.calls)).not.toContain(
+      "Stale preferred name",
+    );
+    expect(JSON.stringify(generate.mock.calls)).not.toContain(
+      "Stale sort name",
+    );
+    expect(JSON.stringify(generate.mock.calls)).not.toContain(
+      "Stale public biography",
+    );
+  });
+  it("rechecks unchanged authority and persists source-backed pending proposals", async () => {
+    const persist = vi.fn(async () => ({
+      runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
+    }));
+    const authorizeResearch = vi.fn(async () => undefined);
+    const { service, generate } = setup({
+      sensitivity: "public",
+      persist,
+      authorizeResearch,
+    });
+
+    await expect(
+      service.run({ personId, consent: true, purpose: "research" }),
+    ).resolves.toMatchObject({
+      runId: "019fe224-a0cd-76e4-92ac-9d27a5c62cf5",
+      suggestions: [suggestion],
+      sources,
+    });
+    expect(authorizeResearch).toHaveBeenCalledTimes(2);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({ suggestions: [suggestion], sources }),
+    );
   });
   it.each([
     { suggestions: [{ ...suggestion, field: "sex" }] },
