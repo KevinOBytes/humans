@@ -274,7 +274,7 @@ liveDescribe("relationship evidence discoverability", () => {
         nodes: [
           {
             evidenceItemId: redactedSourceEvidenceId,
-            locator: "section 2",
+            locator: null,
             evidenceItem: {
               id: redactedSourceEvidenceId,
               reviewState: "pending",
@@ -294,6 +294,7 @@ liveDescribe("relationship evidence discoverability", () => {
     expect(JSON.stringify(secondPage.body)).not.toContain(
       "Confidential citation must not render",
     );
+    expect(JSON.stringify(secondPage.body)).not.toContain("section 2");
     expect(JSON.stringify(secondPage.body)).not.toContain(hiddenEvidenceId);
     expect(JSON.stringify(secondPage.body)).not.toContain("hidden locator");
 

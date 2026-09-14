@@ -8,11 +8,13 @@ export function PageControls({
   nextHref,
   nextLabel,
   resetHref,
+  resetLabel = "First page",
 }: {
   label: string;
   nextHref?: string | null;
   nextLabel: string;
   resetHref?: string | null;
+  resetLabel?: string;
 }) {
   if (!nextHref && !resetHref) return null;
   return (
@@ -25,7 +27,7 @@ export function PageControls({
           href={resetHref}
           className={buttonVariants({ variant: "outline" })}
         >
-          First page
+          {resetLabel}
         </Link>
       ) : null}
       {nextHref ? (

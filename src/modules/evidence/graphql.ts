@@ -327,7 +327,24 @@ export const RelationshipEvidence = builder
       id: t.expose("id", { type: "UUID" }),
       relationshipId: t.expose("relationshipId", { type: "UUID" }),
       evidenceItemId: t.expose("evidenceItemId", { type: "UUID" }),
-      locator: t.exposeString("locator", { nullable: true }),
+      locator: t.string({
+        nullable: true,
+        resolve: async (row, _args, context) => {
+          if (
+            !context.permissions.has("evidence:read") ||
+            !context.permissions.has("source:read")
+          )
+            return null;
+          const evidenceItem = await context.loaders.evidenceItem.load(
+            row.evidenceItemId,
+          );
+          if (!evidenceItem) return null;
+          const source = await context.loaders.source.load(
+            evidenceItem.sourceId,
+          );
+          return source ? row.locator : null;
+        },
+      }),
       supportStrength: t.float({
         nullable: true,
         resolve: (row) =>

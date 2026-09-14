@@ -437,13 +437,17 @@ creation method, review state, and the documented-versus-analyst-hypothesis
 distinction. The smallest concrete readback gap was relationship evidence:
 generated `RelationshipEvidence` pagination now lets the profile traverse every
 authorized evidence page instead of stopping after its one-item preview, while
-preserving explicit hypothesis/documented labels. Focused component coverage
-proves the accessible pagination and generated-operation request; the
-live-when-configured PostgreSQL authorization test now also proves that a
-relationship-read-only API key cannot traverse evidence or disclose source
-metadata. Existing-workspace fact-catalog backfill, protected identifier
-citations, relationship-evidence authoring, and the whole hosted/browser matrix
-remain open.
+preserving explicit hypothesis/documented labels. Focused Node schema and
+component coverage in `tests/unit/relationship-evidence-redaction.test.ts` and
+`tests/unit/relationships-section.test.tsx` proves restricted-source locator
+suppression, distinct accessible pager/link names, and the exact generated
+operation request. The focused disposable-PostgreSQL run of
+`tests/integration/relationship-evidence-discoverability.test.ts` passed its
+relationship-read-only API-key denial and restricted-source locator redaction
+case.
+Existing-workspace fact-catalog backfill, protected identifier citations,
+relationship-evidence authoring, and the whole hosted/browser matrix remain
+open.
 
 Bounded relationship epistemic-status evidence (2026-09-14): migration
 `0052_core.sql` changes only the default for future edges to

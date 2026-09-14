@@ -33,6 +33,7 @@ vi.mock("next/link", () => ({
 }));
 
 import { RelationshipsSection } from "@/components/relationships/relationships-section";
+import { RelationshipEvidenceDocument } from "@/graphql/generated/graphql";
 
 const personId = "018f5f39-9ca7-7b67-a2f1-b8a82ca894d0";
 const counterpartId = "018f5f39-9ca7-7b67-a2f1-b8a82ca894d1";
@@ -158,7 +159,9 @@ describe("RelationshipsSection", () => {
     expect(within(cards[0]!).getByText("Approved")).toBeVisible();
     expect(within(cards[0]!).queryByText(/Documented/)).toBeNull();
     expect(
-      within(cards[0]!).getByRole("link", { name: "More evidence" }),
+      within(cards[0]!).getByRole("link", {
+        name: "More evidence for relationship 1: collaborated with — Grace Hopper",
+      }),
     ).toHaveAttribute(
       "href",
       `/people/${personId}?view=relationships&relationshipEvidence=018f5f39-9ca7-7b67-a2f1-b8a82ca894d3&relationshipEvidenceAfter=relationship_evidence_page_1`,
@@ -251,21 +254,128 @@ describe("RelationshipsSection", () => {
     expect(within(card).queryByText("Published interview")).toBeNull();
     expect(within(card).getByText("Analyst hypothesis")).toBeVisible();
     const navigation = within(card).getByRole("navigation", {
-      name: "Relationship evidence pagination",
+      name: "Relationship 1: collaborated with — Grace Hopper evidence pagination",
     });
     expect(
-      within(navigation).getByRole("link", { name: "First page" }),
+      within(navigation).getByRole("link", {
+        name: "First evidence page for relationship 1: collaborated with — Grace Hopper",
+      }),
     ).toHaveAttribute(
       "href",
       `/people/${personId}?view=relationships&relationshipEvidence=${relationshipId}`,
     );
     expect(executeServer.mock.calls).toContainEqual([
-      expect.anything(),
+      RelationshipEvidenceDocument,
       {
         id: relationshipId,
         first: 1,
         after: "relationship_evidence_page_1",
       },
     ]);
+  });
+
+  function mockTwoPaginatedRelationships() {
+    const firstRelationshipId = "018f5f39-9ca7-7b67-a2f1-b8a82ca894d3";
+    const secondRelationshipId = "018f5f39-9ca7-7b67-a2f1-b8a82ca894d7";
+    executeServer
+      .mockResolvedValueOnce({
+        person: {
+          id: personId,
+          relationships: {
+            nodes: [
+              relationship(firstRelationshipId, {
+                nodes: [
+                  {
+                    id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894db",
+                    locator: "page 14",
+                    evidenceItem: {
+                      id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894dc",
+                      reviewState: "accepted",
+                      source: {
+                        id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894dd",
+                        title: "Published interview",
+                        citation: null,
+                      },
+                    },
+                  },
+                ],
+                pageInfo: { endCursor: "first_cursor", hasNextPage: true },
+              }),
+              relationship(secondRelationshipId, {
+                nodes: [
+                  {
+                    id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894de",
+                    locator: "restricted cabinet 7",
+                    evidenceItem: {
+                      id: "018f5f39-9ca7-7b67-a2f1-b8a82ca894df",
+                      reviewState: "pending",
+                      source: null,
+                    },
+                  },
+                ],
+                pageInfo: { endCursor: "second_cursor", hasNextPage: true },
+              }),
+            ],
+            pageInfo: { endCursor: null, hasNextPage: false },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        relationshipType: {
+          id: relationshipTypeId,
+          key: "collaborated_with",
+          forwardLabel: "collaborated with",
+          inverseLabel: "collaborated with",
+          directed: true,
+        },
+      })
+      .mockResolvedValueOnce({
+        person: { id: counterpartId, displayName: "Grace Hopper" },
+      });
+  }
+
+  async function renderTwoPaginatedRelationships() {
+    mockTwoPaginatedRelationships();
+    render(
+      await RelationshipsSection({
+        canCreate: false,
+        personId,
+        search: {},
+      }),
+    );
+  }
+
+  it("hides a restricted source's locator", async () => {
+    await renderTwoPaginatedRelationships();
+    const cards = screen.getAllByRole("listitem");
+    expect(
+      within(cards[1]!).getByText("Source details restricted"),
+    ).toBeVisible();
+    expect(within(cards[1]!).queryByText("restricted cabinet 7")).toBeNull();
+  });
+
+  it("uniquely names each relationship evidence pager", async () => {
+    await renderTwoPaginatedRelationships();
+    const cards = screen.getAllByRole("listitem");
+    expect(
+      screen.getByRole("navigation", {
+        name: "Relationship 1: collaborated with — Grace Hopper evidence pagination",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("navigation", {
+        name: "Relationship 2: collaborated with — Grace Hopper evidence pagination",
+      }),
+    ).toBeVisible();
+    expect(
+      within(cards[0]!).getByRole("link", {
+        name: "More evidence for relationship 1: collaborated with — Grace Hopper",
+      }),
+    ).toBeVisible();
+    expect(
+      within(cards[1]!).getByRole("link", {
+        name: "More evidence for relationship 2: collaborated with — Grace Hopper",
+      }),
+    ).toBeVisible();
   });
 });
