@@ -87,7 +87,9 @@ liveDescribe("GraphQL security boundaries", () => {
       expect(result.status).toBe(401);
       expect(result.headers.get("cache-control")).toBe("private, no-store");
       expect(result.headers.get("x-request-id")).toBe(requestId);
-      expect(JSON.stringify(result.body)).not.toContain(apiKey);
+      if (apiKey.length > 0) {
+        expect(JSON.stringify(result.body)).not.toContain(apiKey);
+      }
     }
   });
 
