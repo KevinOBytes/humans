@@ -677,6 +677,18 @@ local race hardening measure, not live PostgreSQL/worker, external processor,
 hosted, or browser evidence; HUM-FR-005 and the complete retention matrix
 remain open.
 
+Retention capability-matrix checkpoint (2026-09-14): retention evaluation and
+candidate planning now share an explicit capability matrix. Only the implemented
+workspace-scoped, legal-hold-fenced person/file `soft_delete` path can become an
+`eligible_for_deletion` candidate; unsupported resource kinds, including AI
+artifacts, remain `review_required` and are excluded from worker queue scans.
+The exact expiry boundary, legal-hold precedence, supported person/file paths,
+and unsupported policy-kind fail-closed behavior have focused unit coverage and
+a gated PostgreSQL integration check. Hard-delete, anonymization, durable
+review disposition, external propagation, and hosted/browser acceptance remain
+intentionally open; this bounded checkpoint does not close `HUM-FR-005` or the
+complete retention-policy matrix.
+
 Task 3 local checkpoint (2026-09-11): the AI review ledger preserves typed proposals, evidence or validated web-source snapshots, confidence/uncertainty, run/provider/model/prompt-policy attribution, and explicit accept/reject/defer decisions. The person research panel uses generated review mutations instead of direct AI-driven profile updates. Acceptance requires current AI/write purpose coverage, case/resource visibility, human confirmation, and an owned completed source run; fact/relationship acceptance uses domain services and evidence assertions in one transaction. Batch acceptance is explicitly approved and atomic; AI-created relationships remain inferred until the existing independent assertion review permits promotion. Local unit/build/schema gates are required before commit. Live PostgreSQL lifecycle, browser and provider verification remain pending when the test database/provider is unavailable; this does not close HUM-FR-023 or the overall MVP.
 
 Catalog-backed web-fact checkpoint (2026-09-13): consented person web research may now propose active workspace text fact definitions (for example employment, education, language, organization, or a workspace custom text field) in addition to profile fields. The provider receives only bounded catalog metadata and validated public sources; a proposal is rejected unless its definition UUID came from that catalog and its cited URLs are immutable run snapshots. Fact proposals remain pending in the same independent human accept/reject/defer queue, and acceptance creates a regular `human_reviewed_ai` fact while retaining the originating run and source snapshots. Date, JSON, sensitive/contact/address/identifier fields and web-derived relationships remain excluded. Focused unit coverage is present; live provider, browser, retention, and source-to-evidence-assertion matrix evidence remains open, so HUM-FR-023 stays incomplete.

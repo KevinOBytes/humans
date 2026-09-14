@@ -8,6 +8,7 @@ import {
 const now = new Date("2026-09-12T00:00:00.000Z");
 const policy = {
   id: "00000000-0000-7000-8000-000000000001",
+  resourceKind: "person",
   retentionDays: 30,
   deletionBehavior: "soft_delete",
 };
@@ -73,6 +74,7 @@ describe("retention worker candidate planning", () => {
     ).toEqual([
       {
         id: "expired",
+        resourceKind: "person",
         reason: "retention_elapsed_soft_delete_requires_approval",
       },
     ]);
@@ -88,6 +90,7 @@ describe("retention worker candidate planning", () => {
     ).toEqual([
       {
         id: "boundary",
+        resourceKind: "person",
         reason: "retention_elapsed_soft_delete_requires_approval",
       },
     ]);
@@ -115,5 +118,15 @@ describe("retention worker candidate planning", () => {
         resources: [resource("invalid", "invalid")],
       }),
     ).toThrow();
+  });
+
+  it("fails closed when a soft-delete policy has no worker capability", () => {
+    expect(
+      planRetentionCandidates({
+        now,
+        policy: { ...policy, resourceKind: "ai_thread" },
+        resources: [resource("unsupported", "2026-08-01T00:00:00Z")],
+      }),
+    ).toEqual([]);
   });
 });
