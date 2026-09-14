@@ -34,6 +34,31 @@ database/Compose, browser, live-provider, external storage, accessibility,
 performance, or whole-product acceptance rows; those still require their
 explicit runtime evidence.
 
+## Whole-product acceptance contract checkpoint (2026-09-14)
+
+The deterministic `corepack pnpm acceptance:local` gate inventories all 10
+direct API route modules and runs their stable method/error, malformed-input,
+authorization, request-correlation, private-cache, and redaction boundaries.
+It also runs the provider-adapter and rendered Compose contracts before
+emitting a value-free provider configuration plan. The plan separates local
+PostgreSQL/Redis/MinIO/Ollama configuration from explicitly opted-in external
+Upstash/R2/S3/OpenAI-compatible/Resend contracts. Its stable
+`ACCEPTANCE_PROVIDER_CONFIGURED`, `ACCEPTANCE_PROVIDER_CONFIGURATION_MISSING`,
+`ACCEPTANCE_PROVIDER_NOT_SELECTED`, and `ACCEPTANCE_EXTERNAL_OPT_IN_*` codes
+return only provider labels, status, scope, and missing environment-variable
+names; `networkProbes=false` is part of the diagnostic contract.
+
+The credential-free Node 24.19.0 run in the isolated Task 3 worktree passed 252
+tests with four existing environment-gated skips across 19 selected files.
+That is local boundary evidence only. The attended operator order remains:
+local Compose lifecycle and browser/security suites; one-shot administrator
+bootstrap or recovery if required; email and username sign-in with the current
+2FA policy; and separate least-privilege live provider invocations. A backup
+code is consumable evidence and must be explicitly approved. No hosted
+credential, provider endpoint, bucket, token, provider response, or live
+provider call was used for this checkpoint, so hosted administrator,
+recovery/2FA, and every external-provider acceptance row remains Incomplete.
+
 ## Current closure tranche (2026-09-14)
 
 The current `main` tree includes the production-closure tranche in commits

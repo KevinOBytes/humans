@@ -42,6 +42,32 @@ full database/Compose/browser matrix, hosted admin authentication and recovery,
 and live external-provider runs remain open and are not implied by this local
 evidence.
 
+## Whole-product acceptance contract checkpoint (2026-09-14)
+
+- Verified: a credential-free `corepack pnpm acceptance:local` gate covers the
+  complete direct-route inventory, stable error/correlation/cache/redaction
+  boundaries, provider adapters, and rendered Compose contracts. The local
+  Node 24.19.0 run passed 252 tests with four existing environment-gated
+  skips.
+- Verified: a non-network provider diagnostic uses stable `ACCEPTANCE_*` codes.
+  It separates local PostgreSQL/Redis/MinIO/Ollama from opt-in external
+  Upstash/R2/S3/OpenAI-compatible/Resend and emits provider labels, statuses,
+  scopes, and missing variable names only.
+- Open: in the approved CI/local runtime, rerun the full PostgreSQL/Redis/MinIO
+  integration and security suites, browser acceptance, Compose lifecycle,
+  image verification, and secret scan for the reviewed Task 3 commit.
+- Open: if required, run hosted administrator bootstrap/recovery from the
+  mode-0600 recovery template, then run email and username authenticated
+  smoke under the current 2FA policy. Use a TOTP or an explicitly approved
+  disposable backup code; never disable 2FA to complete acceptance.
+- Open: run Upstash, isolated R2/S3, OpenAI-compatible, and Resend acceptance in
+  separate least-privilege `op run` invocations. Run Ollama separately under
+  its local Compose profile. Record only deployment identity, timestamp,
+  provider labels, request IDs, and redacted outcomes.
+- Open: keep all hosted/provider rows incomplete until those attended checks
+  succeed. Never record an endpoint, bucket, account, token, cookie, TOTP,
+  backup code, or provider response body.
+
 ## Relationship semantic contract checkpoint (2026-09-14)
 
 Follow-up graph projection: the repository/service, canonical GraphQL enum,

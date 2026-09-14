@@ -24,6 +24,8 @@ export function parseArgs(argv = []) {
     else if (value === "--environment-contract")
       options.environmentContract = true;
     else if (value === "--provider-contracts") options.providerContracts = true;
+    else if (value === "--diagnose-provider-config")
+      options.diagnoseProviderConfig = true;
     else if (value === "--two-factor") options.twoFactor = true;
     else if (value === "--help") options.help = true;
     else throw new Error(`Unknown production smoke option: ${value}`);
@@ -152,6 +154,179 @@ const productionEnvironmentGroups = [
 
 function isPresent(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function providerConfigurationCheck({
+  missing,
+  provider,
+  scope,
+  selected = true,
+}) {
+  const status = !selected
+    ? "not-selected"
+    : missing.length > 0
+      ? "missing"
+      : "configured";
+  return {
+    code:
+      status === "configured"
+        ? "ACCEPTANCE_PROVIDER_CONFIGURED"
+        : status === "missing"
+          ? "ACCEPTANCE_PROVIDER_CONFIGURATION_MISSING"
+          : "ACCEPTANCE_PROVIDER_NOT_SELECTED",
+    missing,
+    provider,
+    scope,
+    status,
+  };
+}
+
+/**
+ * Build a value-free acceptance plan. This function deliberately checks only
+ * whether the documented variables are present; it never initializes an
+ * adapter or probes a provider.
+ *
+ * @param {Record<string, string | undefined>} env
+ */
+export function providerConfigurationDiagnostics(env = {}) {
+  const localRuntimeSelected = env.DEPLOYMENT_MODE !== "vercel";
+  const storageProvider = env.STORAGE_PROVIDER;
+  const aiProvider = env.AI_PROVIDER;
+  const testStorageProvider = env.TEST_STORAGE_PROVIDER;
+  const testAiProvider = env.TEST_AI_PROVIDER;
+  const canonicalUpstash = [
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+  ];
+  const vercelUpstash = ["KV_REST_API_URL", "KV_REST_API_TOKEN"];
+  const upstashSelected = [...canonicalUpstash, ...vercelUpstash].some((name) =>
+    isPresent(env[name]),
+  );
+  const upstashVariables = canonicalUpstash.some((name) => isPresent(env[name]))
+    ? canonicalUpstash
+    : vercelUpstash;
+  const storageSelected = ["r2", "s3"].includes(testStorageProvider);
+  const aiSelected = ["openai", "compatible"].includes(testAiProvider);
+  const resendVariables = [
+    "TEST_RESEND_API_KEY",
+    "TEST_RESEND_FROM",
+    "TEST_RESEND_RECIPIENT",
+  ];
+  const resendSelected = resendVariables.some((name) => isPresent(env[name]));
+
+  return {
+    kind: "provider-configuration",
+    networkProbes: false,
+    externalOptIn:
+      env.RUN_EXTERNAL_PROVIDER_CONTRACTS === "true"
+        ? {
+            code: "ACCEPTANCE_EXTERNAL_OPT_IN_CONFIGURED",
+            missing: [],
+            status: "configured",
+          }
+        : {
+            code: "ACCEPTANCE_EXTERNAL_OPT_IN_REQUIRED",
+            missing: ["RUN_EXTERNAL_PROVIDER_CONTRACTS"],
+            status: "missing",
+          },
+    checks: [
+      providerConfigurationCheck({
+        provider: "postgres",
+        scope: "local",
+        selected: localRuntimeSelected,
+        missing: !localRuntimeSelected
+          ? []
+          : ["DATABASE_URL", "POSTGRES_URL"].some((name) =>
+                isPresent(env[name]),
+              )
+            ? []
+            : ["DATABASE_URL", "POSTGRES_URL"],
+      }),
+      providerConfigurationCheck({
+        provider: "redis",
+        scope: "local",
+        selected: localRuntimeSelected && !isPresent(env.REDIS_TOKEN),
+        missing:
+          !localRuntimeSelected || isPresent(env.REDIS_TOKEN)
+            ? []
+            : isPresent(env.REDIS_URL)
+              ? []
+              : ["REDIS_URL"],
+      }),
+      providerConfigurationCheck({
+        provider: "minio",
+        scope: "local",
+        selected: storageProvider === "minio",
+        missing:
+          storageProvider === "minio"
+            ? [
+                "STORAGE_ENDPOINT",
+                "STORAGE_REGION",
+                "STORAGE_BUCKET",
+                "STORAGE_ACCESS_KEY_ID",
+                "STORAGE_SECRET_ACCESS_KEY",
+                "STORAGE_FORCE_PATH_STYLE",
+                "STORAGE_BUCKET_PUBLIC",
+              ].filter((name) => !isPresent(env[name]))
+            : isPresent(storageProvider)
+              ? []
+              : ["STORAGE_PROVIDER"],
+      }),
+      providerConfigurationCheck({
+        provider: "ollama",
+        scope: "local",
+        selected: aiProvider === "ollama",
+        missing:
+          aiProvider === "ollama"
+            ? ["AI_BASE_URL", "AI_MODEL"].filter(
+                (name) => !isPresent(env[name]),
+              )
+            : isPresent(aiProvider)
+              ? []
+              : ["AI_PROVIDER"],
+      }),
+      providerConfigurationCheck({
+        provider: "upstash",
+        scope: "external",
+        selected: upstashSelected,
+        missing: upstashSelected
+          ? upstashVariables.filter((name) => !isPresent(env[name]))
+          : ["UPSTASH_REDIS_REST_URL"],
+      }),
+      providerConfigurationCheck({
+        provider: storageSelected ? testStorageProvider : "r2-or-s3",
+        scope: "external",
+        selected: storageSelected,
+        missing: storageSelected
+          ? [
+              "TEST_STORAGE_ENDPOINT",
+              "TEST_STORAGE_REGION",
+              "TEST_STORAGE_BUCKET",
+              "TEST_STORAGE_ACCESS_KEY_ID",
+              "TEST_STORAGE_SECRET_ACCESS_KEY",
+            ].filter((name) => !isPresent(env[name]))
+          : ["TEST_STORAGE_PROVIDER"],
+      }),
+      providerConfigurationCheck({
+        provider: aiSelected ? testAiProvider : "openai-or-compatible",
+        scope: "external",
+        selected: aiSelected,
+        missing: aiSelected
+          ? ["TEST_AI_BASE_URL", "TEST_AI_MODEL", "TEST_AI_API_KEY"].filter(
+              (name) => !isPresent(env[name]),
+            )
+          : ["TEST_AI_PROVIDER"],
+      }),
+      providerConfigurationCheck({
+        provider: "resend",
+        scope: "external",
+        selected: resendSelected,
+        missing: resendSelected
+          ? resendVariables.filter((name) => !isPresent(env[name]))
+          : ["TEST_RESEND_API_KEY"],
+      }),
+    ],
+  };
 }
 
 function orderedLabels(labels, order) {
@@ -834,7 +1009,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const options = parseArgs(process.argv.slice(2));
     if (options.help) {
       process.stdout.write(
-        "Usage: pnpm production:smoke -- --base-url https://host [--environment-contract] [--authenticated] [--two-factor] [--provider-contracts]\n",
+        "Usage: pnpm production:smoke -- [--diagnose-provider-config] [--base-url https://host] [--environment-contract] [--authenticated] [--two-factor] [--provider-contracts]\n",
+      );
+      process.exit(0);
+    }
+    if (options.diagnoseProviderConfig) {
+      process.stdout.write(
+        `${JSON.stringify(providerConfigurationDiagnostics(process.env))}\n`,
       );
       process.exit(0);
     }
