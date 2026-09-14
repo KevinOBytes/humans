@@ -258,10 +258,12 @@ export async function RelationshipsSection({
         title="Relationships"
         empty="No relationships have been recorded."
       >
-        {presentations.map((item) => {
+        {presentations.map((item, index) => {
           const counterpartName = item.counterpartId
             ? counterpartById.get(item.counterpartId)
             : undefined;
+          const relationshipDescription = `${item.label} — ${counterpartName ?? "related person unavailable"}`;
+          const relationshipPosition = index + 1;
           const evidenceConnection =
             item.relationship.id === relationshipEvidenceAnchor &&
             relationshipEvidenceDetail?.relationship?.id ===
@@ -339,7 +341,7 @@ export async function RelationshipsSection({
                               {source.citation}
                             </p>
                           ) : null}
-                          {entry.locator ? (
+                          {source && entry.locator ? (
                             <p className="text-muted-foreground mt-1 text-xs">
                               {entry.locator}
                             </p>
@@ -354,7 +356,7 @@ export async function RelationshipsSection({
                   </p>
                 )}
                 <PageControls
-                  label="Relationship evidence"
+                  label={`Relationship ${relationshipPosition}: ${relationshipDescription} evidence`}
                   resetHref={
                     item.relationship.id === relationshipEvidenceAnchor &&
                     relationshipEvidenceAfter
@@ -373,7 +375,8 @@ export async function RelationshipsSection({
                         })
                       : null
                   }
-                  nextLabel="More evidence"
+                  nextLabel={`More evidence for relationship ${relationshipPosition}: ${relationshipDescription}`}
+                  resetLabel={`First evidence page for relationship ${relationshipPosition}: ${relationshipDescription}`}
                 />
               </section>
             </li>
