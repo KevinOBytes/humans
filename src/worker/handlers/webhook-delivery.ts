@@ -7,7 +7,7 @@ import {
   webhooks,
 } from "@/db/schema/operations";
 import { openSealedEnvelope } from "@/lib/security/sealed-envelope";
-import { JobExecutionError } from "@/modules/jobs/types";
+import { JobExecutionError, MAX_JOB_ATTEMPTS } from "@/modules/jobs/types";
 import {
   webhookEventHeaders,
   webhookRetryDelayMs,
@@ -18,6 +18,11 @@ import { assertPublicWebhookTarget } from "@/modules/webhooks/target";
 function safeError(error: unknown): Record<string, string> {
   void error;
   return { code: "delivery_failed" };
+}
+
+function deliveryRetryDelayMs(attempt: number): number | null {
+  const delay = webhookRetryDelayMs(attempt);
+  return attempt >= MAX_JOB_ATTEMPTS ? null : delay;
 }
 
 /**
@@ -160,7 +165,7 @@ export function createWebhookDeliveryHandler(input: {
       });
       const nextRetryAt = response.ok
         ? null
-        : webhookRetryDelayMs(context.job.attemptCount);
+        : deliveryRetryDelayMs(context.job.attemptCount);
       await input.database
         .update(webhookDeliveries)
         .set({
@@ -187,16 +192,17 @@ export function createWebhookDeliveryHandler(input: {
         .update(webhookDeliveries)
         .set({
           attempt: context.job.attemptCount,
+          responseStatus: null,
           startedAt,
           completedAt: new Date(),
           nextRetryAt: (() => {
-            const delay = webhookRetryDelayMs(context.job.attemptCount);
+            const delay = deliveryRetryDelayMs(context.job.attemptCount);
             return delay === null ? null : new Date(Date.now() + delay);
           })(),
           redactedError: safeError(error),
         })
         .where(eq(webhookDeliveries.id, row.delivery.id));
-      const delay = webhookRetryDelayMs(context.job.attemptCount);
+      const delay = deliveryRetryDelayMs(context.job.attemptCount);
       throw new JobExecutionError(
         "webhook_transport_failure",
         delay === null ? "permanent" : "retryable",
