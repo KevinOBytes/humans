@@ -1,4 +1,15 @@
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { newId } from "@/db/id";
 import { evidenceExcerpts, evidenceItems } from "@/db/schema/evidence";
 import { files } from "@/db/schema/files";
@@ -177,6 +188,31 @@ export async function executePrivacyPropagations(input: {
       and(
         inArray(privacyProcessorPropagations.state, ["pending", "failed"]),
         lte(privacyProcessorPropagations.nextAttemptAt, now),
+        // Filter ineligible parents before LIMIT: their retained processor
+        // history must not monopolize every bounded batch. This is candidate
+        // selection only; the locked transaction below rechecks authority.
+        exists(
+          input.database
+            .select({ id: privacyRequests.id })
+            .from(privacyRequests)
+            .where(
+              and(
+                eq(
+                  privacyRequests.workspaceId,
+                  privacyProcessorPropagations.workspaceId,
+                ),
+                eq(
+                  privacyRequests.id,
+                  privacyProcessorPropagations.privacyRequestId,
+                ),
+                eq(privacyRequests.state, "fulfilling"),
+                isNull(privacyRequests.deletedAt),
+                lte(privacyRequests.executeAfter, now),
+                isNotNull(privacyRequests.verifiedAt),
+                isNotNull(privacyRequests.reviewedBy),
+              ),
+            ),
+        ),
       ),
     )
     .orderBy(

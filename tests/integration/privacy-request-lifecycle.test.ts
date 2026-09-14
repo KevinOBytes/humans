@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
 import { auditEvents, jobs } from "@/db/schema/operations";
@@ -14,7 +14,10 @@ import { people } from "@/db/schema/people";
 import { retentionPolicies } from "@/db/schema/workspaces";
 import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
-import { executePrivacyPropagations } from "@/modules/privacy/propagation-worker";
+import {
+  createCachePrivacyProcessorAdapter,
+  executePrivacyPropagations,
+} from "@/modules/privacy/propagation-worker";
 import { createRetentionService } from "@/modules/privacy/retention-service";
 import type { ResearchServiceContext } from "@/modules/audit/service";
 import { ResearchFixture } from "../support/research-fixture";
@@ -82,6 +85,96 @@ live("privacy request lifecycle", () => {
       database: fixture.database,
       encryptionKey: "ab".repeat(32),
     });
+
+  it("does not let rejected requests starve the default processor batch or discard their history", async () => {
+    const person = await coveredPerson(context);
+    const policyId = newId();
+    await fixture.database.insert(retentionPolicies).values({
+      id: policyId,
+      workspaceId: context.workspaceId,
+      resourceKind: "person",
+      retentionDays: 0,
+      deletionBehavior: "hard_delete",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    const rejectedIds: string[] = [];
+    for (let index = 0; index < 5; index++) {
+      rejectedIds.push((await startDeletion([person.id])).id);
+    }
+    expect(await execute()).toBe(0);
+    await fixture.database
+      .update(privacyProcessorPropagations)
+      .set({ nextAttemptAt: new Date(0) })
+      .where(
+        inArray(privacyProcessorPropagations.privacyRequestId, rejectedIds),
+      );
+    const rejectedRequests = await fixture.database
+      .select()
+      .from(privacyRequests)
+      .where(inArray(privacyRequests.id, rejectedIds));
+    expect(rejectedRequests.every((row) => row.state === "rejected")).toBe(
+      true,
+    );
+    const rejectedProcessors = await fixture.database
+      .select()
+      .from(privacyProcessorPropagations)
+      .where(
+        inArray(privacyProcessorPropagations.privacyRequestId, rejectedIds),
+      );
+    expect(rejectedProcessors).toHaveLength(25);
+    const rejectedAuditIds = rejectedRequests.map((row) => row.auditReference!);
+    const rejectedAudits = await fixture.database
+      .select()
+      .from(auditEvents)
+      .where(inArray(auditEvents.id, rejectedAuditIds));
+    expect(rejectedAudits).toHaveLength(5);
+
+    await fixture.database
+      .update(retentionPolicies)
+      .set({ deletionBehavior: "soft_delete", version: 2 })
+      .where(eq(retentionPolicies.id, policyId));
+    const valid = await startDeletion([person.id]);
+    expect(await execute()).toBe(1);
+    expect(
+      await executePrivacyPropagations({
+        database: fixture.database,
+        now: new Date(Date.now() + 1_000),
+        adapters: { cache: createCachePrivacyProcessorAdapter() },
+      }),
+    ).toBe(5);
+    const validProcessors = await fixture.database
+      .select()
+      .from(privacyProcessorPropagations)
+      .where(eq(privacyProcessorPropagations.privacyRequestId, valid.id));
+    expect(validProcessors.every((row) => row.attempts === 1)).toBe(true);
+    expect(
+      validProcessors.find((row) => row.processor === "cache"),
+    ).toMatchObject({
+      state: "not_applicable",
+      evidenceReference: "cache:not-applicable:operational-only",
+    });
+    expect(
+      await fixture.database
+        .select()
+        .from(privacyProcessorPropagations)
+        .where(
+          inArray(privacyProcessorPropagations.privacyRequestId, rejectedIds),
+        ),
+    ).toEqual(rejectedProcessors);
+    expect(
+      await fixture.database
+        .select()
+        .from(privacyRequests)
+        .where(inArray(privacyRequests.id, rejectedIds)),
+    ).toEqual(rejectedRequests);
+    expect(
+      await fixture.database
+        .select()
+        .from(auditEvents)
+        .where(inArray(auditEvents.id, rejectedAuditIds)),
+    ).toEqual(rejectedAudits);
+  });
 
   it.each(["invalid", "substituted", "unavailable", "foreign"] as const)(
     "atomically rejects a %s governed scope and replays without extra effects",
