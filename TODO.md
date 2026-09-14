@@ -927,3 +927,14 @@ GraphQL lifecycle replay. It is included in `test:db`; the existing lifecycle
 and retention legal-hold suites also pass. This does not close HUM-NFR-008:
 other mutation families, browser retry, and hosted/provider acceptance remain
 open.
+
+High-risk governance closeout follow-up (2026-09-13): the AI retention
+candidate lock now targets only `ai_threads`, acquires the workspace advisory
+lock before authoritative revalidation, and re-reads current workspace
+retention settings before deletion. This prevents the settings-mutation lock
+inversion and preserves a thread when a concurrent policy update removes its
+eligibility. The two person-hold cases plus the deterministic settings-versus-
+purge race pass on disposable PostgreSQL; the focused cases are run as a
+separate invocation in `test:db` so the aggregate database matrix is not
+filtered by a test-name selector. The broad retention, hosted, and whole-
+product governance rows remain open.

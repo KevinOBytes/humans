@@ -197,7 +197,12 @@ export async function purgeExpiredAiThreads(input: {
       )
       .orderBy(aiThreads.updatedAt, aiThreads.id)
       .limit(limit)
-      .for("update");
+      // The candidate query joins workspace_settings for the retention
+      // calculation. Lock only the thread rows here: policy mutations acquire
+      // the workspace advisory lock before locking workspace settings, so
+      // locking both tables before that advisory lock could deadlock a purge
+      // against a concurrent policy update.
+      .for("update", { of: aiThreads });
 
     for (const candidate of candidates) {
       // Legal-hold creation/release uses this same workspace lock. Candidate
@@ -207,6 +212,32 @@ export async function purgeExpiredAiThreads(input: {
       await transaction.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${candidate.workspaceId}, 0))`,
       );
+      // The candidate query used a snapshot taken before the workspace lock.
+      // Re-read the retention inputs after serialization so a concurrent
+      // policy update cannot turn a formerly-eligible thread into a stale
+      // deletion decision.
+      const [current] = await transaction
+        .select({
+          id: aiThreads.id,
+          workspaceId: aiThreads.workspaceId,
+        })
+        .from(aiThreads)
+        .innerJoin(
+          workspaceSettings,
+          eq(workspaceSettings.workspaceId, aiThreads.workspaceId),
+        )
+        .where(
+          and(
+            eq(aiThreads.workspaceId, candidate.workspaceId),
+            eq(aiThreads.id, candidate.id),
+            isNull(aiThreads.deletedAt),
+            eq(aiThreads.sharing, "private"),
+            sql`coalesce(${aiThreads.retentionDays}, ${workspaceSettings.retentionDays}) is not null`,
+            sql`${aiThreads.updatedAt} < ${now.toISOString()}::timestamptz - (coalesce(${aiThreads.retentionDays}, ${workspaceSettings.retentionDays}) * interval '1 day')`,
+          ),
+        )
+        .limit(1);
+      if (!current) continue;
       const runs = await transaction
         .select({ id: aiRuns.id, reviewPersonIds: aiRuns.reviewPersonIds })
         .from(aiRuns)

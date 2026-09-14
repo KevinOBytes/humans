@@ -1570,3 +1570,15 @@ approval, legal-hold preservation, and generated GraphQL lifecycle replay.
 Existing unkeyed lifecycle and retention legal-hold suites also pass. The
 remaining retryable mutation, browser, and hosted/provider matrices remain
 open; HUM-NFR-008 stays Incomplete.
+
+Bounded AI-retention governance follow-up (2026-09-13): the person-scoped
+legal-hold fence is now evaluated both during bounded candidate selection and
+again after the workspace advisory lock, while the candidate row lock is
+restricted to `ai_threads`. The final check re-reads workspace retention
+settings after serialization, preventing a concurrent settings mutation from
+causing a stale deletion and avoiding a workspace-settings/advisory-lock
+deadlock. Live PostgreSQL coverage passes the active/released person-hold,
+queued hold-vs-purge, direct-artifact-hold, and settings-versus-purge cases.
+This is bounded local evidence for the AI-retention portion of HUM-FR-005 and
+HUM-FR-023; the whole retention, hosted, and provider matrices remain
+Incomplete.
