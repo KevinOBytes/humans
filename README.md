@@ -225,6 +225,15 @@ external-provider smoke, deployment proof, or production-readiness evidence.
 
 ## Deployment direction
 
+The redacted production smoke keeps credentialed acceptance separate from the
+default public/readiness probe. An attended operator may add
+`--authenticated`; administrator values are read only from the caller
+environment or a local mode-0600 secret-manager template, never from command
+arguments or remote-provider lookups. Missing required variables fail before
+any network call and transport failures expose only a fixed request path. See
+the [production closeout runbook](docs/operations/production-closeout.md) for
+the approved operator procedure and the still-open hosted acceptance gates.
+
 The application is designed for one contract in two modes, but only the local
 dependency topology and self-hosted application path are part of the current
 usable alpha boundary. The hosted Vercel path still requires deployment

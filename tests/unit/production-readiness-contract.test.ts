@@ -18,10 +18,12 @@ describe("production readiness smoke contract", () => {
       parseArgs([
         "--base-url",
         "https://example.invalid",
+        "--authenticated",
         "--two-factor",
         "--provider-contracts",
       ]),
     ).toEqual({
+      authenticated: true,
       baseUrl: "https://example.invalid",
       providerContracts: true,
       twoFactor: true,
@@ -46,6 +48,63 @@ describe("production readiness smoke contract", () => {
       }),
     ).rejects.toThrow(/homepage returned 500/);
     expect(logs.join("\n")).not.toContain("do-not-print");
+  });
+
+  it("fails missing authenticated configuration before network access without exposing supplied values", async () => {
+    const { runProductionSmoke, parseBaseUrl } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+    const suppliedEmail = "operator@example.com";
+    const suppliedUsername = "operator";
+    let requests = 0;
+
+    let error: unknown;
+    try {
+      await runProductionSmoke({
+        base: parseBaseUrl("https://humans.example.com"),
+        auth: true,
+        adminEmail: suppliedEmail,
+        adminUsername: suppliedUsername,
+        adminPassword: "",
+        fetchImpl: async () => {
+          requests += 1;
+          return new Response("unexpected", { status: 500 });
+        },
+        log: () => undefined,
+      });
+    } catch (candidate) {
+      error = candidate;
+    }
+
+    expect(requests).toBe(0);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("ADMIN_PASSWORD");
+    expect((error as Error).message).not.toContain(suppliedEmail);
+    expect((error as Error).message).not.toContain(suppliedUsername);
+  });
+
+  it("contains transport failures without exposing credentials or URL values", async () => {
+    const { runProductionSmoke, parseBaseUrl } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+    const password = "operator-password-that-must-not-escape";
+    const credentialUrl = `https://operator:${password}@private.example.test/check?token=${password}`;
+
+    let error: unknown;
+    try {
+      await runProductionSmoke({
+        base: parseBaseUrl("https://humans.example.com"),
+        fetchImpl: async () => {
+          throw new Error(`transport failure for ${credentialUrl}`);
+        },
+        log: () => undefined,
+      });
+    } catch (candidate) {
+      error = candidate;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("request / failed");
+    expect((error as Error).message).not.toContain(password);
+    expect((error as Error).message).not.toContain(credentialUrl);
   });
 
   it("requires and verifies both configured administrator sign-in identifiers", async () => {
