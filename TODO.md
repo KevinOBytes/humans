@@ -2,7 +2,7 @@
 
 ## Production deployment verification (2026-09-14)
 
-- [x] Deploy reviewed `main` head `dcbb36431abec2793d66930f8b5c188705bc6517`
+- [x] Deploy reviewed application commit `dcbb36431abec2793d66930f8b5c188705bc6517`
       to Vercel production as `dpl_BkV534V7M832BTkt1ahb3YX76btc` (`READY`).
 - [x] Confirm aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
       `humans-tkoresearch.vercel.app` resolve to that deployment.
