@@ -108,7 +108,10 @@ const AssertionInput = builder.inputType("LinkEvidenceAssertionInput", {
     evidenceId: t.field({ type: "UUID", required: true }),
     resourceKind: t.string({ required: true }),
     resourceId: t.field({ type: "UUID", required: true }),
-    fieldPath: t.string(),
+    fieldPath: t.string({
+      description:
+        "Optional cited field. Public person identifiers use identifiers.<uuid>.v<version>.<field>; protected identifier citations are not supported by plaintext evidence storage.",
+    }),
     locator: t.string({ required: true }),
     quote: t.string({ required: true }),
     role: t.string({ required: true }),

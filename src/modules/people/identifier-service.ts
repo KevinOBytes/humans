@@ -23,6 +23,7 @@ import {
   type PersonIdentifierView,
 } from "./service";
 import type { PersonIdentifierRow } from "./repository";
+import { requireUncitedIdentifierReclassification } from "@/modules/evidence/identifier-citations";
 
 type IdentifierFields = {
   namespace: string;
@@ -253,6 +254,11 @@ export function createIdentifierService(context: ResearchServiceContext) {
             ),
           };
           const fields = metadata(merged);
+          if (
+            existing.sensitivity === "public" &&
+            fields.sensitivity !== "public"
+          )
+            await requireUncitedIdentifierReclassification(scoped, existing.id);
           const namespace = merged.namespace
             .normalize("NFKC")
             .trim()

@@ -77,6 +77,29 @@ GraphQL. Existing workspace- and case-scoped queues remain compatible. Focused
 schema and service tests cover the contract; hosted/provider and whole-role
 acceptance remain tracked as incomplete.
 
+Identifier citation boundary checkpoint (2026-09-13): public person identifier
+citations reuse `linkEvidenceAssertion` with the canonical field path
+`identifiers.<uuid>.v<version>.<field>`. The service verifies the actual active
+identifier, parent, workspace, current version, and visibility under parent-first
+row locks. It preserves existing evidence/source linkage, purpose coverage,
+redacted audit, and principal-bound idempotency; replay rechecks the current
+identifier boundary. Keyed person assertion writes now deduplicate required
+permissions. Public-to-protected identifier reclassification is rejected while
+active plaintext identifier citations exist, even with a replacement value;
+existing source quotes are not silently rewritten or left as protected-value
+shadow copies. The guard includes previous parents/versions and legacy path
+prefixes. Explicit confidential identifier grants use the canonical
+`personIdentifier` resource kind before the protected-storage precondition.
+Keyed assertion services receive the configured runtime HMAC through GraphQL.
+Focused
+real-PostgreSQL tests cover linkage/replay, wrong parent/workspace, protected
+value rejection, stale versions, archive, source preservation, and generated
+GraphQL author permissions. This is not full identifier provenance completion:
+protected citations require an encrypted/redacted assertion design because the
+current assertion quote and locator are plaintext. Citation discovery/authoring
+UI, version-history readback, migration of any legacy identifier paths, and the
+broader rich-profile citation matrix remain open.
+
 Field-level provenance checkpoint (2026-09-13): evidence assertions now carry
 an optional bounded `fieldPath` (migration `0051`) so a source quote can point
 to a specific profile field or nested field path, such as `biography` or
