@@ -1,4 +1,10 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
+
+const readRepositoryFile = (path: string) =>
+  readFileSync(resolve(process.cwd(), path), "utf8");
 
 describe("production readiness smoke contract", () => {
   it("rejects missing, credential-bearing, and non-http URLs", async () => {
@@ -9,6 +15,59 @@ describe("production readiness smoke contract", () => {
     expect(() => parseBaseUrl("https://user:pass@example.invalid")).toThrow(
       /credential-free/,
     );
+  });
+
+  it("uses mode-0600, least-privilege operator templates for attended acceptance", () => {
+    const closeout = readRepositoryFile(
+      "docs/operations/production-closeout.md",
+    );
+    const docker = readRepositoryFile("docs/operations/docker.md");
+    const authenticated = readRepositoryFile(
+      "docs/operations/production-authenticated-smoke.op.env.example",
+    );
+    const recovery = readRepositoryFile(
+      "docs/operations/production-operator.op.env.example",
+    );
+    const upstash = readRepositoryFile(
+      "docs/operations/production-upstash-contracts.op.env.example",
+    );
+    const storage = readRepositoryFile(
+      "docs/operations/production-storage-contracts.op.env.example",
+    );
+
+    expect(closeout).toContain(
+      "install -m 600 docs/operations/production-authenticated-smoke.op.env.example .env.authenticated-smoke.op.tpl",
+    );
+    expect(docker).toContain(
+      "install -m 600 docs/operations/production-operator.op.env.example .env.operator.op.tpl",
+    );
+    expect(authenticated).toContain("ADMIN_EMAIL=op://");
+    expect(authenticated).toContain("ADMIN_USERNAME=op://");
+    expect(authenticated).toContain("ADMIN_PASSWORD=op://");
+    expect(authenticated).toContain("PRODUCTION_SMOKE_TOTP=op://");
+    for (const unnecessaryVariable of [
+      "DATABASE_URL=",
+      "ADMIN_DISPLAY_NAME=",
+      "UPSTASH_REDIS_REST_",
+      "TEST_STORAGE_",
+      "STORAGE_BUCKET=",
+      "RUN_EXTERNAL_PROVIDER_CONTRACTS=",
+    ])
+      expect(authenticated).not.toContain(unnecessaryVariable);
+    expect(recovery).toContain("DATABASE_URL=op://");
+    expect(recovery).toContain("ADMIN_DISPLAY_NAME=op://");
+    expect(recovery).not.toContain("RUN_EXTERNAL_PROVIDER_CONTRACTS=");
+    expect(recovery).not.toContain("UPSTASH_REDIS_REST_");
+    expect(recovery).not.toContain("TEST_STORAGE_");
+    expect(upstash).toContain("UPSTASH_REDIS_REST_URL=op://");
+    expect(upstash).toContain("UPSTASH_REDIS_REST_TOKEN=op://");
+    expect(upstash).not.toContain("ADMIN_EMAIL=");
+    expect(upstash).not.toContain("DATABASE_URL=");
+    expect(upstash).not.toContain("TEST_STORAGE_");
+    expect(storage).toContain("TEST_STORAGE_SECRET_ACCESS_KEY=op://");
+    expect(storage).not.toContain("ADMIN_EMAIL=");
+    expect(storage).not.toContain("DATABASE_URL=");
+    expect(storage).not.toContain("UPSTASH_REDIS_REST_");
   });
 
   it("parses only the explicit smoke switches", async () => {

@@ -173,12 +173,12 @@ The attended bootstrap and rotation entrypoints intentionally parse only
 Redis, object-storage, Resend, or AI variables used by the application. For a
 hosted recovery, obtain approved references to the Neon connection string and
 replacement administrator values from the deployment's secret manager. With
-1Password CLI, copy the repository's reference-only example to the ignored
-`.env.operator.op.tpl`, update only the `op://` references, and inject them into
-the restricted Node 24 release process:
+1Password CLI, create an ignored mode-0600 copy of the repository's
+reference-only recovery example, update only the `op://` references, and inject
+it into the restricted Node 24 release process:
 
 ```sh
-cp docs/operations/production-operator.op.env.example .env.operator.op.tpl
+install -m 600 docs/operations/production-operator.op.env.example .env.operator.op.tpl
 $EDITOR .env.operator.op.tpl
 op run --env-file .env.operator.op.tpl -- \
   pnpm operator:rotate-admin-password

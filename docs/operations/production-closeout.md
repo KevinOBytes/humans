@@ -111,9 +111,9 @@ the child process. The repository includes a reference-only 1Password template;
 copy it to an ignored file and edit only its `op://` references:
 
 ```sh
-cp docs/operations/production-operator.op.env.example .env.operator.op.tpl
-$EDITOR .env.operator.op.tpl
-op run --env-file .env.operator.op.tpl -- \
+install -m 600 docs/operations/production-authenticated-smoke.op.env.example .env.authenticated-smoke.op.tpl
+$EDITOR .env.authenticated-smoke.op.tpl
+op run --env-file .env.authenticated-smoke.op.tpl -- \
   pnpm production:smoke -- --base-url https://humans.kevinbytes.com --authenticated --two-factor
 ```
 
@@ -140,27 +140,40 @@ consumed; use a disposable current code approved for this check. TOTP and backup
 values are mutually exclusive, and a requested 2FA check fails before making a
 network request when neither or both are injected.
 
-Provider lifecycle contracts are separately opt-in. Add
-`--provider-contracts` to the same `op run` command only when
-`RUN_EXTERNAL_PROVIDER_CONTRACTS=true` and at least one complete Upstash REST or
-S3-compatible test credential group is injected. Partial credential groups fail
-closed before any external-provider request. If opt-in is absent or no complete
-group is available, the requested acceptance exits nonzero with a redacted
-diagnostic after the base homepage, health, unauthenticated GraphQL, and
-protected-jobs probes; it makes no request to Upstash or object storage. When
-enabled, the child provider suite
-round-trips disposable, namespaced Redis and private object-storage fixtures,
-deletes them in a failure-safe cleanup boundary, suppresses all child output,
-and reports provider labels only. R2 and generic S3 buckets must be
-pre-provisioned; the suite never creates an external bucket. Only isolated local
-MinIO may create a missing test bucket. A cleanup failure fails the acceptance
-run. This is destructive only to generated test keys/objects and must use an
-approved test bucket/database rather than irreplaceable data. External R2/S3
-contracts additionally require both `STORAGE_BUCKET` and a distinct
-`TEST_STORAGE_BUCKET` named with the `humans-contract-...` convention. The
-test credential must be least-privilege and limited to that dedicated contract
-bucket; validation fails before a child process or provider client can start
-when this isolation contract is not met.
+Provider lifecycle contracts are separately opt-in and never share the
+authenticated-smoke credential profile. Use exactly one dedicated provider
+template/invocation per provider: `production-upstash-contracts.op.env.example`
+for Upstash REST, or `production-storage-contracts.op.env.example` for an
+S3-compatible target. For Upstash, create and use only its ignored private
+profile:
+
+```sh
+install -m 600 docs/operations/production-upstash-contracts.op.env.example .env.upstash-contracts.op.tpl
+$EDITOR .env.upstash-contracts.op.tpl
+op run --env-file .env.upstash-contracts.op.tpl -- \
+  pnpm production:smoke -- --base-url https://humans.kevinbytes.com --provider-contracts
+```
+
+For storage, use the equivalent `.env.storage-contracts.op.tpl` profile from
+`production-storage-contracts.op.env.example` in a separate invocation. Each
+profile sets `RUN_EXTERNAL_PROVIDER_CONTRACTS=true` and contains only the
+selected provider group. Partial credential groups fail closed before any
+external provider request. If opt-in is absent or no complete group is
+available, the requested acceptance exits nonzero with a redacted diagnostic
+after the base homepage, health, unauthenticated GraphQL, and protected-jobs
+probes; it makes no request to Upstash or object storage. When enabled, the
+child provider suite round-trips disposable, namespaced Redis and private
+object-storage fixtures, deletes them in a failure-safe cleanup boundary,
+suppresses all child output, and reports provider labels only. R2 and generic
+S3 buckets must be pre-provisioned; the suite never creates an external bucket.
+Only isolated local MinIO may create a missing test bucket. A cleanup failure
+fails the acceptance run. This is destructive only to generated test
+keys/objects and must use an approved test bucket/database rather than
+irreplaceable data. External R2/S3 contracts additionally require both
+`STORAGE_BUCKET` and a distinct `TEST_STORAGE_BUCKET` named with the
+`humans-contract-...` convention. The test credential must be least-privilege
+and limited to that dedicated contract bucket; validation fails before a child
+process or provider client can start when this isolation contract is not met.
 
 The readiness endpoint and these lifecycle checks cover PostgreSQL, Redis, and
 object storage. They do not prove Resend delivery, OpenAI-compatible/Ollama
@@ -174,10 +187,12 @@ SHA/ID, aliases, timestamp, redacted outcomes, and provider labels.
 Administrator bootstrap is deliberately idempotent: changing `ADMIN_PASSWORD`
 does not silently overwrite an existing credential. If the configured hosted
 credential is unknown or stale, an operator with approved database-secret
-access must use the same reference-only template to inject the hosted
+access must use the recovery-only reference template to inject the hosted
 `DATABASE_URL` and four `ADMIN_*` values into the explicit recovery command:
 
 ```sh
+install -m 600 docs/operations/production-operator.op.env.example .env.operator.op.tpl
+$EDITOR .env.operator.op.tpl
 op run --env-file .env.operator.op.tpl -- \
   pnpm operator:rotate-admin-password
 ```

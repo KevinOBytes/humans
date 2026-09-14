@@ -12,13 +12,14 @@ whole-product acceptance requirements remain explicitly incomplete.
 
 Hosted acceptance-harness checkpoint (2026-09-14): the redacted production
 smoke now has an explicit `--authenticated` operator switch while accepting
-credentials only through the caller environment (the existing
-`PRODUCTION_SMOKE_AUTH=1` remains automation-compatible). It validates missing
-administrator variable names before any network call and collapses transport
-exceptions to a fixed request-path diagnostic, so values and credential-bearing
-URLs cannot enter smoke output. The focused contract suite passes; no hosted
-credential or external-provider run was performed, so the related release rows
-remain incomplete.
+credentials only through the caller environment or its dedicated mode-0600
+least-privilege template (the existing `PRODUCTION_SMOKE_AUTH=1` remains
+automation-compatible). Recovery, Upstash, and storage contract templates are
+separate. It validates missing administrator variable names before any network
+call and collapses transport exceptions to a fixed request-path diagnostic, so
+values and credential-bearing URLs cannot enter smoke output. The focused
+contract suite passes; no hosted credential or external-provider run was
+performed, so the related release rows remain incomplete.
 
 ## Expanded product scope
 
