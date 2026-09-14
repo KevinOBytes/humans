@@ -29,6 +29,12 @@ import {
 import { profilePageHref } from "@/lib/research-pagination";
 import { readVerifiedFieldSelections } from "@/lib/verified-field-selections";
 
+// Keep the reference picker inside the standard GraphQL complexity budget. A
+// larger page is technically valid at the connection boundary, but the
+// person option selection includes enough fields that it would reject the
+// whole record page once the default profile catalog is present.
+const PERSON_REFERENCE_OPTIONS_PAGE_SIZE = 25;
+
 export async function FactsSection({
   canCreate,
   canSelect,
@@ -155,7 +161,9 @@ export async function FactsSection({
   );
   const peopleOptions =
     canCreate && personReferenceDefinitions
-      ? await executeServerGraphQL(PeopleOptionsDocument, { first: 100 })
+      ? await executeServerGraphQL(PeopleOptionsDocument, {
+          first: PERSON_REFERENCE_OPTIONS_PAGE_SIZE,
+        })
       : null;
   const personOptions = (peopleOptions?.people.nodes ?? []).filter(
     (person) => person.id && person.displayName,
