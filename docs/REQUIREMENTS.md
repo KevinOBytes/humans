@@ -17,6 +17,18 @@ also run without `TEST_DATABASE_URL` and therefore executed only its
 configuration-independent subset; the full PostgreSQL/Redis/MinIO and hosted
 provider gates remain evidence requirements, not checked claims.
 
+Post-merge verification: GitHub Actions run `34811260101` passed all nine
+required jobs, including the full PostgreSQL/Redis/MinIO integration seam,
+browser acceptance, production build, generated drift, Compose lifecycle,
+image security, dependency policy, and secret scanning. Vercel deployment
+`dpl_27Rd1g28zgcDZp3RGk5kjkNjqyaa` is `READY` for the merged runtime and is
+aliased to `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. Anonymous public probes returned 200 for the
+homepage, liveness, and readiness routes; unauthenticated GraphQL returned the
+expected 401 `UNAUTHENTICATED` envelope with a correlation ID. These probes do
+not constitute hosted administrator sign-in, provider, recovery, or full
+role/resource acceptance.
+
 Current release checkpoint (2026-09-13): runtime commit `7826483` is deployed
 from `main`; checkpoint documentation is being synchronized with that runtime.
 GitHub Actions run `34784968632` passed all nine required jobs, and Vercel

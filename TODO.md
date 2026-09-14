@@ -16,6 +16,18 @@ external provider calls were made. The corresponding hosted, provider,
 whole-product browser/accessibility/performance, and full local integration
 rows remain explicitly open below.
 
+Post-merge evidence (2026-09-14): GitHub Actions run `34811260101` passed all
+nine required jobs, including real PostgreSQL/Redis/MinIO integration and
+browser acceptance. Vercel deployment
+`dpl_27Rd1g28zgcDZp3RGk5kjkNjqyaa` is `READY` and serves all three configured
+aliases: `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. Anonymous probes returned 200 for `/`,
+`/api/health/live`, and `/api/health/ready`; unauthenticated GraphQL returned
+the expected 401 `UNAUTHENTICATED` response with a request ID. This closes the
+merge/CI/deployment proof for the tranche only; hosted administrator auth,
+external providers, recovery, and the whole-product acceptance rows remain
+open.
+
 Current release checkpoint (2026-09-13): runtime commit `7826483` is deployed
 from `main`; checkpoint documentation is being synchronized with that runtime.
 GitHub Actions run `34784968632` passed all nine required jobs, and Vercel
