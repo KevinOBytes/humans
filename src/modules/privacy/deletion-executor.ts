@@ -15,19 +15,20 @@ import {
   personWebResearchRuns,
   personWebResearchSources,
 } from "@/db/schema/person-research";
-import { legalHolds } from "@/db/schema/workspaces";
+import { legalHolds, retentionPolicies } from "@/db/schema/workspaces";
 import { people } from "@/db/schema/people";
 import { newId } from "@/db/id";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import { ensureArchivedFileCleanupJob } from "@/modules/files/cleanup";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { planPersonArtifactDeletion } from "./artifact-retention";
-import { retentionRequestPolicyIsCurrent } from "./retention-request-policy";
+import { currentRetentionRequestPolicy } from "./retention-request-policy";
 
 const MAX_DELETION_BATCH = 100;
 const WORKER_ACTOR = "worker:deletion";
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const UNSUPPORTED_RETENTION_ACTIONS = new Set(["hard_delete", "anonymize"]);
 
 type DeletionScope = {
   personIds: readonly string[];
@@ -211,45 +212,49 @@ export async function executeApprovedDeletionRequests(input: {
         return;
       }
 
-      if (
-        governed &&
-        !(await retentionRequestPolicyIsCurrent(
+      let governedRetentionAction: string | null = null;
+      if (governed && governed.requesterId === "worker:retention") {
+        const currentPolicy = await currentRetentionRequestPolicy(
           {
             database: transaction as unknown as Database,
             workspaceId: request.workspaceId,
           },
           { ...governed, scope },
-        ))
-      ) {
-        const blockedMarker = "Deletion requires the current retention policy.";
-        if (request.reviewNotes !== blockedMarker) {
-          await transaction
-            .update(deletionRequests)
-            .set({
-              reviewNotes: blockedMarker,
-              updatedAt: now,
-              updatedBy: WORKER_ACTOR,
-              version: sql`${deletionRequests.version} + 1`,
-            })
-            .where(
-              and(
-                eq(deletionRequests.workspaceId, request.workspaceId),
-                eq(deletionRequests.id, request.id),
-                eq(deletionRequests.state, "approved"),
-                eq(deletionRequests.version, request.version),
-              ),
-            );
-          await auditRequest({
-            database: transaction as unknown as Database,
-            action: "deletion_request.blocked",
-            requestId,
-            resourceId: request.id,
-            workspaceId: request.workspaceId,
-            redactedDiff: { reason: "retention_policy_changed" },
-            outcome: "failure",
-          });
+        );
+        if (currentPolicy)
+          governedRetentionAction = currentPolicy.deletionBehavior;
+        if (!currentPolicy) {
+          const blockedMarker =
+            "Deletion requires the current retention policy.";
+          if (request.reviewNotes !== blockedMarker) {
+            await transaction
+              .update(deletionRequests)
+              .set({
+                reviewNotes: blockedMarker,
+                updatedAt: now,
+                updatedBy: WORKER_ACTOR,
+                version: sql`${deletionRequests.version} + 1`,
+              })
+              .where(
+                and(
+                  eq(deletionRequests.workspaceId, request.workspaceId),
+                  eq(deletionRequests.id, request.id),
+                  eq(deletionRequests.state, "approved"),
+                  eq(deletionRequests.version, request.version),
+                ),
+              );
+            await auditRequest({
+              database: transaction as unknown as Database,
+              action: "deletion_request.blocked",
+              requestId,
+              resourceId: request.id,
+              workspaceId: request.workspaceId,
+              redactedDiff: { reason: "retention_policy_changed" },
+              outcome: "failure",
+            });
+          }
+          return;
         }
-        return;
       }
 
       const personRows = scope.personIds.length
@@ -648,6 +653,68 @@ export async function executeApprovedDeletionRequests(input: {
             outcome: "failure",
           });
         }
+        return;
+      }
+
+      let unsupportedRetentionAction = UNSUPPORTED_RETENTION_ACTIONS.has(
+        governedRetentionAction ?? "",
+      )
+        ? governedRetentionAction
+        : null;
+      if (!unsupportedRetentionAction) {
+        const scopedKinds = [
+          ...(scope.personIds.length ? ["person"] : []),
+          ...(scope.fileIds.length ? ["file"] : []),
+        ] as const;
+        const configuredPolicies = await transaction
+          .select({
+            deletionBehavior: retentionPolicies.deletionBehavior,
+            resourceKind: retentionPolicies.resourceKind,
+          })
+          .from(retentionPolicies)
+          .where(
+            and(
+              eq(retentionPolicies.workspaceId, request.workspaceId),
+              inArray(retentionPolicies.resourceKind, scopedKinds),
+              isNull(retentionPolicies.deletedAt),
+            ),
+          );
+        unsupportedRetentionAction =
+          configuredPolicies.find((policy) =>
+            UNSUPPORTED_RETENTION_ACTIONS.has(policy.deletionBehavior),
+          )?.deletionBehavior ?? null;
+      }
+      if (unsupportedRetentionAction) {
+        await transaction
+          .update(deletionRequests)
+          .set({
+            state: "rejected",
+            reviewNotes:
+              "The configured retention action is not supported for this resource.",
+            updatedAt: now,
+            updatedBy: WORKER_ACTOR,
+            version: sql`${deletionRequests.version} + 1`,
+          })
+          .where(
+            and(
+              eq(deletionRequests.workspaceId, request.workspaceId),
+              eq(deletionRequests.id, request.id),
+              eq(deletionRequests.state, "approved"),
+              eq(deletionRequests.version, request.version),
+            ),
+          );
+        await auditRequest({
+          database: transaction as unknown as Database,
+          action: "deletion_request.rejected",
+          requestId,
+          resourceId: request.id,
+          workspaceId: request.workspaceId,
+          redactedDiff: {
+            deletionBehavior: unsupportedRetentionAction,
+            reason: "retention_action_unsupported",
+          },
+          outcome: "failure",
+        });
         return;
       }
 

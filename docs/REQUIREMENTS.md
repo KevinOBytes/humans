@@ -587,6 +587,17 @@ review disposition, external propagation, and hosted/browser acceptance remain
 intentionally open; this bounded checkpoint does not close `HUM-FR-005` or the
 complete retention-policy matrix.
 
+Governed retention-action checkpoint (2026-09-14): approved deletion requests
+now re-read the workspace policy under the existing advisory lock before any
+resource mutation. `hard_delete` and `anonymize` actions are accepted into the
+durable review/fulfillment boundary only far enough to be explicitly rejected
+with a redacted immutable audit event because no current resource kind has a
+safe, provenance-preserving executor. Active legal holds, unavailable scopes,
+stale worker policy snapshots, workspace boundaries, and repeat execution remain
+fenced; soft-delete behavior and processor propagation are unchanged. Focused
+coverage includes hard-delete/anonymize rejection and unchanged person state.
+No hard-delete or anonymization requirement is marked complete.
+
 Task 3 local checkpoint (2026-09-11): AI proposals are retained in `ai_review_suggestions` with versioned typed values, source/evidence references, confidence, uncertainty, provider/model, originating run, and prompt-policy version. Explicit human accept/reject/defer and approved batch decisions retain the original proposal and link accepted resources back to that record. Current workspace, case, source visibility and purpose coverage for AI/write are checked before acceptance; fact/relationship writes and Task 2 evidence assertions share the decision transaction. AI-created relationships remain inferred; acceptance is not independent evidence approval or an adverse decision. This supersedes the older web-research description below: the browser no longer sends AI suggestions directly to `UpdatePerson`, and original proposals are not editable in the review queue. Focused validation/queue tests, updated panel tests, and gated `ai-review-lifecycle.test.ts` cover this boundary. Live PostgreSQL/browser/provider verification, retention deletion/expiry for retained provenance, and HUM-FR-023 closure remain open.
 
 Catalog-backed web-fact checkpoint (2026-09-13): a consented web-research run may draft active workspace text fact definitions alongside its allowlisted profile values. Only catalog metadata (UUID, namespace/key, label, category) is exposed to the provider; returned definition IDs and HTTPS source URLs are validated against the active catalog and immutable per-run source snapshots before a pending review record is stored. The existing independent human accept/reject/defer controls create an ordinary `human_reviewed_ai` fact only after acceptance and retain the source/run provenance in the review ledger. This intentionally excludes date, JSON, sensitive/contact/address/identifier fields and web-derived relationships. Focused unit tests cover catalog filtering and provenance validation. Live provider/browser verification, retention expiry, and direct source-to-evidence-assertion linkage remain release work; HUM-FR-023 remains Incomplete.
