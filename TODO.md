@@ -983,3 +983,13 @@ correctly retained the pending row. The generated GraphQL acceptance test now
 covers a keyed AI accept, and the focused local Chromium journey passes. A
 fresh GitHub browser run is still required before marking the hosted/browser
 acceptance row complete.
+
+Production verification update (2026-09-14): GitHub Actions run
+`34808092914` passed all nine required jobs for `2d98844`, including browser
+acceptance and the real PostgreSQL/Redis integration matrix. That verified
+commit was deployed with Vercel deployment `dpl_EXaYm1EtkHrLNBDhxohU62hcHxe3`
+(`READY`) and aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. The deployment build completed with Next.js
+16.3.4. Hosted authenticated sign-in, administrator bootstrap, and live
+external-provider acceptance remain intentionally open because provider
+secrets are not exported or printed by this closeout.
