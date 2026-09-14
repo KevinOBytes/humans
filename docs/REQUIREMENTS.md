@@ -1,5 +1,22 @@
 # MVP requirements
 
+## Current closure tranche (2026-09-14)
+
+The current `main` tree includes the production-closure tranche in commits
+`a1eab94`, `142a1cb`, `a9352f4`, and `deec37d`. The tranche adds exact opaque
+replay-reference validation and a real-PostgreSQL idempotency matrix for
+person names/events; a shared stable, correlated, secret-free direct-route
+error envelope with `private, no-store`; and a credential-safe hosted smoke
+harness with explicit authentication opt-in. The operator runbook now creates
+ignored credential templates with mode `0600` and separates authentication,
+recovery, Upstash, and storage profiles by least privilege. Independent task
+reviews approved all three changes. Local Node 24 verification passed
+formatting, lint, typecheck, Drizzle checks, generated Better Auth/GraphQL
+checks, 1,559 unit tests, and the production build. The database command was
+also run without `TEST_DATABASE_URL` and therefore executed only its
+configuration-independent subset; the full PostgreSQL/Redis/MinIO and hosted
+provider gates remain evidence requirements, not checked claims.
+
 Current release checkpoint (2026-09-13): runtime commit `7826483` is deployed
 from `main`; checkpoint documentation is being synchronized with that runtime.
 GitHub Actions run `34784968632` passed all nine required jobs, and Vercel

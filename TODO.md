@@ -1,5 +1,21 @@
 # MVP closure and production hardening backlog
 
+## Current closure tranche (2026-09-14)
+
+Commits `a1eab94`, `142a1cb`, `a9352f4`, and `deec37d` are merged on local
+`main` and cover three independently reviewed hardening tasks: exact
+person-name/event replay references with a real-PostgreSQL matrix; stable
+correlated direct-route failures with no-store and secret-free diagnostics;
+and an explicit, redacted hosted-auth smoke path. Operator credential
+templates are now mode `0600` and split into least-privilege authentication,
+recovery, Upstash, and storage profiles. Node 24 local gates passed formatting,
+lint, typecheck, Drizzle/schema checks, generated checks, 1,559 unit tests, and
+the production build. `pnpm test:db` was run without `TEST_DATABASE_URL`, so
+only its configuration-independent subset executed; no hosted credentials or
+external provider calls were made. The corresponding hosted, provider,
+whole-product browser/accessibility/performance, and full local integration
+rows remain explicitly open below.
+
 Current release checkpoint (2026-09-13): runtime commit `7826483` is deployed
 from `main`; checkpoint documentation is being synchronized with that runtime.
 GitHub Actions run `34784968632` passed all nine required jobs, and Vercel
