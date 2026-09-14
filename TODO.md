@@ -749,7 +749,7 @@ canonical retention service and therefore share resource visibility, workspace
 fencing, redacted immutable audit, optimistic versions, independent release,
 and principal-bound replay. The deletion worker rejects orphaned approved rows
 and governed rows missing the complete configured processor set. The focused
-PostgreSQL 18 matrix passes 35/35 across settings, privacy lifecycle, and
+PostgreSQL 18 matrix passes 36/36 across settings, privacy lifecycle, and
 retention/legal holds. Keep HUM-FR-005/HUM-NFR-008 open pending external
 processor, hosted, browser, and full-role/resource acceptance; hard delete and
 anonymization remain disabled.

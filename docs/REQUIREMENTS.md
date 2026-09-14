@@ -697,7 +697,7 @@ canonical retention service, including resource visibility, workspace fencing,
 immutable audit, optimistic versions, independent release, and principal-bound
 replay. The deletion worker terminally rejects approved queue rows without a
 current canonical parent or the complete configured processor-row set. Focused
-PostgreSQL 18 coverage passes 35 cases across settings, privacy lifecycle, and
+PostgreSQL 18 coverage passes 36 cases across settings, privacy lifecycle, and
 retention/legal holds. Hard delete and anonymization remain unavailable, and
 external-provider/browser/hosted privacy acceptance remains open; HUM-FR-005
 and HUM-NFR-008 remain incomplete.

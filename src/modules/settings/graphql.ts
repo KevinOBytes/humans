@@ -899,7 +899,9 @@ export function registerSettingsGraphQL(): void {
         requirePermission(context, "workspace", "update");
         const hold = await context.services.retention.createLegalHold({
           ...args.input,
-          resourceKind: args.input.resourceKind as PrivacyResourceKind,
+          resourceKind: args.input.resourceKind
+            .trim()
+            .toLowerCase() as PrivacyResourceKind,
         });
         return {
           code: "APPLIED" as const,

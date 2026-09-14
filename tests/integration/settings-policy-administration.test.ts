@@ -1495,10 +1495,10 @@ liveDescribe("settings policy administration", () => {
       .select({ state: deletionRequests.state })
       .from(deletionRequests)
       .where(eq(deletionRequests.workspaceId, owner.workspaceId));
-    expect(rawRows).toEqual([
-      { state: "requested" },
-      { state: "requested" },
-      { state: "requested" },
+    expect(rawRows.map((row) => row.state).sort()).toEqual([
+      "requested",
+      "requested",
+      "requested",
     ]);
     expect(
       await fixture.database
@@ -1512,6 +1512,226 @@ liveDescribe("settings policy administration", () => {
         .from(privacyProcessorPropagations)
         .where(eq(privacyProcessorPropagations.workspaceId, owner.workspaceId)),
     ).toHaveLength(0);
+  });
+
+  it("replays every governed settings deletion step without duplicating canonical effects", async () => {
+    const owner = await fixture.createActor();
+    const reviewer = await fixture.createWorkspaceMember(owner, "admin");
+    const otherReviewer = await fixture.createWorkspaceMember(owner, "admin");
+    const foreign = await fixture.createActor();
+    const subject = await fixture.execute<{
+      createPerson: { person: { id: string } | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input: { displayName: "Governed settings subject" } },
+    });
+    const subjectId = subject.body?.data?.createPerson.person?.id;
+    if (!subjectId) throw new Error("Missing governed settings subject");
+    const foreignSubject = await fixture.execute<{
+      createPerson: { person: { id: string } | null };
+    }>({
+      jar: foreign.jar,
+      operationName: "CreatePerson",
+      query: CreatePersonDocument,
+      variables: { input: { displayName: "Foreign governed subject" } },
+    });
+    const foreignSubjectId = foreignSubject.body?.data?.createPerson.person?.id;
+    if (!foreignSubjectId) throw new Error("Missing foreign governed subject");
+
+    const evidenceId = newId();
+    await fixture.database.insert(files).values({
+      id: evidenceId,
+      workspaceId: owner.workspaceId,
+      storageProvider: "s3",
+      storageBucket: "test",
+      storageKey: `privacy-verification/${evidenceId}`,
+      originalName: "governed-settings-verification.txt",
+      byteSize: 1,
+      checksum: "a".repeat(64),
+      quarantineState: "available",
+      scanState: "clean",
+      uploadedBy: owner.userId,
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+
+    const createInput = {
+      personIds: [subjectId],
+      dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+      idempotencyKey: "settings-governed-deletion-create-replay",
+      requestType: "DELETION",
+    };
+    const create = () =>
+      fixture.execute<{
+        createPrivacyRequest: {
+          auditReference: string;
+          id: string;
+          state: string;
+          version: number;
+        };
+      }>({
+        jar: owner.jar,
+        operationName: "CreateGovernedDeletionRequestFromSettings",
+        query: CreateGovernedDeletionRequestFromSettingsDocument,
+        variables: { input: createInput },
+      });
+    const created = await create();
+    expect(created.body?.errors).toBeUndefined();
+    const createdRequest = created.body?.data?.createPrivacyRequest;
+    expect(createdRequest).toMatchObject({ state: "requested", version: 1 });
+    if (!createdRequest) throw new Error("Missing governed settings request");
+    expect((await create()).body?.data?.createPrivacyRequest).toEqual(
+      createdRequest,
+    );
+
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateGovernedDeletionRequestFromSettings",
+        query: CreateGovernedDeletionRequestFromSettingsDocument,
+        variables: {
+          input: {
+            ...createInput,
+            idempotencyKey: "settings-governed-foreign-scope",
+            personIds: [foreignSubjectId],
+          },
+        },
+      }),
+      "NOT_FOUND",
+    );
+
+    const reviewVariables = {
+      expectedVersion: createdRequest.version,
+      id: createdRequest.id,
+      idempotencyKey: "settings-governed-deletion-review-replay",
+      state: "APPROVED",
+      verificationEvidenceId: evidenceId,
+    };
+    const review = () =>
+      fixture.execute<{
+        reviewPrivacyRequest: {
+          auditReference: string;
+          id: string;
+          state: string;
+          version: number;
+        };
+      }>({
+        jar: reviewer.jar,
+        operationName: "ReviewGovernedDeletionRequestFromSettings",
+        query: ReviewGovernedDeletionRequestFromSettingsDocument,
+        variables: reviewVariables,
+      });
+    const reviewed = await review();
+    expect(reviewed.body?.errors).toBeUndefined();
+    const reviewedRequest = reviewed.body?.data?.reviewPrivacyRequest;
+    expect(reviewedRequest).toMatchObject({ state: "approved", version: 2 });
+    if (!reviewedRequest) throw new Error("Missing governed settings review");
+    expect((await review()).body?.data?.reviewPrivacyRequest).toEqual(
+      reviewedRequest,
+    );
+
+    const fulfillVariables = {
+      expectedVersion: reviewedRequest.version,
+      id: reviewedRequest.id,
+      idempotencyKey: "settings-governed-deletion-fulfill-replay",
+    };
+    const fulfill = (
+      jar: Awaited<ReturnType<ResearchFixture["createActor"]>>["jar"],
+    ) =>
+      fixture.execute<{
+        fulfillPrivacyRequest: {
+          auditReference: string;
+          id: string;
+          state: string;
+          version: number;
+        };
+      }>({
+        jar,
+        operationName: "FulfillGovernedDeletionRequestFromSettings",
+        query: FulfillGovernedDeletionRequestFromSettingsDocument,
+        variables: fulfillVariables,
+      });
+    const fulfilled = await fulfill(reviewer.jar);
+    expect(fulfilled.body?.errors).toBeUndefined();
+    const fulfilledRequest = fulfilled.body?.data?.fulfillPrivacyRequest;
+    expect(fulfilledRequest).toMatchObject({
+      state: "fulfilling",
+      version: 3,
+    });
+    if (!fulfilledRequest)
+      throw new Error("Missing governed settings fulfillment");
+    expect(
+      (await fulfill(reviewer.jar)).body?.data?.fulfillPrivacyRequest,
+    ).toEqual(fulfilledRequest);
+    expectGraphQLError(await fulfill(otherReviewer.jar), "CONFLICT");
+
+    const canonicalRows = await fixture.database
+      .select({
+        id: privacyRequests.id,
+        legacyDeletionRequestId: privacyRequests.legacyDeletionRequestId,
+        state: privacyRequests.state,
+      })
+      .from(privacyRequests)
+      .where(eq(privacyRequests.workspaceId, owner.workspaceId));
+    expect(canonicalRows).toEqual([
+      {
+        id: createdRequest.id,
+        legacyDeletionRequestId: expect.any(String),
+        state: "fulfilling",
+      },
+    ]);
+    const rawRows = await fixture.database
+      .select({
+        id: deletionRequests.id,
+        state: deletionRequests.state,
+      })
+      .from(deletionRequests)
+      .where(eq(deletionRequests.workspaceId, owner.workspaceId));
+    expect(rawRows).toEqual([
+      {
+        id: canonicalRows[0]?.legacyDeletionRequestId,
+        state: "approved",
+      },
+    ]);
+    const processorRows = await fixture.database
+      .select({
+        privacyRequestId: privacyProcessorPropagations.privacyRequestId,
+        processor: privacyProcessorPropagations.processor,
+      })
+      .from(privacyProcessorPropagations)
+      .where(eq(privacyProcessorPropagations.workspaceId, owner.workspaceId));
+    expect(
+      processorRows.map((row) => ({
+        privacyRequestId: row.privacyRequestId,
+        processor: row.processor,
+      })),
+    ).toEqual(
+      expect.arrayContaining(
+        ["ai_provider", "cache", "email", "files", "search"].map(
+          (processor) => ({
+            privacyRequestId: createdRequest.id,
+            processor,
+          }),
+        ),
+      ),
+    );
+    expect(processorRows).toHaveLength(5);
+    const requestAudits = await fixture.database
+      .select({ action: auditEvents.action })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, owner.workspaceId),
+          eq(auditEvents.resourceId, createdRequest.id),
+        ),
+      );
+    expect(requestAudits.map((row) => row.action).sort()).toEqual([
+      "privacy.request.created",
+      "privacy.request.fulfillment_started",
+      "privacy.request.reviewed",
+    ]);
   });
 
   it("delegates legal holds to canonical visibility, audit, replay, and independent release", async () => {
@@ -1532,7 +1752,7 @@ liveDescribe("settings policy administration", () => {
       idempotencyKey: "canonical-settings-hold-create",
       reason: "Preservation review",
       resourceId: personId,
-      resourceKind: "person",
+      resourceKind: " PERSON ",
     };
     const created = await fixture.execute<{
       createLegalHold: {
@@ -1552,6 +1772,11 @@ liveDescribe("settings policy administration", () => {
     expect(hold).toMatchObject({ code: "APPLIED", version: 1 });
     const holdId = hold?.id;
     if (!holdId) throw new Error("Missing canonical hold");
+    const [storedHold] = await fixture.database
+      .select({ resourceKind: legalHolds.resourceKind })
+      .from(legalHolds)
+      .where(eq(legalHolds.id, holdId));
+    expect(storedHold?.resourceKind).toBe("person");
     const replay = await fixture.execute({
       jar: owner.jar,
       operationName: "CreateLegalHold",
@@ -1632,6 +1857,21 @@ liveDescribe("settings policy administration", () => {
         },
       }),
       "NOT_FOUND",
+    );
+    expectGraphQLError(
+      await fixture.execute({
+        jar: owner.jar,
+        operationName: "CreateLegalHold",
+        query: CreateLegalHoldDocument,
+        variables: {
+          input: {
+            ...input,
+            idempotencyKey: "canonical-settings-invalid-hold-kind",
+            resourceKind: " person! ",
+          },
+        },
+      }),
+      "VALIDATION_FAILED",
     );
   });
 
