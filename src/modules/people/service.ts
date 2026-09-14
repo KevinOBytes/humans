@@ -708,6 +708,8 @@ export function createPeopleService(context: ResearchServiceContext) {
     const candidateId = responseReference.identityCandidateId;
     const version = responseReference.version;
     if (
+      Object.keys(responseReference).sort().join(":") !==
+        "identityCandidateId:version" ||
       typeof candidateId !== "string" ||
       !PERSON_REFERENCE_UUID.test(candidateId) ||
       typeof version !== "number" ||
