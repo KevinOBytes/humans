@@ -121,8 +121,10 @@ principals and therefore need an explicit linked scope. A disposable PostgreSQL
 nine tests, including owner/admin manager point-read/list, lead,
 linked-case-member, linked-team-member, explicitly shared API-key,
 foreign-workspace, archived-team, and unrelated reader point-read/list
-boundaries across two linked cases. Hosted and broader role/resource acceptance
-remain open, so the governing requirements stay incomplete.
+boundaries across two linked cases. The matrix asserts exact manager IDs and
+terminal page information, including neutral empty-list cursors for hidden
+readers. Hosted and broader role/resource acceptance remain open, so the
+governing requirements stay incomplete.
 
 Identifier citation boundary checkpoint (2026-09-13): public person identifier
 citations reuse `linkEvidenceAssertion` with the canonical field path
