@@ -1676,3 +1676,25 @@ commit was deployed with Vercel deployment `dpl_EXaYm1EtkHrLNBDhxohU62hcHxe3`
 16.3.4. Hosted authenticated sign-in, administrator bootstrap, and live
 external-provider acceptance remain intentionally open because provider
 secrets are not exported or printed by this closeout.
+
+Acceptance-closure tranche verification (2026-09-14): pushed `main` commit
+`e54555c` passes GitHub Actions run `34844791102` with all nine required jobs:
+quality (1,561 unit tests), browser acceptance, PostgreSQL/Redis/MinIO
+integration, isolated Compose lifecycle, production build, generated drift,
+image security, dependency policy, and secret scanning. The merged tranche
+closes the reviewed presentation-replay principal fence, the webhook delivery
+transport rebinding/redirect/response-drain boundary and lifecycle matrix,
+and the governed profile evidence/confidence/updater presentation surface.
+Deterministic test fixture fingerprints are documented individually in
+`.gitleaksignore`; no credential material is present. The exact checkout was
+manually deployed as Vercel `dpl_GgUYyHMw6SNwKHV67aK2DwkeLYEu` (`READY`) with
+aliases for `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`; the build completed with Next.js 16.3.4.
+Fresh public probes returned 200 for `/`, `/sign-in`, `/api/health/live`, and
+`/api/health/ready`, all with private/no-store and correlation headers; an
+unauthenticated POST to `/api/graphql` returned the expected `UNAUTHENTICATED`
+contract. This evidence applies to the merged tranche only. Hosted
+administrator authentication/bootstrap, live Resend/R2/S3/Upstash/OpenAI/
+Ollama contracts, complete role/resource/redaction/performance matrices, and
+the remaining incomplete requirements must still be closed with their own
+runtime evidence before the project can be called fully production-complete.

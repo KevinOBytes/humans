@@ -1032,3 +1032,23 @@ commit was deployed with Vercel deployment `dpl_EXaYm1EtkHrLNBDhxohU62hcHxe3`
 16.3.4. Hosted authenticated sign-in, administrator bootstrap, and live
 external-provider acceptance remain intentionally open because provider
 secrets are not exported or printed by this closeout.
+
+Acceptance-closure tranche verification (2026-09-14): pushed `main` commit
+`e54555c` passes GitHub Actions run `34844791102` with all nine required jobs:
+quality (1,561 unit tests), browser acceptance, PostgreSQL/Redis/MinIO
+integration, isolated Compose lifecycle, production build, generated drift,
+image security, dependency policy, and secret scanning. The tranche adds
+principal-bound presentation replay fencing, DNS-pinned and non-redirecting
+webhook delivery with response draining, a complete webhook failure/retry
+matrix, governed profile provenance/confidence/updater presentation, and
+reviewed synthetic Gitleaks history suppressions. It was deployed manually as
+Vercel `dpl_GgUYyHMw6SNwKHV67aK2DwkeLYEu` (`READY`) with aliases for
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`; the Vercel build used Next.js 16.3.4.
+Fresh public probes returned 200 for `/`, `/sign-in`, `/api/health/live`, and
+`/api/health/ready`, with private/no-store and correlation headers; an
+unauthenticated POST to `/api/graphql` returned the expected `UNAUTHENTICATED`
+contract. This is verified release evidence for the merged tranche, not full
+MVP closure: hosted administrator sign-in/bootstrap, external Resend/R2/S3/
+Upstash/OpenAI/Ollama contracts, full role/resource/redaction/performance
+matrices, and the other incomplete rows above remain open.
