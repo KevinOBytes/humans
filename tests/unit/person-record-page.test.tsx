@@ -95,6 +95,10 @@ describe("PersonRecordPage overview editing", () => {
     });
     expect(provenance).toHaveTextContent("72%");
     expect(provenance).toHaveTextContent(
+      "Analyst-entered confidence describes this record-level assessment.",
+    );
+    expect(provenance).not.toHaveTextContent(/source agreement/iu);
+    expect(provenance).toHaveTextContent(
       "Two independently reviewed archives agree.",
     );
     expect(provenance).toHaveTextContent("Morgan Reviewer");
