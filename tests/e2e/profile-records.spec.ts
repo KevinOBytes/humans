@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { eq } from "drizzle-orm";
 
+import { users } from "@/db/schema/auth";
 import { useFragment as readFragment } from "@/graphql/generated/fragment-masking";
 import {
   PersonEventsDocument,
@@ -62,12 +64,18 @@ test("fictional profile names and events persist through keyboard editing and ar
   const owner = await fixture.createActor();
   const viewer = await fixture.createWorkspaceMember(owner, "viewer");
   const outsider = await fixture.createActor();
+  const updaterLabel = `FictionalProfileReviewer${"z".repeat(120)}`;
+  const confidenceRationale =
+    "Two consented fictional archive sources were reviewed.";
+  await fixture.database
+    .update(users)
+    .set({ name: updaterLabel })
+    .where(eq(users.id, owner.userId));
   const result = await fixture.createPerson(owner, {
     displayName: "Fictional Morgan Archive",
     biography: "Synthetic consent-based browser acceptance record.",
     confidence: 0.73,
-    confidenceExplanation:
-      "Two consented fictional archive sources were reviewed.",
+    confidenceExplanation: confidenceRationale,
   });
   const personId = result.body?.data?.createPerson?.person?.id;
   if (!personId) throw new Error("Fictional profile was not created");
@@ -78,9 +86,8 @@ test("fictional profile names and events persist through keyboard editing and ar
   ).toBeVisible();
   const provenance = page.getByRole("region", { name: "Record provenance" });
   await expect(provenance).toContainText("73%");
-  await expect(provenance).toContainText(
-    "Two consented fictional archive sources were reviewed.",
-  );
+  await expect(provenance).toContainText(confidenceRationale);
+  await expect(provenance).toContainText(updaterLabel);
   await expect(provenance.getByText("Created", { exact: true })).toBeVisible();
   await expect(provenance.getByText("Updated", { exact: true })).toBeVisible();
   await expectAccessibleReflow(page);
@@ -115,12 +122,14 @@ test("fictional profile names and events persist through keyboard editing and ar
   await expect(timeline).toContainText("Jan 2, 2020");
   await expect(timeline).toContainText("May 3, 2024");
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(provenance).toContainText(updaterLabel);
   await expectAccessibleReflow(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.evaluate(() => {
     document.documentElement.dir = "rtl";
     document.documentElement.style.zoom = "2";
   });
+  await expect(provenance).toContainText(updaterLabel);
   await expectAccessibleReflow(page);
 
   const nameRow = names.getByRole("listitem").filter({
@@ -243,8 +252,16 @@ test("fictional profile names and events persist through keyboard editing and ar
     expect(deniedPayload).toBeDefined();
     expect(deniedPayload).not.toContain("Morgan Reviewed Alias");
     expect(deniedPayload).not.toContain("Reviewed fictional archive studies.");
+    expect(deniedPayload).not.toContain(confidenceRationale);
+    expect(deniedPayload).not.toContain(updaterLabel);
     await expect(
       outsiderPage.getByText("Morgan Reviewed Alias", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      outsiderPage.getByText(confidenceRationale, { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      outsiderPage.getByText(updaterLabel, { exact: true }),
     ).toHaveCount(0);
   } finally {
     await viewerContext.close();

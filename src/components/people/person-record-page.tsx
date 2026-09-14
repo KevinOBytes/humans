@@ -124,8 +124,7 @@ export async function PersonRecordPage({
             Record provenance
           </h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Confidence applies to the record&apos;s evidence coverage and source
-            agreement.
+            Analyst-entered confidence describes this record-level assessment.
           </p>
           <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div className="min-w-0">
