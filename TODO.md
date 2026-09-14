@@ -963,3 +963,13 @@ replace them when decision material or batch membership changes. The ledger
 stores only suggestion identifiers, versions and statuses. This is bounded
 evidence for HUM-NFR-008; other mutation families and hosted/provider acceptance
 remain open.
+
+Merged provenance/provider hardening verification (2026-09-14): `main` now
+contains the reviewed AI retry, relationship evidence-gate, external bucket
+isolation, and migration-count contract changes. Local Node 24.19.0 gates pass:
+1,556 unit tests, formatting, lint, TypeScript, Drizzle check/drift, and the
+production build. The supported PostgreSQL 18.3/Redis matrix passes 46 files
+and 651 tests with five documented skips, followed by the three focused AI
+retention tests. Temporary synthetic containers and all obsolete local
+worktrees/branches were removed. GitHub CI, hosted authenticated acceptance,
+and live external-provider contracts still require their normal remote runs.
