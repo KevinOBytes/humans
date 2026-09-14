@@ -109,6 +109,17 @@ GraphQL. Existing workspace- and case-scoped queues remain compatible. Focused
 schema and service tests cover the contract; hosted/provider and whole-role
 acceptance remain tracked as incomplete.
 
+Bounded investigation-read authorization checkpoint (2026-09-13): generated
+investigation reads now apply the same information-sharing boundary as the
+assignment queue. Workspace owners/administrators retain workspace visibility;
+other principals must lead the investigation, belong to a linked case, or
+belong to a team with an active linked-case share. The predicate is applied in
+both point reads and paginated lists, so unrelated readers cannot infer an
+investigation from list membership. API-key principals remain non-manager
+principals and therefore need an explicit linked scope. Focused unit coverage
+passes; live PostgreSQL, hosted, and full role/resource matrix evidence remain
+open, so the governing requirements stay incomplete.
+
 Identifier citation boundary checkpoint (2026-09-13): public person identifier
 citations reuse `linkEvidenceAssertion` with the canonical field path
 `identifiers.<uuid>.v<version>.<field>`. The service verifies the actual active
