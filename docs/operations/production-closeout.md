@@ -106,6 +106,23 @@ names, provider labels, and correlation IDs only. Response bodies, account or
 workspace identifiers, credentials, cookies, provider payloads, person values,
 TOTP values, and backup codes are never printed.
 
+An operator may also request a non-network environment-name contract before the
+public probes:
+
+```sh
+pnpm production:smoke -- --base-url https://humans.kevinbytes.com --environment-contract
+```
+
+This checks that the runtime, authentication, administrator recovery, Redis,
+storage, Resend, and selected AI provider variable groups are complete. It
+reports only missing variable names and configured provider labels. It does not
+contact or authenticate to a provider and is therefore configuration evidence,
+not provider acceptance. The runtime recognizes Vercel marketplace aliases
+`POSTGRES_URL`, `KV_URL`, and `OPENAI_API_KEY` only when the canonical
+`DATABASE_URL`, `REDIS_URL`, or `AI_API_KEY` respectively is absent. Canonical
+variables always take precedence; OpenRouter's existing `OPEN_ROUTER_KEY` alias
+remains limited to the compatible OpenRouter endpoint.
+
 For production authentication, use a secret manager to inject values only into
 the child process. The repository includes a reference-only 1Password template;
 copy it to an ignored file and edit only its `op://` references:
@@ -143,9 +160,11 @@ network request when neither or both are injected.
 Provider lifecycle contracts are separately opt-in and never share the
 authenticated-smoke credential profile. Use exactly one dedicated provider
 template/invocation per provider: `production-upstash-contracts.op.env.example`
-for Upstash REST, or `production-storage-contracts.op.env.example` for an
-S3-compatible target. For Upstash, create and use only its ignored private
-profile:
+for Upstash REST, `production-storage-contracts.op.env.example` for an
+S3-compatible target, `production-ai-contracts.op.env.example` for OpenAI or a
+compatible endpoint, or `production-resend-contracts.op.env.example` for one
+approved acceptance mailbox. For Upstash, create and use only its ignored
+private profile:
 
 ```sh
 install -m 600 docs/operations/production-upstash-contracts.op.env.example .env.upstash-contracts.op.tpl
@@ -154,17 +173,23 @@ op run --env-file .env.upstash-contracts.op.tpl -- \
   pnpm production:smoke -- --base-url https://humans.kevinbytes.com --provider-contracts
 ```
 
-For storage, use the equivalent `.env.storage-contracts.op.tpl` profile from
-`production-storage-contracts.op.env.example` in a separate invocation. Each
+For storage, AI, and Resend, use equivalent mode-0600 ignored profiles copied
+from their reference templates in separate invocations. The AI lifecycle sends
+one bounded request through the production adapter and requires a structured
+answer. The Resend lifecycle sends one idempotent, fictional acceptance message
+to the explicitly configured recipient. Local Ollama remains covered by the
+separate opt-in Compose procedure; the AI contract runner also accepts a
+loopback Ollama endpoint for controlled acceptance. Each
 profile sets `RUN_EXTERNAL_PROVIDER_CONTRACTS=true` and contains only the
 selected provider group. Partial credential groups fail closed before any
 external provider request. If opt-in is absent or no complete group is
 available, the requested acceptance exits nonzero with a redacted diagnostic
 after the base homepage, health, unauthenticated GraphQL, and protected-jobs
-probes; it makes no request to Upstash or object storage. When enabled, the
-child provider suite round-trips disposable, namespaced Redis and private
-object-storage fixtures, deletes them in a failure-safe cleanup boundary,
-suppresses all child output, and reports provider labels only. R2 and generic
+probes; it makes no provider request. When enabled, the child provider suite
+round-trips disposable, namespaced Redis and private object-storage fixtures,
+performs only the selected AI/email check, deletes storage fixtures in a
+failure-safe cleanup boundary, suppresses all child output, and reports provider
+labels only. R2 and generic
 S3 buckets must be pre-provisioned; the suite never creates an external bucket.
 Only isolated local MinIO may create a missing test bucket. A cleanup failure
 fails the acceptance run. This is destructive only to generated test
@@ -175,10 +200,11 @@ irreplaceable data. External R2/S3 contracts additionally require both
 and limited to that dedicated contract bucket; validation fails before a child
 process or provider client can start when this isolation contract is not met.
 
-The readiness endpoint and these lifecycle checks cover PostgreSQL, Redis, and
-object storage. They do not prove Resend delivery, OpenAI-compatible/Ollama
-generation, or web-search results; keep those provider rows unverified until
-their dedicated attended acceptance is recorded. The harness is evidence
+The readiness endpoint covers PostgreSQL, Redis, and object storage. AI, Resend,
+Upstash REST, and external storage are proven only when their dedicated,
+explicitly opted-in lifecycle invocation succeeds and the attended evidence is
+recorded; environment-name checks alone do not prove them. Web-search results
+remain outside this provider contract. The harness is evidence
 collection, not a deployment command. Record only the exact Ready deployment
 SHA/ID, aliases, timestamp, redacted outcomes, and provider labels.
 

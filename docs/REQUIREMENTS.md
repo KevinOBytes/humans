@@ -1698,6 +1698,18 @@ commit was deployed with Vercel deployment `dpl_EXaYm1EtkHrLNBDhxohU62hcHxe3`
 external-provider acceptance remain intentionally open because provider
 secrets are not exported or printed by this closeout.
 
+Provider-acceptance harness checkpoint (2026-09-14): the redacted production
+smoke now inventories the complete runtime/authentication/recovery/provider
+environment contract without returning values, recognizes documented Vercel
+marketplace aliases only as fallbacks, and keeps canonical names authoritative.
+Explicitly opted-in external contracts can exercise the production AI and
+Resend adapters in addition to Upstash REST and isolated R2/S3 storage; each
+provider receives only its dedicated variables in a child process whose output
+is suppressed. A controlled loopback boundary proves both new adapter paths.
+This is harness and local contract evidence only. No live external provider,
+hosted administrator sign-in, or recovery action was run, so their incomplete
+requirements remain open.
+
 Acceptance-closure tranche verification (2026-09-14): pushed `main` commit
 `e54555c` passes GitHub Actions run `34844791102` with all nine required jobs:
 quality (1,561 unit tests), browser acceptance, PostgreSQL/Redis/MinIO

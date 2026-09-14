@@ -23,6 +23,19 @@ remain open. No schema or policy boundary was replaced.
 
 ## Current closure tranche (2026-09-14)
 
+Provider-acceptance harness checkpoint (2026-09-14): the production smoke now
+has an explicit environment-name contract for public runtime, authentication,
+administrator recovery, Redis/Upstash, R2/S3/MinIO, Resend, and the selected
+OpenAI-compatible or Ollama provider. It reports variable names and provider
+labels only. Vercel marketplace aliases for PostgreSQL, Redis, and OpenAI are
+normalized only when their canonical runtime names are absent. External AI and
+Resend lifecycle checks join the existing Upstash and isolated-storage checks,
+remain gated by `RUN_EXTERNAL_PROVIDER_CONTRACTS=true`, execute in a
+secret-minimized child process, and suppress provider output. Controlled local
+provider-boundary coverage proves the new child runner, but no real external
+provider or hosted administrator credential was used; the corresponding
+production acceptance rows remain open.
+
 Commits `a1eab94`, `142a1cb`, `a9352f4`, and `deec37d` are merged on local
 `main` and cover three independently reviewed hardening tasks: exact
 person-name/event replay references with a real-PostgreSQL matrix; stable

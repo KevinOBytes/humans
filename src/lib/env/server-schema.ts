@@ -509,7 +509,13 @@ export const adminOperationEnvSchema = z
 export type AdminOperationEnv = z.infer<typeof adminOperationEnvSchema>;
 
 export function parseServerEnv(source: NodeJS.ProcessEnv): ServerEnv {
-  return serverEnvSchema.parse(source);
+  const normalized = { ...source };
+  normalized.DATABASE_URL ??= source.POSTGRES_URL;
+  normalized.REDIS_URL ??= source.KV_URL;
+  if (source.AI_PROVIDER === "openai") {
+    normalized.AI_API_KEY ??= source.OPENAI_API_KEY;
+  }
+  return serverEnvSchema.parse(normalized);
 }
 
 export function parseBootstrapAdminEnv(

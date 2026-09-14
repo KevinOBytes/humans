@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 import { validateExternalStorageContractBucket } from "./provider-contract-storage-config.mjs";
 
@@ -12,6 +12,7 @@ export function parseArgs(argv = []) {
   const options = {
     authenticated: false,
     baseUrl: null,
+    environmentContract: false,
     providerContracts: false,
     twoFactor: false,
   };
@@ -20,6 +21,8 @@ export function parseArgs(argv = []) {
     if (value === "--") continue;
     if (value === "--base-url") options.baseUrl = argv[++index] ?? "";
     else if (value === "--authenticated") options.authenticated = true;
+    else if (value === "--environment-contract")
+      options.environmentContract = true;
     else if (value === "--provider-contracts") options.providerContracts = true;
     else if (value === "--two-factor") options.twoFactor = true;
     else if (value === "--help") options.help = true;
@@ -28,11 +31,7 @@ export function parseArgs(argv = []) {
   return options;
 }
 
-const providerContractGroups = [
-  {
-    label: "upstash-rest",
-    variables: ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
-  },
+const simpleProviderContractGroups = [
   {
     label: "storage",
     variables: [
@@ -44,6 +43,14 @@ const providerContractGroups = [
       "TEST_STORAGE_SECRET_ACCESS_KEY",
     ],
   },
+  {
+    label: "resend",
+    variables: [
+      "TEST_RESEND_API_KEY",
+      "TEST_RESEND_FROM",
+      "TEST_RESEND_RECIPIENT",
+    ],
+  },
 ];
 
 const providerContractEnvironmentVariables = [
@@ -51,6 +58,8 @@ const providerContractEnvironmentVariables = [
   "REDIS_TEST_URL",
   "UPSTASH_REDIS_REST_URL",
   "UPSTASH_REDIS_REST_TOKEN",
+  "KV_REST_API_URL",
+  "KV_REST_API_TOKEN",
   "TEST_STORAGE_PROVIDER",
   "TEST_STORAGE_ENDPOINT",
   "TEST_STORAGE_REGION",
@@ -58,6 +67,14 @@ const providerContractEnvironmentVariables = [
   "TEST_STORAGE_ACCESS_KEY_ID",
   "TEST_STORAGE_SECRET_ACCESS_KEY",
   "STORAGE_BUCKET",
+  "TEST_AI_PROVIDER",
+  "TEST_AI_BASE_URL",
+  "TEST_AI_API_KEY",
+  "TEST_AI_MODEL",
+  "TEST_RESEND_API_KEY",
+  "TEST_RESEND_FROM",
+  "TEST_RESEND_RECIPIENT",
+  "TEST_RESEND_BASE_URL",
 ];
 
 const childRuntimeEnvironmentVariables = [
@@ -74,7 +91,7 @@ const childRuntimeEnvironmentVariables = [
 ];
 
 function providerContractChildEnvironment(env) {
-  return Object.fromEntries(
+  const child = Object.fromEntries(
     [
       ...childRuntimeEnvironmentVariables,
       ...providerContractEnvironmentVariables,
@@ -82,6 +99,181 @@ function providerContractChildEnvironment(env) {
       .filter((variable) => env[variable] !== undefined)
       .map((variable) => [variable, env[variable]]),
   );
+  child.UPSTASH_REDIS_REST_URL ??= env.KV_REST_API_URL;
+  child.UPSTASH_REDIS_REST_TOKEN ??= env.KV_REST_API_TOKEN;
+  delete child.KV_REST_API_URL;
+  delete child.KV_REST_API_TOKEN;
+  return child;
+}
+
+const productionEnvironmentGroups = [
+  {
+    label: "public-runtime",
+    variables: [
+      "DEPLOYMENT_MODE",
+      "NEXT_PUBLIC_APP_URL",
+      "CRON_SECRET",
+      "TRUSTED_PROXY_MODE",
+    ],
+    alternatives: [
+      ["DATABASE_URL", "POSTGRES_URL"],
+      ["REDIS_URL", "KV_URL"],
+    ],
+  },
+  {
+    label: "authentication",
+    variables: [
+      "AUTH_SECRET",
+      "AUTH_ENCRYPTION_KEY",
+      "DATA_ENCRYPTION_KEY",
+      "PROTECTED_LOOKUP_HMAC_KEY",
+      "OPERATION_LIMIT_HMAC_KEY",
+      "AUTH_TRUSTED_ORIGINS",
+      "AUTH_SECURE_COOKIES",
+    ],
+  },
+  {
+    label: "administrator-recovery",
+    variables: [
+      "ADMIN_EMAIL",
+      "ADMIN_USERNAME",
+      "ADMIN_DISPLAY_NAME",
+      "ADMIN_PASSWORD",
+    ],
+    alternatives: [["DATABASE_URL", "POSTGRES_URL"]],
+  },
+  {
+    label: "resend",
+    variables: ["RESEND_API_KEY", "EMAIL_FROM"],
+  },
+];
+
+function isPresent(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function orderedLabels(labels, order) {
+  return [...labels].sort((left, right) => {
+    const leftIndex = order.indexOf(left);
+    const rightIndex = order.indexOf(right);
+    return (
+      (leftIndex < 0 ? order.length : leftIndex) -
+      (rightIndex < 0 ? order.length : rightIndex)
+    );
+  });
+}
+
+function missingVariables(env, group) {
+  const missing = group.variables.filter(
+    (variable) => !isPresent(env[variable]),
+  );
+  for (const alternatives of group.alternatives ?? []) {
+    if (!alternatives.some((variable) => isPresent(env[variable]))) {
+      missing.push(...alternatives);
+    }
+  }
+  return missing;
+}
+
+export function productionEnvironmentContractPlan(env = {}) {
+  const configured = [];
+  /** @type {Record<string, string[]>} */
+  const missing = {};
+
+  for (const group of productionEnvironmentGroups) {
+    const absent = missingVariables(env, group);
+    if (absent.length) missing[group.label] = absent;
+    else configured.push(group.label);
+  }
+
+  const redisConfigured = ["REDIS_URL", "KV_URL"].some((name) =>
+    isPresent(env[name]),
+  );
+  if (redisConfigured) {
+    const upstashConfigured = [
+      "KV_URL",
+      "KV_REST_API_URL",
+      "UPSTASH_REDIS_REST_URL",
+    ].some((name) => isPresent(env[name]));
+    configured.push(upstashConfigured ? "upstash" : "redis");
+  }
+
+  const storageProvider = env.STORAGE_PROVIDER;
+  const storageVariables = [
+    "STORAGE_PROVIDER",
+    "STORAGE_ENDPOINT",
+    "STORAGE_REGION",
+    "STORAGE_BUCKET",
+    "STORAGE_ACCESS_KEY_ID",
+    "STORAGE_SECRET_ACCESS_KEY",
+    "STORAGE_FORCE_PATH_STYLE",
+    "STORAGE_BUCKET_PUBLIC",
+  ];
+  const storageMissing = storageVariables.filter(
+    (variable) => !isPresent(env[variable]),
+  );
+  if (storageProvider && !["minio", "r2", "s3"].includes(storageProvider)) {
+    throw new Error("STORAGE_PROVIDER must be one of minio, r2, or s3");
+  }
+  if (storageMissing.length) missing.storage = storageMissing;
+  else configured.push(storageProvider);
+
+  const aiProvider = env.AI_PROVIDER;
+  if (aiProvider && !["openai", "ollama", "compatible"].includes(aiProvider)) {
+    throw new Error("AI_PROVIDER must be one of openai, ollama, or compatible");
+  }
+  const aiMissing = ["AI_PROVIDER", "AI_BASE_URL", "AI_MODEL"].filter(
+    (variable) => !isPresent(env[variable]),
+  );
+  if (
+    aiProvider === "openai" &&
+    !isPresent(env.AI_API_KEY) &&
+    !isPresent(env.OPENAI_API_KEY)
+  ) {
+    aiMissing.push("AI_API_KEY", "OPENAI_API_KEY");
+  }
+  if (aiProvider === "compatible") {
+    const openRouter = /^https:\/\/(?:[^/]+\.)?openrouter\.ai(?:\/|$)/iu.test(
+      env.AI_BASE_URL ?? "",
+    );
+    const keyNames = openRouter
+      ? ["AI_API_KEY", "OPEN_ROUTER_KEY"]
+      : ["AI_API_KEY"];
+    if (!keyNames.some((variable) => isPresent(env[variable]))) {
+      aiMissing.push(...keyNames);
+    }
+  }
+  if (aiMissing.length) missing[aiProvider ?? "ai"] = aiMissing;
+  else configured.push(aiProvider);
+
+  return {
+    configured: orderedLabels(configured, [
+      "public-runtime",
+      "authentication",
+      "administrator-recovery",
+      "upstash",
+      "redis",
+      "minio",
+      "r2",
+      "s3",
+      "resend",
+      "openai",
+      "ollama",
+      "compatible",
+    ]),
+    missing,
+  };
+}
+
+export function assertProductionEnvironmentContract(env = {}) {
+  const plan = productionEnvironmentContractPlan(env);
+  const missing = Object.values(plan.missing).flat();
+  if (missing.length) {
+    throw new Error(
+      `production environment contract is incomplete; missing ${[...new Set(missing)].join(", ")}`,
+    );
+  }
+  return plan;
 }
 
 export function externalProviderContractPlan(env = {}) {
@@ -91,11 +283,29 @@ export function externalProviderContractPlan(env = {}) {
   if (env.RUN_EXTERNAL_PROVIDER_CONTRACTS !== "true") {
     return {
       enabled,
-      unavailable: providerContractGroups.map(({ label }) => label),
+      unavailable: ["upstash-rest", "storage", "ai", "resend"],
     };
   }
 
-  for (const group of providerContractGroups) {
+  const canonicalUpstash = [
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+  ];
+  const vercelUpstash = ["KV_REST_API_URL", "KV_REST_API_TOKEN"];
+  const selectedUpstash = canonicalUpstash.some((name) => isPresent(env[name]))
+    ? canonicalUpstash
+    : vercelUpstash;
+  if (selectedUpstash.some((name) => isPresent(env[name]))) {
+    const missing = selectedUpstash.filter((name) => !isPresent(env[name]));
+    if (missing.length) {
+      throw new Error(
+        `upstash-rest provider contract credentials are incomplete; missing ${missing.join(", ")}`,
+      );
+    }
+    enabled.push("upstash-rest");
+  } else unavailable.push("upstash-rest");
+
+  for (const group of simpleProviderContractGroups) {
     const present = group.variables.filter((variable) =>
       Boolean(env[variable]),
     );
@@ -123,9 +333,67 @@ export function externalProviderContractPlan(env = {}) {
     enabled.push(
       group.label === "storage" ? env.TEST_STORAGE_PROVIDER : group.label,
     );
+    if (group.label === "resend" && env.TEST_RESEND_BASE_URL) {
+      let base;
+      try {
+        base = new URL(env.TEST_RESEND_BASE_URL);
+      } catch {
+        throw new Error("TEST_RESEND_BASE_URL must be a loopback HTTP URL");
+      }
+      if (
+        base.protocol !== "http:" ||
+        !["127.0.0.1", "localhost", "[::1]", "::1"].includes(base.hostname) ||
+        base.username ||
+        base.password ||
+        base.search ||
+        base.hash
+      ) {
+        throw new Error("TEST_RESEND_BASE_URL must be a loopback HTTP URL");
+      }
+    }
   }
 
-  return { enabled, unavailable };
+  const aiVariables = ["TEST_AI_PROVIDER", "TEST_AI_BASE_URL", "TEST_AI_MODEL"];
+  const aiPresent = [...aiVariables, "TEST_AI_API_KEY"].some((variable) =>
+    isPresent(env[variable]),
+  );
+  if (aiPresent) {
+    const provider = env.TEST_AI_PROVIDER;
+    if (!provider || !["openai", "ollama", "compatible"].includes(provider)) {
+      throw new Error(
+        "TEST_AI_PROVIDER must be one of openai, ollama, or compatible",
+      );
+    }
+    const missing = aiVariables.filter((variable) => !isPresent(env[variable]));
+    if (provider !== "ollama" && !isPresent(env.TEST_AI_API_KEY)) {
+      missing.push("TEST_AI_API_KEY");
+    }
+    if (missing.length) {
+      throw new Error(
+        `ai provider contract credentials are incomplete; missing ${missing.join(", ")}`,
+      );
+    }
+    enabled.push(provider);
+  } else unavailable.push("ai");
+
+  return {
+    enabled: orderedLabels(enabled, [
+      "upstash-rest",
+      "minio",
+      "r2",
+      "s3",
+      "openai",
+      "ollama",
+      "compatible",
+      "resend",
+    ]),
+    unavailable: orderedLabels(unavailable, [
+      "upstash-rest",
+      "storage",
+      "ai",
+      "resend",
+    ]),
+  };
 }
 
 /**
@@ -133,9 +401,7 @@ export function externalProviderContractPlan(env = {}) {
  * @returns {Promise<{exitCode: number}>}
  */
 async function executeProviderContractSuite(env) {
-  const vitest = fileURLToPath(
-    new URL("../node_modules/vitest/vitest.mjs", import.meta.url),
-  );
+  const vitest = resolve(process.cwd(), "node_modules/vitest/vitest.mjs");
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
@@ -143,6 +409,7 @@ async function executeProviderContractSuite(env) {
         vitest,
         "run",
         "tests/integration/provider-adapter-contract.test.ts",
+        "tests/integration/provider-ai-email-contract.test.ts",
         "--no-file-parallelism",
       ],
       {
@@ -264,6 +531,7 @@ export async function runProductionSmoke({
   adminUsername = "",
   adminPassword = "",
   backupCode = "",
+  environmentContract = false,
   providerContracts = false,
   providerContractRunner = runExternalProviderContracts,
   providerEnv = process.env,
@@ -274,6 +542,10 @@ export async function runProductionSmoke({
     process.stdout.write(`${line}\n`);
   },
 }) {
+  if (environmentContract) {
+    const plan = assertProductionEnvironmentContract(providerEnv);
+    log(`environment contract configured for ${plan.configured.join(", ")}`);
+  }
   if (auth)
     validateAuthenticatedSmokeConfiguration({
       adminEmail,
@@ -560,7 +832,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const options = parseArgs(process.argv.slice(2));
     if (options.help) {
       process.stdout.write(
-        "Usage: pnpm production:smoke -- --base-url https://host [--authenticated] [--two-factor] [--provider-contracts]\n",
+        "Usage: pnpm production:smoke -- --base-url https://host [--environment-contract] [--authenticated] [--two-factor] [--provider-contracts]\n",
       );
       process.exit(0);
     }
@@ -570,6 +842,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     await runProductionSmoke({
       base,
       auth: options.authenticated || process.env.PRODUCTION_SMOKE_AUTH === "1",
+      environmentContract:
+        options.environmentContract ||
+        process.env.PRODUCTION_SMOKE_ENVIRONMENT_CONTRACT === "1",
       adminEmail: process.env.ADMIN_EMAIL,
       adminUsername: process.env.ADMIN_USERNAME,
       adminPassword: process.env.ADMIN_PASSWORD,

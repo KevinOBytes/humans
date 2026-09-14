@@ -60,6 +60,37 @@ describe("parseServerEnv", () => {
     expect(env.TRUSTED_PROXY_MODE).toBe("vercel");
   });
 
+  it("normalizes documented Vercel marketplace aliases before validation", () => {
+    const source = {
+      ...productionEnv,
+      DATABASE_URL: undefined,
+      REDIS_URL: undefined,
+      AI_API_KEY: undefined,
+      POSTGRES_URL: productionEnv.DATABASE_URL,
+      KV_URL: productionEnv.REDIS_URL,
+      OPENAI_API_KEY: productionEnv.AI_API_KEY,
+    };
+
+    const env = parseServerEnv(source);
+
+    expect(env.DATABASE_URL).toBe(productionEnv.DATABASE_URL);
+    expect(env.REDIS_URL).toBe(productionEnv.REDIS_URL);
+    expect(env.AI_API_KEY).toBe(productionEnv.AI_API_KEY);
+  });
+
+  it("keeps canonical runtime variables authoritative over marketplace aliases", () => {
+    const env = parseServerEnv({
+      ...productionEnv,
+      POSTGRES_URL: "not-a-postgres-url",
+      KV_URL: "not-a-redis-url",
+      OPENAI_API_KEY: "not-the-selected-provider-key",
+    });
+
+    expect(env.DATABASE_URL).toBe(productionEnv.DATABASE_URL);
+    expect(env.REDIS_URL).toBe(productionEnv.REDIS_URL);
+    expect(env.AI_API_KEY).toBe(productionEnv.AI_API_KEY);
+  });
+
   it("accepts a bounded explicit database pool size without changing the default", () => {
     expect(parseServerEnv(productionEnv).DATABASE_POOL_MAX).toBeUndefined();
     expect(
