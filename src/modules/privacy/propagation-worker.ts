@@ -1,7 +1,10 @@
-import { and, asc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
+import { evidenceExcerpts, evidenceItems } from "@/db/schema/evidence";
 import { files } from "@/db/schema/files";
 import { auditEvents } from "@/db/schema/operations";
+import { relationships } from "@/db/schema/relationships";
+import { searchDocuments } from "@/db/schema/search";
 import {
   deletionRequests,
   privacyRequests,
@@ -20,6 +23,139 @@ export type PrivacyProcessorAdapter = (input: {
   request: PrivacyRequestRow;
   idempotencyKey: string;
 }) => Promise<PropagationResult>;
+
+/** A processor can fail closed with a stable, redacted operational reason. */
+export class PrivacyProcessorError extends Error {
+  constructor(readonly resultCode: string) {
+    super(resultCode);
+    this.name = "PrivacyProcessorError";
+  }
+}
+
+/**
+ * Purges app-owned search contributions for the people covered by a privacy
+ * request. The workspace predicate is deliberately repeated on every branch:
+ * a subject id is not a sufficient tenant boundary on its own. Direct person
+ * documents are included even when an older index row did not carry the
+ * subjectPersonId column, while dependent contributions use that explicit
+ * subject link.
+ *
+ * The operation is intentionally idempotent. A retry sees zero rows and
+ * returns the same opaque request-scoped evidence reference. It never scans
+ * Redis, calls a hosted search provider, or returns indexed content.
+ */
+export function createSearchPrivacyProcessorAdapter(): PrivacyProcessorAdapter {
+  return async ({ database, request }) => {
+    const personIds = request.scope.personIds;
+    const fileIds = request.scope.fileIds;
+    const evidenceReference = `search-purge:${request.id}`;
+    if (request.requestType === "correction")
+      throw new PrivacyProcessorError("search_reindex_required");
+    if (!personIds.length && !fileIds.length)
+      return {
+        state: "not_applicable",
+        evidenceReference: "search:no-scoped-people",
+      };
+
+    const evidenceItemIds = fileIds.length
+      ? database
+          .select({ id: evidenceItems.id })
+          .from(evidenceItems)
+          .where(
+            and(
+              eq(evidenceItems.workspaceId, request.workspaceId),
+              inArray(evidenceItems.fileId, fileIds),
+            ),
+          )
+      : null;
+    const evidenceExcerptIds = fileIds.length
+      ? database
+          .select({ id: evidenceExcerpts.id })
+          .from(evidenceExcerpts)
+          .innerJoin(
+            evidenceItems,
+            and(
+              eq(evidenceItems.workspaceId, evidenceExcerpts.workspaceId),
+              eq(evidenceItems.id, evidenceExcerpts.evidenceItemId),
+            ),
+          )
+          .where(
+            and(
+              eq(evidenceExcerpts.workspaceId, request.workspaceId),
+              inArray(evidenceItems.fileId, fileIds),
+            ),
+          )
+      : null;
+    const relationshipIds = personIds.length
+      ? database
+          .select({ id: relationships.id })
+          .from(relationships)
+          .where(
+            and(
+              eq(relationships.workspaceId, request.workspaceId),
+              or(
+                inArray(relationships.sourcePersonId, personIds),
+                inArray(relationships.targetPersonId, personIds),
+              ),
+              isNull(relationships.deletedAt),
+            ),
+          )
+      : null;
+
+    const documentScope = [
+      personIds.length
+        ? or(
+            inArray(searchDocuments.subjectPersonId, personIds),
+            and(
+              eq(searchDocuments.resourceKind, "person"),
+              inArray(searchDocuments.resourceId, personIds),
+            ),
+          )
+        : null,
+      relationshipIds
+        ? and(
+            eq(searchDocuments.resourceKind, "relationship"),
+            inArray(searchDocuments.resourceId, relationshipIds),
+          )
+        : null,
+      evidenceItemIds
+        ? and(
+            eq(searchDocuments.resourceKind, "evidence_item"),
+            inArray(searchDocuments.resourceId, evidenceItemIds),
+          )
+        : null,
+      evidenceExcerptIds
+        ? and(
+            eq(searchDocuments.resourceKind, "evidence_excerpt"),
+            inArray(searchDocuments.resourceId, evidenceExcerptIds),
+          )
+        : null,
+    ].filter((scope): scope is NonNullable<typeof scope> => scope !== null);
+
+    await database
+      .delete(searchDocuments)
+      .where(
+        and(
+          eq(searchDocuments.workspaceId, request.workspaceId),
+          or(...documentScope),
+        ),
+      );
+
+    return { state: "succeeded", evidenceReference };
+  };
+}
+
+/**
+ * Redis is operational-only in this deployment. It does not contain
+ * person-derived records, so privacy propagation records that capability
+ * explicitly instead of pretending that a shared key scan or flush is safe.
+ */
+export function createCachePrivacyProcessorAdapter(): PrivacyProcessorAdapter {
+  return async () => ({
+    state: "not_applicable",
+    evidenceReference: "cache:not-applicable:operational-only",
+  });
+}
 
 /** Processor adapters must honor the stable key and return an opaque evidence
  * reference, never personal content. Missing adapters fail visibly and retry;
@@ -144,9 +280,12 @@ export async function executePrivacyPropagations(input: {
             };
           else resultCode = "file_cleanup_pending";
         }
-      } catch {
+      } catch (error) {
         result = null;
-        resultCode = "processor_failed";
+        resultCode =
+          error instanceof PrivacyProcessorError
+            ? error.resultCode
+            : "processor_failed";
       }
       const auditReference = newId();
       await tx.insert(auditEvents).values({
