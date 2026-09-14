@@ -1,17 +1,21 @@
 // @vitest-environment node
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
-import { auditEvents } from "@/db/schema/operations";
+import { auditEvents, jobs } from "@/db/schema/operations";
 import {
   consentRecords,
+  deletionRequests,
+  privacyRequests,
   privacyProcessorPropagations,
 } from "@/db/schema/privacy";
 import { people } from "@/db/schema/people";
 import { retentionPolicies } from "@/db/schema/workspaces";
 import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
+import { executePrivacyPropagations } from "@/modules/privacy/propagation-worker";
+import { createRetentionService } from "@/modules/privacy/retention-service";
 import type { ResearchServiceContext } from "@/modules/audit/service";
 import { ResearchFixture } from "../support/research-fixture";
 import { caseContext, coveredPerson } from "../support/cases";
@@ -53,6 +57,160 @@ live("privacy request lifecycle", () => {
     });
   });
   afterAll(async () => fixture.close());
+  async function startDeletion(personIds: string[], fileIds: string[] = []) {
+    const request = await createPrivacyRequestService(context).createRequest({
+      requestType: "deletion",
+      personIds,
+      fileIds,
+      dueAt: new Date(Date.now() + 86_400_000),
+      idempotencyKey: newId(),
+    });
+    const service = createPrivacyRequestService(reviewer);
+    const approved = await service.reviewRequest({
+      id: request.id,
+      expectedVersion: request.version,
+      state: "approved",
+      verificationEvidenceId: evidenceId,
+    });
+    return service.fulfillRequest({
+      id: request.id,
+      expectedVersion: approved.version,
+    });
+  }
+  const execute = () =>
+    executeApprovedDeletionRequests({
+      database: fixture.database,
+      encryptionKey: "ab".repeat(32),
+    });
+
+  it.each(["invalid", "substituted", "unavailable", "foreign"] as const)(
+    "atomically rejects a %s governed scope and replays without extra effects",
+    async (kind) => {
+      const person = await coveredPerson(context);
+      const sibling = await coveredPerson(context);
+      const request = await startDeletion([person.id]);
+      if (kind === "unavailable") {
+        await fixture.database
+          .update(people)
+          .set({ deletedAt: new Date() })
+          .where(eq(people.id, person.id));
+      } else if (kind === "foreign") {
+        const other = await caseContext(fixture, await fixture.createActor());
+        const foreign = await coveredPerson(other);
+        const scope = { personIds: [foreign.id], fileIds: [] };
+        // Even mutually consistent queue snapshots cannot authorize a foreign
+        // resource: the worker must independently enforce workspace predicates.
+        await fixture.database
+          .update(privacyRequests)
+          .set({ scope })
+          .where(eq(privacyRequests.id, request.id));
+        await fixture.database
+          .update(deletionRequests)
+          .set({ scope })
+          .where(eq(deletionRequests.id, request.legacyDeletionRequestId!));
+      } else {
+        await fixture.database
+          .update(deletionRequests)
+          .set({
+            scope:
+              kind === "invalid"
+                ? { personIds: ["not-a-uuid"], fileIds: [] }
+                : { personIds: [sibling.id], fileIds: [] },
+          })
+          .where(eq(deletionRequests.id, request.legacyDeletionRequestId!));
+      }
+      const before = await fixture.database.select().from(people);
+      expect(await Promise.all([execute(), execute()])).toEqual([0, 0]);
+      const [terminal] = await fixture.database
+        .select()
+        .from(privacyRequests)
+        .where(eq(privacyRequests.id, request.id));
+      expect(terminal).toMatchObject({
+        state: "rejected",
+        version: request.version + 1,
+      });
+      const [legacy] = await fixture.database
+        .select()
+        .from(deletionRequests)
+        .where(eq(deletionRequests.id, request.legacyDeletionRequestId!));
+      expect(legacy?.state).toBe("rejected");
+      expect(await fixture.database.select().from(people)).toEqual(before);
+      const audits = await fixture.database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.resourceId, request.legacyDeletionRequestId!),
+            eq(auditEvents.action, "deletion_request.rejected"),
+          ),
+        );
+      expect(audits).toHaveLength(1);
+      expect(terminal?.auditReference).toBe(audits[0]?.id);
+      expect(audits[0]?.redactedDiff).toEqual({
+        reason:
+          kind === "invalid"
+            ? "invalid_scope"
+            : kind === "substituted"
+              ? "governed_scope_mismatch"
+              : "scope_unavailable",
+      });
+      expect(await execute()).toBe(0);
+      expect(
+        await fixture.database
+          .select()
+          .from(privacyRequests)
+          .where(eq(privacyRequests.id, request.id)),
+      ).toEqual([terminal]);
+      expect(
+        await fixture.database
+          .select()
+          .from(consentRecords)
+          .where(eq(consentRecords.id, person.consentId)),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("rolls back terminal rejection if its immutable audit cannot commit", async () => {
+    const person = await coveredPerson(context);
+    const request = await startDeletion([person.id]);
+    await fixture.database
+      .update(deletionRequests)
+      .set({ scope: {} })
+      .where(eq(deletionRequests.id, request.legacyDeletionRequestId!));
+    await fixture.database
+      .execute(sql`create function fail_privacy_audit() returns trigger language plpgsql as $$
+      begin
+        if new.action = 'deletion_request.rejected' then raise exception 'fixture audit unavailable'; end if;
+        return new;
+      end;
+    $$`);
+    await fixture.database
+      .execute(sql`create trigger fail_privacy_audit before insert on audit_events
+      for each row execute function fail_privacy_audit()`);
+    await expect(execute()).rejects.toThrow();
+    const [governed] = await fixture.database
+      .select()
+      .from(privacyRequests)
+      .where(eq(privacyRequests.id, request.id));
+    const [legacy] = await fixture.database
+      .select()
+      .from(deletionRequests)
+      .where(eq(deletionRequests.id, request.legacyDeletionRequestId!));
+    expect(governed).toEqual(request);
+    expect(legacy).toMatchObject({ state: "approved", version: 1 });
+    await fixture.database.execute(
+      sql`drop trigger fail_privacy_audit on audit_events`,
+    );
+    expect(await execute()).toBe(0);
+    expect(
+      (
+        await fixture.database
+          .select()
+          .from(privacyRequests)
+          .where(eq(privacyRequests.id, request.id))
+      )[0]?.state,
+    ).toBe("rejected");
+  });
   it("binds replay material, blocks self-approval and requires completion evidence", async () => {
     const person = await coveredPerson(context);
     const service = createPrivacyRequestService(context);
@@ -97,6 +255,60 @@ live("privacy request lifecycle", () => {
       ).state,
     ).toBe("completed");
   });
+  it("rolls back resource mutation when completion audit fails and recovers exactly once", async () => {
+    const person = await coveredPerson(context);
+    const request = await startDeletion([person.id]);
+    const before = await fixture.database.select().from(people);
+    const consentBefore = await fixture.database.select().from(consentRecords);
+    await fixture.database
+      .execute(sql`create function fail_completion_audit() returns trigger language plpgsql as $$
+      begin
+        if new.action = 'deletion_request.completed' then raise exception 'fixture audit unavailable'; end if;
+        return new;
+      end;
+    $$`);
+    await fixture.database
+      .execute(sql`create trigger fail_completion_audit before insert on audit_events
+      for each row execute function fail_completion_audit()`);
+    await expect(execute()).rejects.toThrow();
+    expect(await fixture.database.select().from(people)).toEqual(before);
+    expect(await fixture.database.select().from(consentRecords)).toEqual(
+      consentBefore,
+    );
+    expect(
+      (
+        await fixture.database
+          .select()
+          .from(deletionRequests)
+          .where(eq(deletionRequests.id, request.legacyDeletionRequestId!))
+      )[0],
+    ).toMatchObject({ state: "approved", version: 1, completedAt: null });
+    await fixture.database.execute(
+      sql`drop trigger fail_completion_audit on audit_events`,
+    );
+    const results = await Promise.all([execute(), execute()]);
+    expect(results.sort()).toEqual([0, 1]);
+    expect(await execute()).toBe(0);
+    const [archived] = await fixture.database
+      .select()
+      .from(people)
+      .where(eq(people.id, person.id));
+    expect(archived).toMatchObject({
+      status: "archived",
+      version: 2,
+    });
+    expect(archived?.deletedAt).toBeInstanceOf(Date);
+    const audits = await fixture.database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, request.legacyDeletionRequestId!),
+          eq(auditEvents.action, "deletion_request.completed"),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+  });
   it("does not disclose foreign resources or requests", async () => {
     const person = await coveredPerson(context);
     const row = await createPrivacyRequestService(context).createRequest({
@@ -120,69 +332,212 @@ live("privacy request lifecycle", () => {
       }),
     ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
   });
-  it("surfaces a governed unsupported retention action as a durable rejection", async () => {
+  it.each(["hard_delete", "anonymize"] as const)(
+    "surfaces governed person %s as a durable rejection",
+    async (deletionBehavior) => {
+      const person = await coveredPerson(context);
+      await fixture.database.insert(retentionPolicies).values({
+        id: newId(),
+        workspaceId: context.workspaceId,
+        resourceKind: "person",
+        retentionDays: 0,
+        deletionBehavior,
+        createdBy: context.actor.principalId,
+        updatedBy: context.actor.principalId,
+      });
+      const service = createPrivacyRequestService(context);
+      const request = await service.createRequest({
+        requestType: "deletion",
+        personIds: [person.id],
+        purpose: "subject deletion",
+        dueAt: new Date(Date.now() + 86_400_000),
+        idempotencyKey: "unsupported-retention-action",
+      });
+      const approved = await createPrivacyRequestService(
+        reviewer,
+      ).reviewRequest({
+        id: request.id,
+        expectedVersion: request.version,
+        state: "approved",
+        verificationEvidenceId: evidenceId,
+      });
+      const fulfilling = await createPrivacyRequestService(
+        reviewer,
+      ).fulfillRequest({
+        id: approved.id,
+        expectedVersion: approved.version,
+      });
+      expect(fulfilling.state).toBe("fulfilling");
+
+      expect(
+        await executeApprovedDeletionRequests({
+          database: fixture.database,
+          encryptionKey: "ab".repeat(32),
+          now: new Date(),
+        }),
+      ).toBe(0);
+
+      const rejected = await createPrivacyRequestService(reviewer).getRequest(
+        request.id,
+      );
+      expect(rejected).toMatchObject({
+        auditReference: expect.any(String),
+        state: "rejected",
+        version: fulfilling.version + 1,
+      });
+      const [unchanged] = await fixture.database
+        .select({ deletedAt: people.deletedAt, status: people.status })
+        .from(people)
+        .where(eq(people.id, person.id));
+      expect(unchanged).toEqual({ deletedAt: null, status: "active" });
+      const [audit] = await fixture.database
+        .select({ redactedDiff: auditEvents.redactedDiff })
+        .from(auditEvents)
+        .where(eq(auditEvents.id, rejected.auditReference!));
+      expect(audit?.redactedDiff).toEqual({
+        deletionBehavior,
+        reason: "retention_action_unsupported",
+      });
+      expect(JSON.stringify(audit)).not.toContain(person.id);
+    },
+  );
+  it.each(["hard_delete", "anonymize"] as const)(
+    "rejects file %s without deleting verification/provenance or scheduling cleanup",
+    async (deletionBehavior) => {
+      await fixture.database.insert(retentionPolicies).values({
+        id: newId(),
+        workspaceId: context.workspaceId,
+        resourceKind: "file",
+        retentionDays: 0,
+        deletionBehavior,
+        createdBy: context.actor.principalId,
+        updatedBy: context.actor.principalId,
+      });
+      const request = await startDeletion([], [evidenceId]);
+      const before = await fixture.database.select().from(files);
+      const beforeJobs = await fixture.database.select().from(jobs);
+      expect(await Promise.all([execute(), execute()])).toEqual([0, 0]);
+      expect(await fixture.database.select().from(files)).toEqual(before);
+      expect(await fixture.database.select().from(jobs)).toEqual(beforeJobs);
+      const terminal = await createPrivacyRequestService(reviewer).getRequest(
+        request.id,
+      );
+      expect(terminal).toMatchObject({
+        state: "rejected",
+        verificationEvidenceId: evidenceId,
+      });
+      const [audit] = await fixture.database
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.id, terminal.auditReference!));
+      expect(audit?.redactedDiff).toEqual({
+        deletionBehavior,
+        reason: "retention_action_unsupported",
+      });
+      expect(
+        await executePrivacyPropagations({ database: fixture.database }),
+      ).toBe(0);
+      const processors = await fixture.database
+        .select()
+        .from(privacyProcessorPropagations)
+        .where(eq(privacyProcessorPropagations.privacyRequestId, request.id));
+      expect(processors).toHaveLength(5);
+      expect(
+        processors.every(
+          (row) => row.state === "pending" && row.attempts === 0,
+        ),
+      ).toBe(true);
+    },
+  );
+  it("keeps a newly held approved request retryable without destructive effects", async () => {
     const person = await coveredPerson(context);
-    await fixture.database.insert(retentionPolicies).values({
-      id: newId(),
-      workspaceId: context.workspaceId,
+    const request = await startDeletion([person.id]);
+    await createRetentionService(context).createLegalHold({
       resourceKind: "person",
-      retentionDays: 0,
-      deletionBehavior: "anonymize",
-      createdBy: context.actor.principalId,
-      updatedBy: context.actor.principalId,
+      resourceId: person.id,
+      reason: "Preserve fixture",
+      authority: "Independent review",
     });
-    const service = createPrivacyRequestService(context);
-    const request = await service.createRequest({
-      requestType: "deletion",
-      personIds: [person.id],
-      purpose: "subject deletion",
-      dueAt: new Date(Date.now() + 86_400_000),
-      idempotencyKey: "unsupported-retention-action",
-    });
-    const approved = await createPrivacyRequestService(reviewer).reviewRequest({
-      id: request.id,
-      expectedVersion: request.version,
-      state: "approved",
-      verificationEvidenceId: evidenceId,
-    });
-    const fulfilling = await createPrivacyRequestService(
-      reviewer,
-    ).fulfillRequest({
-      id: approved.id,
-      expectedVersion: approved.version,
-    });
-    expect(fulfilling.state).toBe("fulfilling");
-
+    const before = await fixture.database.select().from(people);
+    expect(await execute()).toBe(0);
+    expect(await execute()).toBe(0);
+    expect(await fixture.database.select().from(people)).toEqual(before);
     expect(
-      await executeApprovedDeletionRequests({
-        database: fixture.database,
-        encryptionKey: "ab".repeat(32),
-        now: new Date(),
-      }),
-    ).toBe(0);
-
-    const rejected = await createPrivacyRequestService(reviewer).getRequest(
-      request.id,
-    );
-    expect(rejected).toMatchObject({
-      auditReference: expect.any(String),
-      state: "rejected",
-      version: fulfilling.version + 1,
-    });
-    const [unchanged] = await fixture.database
-      .select({ deletedAt: people.deletedAt, status: people.status })
-      .from(people)
-      .where(eq(people.id, person.id));
-    expect(unchanged).toEqual({ deletedAt: null, status: "active" });
-    const [audit] = await fixture.database
-      .select({ redactedDiff: auditEvents.redactedDiff })
+      (await createPrivacyRequestService(reviewer).getRequest(request.id))
+        .state,
+    ).toBe("fulfilling");
+    const audits = await fixture.database
+      .select()
       .from(auditEvents)
-      .where(eq(auditEvents.id, rejected.auditReference!));
-    expect(audit?.redactedDiff).toEqual({
-      deletionBehavior: "anonymize",
-      reason: "retention_action_unsupported",
+      .where(
+        and(
+          eq(auditEvents.resourceId, request.legacyDeletionRequestId!),
+          eq(auditEvents.action, "deletion_request.blocked"),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.redactedDiff).toEqual({ reason: "active_legal_hold" });
+  });
+  it("retries processor failure without repeating local destructive effects", async () => {
+    const person = await coveredPerson(context);
+    const request = await startDeletion([person.id]);
+    expect(await execute()).toBe(1);
+    const before = await fixture.database.select().from(people);
+    const now = new Date(Date.now() + 1_000);
+    await executePrivacyPropagations({
+      database: fixture.database,
+      now,
+      adapters: {
+        email: async () => {
+          throw new Error("external fixture failure");
+        },
+      },
     });
-    expect(JSON.stringify(audit)).not.toContain(person.id);
+    const [failed] = await fixture.database
+      .select()
+      .from(privacyProcessorPropagations)
+      .where(
+        and(
+          eq(privacyProcessorPropagations.privacyRequestId, request.id),
+          eq(privacyProcessorPropagations.processor, "email"),
+        ),
+      );
+    expect(failed).toMatchObject({
+      state: "failed",
+      attempts: 1,
+      resultCode: "processor_failed",
+    });
+    expect(await execute()).toBe(0);
+    await executePrivacyPropagations({
+      database: fixture.database,
+      now: new Date(now.getTime() + 60_001),
+      adapters: {
+        email: async () => ({
+          state: "succeeded",
+          evidenceReference: "fixture:email-erasure",
+        }),
+      },
+    });
+    expect(await fixture.database.select().from(people)).toEqual(before);
+    const [succeeded] = await fixture.database
+      .select()
+      .from(privacyProcessorPropagations)
+      .where(eq(privacyProcessorPropagations.id, failed!.id));
+    expect(succeeded).toMatchObject({ state: "succeeded", attempts: 2 });
+    expect(
+      (await createPrivacyRequestService(reviewer).getRequest(request.id))
+        .state,
+    ).toBe("fulfilling");
+    const audits = await fixture.database
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, request.legacyDeletionRequestId!),
+          eq(auditEvents.action, "deletion_request.completed"),
+        ),
+      );
+    expect(audits).toHaveLength(1);
   });
   it("withdraws matching consent atomically and leaves processors pending", async () => {
     const person = await coveredPerson(context);
