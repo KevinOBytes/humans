@@ -1,19 +1,188 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function parseArgs(argv = []) {
-  const options = { baseUrl: null, providerContracts: false };
+  const options = {
+    baseUrl: null,
+    providerContracts: false,
+    twoFactor: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === "--") continue;
     if (value === "--base-url") options.baseUrl = argv[++index] ?? "";
     else if (value === "--provider-contracts") options.providerContracts = true;
+    else if (value === "--two-factor") options.twoFactor = true;
     else if (value === "--help") options.help = true;
     else throw new Error(`Unknown production smoke option: ${value}`);
   }
   return options;
+}
+
+const providerContractGroups = [
+  {
+    label: "upstash-rest",
+    variables: ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
+  },
+  {
+    label: "storage",
+    variables: [
+      "TEST_STORAGE_PROVIDER",
+      "TEST_STORAGE_ENDPOINT",
+      "TEST_STORAGE_REGION",
+      "TEST_STORAGE_BUCKET",
+      "TEST_STORAGE_ACCESS_KEY_ID",
+      "TEST_STORAGE_SECRET_ACCESS_KEY",
+    ],
+  },
+];
+
+const providerContractEnvironmentVariables = [
+  "RUN_EXTERNAL_PROVIDER_CONTRACTS",
+  "REDIS_TEST_URL",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
+  "TEST_STORAGE_PROVIDER",
+  "TEST_STORAGE_ENDPOINT",
+  "TEST_STORAGE_REGION",
+  "TEST_STORAGE_BUCKET",
+  "TEST_STORAGE_ACCESS_KEY_ID",
+  "TEST_STORAGE_SECRET_ACCESS_KEY",
+];
+
+const childRuntimeEnvironmentVariables = [
+  "CI",
+  "FORCE_COLOR",
+  "HOME",
+  "NODE_OPTIONS",
+  "NO_COLOR",
+  "PATH",
+  "TEMP",
+  "TERM",
+  "TMP",
+  "TMPDIR",
+];
+
+function providerContractChildEnvironment(env) {
+  return Object.fromEntries(
+    [
+      ...childRuntimeEnvironmentVariables,
+      ...providerContractEnvironmentVariables,
+    ]
+      .filter((variable) => env[variable] !== undefined)
+      .map((variable) => [variable, env[variable]]),
+  );
+}
+
+export function externalProviderContractPlan(env = {}) {
+  const enabled = [];
+  const unavailable = [];
+
+  if (env.RUN_EXTERNAL_PROVIDER_CONTRACTS !== "true") {
+    return {
+      enabled,
+      unavailable: providerContractGroups.map(({ label }) => label),
+    };
+  }
+
+  for (const group of providerContractGroups) {
+    const present = group.variables.filter((variable) =>
+      Boolean(env[variable]),
+    );
+    if (present.length === 0) {
+      unavailable.push(group.label);
+      continue;
+    }
+    const missing = group.variables.filter((variable) => !env[variable]);
+    if (missing.length > 0) {
+      throw new Error(
+        `${group.label} provider contract credentials are incomplete; missing ${missing.join(", ")}`,
+      );
+    }
+    if (
+      group.label === "storage" &&
+      !["minio", "r2", "s3"].includes(env.TEST_STORAGE_PROVIDER)
+    )
+      throw new Error("TEST_STORAGE_PROVIDER must be one of minio, r2, or s3");
+    enabled.push(
+      group.label === "storage" ? env.TEST_STORAGE_PROVIDER : group.label,
+    );
+  }
+
+  return { enabled, unavailable };
+}
+
+/**
+ * @param {Record<string, string | undefined>} env
+ * @returns {Promise<{exitCode: number}>}
+ */
+async function executeProviderContractSuite(env) {
+  const vitest = fileURLToPath(
+    new URL("../node_modules/vitest/vitest.mjs", import.meta.url),
+  );
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        vitest,
+        "run",
+        "tests/integration/provider-adapter-contract.test.ts",
+        "--no-file-parallelism",
+      ],
+      {
+        cwd: process.cwd(),
+        env,
+        stdio: "ignore",
+      },
+    );
+    child.once("error", () => {
+      reject(new Error("external provider contract runner could not start"));
+    });
+    child.once("close", (exitCode) => {
+      resolve({ exitCode: exitCode ?? 1 });
+    });
+  });
+}
+
+/**
+ * @param {{
+ *   env?: Record<string, string | undefined>,
+ *   execute?: (env: Record<string, string | undefined>) => Promise<{exitCode: number}>,
+ *   log?: (line: string) => void,
+ * }} [options]
+ */
+export async function runExternalProviderContracts({
+  env = /** @type {Record<string, string | undefined>} */ (process.env),
+  execute = executeProviderContractSuite,
+  log = (line) => {
+    process.stdout.write(`${line}\n`);
+  },
+} = {}) {
+  const plan = externalProviderContractPlan(env);
+  if (env.RUN_EXTERNAL_PROVIDER_CONTRACTS !== "true") {
+    throw new Error(
+      "external provider contracts require explicit RUN_EXTERNAL_PROVIDER_CONTRACTS=true opt-in",
+    );
+  }
+  if (plan.enabled.length === 0) {
+    throw new Error(
+      `external provider contracts unavailable: no complete credential set injected (${plan.unavailable.join(", ")})`,
+    );
+  }
+
+  const result = await execute(providerContractChildEnvironment(env));
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `external provider contracts failed for ${plan.enabled.join(", ")}`,
+    );
+  }
+  log(`external provider contracts passed for ${plan.enabled.join(", ")}`);
+  return { enabled: plan.enabled, ran: true };
 }
 
 export function parseBaseUrl(value) {
@@ -35,6 +204,24 @@ export function parseBaseUrl(value) {
   return url;
 }
 
+export async function validateSyntheticPersonRead(
+  response,
+  { expectedId, expectedDisplayName },
+) {
+  const body = await response.json().catch(() => null);
+  const person = body?.data?.person;
+  if (
+    !response.ok ||
+    !body ||
+    (Array.isArray(body.errors) && body.errors.length > 0) ||
+    person?.id !== expectedId ||
+    person?.displayName !== expectedDisplayName
+  )
+    throw new Error(
+      `authenticated person read failed (request ${requestId(response.headers)})`,
+    );
+}
+
 function requestId(headers) {
   return headers.get("x-request-id") ?? "missing";
 }
@@ -47,12 +234,28 @@ export async function runProductionSmoke({
   adminEmail = "",
   adminUsername = "",
   adminPassword = "",
+  backupCode = "",
   providerContracts = false,
+  providerContractRunner = runExternalProviderContracts,
+  providerEnv = process.env,
   randomUUID = () => crypto.randomUUID(),
+  totpCode = "",
+  twoFactor = false,
   log = (line) => {
     process.stdout.write(`${line}\n`);
   },
 }) {
+  if (twoFactor) {
+    if (!auth)
+      throw new Error(
+        "two-factor production smoke requires authenticated smoke",
+      );
+    if (Number(Boolean(totpCode)) + Number(Boolean(backupCode)) !== 1)
+      throw new Error(
+        "two-factor production smoke requires exactly one injected TOTP code or backup code",
+      );
+  }
+
   const call = async (path, init = {}) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -91,6 +294,21 @@ export async function runProductionSmoke({
   const ready = await checkJson("/api/health/ready", 200);
   if (ready.body?.status !== "ready")
     throw new Error("readiness did not report ready");
+  const requiredDependencies = [
+    "configuration",
+    "postgres",
+    "redis",
+    "storage",
+  ];
+  if (
+    requiredDependencies.some(
+      (dependency) => ready.body?.dependencies?.[dependency] !== "ok",
+    )
+  )
+    throw new Error(
+      "readiness did not include successful dependency evidence for configuration, postgres, redis, and storage",
+    );
+  log("provider readiness configuration=ok postgres=ok redis=ok storage=ok");
   const graph = await call("/api/graphql", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -118,7 +336,25 @@ export async function runProductionSmoke({
       throw new Error(
         "PRODUCTION_SMOKE_AUTH=1 requires ADMIN_EMAIL, ADMIN_USERNAME, and ADMIN_PASSWORD",
       );
+    const cookieHeader = (jar) =>
+      [...jar.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
+    const absorbCookies = (response, jar) => {
+      const values =
+        typeof response.headers.getSetCookie === "function"
+          ? response.headers.getSetCookie()
+          : [response.headers.get("set-cookie")].filter(Boolean);
+      for (const value of values) {
+        const pair = value.split(";", 1)[0];
+        const separator = pair.indexOf("=");
+        if (separator < 1) continue;
+        const name = pair.slice(0, separator).trim();
+        const cookieValue = pair.slice(separator + 1).trim();
+        if (/max-age=0/iu.test(value) || cookieValue === "") jar.delete(name);
+        else jar.set(name, cookieValue);
+      }
+    };
     const signIn = async ({ path, body, label }) => {
+      const jar = new Map();
       const response = await call(path, {
         method: "POST",
         headers: {
@@ -133,22 +369,46 @@ export async function runProductionSmoke({
         throw new Error(
           `authenticated ${label} sign-in returned ${response.status} (request ${requestId(response.headers)})`,
         );
-      const cookie = response.headers.get("set-cookie");
-      if (!cookie)
+      absorbCookies(response, jar);
+      if (jar.size === 0)
         throw new Error(
-          `authenticated ${label} sign-in did not return a session cookie`,
+          `authenticated ${label} sign-in did not return an authentication cookie`,
         );
+      const result = await response.json().catch(() => null);
       return {
-        headers: { cookie: cookie.split(",")[0].split(";")[0] },
+        jar,
         label,
+        twoFactorRequired: result?.twoFactorRedirect === true,
       };
+    };
+    const completeSecondFactor = async (session) => {
+      const method = totpCode ? "totp" : "backup-code";
+      const code = totpCode || backupCode;
+      const response = await call(`/api/auth/two-factor/verify-${method}`, {
+        method: "POST",
+        headers: {
+          ...sameOrigin,
+          cookie: cookieHeader(session.jar),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ code, trustDevice: false }),
+      });
+      if (!response.ok)
+        throw new Error(
+          `authenticated ${session.label} two-factor verification returned ${response.status} (request ${requestId(response.headers)})`,
+        );
+      absorbCookies(response, session.jar);
+      log(
+        `authenticated ${session.label} two-factor verified request=${requestId(response.headers)}`,
+      );
+      return session;
     };
     const verifyViewer = async (session) => {
       const viewer = await call("/api/graphql", {
         method: "POST",
         headers: {
           ...sameOrigin,
-          ...session.headers,
+          cookie: cookieHeader(session.jar),
           "content-type": "application/json",
         },
         body: JSON.stringify({
@@ -163,26 +423,43 @@ export async function runProductionSmoke({
           `authenticated ${session.label} viewer failed (request ${requestId(viewer.headers)})`,
         );
       log(
-        `authenticated ${session.label} viewer 200 workspace=${workspaceId} request=${requestId(viewer.headers)}`,
+        `authenticated ${session.label} viewer 200 request=${requestId(viewer.headers)}`,
       );
-      return { headers: session.headers, workspaceId };
+      return { jar: session.jar, workspaceId };
     };
+    const emailSignIn = await signIn({
+      path: "/api/auth/sign-in/email",
+      body: { email: adminEmail, password: adminPassword },
+      label: "email",
+    });
+    if (emailSignIn.twoFactorRequired !== twoFactor)
+      throw new Error(
+        twoFactor
+          ? "authenticated email sign-in did not require configured two-factor verification"
+          : "authenticated email sign-in requires two-factor verification; rerun with --two-factor and one injected code",
+      );
     const emailSession = await verifyViewer(
-      await signIn({
-        path: "/api/auth/sign-in/email",
-        body: { email: adminEmail, password: adminPassword },
-        label: "email",
-      }),
+      twoFactor ? await completeSecondFactor(emailSignIn) : emailSignIn,
     );
-    await verifyViewer(
-      await signIn({
-        path: "/api/auth/sign-in/username",
-        body: { username: adminUsername, password: adminPassword },
-        label: "username",
-      }),
-    );
-    const sessionHeaders = emailSession.headers;
+    const usernameSignIn = await signIn({
+      path: "/api/auth/sign-in/username",
+      body: { username: adminUsername, password: adminPassword },
+      label: "username",
+    });
+    if (usernameSignIn.twoFactorRequired !== twoFactor)
+      throw new Error(
+        "email and username sign-in identifiers did not return the same two-factor policy",
+      );
+    if (twoFactor) {
+      log(
+        "authenticated username password accepted; two-factor challenge required",
+      );
+    } else {
+      await verifyViewer(usernameSignIn);
+    }
+    const sessionHeaders = { cookie: cookieHeader(emailSession.jar) };
     const idempotencyKey = randomUUID();
+    const expectedDisplayName = `Production smoke ${idempotencyKey.slice(0, 8)}`;
     const create = await call("/api/graphql", {
       method: "POST",
       headers: {
@@ -196,7 +473,7 @@ export async function runProductionSmoke({
           "mutation SmokeCreatePerson($input: CreatePersonInput!) { createPerson(input: $input) { person { id displayName } code } }",
         variables: {
           input: {
-            displayName: `Production smoke ${idempotencyKey.slice(0, 8)}`,
+            displayName: expectedDisplayName,
             biography: "Fictional smoke-test record",
             idempotencyKey,
           },
@@ -226,24 +503,16 @@ export async function runProductionSmoke({
         variables: { id: personId },
       }),
     });
-    if (!read.ok)
-      throw new Error(
-        `authenticated person read returned ${read.status} (request ${requestId(read.headers)})`,
-      );
+    await validateSyntheticPersonRead(read, {
+      expectedId: personId,
+      expectedDisplayName,
+    });
     log(
       `authenticated synthetic person read 200 request=${requestId(read.headers)}`,
     );
   }
   if (providerContracts) {
-    if (process.env.RUN_EXTERNAL_PROVIDER_CONTRACTS !== "true") {
-      log(
-        "provider contracts skipped (set RUN_EXTERNAL_PROVIDER_CONTRACTS=true to opt in)",
-      );
-    } else {
-      log(
-        "provider contracts requested; use the dedicated Compose/provider suites with injected credentials",
-      );
-    }
+    await providerContractRunner({ env: providerEnv, log });
   }
 }
 
@@ -252,7 +521,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const options = parseArgs(process.argv.slice(2));
     if (options.help) {
       process.stdout.write(
-        "Usage: pnpm production:smoke -- --base-url https://host [--provider-contracts]\n",
+        "Usage: pnpm production:smoke -- --base-url https://host [--two-factor] [--provider-contracts]\n",
       );
       process.exit(0);
     }
@@ -265,7 +534,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       adminEmail: process.env.ADMIN_EMAIL,
       adminUsername: process.env.ADMIN_USERNAME,
       adminPassword: process.env.ADMIN_PASSWORD,
+      backupCode: process.env.PRODUCTION_SMOKE_BACKUP_CODE,
       providerContracts: options.providerContracts,
+      totpCode: process.env.PRODUCTION_SMOKE_TOTP,
+      twoFactor: options.twoFactor || process.env.PRODUCTION_SMOKE_2FA === "1",
     });
     process.stdout.write("production smoke passed\n");
   } catch (error) {

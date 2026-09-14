@@ -171,26 +171,29 @@ secret and remove or rotate it after successful recovery.
 The attended bootstrap and rotation entrypoints intentionally parse only
 `DATABASE_URL` and the four `ADMIN_*` values. They do not require the unrelated
 Redis, object-storage, Resend, or AI variables used by the application. For a
-hosted recovery, obtain the Neon connection string and replacement administrator
-values from the deployment's approved secret manager, write them to a temporary
-0600 file such as `.env.admin-recovery`, and run the entrypoint directly from a
-restricted Node 24 release checkout:
+hosted recovery, obtain approved references to the Neon connection string and
+replacement administrator values from the deployment's secret manager. With
+1Password CLI, copy the repository's reference-only example to the ignored
+`.env.operator.op.tpl`, update only the `op://` references, and inject them into
+the restricted Node 24 release process:
 
 ```sh
-node --env-file=.env.admin-recovery --conditions=react-server --import tsx \
-  src/db/rotate-admin-password-entry.ts
-rm -f .env.admin-recovery
+cp docs/operations/production-operator.op.env.example .env.operator.op.tpl
+$EDITOR .env.operator.op.tpl
+op run --env-file .env.operator.op.tpl -- \
+  pnpm operator:rotate-admin-password
 ```
 
-The file must contain only `DATABASE_URL`, `ADMIN_EMAIL`,
-`ADMIN_USERNAME`, `ADMIN_DISPLAY_NAME`, and `ADMIN_PASSWORD`; do not put the
-password in a command argument or shell history. Vercel protected/hidden
-variables are not a recovery transport: do not try to obtain plaintext values
-with `vercel env pull`. Source the database credential from Neon or the
-approved secret manager instead, keep the Vercel runtime variables unchanged,
-and record only the redacted result and timestamp. This operation still
-requires an explicit operator-controlled database credential and never runs
-inside a Vercel function.
+The template must contain references only; never render it or replace a
+reference with plaintext, and never use `op run --no-masking`. Vercel
+protected/hidden variables are not a recovery transport: do not try to obtain
+plaintext values with `vercel env pull`. Source the database credential from
+Neon or the approved secret manager instead, keep Vercel runtime variables
+unchanged, and record only the redacted boolean result and timestamp. This
+operation still requires an explicit operator-controlled database credential
+and never runs inside a Vercel function. See the
+[production closeout runbook](production-closeout.md) for the subsequent
+authenticated 2FA and provider checks.
 
 For a source-based or hosted deployment, run the equivalent one-shot command
 from a restricted release environment with the production database and normal

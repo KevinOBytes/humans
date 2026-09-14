@@ -91,6 +91,13 @@ were saved before leaving the presentation step. Plaintext QR secrets and codes
 must never be copied into tickets, screenshots, logs, analytics, URLs, or
 browser storage.
 
+Hosted acceptance uses the reference-only 1Password workflow in the
+[production closeout runbook](production-closeout.md). It injects a current TOTP
+or one disposable backup code only into the smoke process, keeps 1Password
+output masking enabled, and never places the factor in a command argument,
+populated environment file, or recorded result. Missing approved factor access
+is an unverified acceptance step, not a reason to disable or bypass 2FA.
+
 The application-owned disable endpoint accepts only a cookie session from the
 exact trusted Origin; API keys and direct Better Auth disable calls are denied.
 Before password hashing it consumes an atomic PostgreSQL attempt budget keyed
