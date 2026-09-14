@@ -630,6 +630,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     const nameId = responseReference.nameId;
     const version = responseReference.version;
     if (
+      Object.keys(responseReference).sort().join(":") !== "nameId:version" ||
       typeof nameId !== "string" ||
       !PERSON_REFERENCE_UUID.test(nameId) ||
       typeof version !== "number" ||
@@ -668,6 +669,7 @@ export function createPeopleService(context: ResearchServiceContext) {
     const eventId = responseReference.eventId;
     const version = responseReference.version;
     if (
+      Object.keys(responseReference).sort().join(":") !== "eventId:version" ||
       typeof eventId !== "string" ||
       !PERSON_REFERENCE_UUID.test(eventId) ||
       typeof version !== "number" ||
