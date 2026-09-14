@@ -1,7 +1,10 @@
 import { builder } from "@/graphql/builder";
 import { normalizePagination } from "@/graphql/limits";
 import type { CaseRow, CaseMemberRow, CaseResourceLinkRow } from "./types";
-import type { linkEvidenceAssertion } from "@/modules/evidence/assertions";
+import type {
+  linkEvidenceAssertion,
+  PersonIdentifierCitation,
+} from "@/modules/evidence/assertions";
 
 const Case = builder.objectRef<CaseRow>("ResearchCase").implement({
   fields: (t) => ({
@@ -123,8 +126,65 @@ const AssertionInput = builder.inputType("LinkEvidenceAssertionInput", {
   }),
 });
 
+const IdentifierCitation = builder
+  .objectRef<PersonIdentifierCitation>("PersonIdentifierCitation")
+  .implement({
+    fields: (t) => ({
+      id: t.expose("id", { type: "UUID" }),
+      evidenceId: t.expose("evidenceId", { type: "UUID" }),
+      identifierId: t.expose("identifierId", { type: "UUID" }),
+      identifierVersion: t.exposeInt("identifierVersion"),
+      field: t.exposeString("field"),
+      fieldPath: t.exposeString("fieldPath"),
+      sourceId: t.expose("sourceId", { type: "UUID" }),
+      sourceTitle: t.exposeString("sourceTitle"),
+      sourceUrl: t.exposeString("sourceUrl", { nullable: true }),
+      locator: t.exposeString("locator"),
+      quote: t.exposeString("quote"),
+      role: t.exposeString("role"),
+      confidence: t.float({ resolve: (r) => Number(r.confidence) }),
+      sourceReliability: t.float({
+        nullable: true,
+        resolve: (r) =>
+          r.sourceReliability == null ? null : Number(r.sourceReliability),
+      }),
+      reviewState: t.exposeString("reviewState"),
+    }),
+  });
+const IdentifierCitations = builder
+  .objectRef<{
+    nodes: PersonIdentifierCitation[];
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  }>("PersonIdentifierCitationConnection")
+  .implement({
+    fields: (t) => ({
+      nodes: t.field({
+        type: [IdentifierCitation],
+        resolve: (r) => r.nodes,
+        complexity: { field: 0, multiplier: 1 },
+      }),
+      pageInfo: t.field({ type: Page, resolve: (r) => r.pageInfo }),
+    }),
+  });
+
 export function registerCasesGraphQL() {
   builder.queryFields((t) => ({
+    personIdentifierCitations: t.field({
+      type: IdentifierCitations,
+      description:
+        "Current authorized public identifier citations only. Protected and stale bindings are omitted; a bounded page may be empty while more candidates remain.",
+      args: {
+        personId: t.arg({ type: "UUID", required: true }),
+        first: t.arg.int(),
+        after: t.arg.string(),
+      },
+      complexity: (a) => ({
+        field: 1,
+        multiplier: normalizePagination(a).first,
+      }),
+      resolve: (_r, a, c) =>
+        c.services.evidenceAssertions.listPersonIdentifierCitations(a),
+    }),
     researchCase: t.field({
       type: Case,
       args: { id: t.arg({ type: "UUID", required: true }) },

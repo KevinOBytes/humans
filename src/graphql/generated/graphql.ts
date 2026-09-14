@@ -1914,6 +1914,35 @@ export type ReviewEvidenceAssertionMutation = {
   } | null;
 };
 
+export type PersonIdentifierCitationsQueryVariables = Exact<{
+  personId: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type PersonIdentifierCitationsQuery = {
+  personIdentifierCitations: {
+    nodes: Array<{
+      id: string | null;
+      evidenceId: string | null;
+      identifierId: string | null;
+      identifierVersion: number | null;
+      field: string | null;
+      fieldPath: string | null;
+      sourceId: string | null;
+      sourceTitle: string | null;
+      sourceUrl: string | null;
+      locator: string | null;
+      quote: string | null;
+      role: string | null;
+      confidence: number | null;
+      sourceReliability: number | null;
+      reviewState: string | null;
+    }> | null;
+    pageInfo: { hasNextPage: boolean | null; endCursor: string | null } | null;
+  } | null;
+};
+
 export type CollaborationInvestigationsQueryVariables = Exact<{
   first?: number | null | undefined;
   after?: string | null | undefined;
@@ -7632,6 +7661,41 @@ export const ReviewEvidenceAssertionDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   ReviewEvidenceAssertionMutation,
   ReviewEvidenceAssertionMutationVariables
+>;
+export const PersonIdentifierCitationsDocument = new TypedDocumentString(
+  `
+    query PersonIdentifierCitations($personId: UUID!, $first: Int, $after: String) {
+  personIdentifierCitations(personId: $personId, first: $first, after: $after) {
+    nodes {
+      id
+      evidenceId
+      identifierId
+      identifierVersion
+      field
+      fieldPath
+      sourceId
+      sourceTitle
+      sourceUrl
+      locator
+      quote
+      role
+      confidence
+      sourceReliability
+      reviewState
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+    `,
+  {
+    hash: "sha256:cc541b88f0d9f352a7965c9474c0321513df1e287e1f2e26eafcb5d18de00af0",
+  },
+) as unknown as TypedDocumentString<
+  PersonIdentifierCitationsQuery,
+  PersonIdentifierCitationsQueryVariables
 >;
 export const CollaborationInvestigationsDocument = new TypedDocumentString(
   `

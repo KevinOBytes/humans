@@ -1,4 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { createHmac } from "node:crypto";
+import { GraphQLError } from "graphql";
 import { newId } from "@/db/id";
 import {
   evidenceAssertions,
@@ -8,8 +10,14 @@ import {
 } from "@/db/schema/evidence";
 import { relationships } from "@/db/schema/relationships";
 import { createGraphQLError } from "@/graphql/errors";
+import { normalizePagination, type PaginationInput } from "@/graphql/limits";
+import {
+  openSealedEnvelope,
+  sealEnvelope,
+} from "@/lib/security/sealed-envelope";
 import {
   canAccessResource,
+  resourceVisibilitySql,
   createAuditService,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
@@ -17,6 +25,7 @@ import {
   derivePrincipalResearchIdempotency,
   runPrincipalIdempotentResearchWrite,
   withResearchWriteTransaction,
+  runResearchTransaction,
   type CanonicalRequestMaterial,
   type ResearchResponseReference,
 } from "@/modules/audit/transactions";
@@ -30,10 +39,12 @@ import { boundedCaseText } from "@/modules/cases/validation";
 import { normalizeGovernanceContext } from "@/modules/governance/validation";
 import {
   normalizeEvidenceAssertion,
+  parseIdentifierCitationPath,
   requireReviewedPromotion,
   requiresRelationshipPromotionReview,
 } from "./assertions-validation";
 import { requireIdentifierCitation } from "./identifier-citations";
+import { createEvidenceRepository } from "./repository";
 
 type AssertionInput = {
   evidenceId: string;
@@ -131,6 +142,9 @@ export function createEvidenceAssertionsService(
   context: ResearchServiceContext,
 ) {
   return {
+    listPersonIdentifierCitations: (
+      input: { personId: string } & PaginationInput,
+    ) => listPersonIdentifierCitations(context, input),
     link: (input: AssertionInput) => linkEvidenceAssertion(context, input),
     review: (input: Parameters<typeof reviewEvidenceAssertion>[1]) =>
       reviewEvidenceAssertion(context, input),
@@ -139,6 +153,191 @@ export function createEvidenceAssertionsService(
 export type EvidenceAssertionsService = ReturnType<
   typeof createEvidenceAssertionsService
 >;
+
+export type PersonIdentifierCitation = {
+  id: string;
+  evidenceId: string;
+  identifierId: string;
+  identifierVersion: number;
+  field: string;
+  fieldPath: string;
+  sourceId: string;
+  sourceTitle: string;
+  sourceUrl: string | null;
+  locator: string;
+  quote: string;
+  role: string;
+  confidence: string;
+  sourceReliability: string | null;
+  reviewState: string;
+};
+
+async function listPersonIdentifierCitations(
+  context: ResearchServiceContext,
+  input: { personId: string } & PaginationInput,
+) {
+  const page = normalizePagination(input);
+  // Seal, rather than merely encode, scan positions: omitted rows must not leak
+  // their UUIDs through a cursor. The key and envelope are purpose-separated.
+  if (!context.idempotencyHmacKey)
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "Citation pagination is not configured.",
+    );
+  const key = createHmac(
+    "sha256",
+    Buffer.from(context.idempotencyHmacKey, "hex"),
+  )
+    .update("humans:identifier-citation-cursor:v1")
+    .digest("hex");
+  const purpose = "identifier-citation-cursor";
+  const binding = {
+    workspaceId: context.workspaceId,
+    personId: input.personId,
+    principalId: context.actor.principalId,
+  };
+  let afterId: string | null = null;
+  if (page.after != null) {
+    try {
+      if (page.after.length > 1024 || !/^[A-Za-z0-9_-]+$/u.test(page.after))
+        throw new Error();
+      const bytes = Buffer.from(page.after, "base64url");
+      if (bytes.toString("base64url") !== page.after) throw new Error();
+      const decoded = JSON.parse(
+        openSealedEnvelope({ key, purpose, token: bytes.toString("utf8") }),
+      );
+      if (
+        decoded.v !== 1 ||
+        decoded.workspaceId !== binding.workspaceId ||
+        decoded.personId !== binding.personId ||
+        decoded.principalId !== binding.principalId ||
+        typeof decoded.id !== "string" ||
+        !UUID.test(decoded.id)
+      )
+        throw new Error();
+      afterId = decoded.id;
+    } catch {
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The citation cursor is invalid.",
+      );
+    }
+  }
+  return runResearchTransaction(
+    context,
+    { requiredPermissions: ["person:read", "evidence:read", "source:read"] },
+    async (scoped) => {
+      const person = await requireCaseResource(
+        scoped,
+        "person",
+        input.personId,
+      );
+      const rows = await createEvidenceRepository(
+        scoped.database,
+      ).listPersonIdentifierCitationCandidates({
+        workspaceId: scoped.workspaceId,
+        personId: input.personId,
+        afterId,
+        limit: page.first + 1,
+        evidenceVisibility: resourceVisibilitySql(scoped, {
+          resourceKind: "evidence",
+          id: evidenceItems.id,
+          sensitivity: evidenceItems.sensitivity,
+        }),
+        sourceVisibility: resourceVisibilitySql(scoped, {
+          resourceKind: "source",
+          id: sources.id,
+          sensitivity: sources.sensitivity,
+        }),
+      });
+      const candidates = rows.slice(0, page.first);
+      const nodes: PersonIdentifierCitation[] = [];
+      for (const row of candidates) {
+        try {
+          const citation = parseIdentifierCitationPath(
+            row.resourceKind,
+            row.fieldPath,
+          );
+          if (!citation) continue;
+          // Locks parent then identifier and rechecks public sensitivity/current
+          // version. Historical citations are not silently rebound to new values.
+          await requireIdentifierCitation(scoped, row, true);
+          if (row.caseId) {
+            const caseRow = await createCasesService(scoped).getCase(
+              row.caseId,
+            );
+            if (caseRow.purpose !== row.purpose) continue;
+          }
+          await requireResourceCoverage(
+            scoped,
+            person,
+            row.purpose,
+            row.caseId,
+            "read",
+          );
+          await requireEvidence(scoped, row.evidenceId);
+          let sourceUrl: string | null = null;
+          if (row.sourceUrl) {
+            try {
+              const url = new URL(row.sourceUrl);
+              if (
+                ["http:", "https:"].includes(url.protocol) &&
+                !url.username &&
+                !url.password
+              )
+                sourceUrl = url.href;
+            } catch {}
+          }
+          nodes.push({
+            id: row.id,
+            evidenceId: row.evidenceId,
+            identifierId: citation.identifierId,
+            identifierVersion: citation.version,
+            field: citation.field,
+            fieldPath: row.fieldPath!,
+            sourceId: row.sourceId,
+            sourceTitle: row.sourceTitle.slice(0, 512),
+            sourceUrl,
+            locator: row.locator.slice(0, 2048),
+            quote: row.quote.slice(0, 8000),
+            role: row.role,
+            confidence: row.confidence,
+            sourceReliability: row.sourceReliability,
+            reviewState: row.reviewState,
+          });
+        } catch (error) {
+          if (
+            !(error instanceof GraphQLError) ||
+            ![
+              "NOT_FOUND",
+              "FORBIDDEN",
+              "PRECONDITION_FAILED",
+              "CONFLICT",
+              "VALIDATION_FAILED",
+            ].includes(String(error.extensions.code))
+          )
+            throw error;
+        }
+      }
+      const last = candidates.at(-1);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: rows.length > page.first,
+          endCursor: last
+            ? Buffer.from(
+                sealEnvelope({
+                  key,
+                  purpose,
+                  plaintext: JSON.stringify({ v: 1, ...binding, id: last.id }),
+                }),
+              ).toString("base64url")
+            : null,
+        },
+      };
+    },
+  );
+}
 function permitted(context: ResearchServiceContext, permission: string) {
   if (!context.permissions.has(permission))
     throw createGraphQLError("FORBIDDEN", "This operation is not permitted.");

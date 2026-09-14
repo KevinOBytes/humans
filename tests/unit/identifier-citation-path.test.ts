@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { normalizeEvidenceAssertion } from "@/modules/evidence/assertions-validation";
+import {
+  normalizeEvidenceAssertion,
+  parseIdentifierCitationPath,
+} from "@/modules/evidence/assertions-validation";
 
 const identifierId = "019f4df3-a656-7002-9979-8946810c5bde";
 const input = {
@@ -11,6 +14,14 @@ const input = {
 };
 
 describe("identifier citation paths", () => {
+  it("returns the exact authored field and version for public readback", () => {
+    expect(
+      parseIdentifierCitationPath(
+        "person",
+        `identifiers.${identifierId}.v12.issuer`,
+      ),
+    ).toEqual({ identifierId, version: 12, field: "issuer" });
+  });
   it.each([
     "identifiers",
     `identifiers.${identifierId}.value`,

@@ -132,3 +132,28 @@ mutation ReviewEvidenceAssertion(
     auditReference
   }
 }
+query PersonIdentifierCitations($personId: UUID!, $first: Int, $after: String) {
+  personIdentifierCitations(personId: $personId, first: $first, after: $after) {
+    nodes {
+      id
+      evidenceId
+      identifierId
+      identifierVersion
+      field
+      fieldPath
+      sourceId
+      sourceTitle
+      sourceUrl
+      locator
+      quote
+      role
+      confidence
+      sourceReliability
+      reviewState
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}

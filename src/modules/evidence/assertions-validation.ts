@@ -20,7 +20,11 @@ export function parseIdentifierCitationPath(
       "VALIDATION_FAILED",
       "The identifier citation path is invalid.",
     );
-  return { identifierId: match[1]!, version: Number(match[2]) };
+  return {
+    identifierId: match[1]!,
+    version: Number(match[2]),
+    field: match[3]!,
+  };
 }
 
 export function normalizeEvidenceAssertion(input: {

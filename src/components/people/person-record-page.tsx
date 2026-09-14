@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
 import { getAppContext } from "@/app/(app)/app-session";
@@ -8,6 +9,7 @@ import { FactsSection } from "@/components/facts/facts-section";
 import { NotesSection } from "@/components/notes/notes-section";
 import { ContactsPlacesSection } from "@/components/locations/contacts-places-section";
 import { PersonEditForm } from "@/components/people/person-edit-form";
+import { IdentifierCitationsSection } from "@/components/people/identifier-citations-section";
 import { PersonGovernancePanels } from "@/components/people/person-governance-panels";
 import { PersonPrivacyPanel } from "@/components/people/person-privacy-panel";
 import { PersonResearchPanel } from "@/components/people/person-research-panel";
@@ -188,14 +190,25 @@ export async function PersonRecordPage({
         />
       ) : null}
       {view === "evidence" ? (
-        <EvidenceSection
-          search={search}
-          personId={personId}
-          canCreate={
-            permissions.includes("evidence:create") &&
-            permissions.includes("source:create")
-          }
-        />
+        <>
+          {permissions.includes("evidence:read") &&
+          permissions.includes("source:read") ? (
+            <Suspense
+              key={`${context.viewer.workspace?.id ?? "workspace"}:${personId}:${String(search.identifierCitationAfter ?? "")}`}
+              fallback={<p role="status">Loading identifier citations…</p>}
+            >
+              <IdentifierCitationsSection personId={personId} search={search} />
+            </Suspense>
+          ) : null}
+          <EvidenceSection
+            search={search}
+            personId={personId}
+            canCreate={
+              permissions.includes("evidence:create") &&
+              permissions.includes("source:create")
+            }
+          />
+        </>
       ) : null}
       {view === "notes" ? (
         <NotesSection

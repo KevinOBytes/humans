@@ -16,6 +16,7 @@ import {
 
 import {
   evidenceExcerpts,
+  evidenceAssertions,
   evidenceItems,
   factEvidence,
   factTags,
@@ -46,6 +47,68 @@ export type RelationshipTagRow = typeof relationshipTags.$inferSelect;
 
 export function createEvidenceRepository(database: Database) {
   return {
+    async listPersonIdentifierCitationCandidates(input: {
+      workspaceId: string;
+      personId: string;
+      afterId: string | null;
+      limit: number;
+      evidenceVisibility: SQL;
+      sourceVisibility: SQL;
+    }) {
+      // Deliberately never join or select identifier value/storage columns.
+      return database
+        .select({
+          id: evidenceAssertions.id,
+          evidenceId: evidenceAssertions.evidenceId,
+          resourceKind: evidenceAssertions.resourceKind,
+          resourceId: evidenceAssertions.resourceId,
+          fieldPath: evidenceAssertions.fieldPath,
+          caseId: evidenceAssertions.caseId,
+          purpose: evidenceAssertions.purpose,
+          locator: evidenceAssertions.locator,
+          quote: evidenceAssertions.quote,
+          role: evidenceAssertions.role,
+          confidence: evidenceAssertions.confidence,
+          reviewState: evidenceAssertions.reviewState,
+          sourceId: sources.id,
+          sourceTitle: sources.title,
+          sourceUrl: sources.canonicalUrl,
+          sourceReliability: sources.reliability,
+        })
+        .from(evidenceAssertions)
+        .innerJoin(
+          evidenceItems,
+          and(
+            eq(evidenceItems.workspaceId, evidenceAssertions.workspaceId),
+            eq(evidenceItems.id, evidenceAssertions.evidenceId),
+          ),
+        )
+        .innerJoin(
+          sources,
+          and(
+            eq(sources.workspaceId, evidenceItems.workspaceId),
+            eq(sources.id, evidenceItems.sourceId),
+          ),
+        )
+        .where(
+          and(
+            eq(evidenceAssertions.workspaceId, input.workspaceId),
+            eq(evidenceAssertions.resourceKind, "person"),
+            eq(evidenceAssertions.resourceId, input.personId),
+            sql`${evidenceAssertions.fieldPath} LIKE 'identifiers.%'`,
+            isNull(evidenceAssertions.deletedAt),
+            isNull(evidenceItems.deletedAt),
+            isNull(sources.deletedAt),
+            input.evidenceVisibility,
+            input.sourceVisibility,
+            input.afterId
+              ? lt(evidenceAssertions.id, input.afterId)
+              : undefined,
+          ),
+        )
+        .orderBy(desc(evidenceAssertions.id))
+        .limit(input.limit);
+    },
     async getSource(input: {
       workspaceId: string;
       id: string;
