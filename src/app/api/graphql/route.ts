@@ -1,7 +1,4 @@
-import {
-  createGraphQLInternalErrorResponse,
-  createGraphQLRequestId,
-} from "@/graphql/server";
+import { createGraphQLRouteHandler } from "@/app/api/graphql/handlers";
 import { createMethodBoundary } from "@/lib/api/method-boundary";
 import { OperationLimiter } from "@/graphql/operation-limiter";
 import { productionSecurityEventLogger } from "@/lib/observability/security-events";
@@ -130,20 +127,7 @@ async function getProductionHandler() {
   return productionHandler;
 }
 
-async function handler(request: Request) {
-  const requestId = createGraphQLRequestId(request);
-  try {
-    const productionHandler = await getProductionHandler();
-    return await productionHandler(request, requestId);
-  } catch {
-    productionSecurityEventLogger.log({
-      event: "graphql.initialization.internal",
-      requestId,
-      severity: "error",
-    });
-    return createGraphQLInternalErrorResponse(requestId);
-  }
-}
+const handler = createGraphQLRouteHandler(getProductionHandler);
 
 export { handler as GET, handler as OPTIONS, handler as POST };
 

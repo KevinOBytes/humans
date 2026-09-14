@@ -244,14 +244,30 @@ injecting any operator values:
 corepack pnpm acceptance:local
 ```
 
-This inventories every direct API route, exercises its method, input,
-authorization, correlation, cache, and redaction boundaries, checks the
-provider adapters and rendered Compose contracts, and then prints a
-configuration-only JSON plan. Diagnostic entries use stable `ACCEPTANCE_*`
-codes and include only the local/external scope, provider label, status, and
-missing variable names. `networkProbes` is always `false`: this step never
-initializes PostgreSQL, Redis, MinIO, Ollama, Upstash, R2/S3, OpenAI-compatible,
-or Resend clients and is not provider-readiness evidence.
+The command runs in a deliberately sanitized child environment. It retains only
+safe process runtime variables, forces `NODE_ENV=test`, and ignores ambient
+database, test-reset, Redis, provider, Docker-host, and Node-injection values.
+Its unconditional contracts inventory every direct API route and exercise
+method, input, authorization, correlation, cache, and redaction boundaries,
+including pure GraphQL authentication, malformed-request, preflight, and
+initialization-failure behavior. It also checks provider adapters and rendered
+Compose contracts without initializing PostgreSQL, Redis, MinIO, Ollama,
+Upstash, R2/S3, OpenAI-compatible, or Resend clients.
+
+After the contracts pass, the command prints a configuration-only JSON plan for
+that sanitized environment. Diagnostic entries use stable `ACCEPTANCE_*` codes
+and include only the local/external scope, provider label, status, and missing
+variable names; `networkProbes` is always `false`. To inspect the same allowlisted
+diagnostic against a deliberately selected operator environment without running
+the aggregate, use:
+
+```sh
+corepack pnpm production:smoke -- --diagnose-provider-config
+```
+
+That diagnostic is still configuration-only and is not provider-readiness
+evidence. Real PostgreSQL/Redis integration, Compose lifecycle, browser, hosted,
+and provider acceptance remain separate attended commands.
 
 The operator closeout order is explicit:
 
