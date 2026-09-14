@@ -517,20 +517,21 @@ liveDescribe("research assignment queue lifecycle", () => {
     const assertVisible = async (reader: ResearchServiceContext) => {
       const service = createInvestigationsService(reader);
       expect((await service.getInvestigation(visible.id)).id).toBe(visible.id);
-      expect(
-        (await service.listInvestigations({ first: 1 })).nodes.map(
-          (row) => row.id,
-        ),
-      ).toEqual([visible.id]);
+      const page = await service.listInvestigations({ first: 1 });
+      expect(page.nodes.map((row) => row.id)).toEqual([visible.id]);
+      expect(page.pageInfo).toEqual({
+        hasNextPage: false,
+        endCursor: expect.any(String),
+      });
     };
     const assertHidden = async (reader: ResearchServiceContext) => {
       const service = createInvestigationsService(reader);
       await expect(service.getInvestigation(visible.id)).rejects.toMatchObject({
         extensions: { code: "NOT_FOUND" },
       });
-      expect((await service.listInvestigations({ first: 1 })).nodes).toEqual(
-        [],
-      );
+      const page = await service.listInvestigations({ first: 1 });
+      expect(page.nodes).toEqual([]);
+      expect(page.pageInfo).toEqual({ hasNextPage: false, endCursor: null });
     };
 
     const assertManagerVisible = async (reader: ResearchServiceContext) => {
@@ -539,13 +540,14 @@ liveDescribe("research assignment queue lifecycle", () => {
       expect(
         (await service.getInvestigation(unrelatedInvestigation.id)).id,
       ).toBe(unrelatedInvestigation.id);
-      expect(
-        (await service.listInvestigations({ first: 10 })).nodes.map(
-          (row) => row.id,
-        ),
-      ).toEqual(
-        expect.arrayContaining([visible.id, unrelatedInvestigation.id]),
+      const page = await service.listInvestigations({ first: 10 });
+      expect(page.nodes.map((row) => row.id).sort()).toEqual(
+        [visible.id, unrelatedInvestigation.id].sort(),
       );
+      expect(page.pageInfo).toEqual({
+        hasNextPage: false,
+        endCursor: expect.any(String),
+      });
     };
     await assertManagerVisible(context);
     await assertManagerVisible(adminContext);
