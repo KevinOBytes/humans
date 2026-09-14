@@ -46,9 +46,11 @@ evidence.
 
 - Verified: a credential-free `corepack pnpm acceptance:local` gate covers the
   complete direct-route inventory, stable error/correlation/cache/redaction
-  boundaries, provider adapters, and rendered Compose contracts. The local
-  Node 24.19.0 run passed 252 tests with four existing environment-gated
-  skips.
+  boundaries, unconditional pure GraphQL route/error contracts, provider
+  adapters, and rendered Compose contracts. Its child process ignores ambient
+  database, test-reset, Redis, provider, Docker-host, and Node-injection values.
+  The local Node 24.19.0 run passed 267 tests across 22 files with no skips,
+  including under synthetic ambient service credentials and reset opt-ins.
 - Verified: a non-network provider diagnostic uses stable `ACCEPTANCE_*` codes.
   It separates local PostgreSQL/Redis/MinIO/Ollama from opt-in external
   Upstash/R2/S3/OpenAI-compatible/Resend and emits provider labels, statuses,
