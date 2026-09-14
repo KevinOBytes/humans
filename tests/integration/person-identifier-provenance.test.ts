@@ -428,7 +428,7 @@ liveDescribe("version-bound public identifier provenance", () => {
       sensitivity: "restricted",
       value: "SYNTHETIC-PROTECTED-SECRET",
     });
-    expect(changed.resource?.sensitivity).toBe("confidential");
+    expect(changed.resource?.sensitivity).toBe("restricted");
     const linked = await linkEvidenceAssertion(context, {
       ...input(),
       quote: "SYNTHETIC-PROTECTED-SECRET",
