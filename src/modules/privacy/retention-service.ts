@@ -21,7 +21,11 @@ import {
   createAuditService,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
-import { runResearchTransaction } from "@/modules/audit/transactions";
+import {
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
+  runResearchTransaction,
+} from "@/modules/audit/transactions";
 
 export const privacyResourceKinds = [
   "person",
@@ -459,24 +463,150 @@ export async function evaluateRetention(
   });
 }
 export function createRetentionService(context: ResearchServiceContext) {
+  async function readLegalHold(
+    scoped: ResearchServiceContext,
+    id: string,
+    lock = false,
+  ) {
+    const query = scoped.database
+      .select()
+      .from(legalHolds)
+      .where(
+        and(
+          eq(legalHolds.workspaceId, scoped.workspaceId),
+          eq(legalHolds.id, id),
+          isNull(legalHolds.deletedAt),
+        ),
+      )
+      .limit(1);
+    const [row] = lock ? await query.for("update") : await query;
+    if (!row)
+      throw createGraphQLError(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+      );
+    await requirePrivacyResource(
+      scoped,
+      {
+        resourceKind: row.resourceKind as PrivacyResource["resourceKind"],
+        resourceId: row.resourceId,
+      },
+      true,
+    );
+    return row;
+  }
+
+  function mutation<T>(run: (scoped: ResearchServiceContext) => Promise<T>) {
+    privacyPermission(context, true);
+    return runResearchTransaction(
+      context,
+      { requiredPermissions: ["workspace:update"] },
+      async (scoped) => {
+        await privacyPolicyLock(scoped);
+        return run(scoped);
+      },
+    );
+  }
+
+  async function idempotentMutation(
+    operation: "create" | "release",
+    idempotencyKey: string | null | undefined,
+    requestMaterial: Record<string, string | number | null>,
+    run: (
+      scoped: ResearchServiceContext,
+    ) => Promise<typeof legalHolds.$inferSelect & { auditReference: string }>,
+  ) {
+    if (idempotencyKey == null) return mutation(run);
+    privacyPermission(context, true);
+    if (!context.idempotencyHmacKey)
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The legal hold mutation cannot be replayed safely.",
+      );
+    const derived = derivePrincipalResearchIdempotency(context, {
+      expiresAt: new Date(Date.now() + 86_400_000),
+      idempotencyKey,
+      operation: `privacy.legal_hold.${operation}`,
+      requestMaterial,
+      secret: context.idempotencyHmacKey,
+    });
+    const executed = await runPrincipalIdempotentResearchWrite(
+      context,
+      derived,
+      ["workspace:update"],
+      async (scoped) => {
+        await privacyPolicyLock(scoped);
+        const row = await run(scoped);
+        return {
+          auditReference: row.auditReference,
+          legalHoldId: row.id,
+          requestId: scoped.requestId,
+          state: row.state,
+          version: row.version,
+        };
+      },
+    );
+    const reference = z
+      .object({
+        auditReference: z.uuid(),
+        legalHoldId: z.uuid(),
+        requestId: z.string().min(1),
+        state: z.enum(["active", "released"]),
+        version: z.number().int().positive(),
+      })
+      .strict()
+      .safeParse(executed.responseReference);
+    const expectedState = operation === "create" ? "active" : "released";
+    if (!reference.success || reference.data.state !== expectedState)
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The legal hold replay reference is invalid.",
+      );
+    return mutation(async (scoped) => {
+      const row = await readLegalHold(scoped, reference.data.legalHoldId, true);
+      if (
+        row.state !== reference.data.state ||
+        row.version !== reference.data.version ||
+        row.updatedBy !== scoped.actor.principalId
+      )
+        throw createGraphQLError(
+          "CONFLICT",
+          "The legal hold version is stale.",
+        );
+      return {
+        ...row,
+        auditReference: reference.data.auditReference,
+        operationRequestId: reference.data.requestId,
+      };
+    });
+  }
+
   return {
     evaluateRetention: (resource: PrivacyResource) =>
       evaluateRetention(context, resource),
     async createLegalHold(
-      input: PrivacyResource & { reason: string; authority: string },
+      input: PrivacyResource & {
+        reason: string;
+        authority: string;
+        idempotencyKey?: string | null;
+      },
     ) {
-      privacyPermission(context, true);
       const parsed = z
         .object({
           reason: z.string().trim().min(1).max(2048),
           authority: z.string().trim().min(1).max(512),
         })
         .parse(input);
-      return runResearchTransaction(
-        context,
-        { requiredPermissions: ["workspace:update"] },
+      return idempotentMutation(
+        "create",
+        input.idempotencyKey,
+        {
+          authority: parsed.authority,
+          reason: parsed.reason,
+          resourceId: input.resourceId,
+          resourceKind: input.resourceKind,
+        },
         async (scoped) => {
-          await privacyPolicyLock(scoped);
           await requirePrivacyResource(scoped, input);
           const [row] = await scoped.database
             .insert(legalHolds)
@@ -507,38 +637,19 @@ export function createRetentionService(context: ResearchServiceContext) {
       id: string;
       expectedVersion: number;
       reason: string;
+      idempotencyKey?: string | null;
     }) {
-      privacyPermission(context, true);
       const reason = z.string().trim().min(1).max(2048).parse(input.reason);
-      return runResearchTransaction(
-        context,
-        { requiredPermissions: ["workspace:update"] },
+      return idempotentMutation(
+        "release",
+        input.idempotencyKey,
+        {
+          expectedVersion: input.expectedVersion,
+          id: input.id,
+          reason,
+        },
         async (scoped) => {
-          await privacyPolicyLock(scoped);
-          const [row] = await scoped.database
-            .select()
-            .from(legalHolds)
-            .where(
-              and(
-                eq(legalHolds.workspaceId, scoped.workspaceId),
-                eq(legalHolds.id, input.id),
-                isNull(legalHolds.deletedAt),
-              ),
-            )
-            .for("update");
-          if (!row)
-            throw createGraphQLError(
-              "NOT_FOUND",
-              "The requested resource was not found.",
-            );
-          await requirePrivacyResource(
-            scoped,
-            {
-              resourceKind: row.resourceKind as PrivacyResource["resourceKind"],
-              resourceId: row.resourceId,
-            },
-            true,
-          );
+          const row = await readLegalHold(scoped, input.id, true);
           if (
             row.createdBy === scoped.actor.principalId ||
             row.createdBy === scoped.actor.id ||

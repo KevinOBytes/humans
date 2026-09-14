@@ -688,6 +688,20 @@ anonymization remain unavailable: complete processor coverage and a
 provenance-preserving irreversible-redaction contract are not implemented.
 This checkpoint does not close HUM-FR-005.
 
+Privacy-governance convergence checkpoint (2026-09-14): the legacy settings
+deletion fields remain in the GraphQL schema only as stable deprecated
+compatibility errors and can no longer insert or transition `deletion_requests`.
+Generated settings operations now include the canonical create/review/fulfill
+privacy-request path. Settings legal-hold create/release delegates to the
+canonical retention service, including resource visibility, workspace fencing,
+immutable audit, optimistic versions, independent release, and principal-bound
+replay. The deletion worker terminally rejects approved queue rows without a
+current canonical parent or the complete configured processor-row set. Focused
+PostgreSQL 18 coverage passes 35 cases across settings, privacy lifecycle, and
+retention/legal holds. Hard delete and anonymization remain unavailable, and
+external-provider/browser/hosted privacy acceptance remains open; HUM-FR-005
+and HUM-NFR-008 remain incomplete.
+
 Processor fairness follow-up (2026-09-14): eligible privacy parent state,
 schedule, verification, and non-deleted status are filtered before the bounded
 processor queue limit and rechecked under lock. A PostgreSQL regression with

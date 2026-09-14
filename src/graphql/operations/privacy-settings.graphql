@@ -51,3 +51,62 @@ mutation ReviewDeletionRequest($input: ReviewDeletionRequestInput!) {
     requestId
   }
 }
+
+# Settings clients migrate legacy deletion writes to this governed request
+# lifecycle. Approval requires a separate reviewer plus verification evidence;
+# fulfillment is the only operation allowed to enqueue processor work.
+mutation CreateGovernedDeletionRequestFromSettings(
+  $input: CreatePrivacyRequestInput!
+) {
+  createPrivacyRequest(input: $input) {
+    id
+    requestType
+    state
+    version
+    dueAt
+    executeAfter
+    auditReference
+  }
+}
+
+mutation ReviewGovernedDeletionRequestFromSettings(
+  $id: UUID!
+  $expectedVersion: Int!
+  $state: PrivacyReviewState!
+  $verificationEvidenceId: UUID
+  $idempotencyKey: String
+) {
+  reviewPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    verificationEvidenceId: $verificationEvidenceId
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    requestType
+    state
+    version
+    auditReference
+  }
+}
+
+mutation FulfillGovernedDeletionRequestFromSettings(
+  $id: UUID!
+  $expectedVersion: Int!
+  $completionEvidenceId: UUID
+  $idempotencyKey: String
+) {
+  fulfillPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    completionEvidenceId: $completionEvidenceId
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    requestType
+    state
+    version
+    auditReference
+  }
+}

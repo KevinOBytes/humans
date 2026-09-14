@@ -627,6 +627,7 @@ function createServices(input: {
     retention: createRetentionService({
       ...input.context,
       database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
       searchIndexMaintenance: input.searchIndexMaintenance,
     }),
     evidenceAssertions: createEvidenceAssertionsService({

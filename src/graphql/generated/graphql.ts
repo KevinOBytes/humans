@@ -3988,6 +3988,58 @@ export type ReviewDeletionRequestMutation = {
   };
 };
 
+export type CreateGovernedDeletionRequestFromSettingsMutationVariables = Exact<{
+  input: CreatePrivacyRequestInput;
+}>;
+
+export type CreateGovernedDeletionRequestFromSettingsMutation = {
+  createPrivacyRequest: {
+    id: string | null;
+    requestType: PrivacyRequestType | null;
+    state: string | null;
+    version: number | null;
+    dueAt: string | null;
+    executeAfter: string | null;
+    auditReference: string | null;
+  } | null;
+};
+
+export type ReviewGovernedDeletionRequestFromSettingsMutationVariables = Exact<{
+  id: string;
+  expectedVersion: number;
+  state: PrivacyReviewState;
+  verificationEvidenceId?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
+}>;
+
+export type ReviewGovernedDeletionRequestFromSettingsMutation = {
+  reviewPrivacyRequest: {
+    id: string | null;
+    requestType: PrivacyRequestType | null;
+    state: string | null;
+    version: number | null;
+    auditReference: string | null;
+  } | null;
+};
+
+export type FulfillGovernedDeletionRequestFromSettingsMutationVariables =
+  Exact<{
+    id: string;
+    expectedVersion: number;
+    completionEvidenceId?: string | null | undefined;
+    idempotencyKey?: string | null | undefined;
+  }>;
+
+export type FulfillGovernedDeletionRequestFromSettingsMutation = {
+  fulfillPrivacyRequest: {
+    id: string | null;
+    requestType: PrivacyRequestType | null;
+    state: string | null;
+    version: number | null;
+    auditReference: string | null;
+  } | null;
+};
+
 export type ResearchAnalysisQueryVariables = Exact<{
   input: ResearchAnalysisInput;
 }>;
@@ -10626,6 +10678,79 @@ export const ReviewDeletionRequestDocument = new TypedDocumentString(
   ReviewDeletionRequestMutation,
   ReviewDeletionRequestMutationVariables
 >;
+export const CreateGovernedDeletionRequestFromSettingsDocument =
+  new TypedDocumentString(
+    `
+    mutation CreateGovernedDeletionRequestFromSettings($input: CreatePrivacyRequestInput!) {
+  createPrivacyRequest(input: $input) {
+    id
+    requestType
+    state
+    version
+    dueAt
+    executeAfter
+    auditReference
+  }
+}
+    `,
+    {
+      hash: "sha256:feb66c040e878fa48bc65e1f41015b4b80c01a0bb08e2e72e85cd0d4c04d1d34",
+    },
+  ) as unknown as TypedDocumentString<
+    CreateGovernedDeletionRequestFromSettingsMutation,
+    CreateGovernedDeletionRequestFromSettingsMutationVariables
+  >;
+export const ReviewGovernedDeletionRequestFromSettingsDocument =
+  new TypedDocumentString(
+    `
+    mutation ReviewGovernedDeletionRequestFromSettings($id: UUID!, $expectedVersion: Int!, $state: PrivacyReviewState!, $verificationEvidenceId: UUID, $idempotencyKey: String) {
+  reviewPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    state: $state
+    verificationEvidenceId: $verificationEvidenceId
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    requestType
+    state
+    version
+    auditReference
+  }
+}
+    `,
+    {
+      hash: "sha256:346f244173cd5e088db00a6920ccb19516c7ddfe6738f820babdb2fb41e0a289",
+    },
+  ) as unknown as TypedDocumentString<
+    ReviewGovernedDeletionRequestFromSettingsMutation,
+    ReviewGovernedDeletionRequestFromSettingsMutationVariables
+  >;
+export const FulfillGovernedDeletionRequestFromSettingsDocument =
+  new TypedDocumentString(
+    `
+    mutation FulfillGovernedDeletionRequestFromSettings($id: UUID!, $expectedVersion: Int!, $completionEvidenceId: UUID, $idempotencyKey: String) {
+  fulfillPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    completionEvidenceId: $completionEvidenceId
+    idempotencyKey: $idempotencyKey
+  ) {
+    id
+    requestType
+    state
+    version
+    auditReference
+  }
+}
+    `,
+    {
+      hash: "sha256:29d6d875b47d52981458e0eb40c63406fd9d7b81f0b3649168e0422384079b39",
+    },
+  ) as unknown as TypedDocumentString<
+    FulfillGovernedDeletionRequestFromSettingsMutation,
+    FulfillGovernedDeletionRequestFromSettingsMutationVariables
+  >;
 export const ResearchAnalysisDocument = new TypedDocumentString(
   `
     query ResearchAnalysis($input: ResearchAnalysisInput!) {

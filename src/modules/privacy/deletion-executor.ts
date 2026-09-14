@@ -10,7 +10,11 @@ import {
   aiToolCalls,
 } from "@/db/schema/ai";
 import { auditEvents } from "@/db/schema/operations";
-import { deletionRequests, privacyRequests } from "@/db/schema/privacy";
+import {
+  deletionRequests,
+  privacyProcessorPropagations,
+  privacyRequests,
+} from "@/db/schema/privacy";
 import {
   personWebResearchRuns,
   personWebResearchSources,
@@ -22,6 +26,7 @@ import type { Database } from "@/modules/auth/bootstrap-admin";
 import { ensureArchivedFileCleanupJob } from "@/modules/files/cleanup";
 import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { planPersonArtifactDeletion } from "./artifact-retention";
+import { privacyProcessors } from "./request-types";
 import { currentRetentionRequestPolicy } from "./retention-request-policy";
 
 const MAX_DELETION_BATCH = 100;
@@ -161,8 +166,9 @@ export async function executeApprovedDeletionRequests(input: {
         .for("update", { skipLocked: true });
       if (!request) return;
 
-      // New governed requests may only execute after verified approval and
-      // their schedule. Historical deletion requests retain their old path.
+      // Every executable queue row must belong to the canonical privacy
+      // workflow. Orphaned historical rows are terminally rejected rather than
+      // retaining a governance bypass.
       const [governed] = await transaction
         .select()
         .from(privacyRequests)
@@ -174,17 +180,6 @@ export async function executeApprovedDeletionRequests(input: {
         )
         .limit(1)
         .for("update");
-      if (
-        governed &&
-        !governed.idempotencyHash.startsWith("legacy:") &&
-        (governed.state !== "fulfilling" ||
-          !governed.verifiedAt ||
-          !governed.reviewedBy ||
-          governed.executeAfter > now ||
-          governed.deletedAt)
-      )
-        return;
-
       const scope = parseScope(request.scope);
       const requestId = `worker:deletion:${request.id}`;
       // Terminal rejection is one outcome across both request ledgers. Keep
@@ -246,20 +241,56 @@ export async function executeApprovedDeletionRequests(input: {
           if (!terminal) throw new Error("Privacy rejection lost its claim");
         }
       };
+      if (!governed || governed.idempotencyHash.startsWith("legacy:")) {
+        await reject(
+          "Deletion requires a governed privacy request.",
+          "missing_governance_parent",
+        );
+        return;
+      }
+      if (
+        governed.state !== "fulfilling" ||
+        !governed.verifiedAt ||
+        !governed.reviewedBy ||
+        governed.executeAfter > now ||
+        governed.deletedAt
+      )
+        return;
+      const processors = await transaction
+        .select({ processor: privacyProcessorPropagations.processor })
+        .from(privacyProcessorPropagations)
+        .where(
+          and(
+            eq(privacyProcessorPropagations.workspaceId, request.workspaceId),
+            eq(privacyProcessorPropagations.privacyRequestId, governed.id),
+          ),
+        );
+      const configuredProcessors = new Set(
+        processors.map((row) => row.processor),
+      );
+      if (
+        configuredProcessors.size !== privacyProcessors.length ||
+        !privacyProcessors.every((processor) =>
+          configuredProcessors.has(processor),
+        )
+      ) {
+        await reject(
+          "Deletion requires configured processor governance.",
+          "missing_processor_governance",
+        );
+        return;
+      }
       if (!scope) {
         await reject("The deletion scope is invalid.", "invalid_scope");
         return;
       }
-      const approvedScope = governed ? parseScope(governed.scope) : null;
+      const approvedScope = parseScope(governed.scope);
       if (
-        governed &&
-        (!approvedScope ||
-          approvedScope.personIds.length !== scope.personIds.length ||
-          approvedScope.fileIds.length !== scope.fileIds.length ||
-          !scope.personIds.every((id) =>
-            approvedScope.personIds.includes(id),
-          ) ||
-          !scope.fileIds.every((id) => approvedScope.fileIds.includes(id)))
+        !approvedScope ||
+        approvedScope.personIds.length !== scope.personIds.length ||
+        approvedScope.fileIds.length !== scope.fileIds.length ||
+        !scope.personIds.every((id) => approvedScope.personIds.includes(id)) ||
+        !scope.fileIds.every((id) => approvedScope.fileIds.includes(id))
       ) {
         await reject(
           "The deletion scope does not match the approved privacy request.",
