@@ -1671,6 +1671,30 @@ Existing unkeyed lifecycle and retention legal-hold suites also pass. The
 remaining retryable mutation, browser, and hosted/provider matrices remain
 open; HUM-NFR-008 stays Incomplete.
 
+Bounded HUM-FR-005/HUM-NFR-008 privacy search propagation evidence
+(2026-09-14): the privacy worker now wires a transactional, workspace-scoped
+search adapter that removes direct person documents and dependent indexed
+contributions for the request's person scope. Repeated execution is safe and
+returns the same opaque request-scoped evidence reference; same-workspace
+non-targets and foreign-workspace documents remain untouched. Redis is marked
+explicitly `not_applicable` because this deployment uses it for operational
+state only, while Resend and AI-provider processors remain failed-closed until
+provider-specific erasure contracts exist. The focused PostgreSQL suite is
+`tests/integration/privacy-search-propagation.test.ts`; local runs skip without
+`TEST_DATABASE_URL`, and the suite is now required by `test:db` plus its CI
+contract. This bounded implementation does not close the hosted,
+external-provider, or whole-product privacy matrix.
+
+Reviewer hardening for the same tranche: correction requests now fail closed
+with `search_reindex_required` rather than deleting stale search rows without a
+transactional reindex contract. File-only scopes delete only workspace-owned
+`evidence_item` and `evidence_excerpt` documents reached through
+`evidence_items.file_id`; relationship documents are removed when either the
+source or target endpoint is in the person scope. The index contribution still
+stores one source-side `subjectPersonId`, so endpoint-complete privacy cleanup
+is implemented in the adapter query and guarded by a target-endpoint
+regression case; richer dual-endpoint index attribution remains future work.
+
 Bounded AI-retention governance follow-up (2026-09-13): the person-scoped
 legal-hold fence is now evaluated both during bounded candidate selection and
 again after the workspace advisory lock, while the candidate row lock is
