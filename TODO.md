@@ -2,20 +2,20 @@
 
 ## Production deployment verification (2026-09-14)
 
-- [x] Deploy reviewed application commit `dcbb36431abec2793d66930f8b5c188705bc6517`
+- Verified: deployed reviewed application commit `dcbb36431abec2793d66930f8b5c188705bc6517`
       to Vercel production as `dpl_BkV534V7M832BTkt1ahb3YX76btc` (`READY`).
-- [x] Confirm aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+- Verified: aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
       `humans-tkoresearch.vercel.app` resolve to that deployment.
-- [x] Probe homepage, sign-in, liveness, and readiness routes (all 200).
-- [x] Confirm unauthenticated GraphQL fails closed with 401
+- Verified: homepage, sign-in, liveness, and readiness routes all return 200.
+- Verified: unauthenticated GraphQL fails closed with 401
       `UNAUTHENTICATED` and a request ID.
-- [x] Confirm GitHub Actions run `34850702071` passed all nine required jobs,
+- Verified: GitHub Actions run `34850702071` passed all nine required jobs,
       including real PostgreSQL integration, browser acceptance, build,
       Compose, generated-drift, image-security, dependency, and secret-scan.
-- [ ] Run attended hosted administrator sign-in, recovery, optional 2FA, and
+- Open operator evidence: run attended hosted administrator sign-in, recovery, optional 2FA, and
       first-person creation using credentials supplied through the ignored
       mode-0600 operator templates; do not print secrets.
-- [ ] Run the opt-in live OpenAI/Ollama, Resend, Upstash, and R2/S3 provider
+- Open operator evidence: run the opt-in live OpenAI/Ollama, Resend, Upstash, and R2/S3 provider
       contracts with redacted output and record the provider evidence.
 
 ## Full-MVP closeout tranche verification (2026-09-14)
