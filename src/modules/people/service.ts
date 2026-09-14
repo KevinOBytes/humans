@@ -473,7 +473,10 @@ export function createPeopleService(context: ResearchServiceContext) {
   ): Promise<PersonRow> {
     const personId = responseReference.personId;
     const version = responseReference.version;
+    const referenceKeys = Object.keys(responseReference).sort().join(":");
     if (
+      (referenceKeys !== "personId:version" &&
+        !(allowLegacyCreateReference && referenceKeys === "personId")) ||
       typeof personId !== "string" ||
       !PERSON_REFERENCE_UUID.test(personId) ||
       (version === undefined && !allowLegacyCreateReference) ||
@@ -4076,7 +4079,7 @@ export function createPeopleService(context: ResearchServiceContext) {
             "Idempotent person presentation updates are not configured.",
           );
         }
-        const idempotency = deriveResearchIdempotency(context, {
+        const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey: input.idempotencyKey,
           operation: "person.presentation.select",
@@ -4088,7 +4091,7 @@ export function createPeopleService(context: ResearchServiceContext) {
           },
           secret,
         });
-        const result = await runIdempotentResearchWrite(
+        const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
           ["person:update"],
