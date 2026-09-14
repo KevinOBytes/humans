@@ -1,5 +1,29 @@
 # MVP closure and production hardening backlog
 
+## Full-MVP closeout tranche verification (2026-09-14)
+
+Merged locally into `main` after independent review:
+
+- `4d0c810` / `c02f7ed`: relationship evidence semantics keep explicit
+  documented versus analyst-hypothesis status separate from review/claim
+  state; nullable relationship strength is distinct from confidence and is
+  carried through the graph API and inspector.
+- `5d04066`: `person.merge` and `person.unmerge` use principal-bound
+  idempotency with user-only legacy replay compatibility, workspace/API-key
+  fencing, strict response references, and redacted audit effects.
+- `88f737a` / `20716f2`: environment/provider acceptance contracts cover
+  canonical Vercel aliases, redacted environment checks, and explicit opt-in
+  AI/Resend/Upstash/storage lifecycle runners. Review remediation prevents
+  empty canonical Upstash values from producing false success and keeps
+  `POSTGRES_URL` consistent with administrator-operation parsing.
+
+Post-merge focused validation passed: 7 changed-surface unit files, 206 tests;
+format, lint, typecheck, GraphQL codegen drift, and production build all pass.
+The implementation branches were reviewed and their worktrees removed. The
+full database/Compose/browser matrix, hosted admin authentication and recovery,
+and live external-provider runs remain open and are not implied by this local
+evidence.
+
 ## Relationship semantic contract checkpoint (2026-09-14)
 
 Follow-up graph projection: the repository/service, canonical GraphQL enum,
