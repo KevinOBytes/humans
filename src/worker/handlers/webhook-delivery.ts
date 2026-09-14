@@ -13,7 +13,11 @@ import {
   webhookRetryDelayMs,
 } from "@/modules/webhooks/signature";
 import type { Database } from "@/modules/auth/bootstrap-admin";
-import { assertPublicWebhookTarget } from "@/modules/webhooks/target";
+import { resolvePublicWebhookTarget } from "@/modules/webhooks/target";
+import {
+  pinnedWebhookTransport,
+  type WebhookTransport,
+} from "@/modules/webhooks/transport";
 
 function safeError(error: unknown): Record<string, string> {
   void error;
@@ -76,6 +80,7 @@ async function terminalizeDisabledDelivery(input: {
 export function createWebhookDeliveryHandler(input: {
   database: Database;
   encryptionKey: string;
+  transport?: WebhookTransport;
 }): (
   payload: { deliveryId: string; webhookId: string },
   context: { job: { attemptCount: number }; signal: AbortSignal },
@@ -147,12 +152,9 @@ export function createWebhookDeliveryHandler(input: {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5_000);
     try {
-      await assertPublicWebhookTarget(row.webhook.url);
-      const response = await fetch(row.webhook.url, {
-        method: "POST",
-        // The destination was validated immediately before this request. Do
-        // not follow a redirect into a private or otherwise unvalidated host.
-        redirect: "error",
+      const target = await resolvePublicWebhookTarget(row.webhook.url);
+      const response = await (input.transport ?? pinnedWebhookTransport)({
+        target,
         headers: webhookEventHeaders({
           event,
           deliveryId: row.delivery.id,
@@ -163,7 +165,8 @@ export function createWebhookDeliveryHandler(input: {
         body: payloadText,
         signal: controller.signal,
       });
-      const nextRetryAt = response.ok
+      const responseOk = response.status >= 200 && response.status < 300;
+      const nextRetryAt = responseOk
         ? null
         : deliveryRetryDelayMs(context.job.attemptCount);
       await input.database
@@ -174,10 +177,10 @@ export function createWebhookDeliveryHandler(input: {
           startedAt,
           completedAt: new Date(),
           nextRetryAt: nextRetryAt ? new Date(Date.now() + nextRetryAt) : null,
-          redactedError: response.ok ? null : { code: "http_failure" },
+          redactedError: responseOk ? null : { code: "http_failure" },
         })
         .where(eq(webhookDeliveries.id, row.delivery.id));
-      if (!response.ok) {
+      if (!responseOk) {
         throw new JobExecutionError(
           `webhook_http_${response.status}`,
           nextRetryAt === null ? "permanent" : "retryable",

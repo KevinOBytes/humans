@@ -1,6 +1,13 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
+export type PublicWebhookTarget = Readonly<{
+  address: string;
+  family: 4 | 6;
+  hostname: string;
+  url: URL;
+}>;
+
 function privateIpv4(value: string): boolean {
   const octets = value.split(".").map(Number);
   if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet)))
@@ -42,10 +49,10 @@ export function isPrivateAddress(value: string): boolean {
       : true;
 }
 
-/** Resolve the destination immediately before delivery to reduce DNS rebinding/SSRF risk. */
-export async function assertPublicWebhookTarget(
+/** Resolve and retain the public address that the delivery transport must use. */
+export async function resolvePublicWebhookTarget(
   urlValue: string,
-): Promise<void> {
+): Promise<PublicWebhookTarget> {
   const url = new URL(urlValue);
   if (url.protocol !== "https:") throw new Error("webhook_target_protocol");
   const addresses = await lookup(url.hostname, { all: true, verbatim: true });
@@ -55,4 +62,18 @@ export async function assertPublicWebhookTarget(
   ) {
     throw new Error("webhook_target_private");
   }
+  const selected = addresses[0]!;
+  return {
+    address: selected.address,
+    family: selected.family as 4 | 6,
+    hostname: url.hostname,
+    url,
+  };
+}
+
+/** Compatibility validator for callers that do not initiate a connection. */
+export async function assertPublicWebhookTarget(
+  urlValue: string,
+): Promise<void> {
+  await resolvePublicWebhookTarget(urlValue);
 }

@@ -1,6 +1,8 @@
 // @vitest-environment node
 
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import {
   afterAll,
   afterEach,
@@ -21,6 +23,12 @@ vi.mock("node:dns/promises", () => ({
   ),
 }));
 
+const httpsRequest = vi.hoisted(() => vi.fn());
+
+vi.mock("node:https", () => ({
+  default: { request: httpsRequest },
+}));
+
 import {
   CreateWorkspaceWebhookDocument,
   DisableWorkspaceWebhookDocument,
@@ -39,6 +47,7 @@ import {
 import { locationMutationIdempotency } from "@/db/schema/locations";
 import { openSealedEnvelope } from "@/lib/security/sealed-envelope";
 import { verifyWebhookSignature } from "@/modules/webhooks/signature";
+import type { WebhookTransport } from "@/modules/webhooks/transport";
 import { createWebhookDeliveryHandler } from "@/worker/handlers/webhook-delivery";
 
 import { testAdminEnv } from "../support/auth";
@@ -51,6 +60,21 @@ function required<T>(value: T | null | undefined, label: string): T {
   if (value == null) throw new Error(`Missing ${label}`);
   return value;
 }
+
+const fetchWebhookTransport: WebhookTransport = async (request) => {
+  const response = await fetch(request.target.url.href, {
+    method: "POST",
+    redirect: "error",
+    headers: request.headers,
+    body: request.body,
+    signal: request.signal,
+  });
+  try {
+    return { status: response.status };
+  } finally {
+    await response.body?.cancel();
+  }
+};
 
 function commitRace(operation: string) {
   let signalReached!: () => void;
@@ -1152,6 +1176,7 @@ liveDescribe("webhook lifecycle acceptance", () => {
     const handler = createWebhookDeliveryHandler({
       database: fixture.database,
       encryptionKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+      transport: fetchWebhookTransport,
     });
     await expect(
       handler(
@@ -1311,6 +1336,96 @@ liveDescribe("webhook lifecycle acceptance", () => {
     expect(disabledWebhook?.deletedAt).toBeInstanceOf(Date);
   });
 
+  it("pins the validated address to the TLS socket while preserving the webhook hostname", async () => {
+    const owner = await fixture.createActor();
+    const created = await fixture.execute<{
+      createWebhook: { id: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "CreateWorkspaceWebhook",
+      query: CreateWorkspaceWebhookDocument,
+      variables: {
+        input: {
+          events: ["webhook.test"],
+          url: "https://hooks.example.test/pinned",
+        },
+      },
+    });
+    const webhookId = required(
+      created.body?.data?.createWebhook.id,
+      "pinned webhook ID",
+    );
+    const queued = await fixture.execute<{
+      sendWebhookTestEvent: { deliveryId: string | null };
+    }>({
+      jar: owner.jar,
+      operationName: "SendWorkspaceWebhookTestEvent",
+      query: SendWorkspaceWebhookTestEventDocument,
+      variables: { input: { id: webhookId } },
+    });
+    const deliveryId = required(
+      queued.body?.data?.sendWebhookTestEvent.deliveryId,
+      "pinned delivery ID",
+    );
+    const response = Object.assign(new PassThrough(), {
+      headers: {},
+      statusCode: 204,
+    });
+    const resumeResponse = vi.spyOn(response, "resume");
+    const request = Object.assign(new EventEmitter(), {
+      destroy: vi.fn(),
+      end: vi.fn(),
+    });
+    let requestOptions: Record<string, unknown> | undefined;
+    request.end.mockImplementation(() => {
+      response.end("ignored provider body");
+    });
+    httpsRequest.mockImplementationOnce(
+      (
+        options: Record<string, unknown>,
+        onResponse: (value: typeof response) => void,
+      ) => {
+        requestOptions = options;
+        request.end.mockImplementation(() => {
+          onResponse(response);
+          response.end("ignored provider body");
+        });
+        return request;
+      },
+    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("unpinned fetch must not run"));
+    const handler = createWebhookDeliveryHandler({
+      database: fixture.database,
+      encryptionKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+    });
+
+    await expect(
+      handler(
+        { deliveryId, webhookId },
+        { job: { attemptCount: 1 }, signal: new AbortController().signal },
+      ),
+    ).resolves.toEqual({ resultReferences: [deliveryId] });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(httpsRequest).toHaveBeenCalledTimes(1);
+    expect(requestOptions).toMatchObject({
+      agent: false,
+      family: 4,
+      hostname: "198.51.100.10",
+      method: "POST",
+      path: "/pinned",
+      rejectUnauthorized: true,
+      servername: "hooks.example.test",
+    });
+    expect(requestOptions?.headers).toEqual(
+      expect.objectContaining({ host: "hooks.example.test" }),
+    );
+    expect(requestOptions?.signal).toBeInstanceOf(AbortSignal);
+    expect(resumeResponse).toHaveBeenCalledTimes(1);
+  });
+
   it("revalidates the destination while advancing the same delivery through retries", async () => {
     const owner = await fixture.createActor();
     const created = await fixture.execute<{
@@ -1351,6 +1466,7 @@ liveDescribe("webhook lifecycle acceptance", () => {
     const handler = createWebhookDeliveryHandler({
       database: fixture.database,
       encryptionKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+      transport: fetchWebhookTransport,
     });
 
     await expect(
@@ -1479,6 +1595,7 @@ liveDescribe("webhook lifecycle acceptance", () => {
       const handler = createWebhookDeliveryHandler({
         database: fixture.database,
         encryptionKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+        transport: fetchWebhookTransport,
       });
 
       await expect(
@@ -1559,6 +1676,7 @@ liveDescribe("webhook lifecycle acceptance", () => {
     const handler = createWebhookDeliveryHandler({
       database: fixture.database,
       encryptionKey: testAdminEnv.DATA_ENCRYPTION_KEY,
+      transport: fetchWebhookTransport,
     });
 
     await expect(
