@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { newId } from "@/db/id";
+import { people } from "@/db/schema/people";
 import { createCasesService } from "@/modules/cases/service";
 import {
   canAccessResource,
@@ -129,7 +131,15 @@ liveDescribe("case membership and resource boundary", () => {
     ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
   });
   it("membership never grants restricted baseline access", async () => {
-    const person = await coveredPerson(context, { sensitivity: "restricted" });
+    // Consent must be recorded while the subject is visible to the workspace
+    // administrator.  Tighten the resource sensitivity only after the
+    // governance fixture is complete so this assertion exercises the case
+    // boundary rather than failing during fixture setup.
+    const person = await coveredPerson(context);
+    await context.database
+      .update(people)
+      .set({ sensitivity: "restricted", updatedAt: new Date() })
+      .where(eq(people.id, person.id));
     const service = createCasesService(context);
     const row = await service.createCase({
       title: "Case",
