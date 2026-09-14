@@ -69,4 +69,71 @@ describe("direct JSON route input and authorization envelopes", () => {
       });
     }
   }
+
+  for (const name of ["accept", "two-factor"] as const) {
+    it(`${name} rejects an unauthenticated browser request before any mutation`, async () => {
+      const mutation = vi.fn();
+      const getSession = vi.fn(async () => null);
+      const dependencies = { database, getSession, trustedOrigins: [origin] };
+      const handler =
+        name === "accept"
+          ? createInvitationAcceptanceHandler({
+              ...dependencies,
+              accept: mutation,
+            })
+          : createTwoFactorDisableHandler({
+              ...dependencies,
+              change: mutation,
+            });
+      const body =
+        name === "accept"
+          ? { invitationId: "pending-invitation" }
+          : { action: "disable", password: "private-password" };
+
+      const response = await handler(
+        new Request(`${origin}/api/account/${name}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin,
+            "x-request-id": requestId,
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+
+      expect(response.status).toBe(401);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("x-request-id")).toBe(requestId);
+      expect(await response.json()).toEqual({
+        code: "UNAUTHORIZED",
+        requestId,
+      });
+      expect(mutation).not.toHaveBeenCalled();
+    });
+  }
+
+  it("handoff GET rejects an unauthenticated request without disclosing cookie state", async () => {
+    const getSession = vi.fn(async () => null);
+    const handler = createInvitationHandoffHandlers({
+      encryptionKey: "71".repeat(32),
+      getSession,
+      secureCookies: true,
+      trustedOrigins: [origin],
+    }).GET;
+    const response = await handler(
+      new Request(`${origin}/api/account/invitations/handoff`, {
+        headers: { "x-request-id": requestId },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-request-id")).toBe(requestId);
+    expect(await response.json()).toEqual({
+      code: "UNAUTHORIZED",
+      requestId,
+    });
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
 });

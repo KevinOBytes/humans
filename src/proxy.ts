@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { requestCorrelationId } from "@/lib/api/request-id";
 import { routeProxy } from "@/route-proxy";
 
 const securityHeaders = {
@@ -53,6 +54,7 @@ function applySecurityHeaders(request: NextRequest, response: NextResponse) {
     }
     response.headers.set(name, value);
   }
+  response.headers.set("x-request-id", requestCorrelationId(request));
   return response;
 }
 
