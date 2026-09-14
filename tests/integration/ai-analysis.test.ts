@@ -1216,6 +1216,86 @@ liveDescribe("atomic AI analysis persistence", () => {
     }
   });
 
+  it("serializes workspace retention updates before purging a candidate", async () => {
+    const owner = await fixture.createActor();
+    const context = await userContext(owner);
+    await fixture.database
+      .update(workspaceSettings)
+      .set({ retentionDays: 0 })
+      .where(eq(workspaceSettings.workspaceId, owner.workspaceId));
+    const run = await service(context).startAiAnalysis({
+      question: "Retention policy race",
+      idempotencyKey: "retention-policy-race",
+    });
+    const [runRow] = await fixture.database
+      .select({ threadId: aiRuns.threadId })
+      .from(aiRuns)
+      .where(eq(aiRuns.id, run.id));
+    const threadId = required(runRow).threadId;
+    const old = new Date(Date.now() - 60_000);
+    await fixture.database
+      .update(aiThreads)
+      .set({ updatedAt: old, retentionDays: null })
+      .where(eq(aiThreads.id, threadId));
+    await fixture.database
+      .update(aiRuns)
+      .set({ state: "completed", completedAt: old })
+      .where(eq(aiRuns.id, run.id));
+
+    const settingsConnection = createTestConnection(1);
+    const purgeConnection = createTestConnection(1);
+    const settingsName = `retention_settings_${newId()}`;
+    const purgeName = `retention_policy_purge_${newId()}`;
+    let releaseSettings!: () => void;
+    let continueSettings!: () => void;
+    const settingsReady = new Promise<void>((resolve) => {
+      releaseSettings = resolve;
+    });
+    const settingsContinue = new Promise<void>((resolve) => {
+      continueSettings = resolve;
+    });
+    let settingsPromise: Promise<unknown> | undefined;
+    let purgePromise: Promise<number> | undefined;
+    try {
+      await settingsConnection`SELECT set_config('application_name', ${settingsName}, false)`;
+      await purgeConnection`SELECT set_config('application_name', ${purgeName}, false)`;
+      settingsPromise = settingsConnection.begin(async (transaction) => {
+        await transaction`SELECT pg_advisory_xact_lock(hashtextextended(${owner.workspaceId}, 0))`;
+        await transaction`SET LOCAL lock_timeout = '1000ms'`;
+        releaseSettings();
+        await settingsContinue;
+        await transaction`
+          UPDATE workspace_settings
+          SET retention_days = NULL
+          WHERE workspace_id = ${owner.workspaceId}
+        `;
+      });
+      await settingsReady;
+      purgePromise = purgeExpiredAiThreads({
+        database: createTestDatabase(purgeConnection),
+        now: new Date(),
+      });
+      await waitForActivity(purgeName, "AdvisoryLock");
+      continueSettings();
+      await expect(settingsPromise).resolves.toBeUndefined();
+      await expect(purgePromise).resolves.toBe(0);
+      expect(
+        await fixture.database
+          .select({ id: aiThreads.id })
+          .from(aiThreads)
+          .where(eq(aiThreads.id, threadId)),
+      ).toHaveLength(1);
+    } finally {
+      continueSettings();
+      await Promise.allSettled(
+        [settingsPromise, purgePromise].filter(
+          (promise): promise is Promise<unknown> => promise != null,
+        ),
+      );
+      await Promise.all([settingsConnection.end(), purgeConnection.end()]);
+    }
+  });
+
   it("revalidates live authority before enqueue, read, and cancel", async () => {
     const owner = await fixture.createActor();
     const context = await apiKeyContext(owner);
