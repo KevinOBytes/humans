@@ -190,6 +190,7 @@ export function registerPrivacyGraphQL() {
         expectedVersion: t.arg.int({ required: true }),
         state: t.arg({ type: ReviewState, required: true }),
         verificationEvidenceId: t.arg({ type: "UUID" }),
+        idempotencyKey: t.arg.string(),
       },
       resolve: (_, args, ctx) => ctx.services.privacy.reviewRequest(args),
     }),
@@ -199,6 +200,7 @@ export function registerPrivacyGraphQL() {
         id: t.arg({ type: "UUID", required: true }),
         expectedVersion: t.arg.int({ required: true }),
         completionEvidenceId: t.arg({ type: "UUID" }),
+        idempotencyKey: t.arg.string(),
       },
       resolve: (_, args, ctx) => ctx.services.privacy.fulfillRequest(args),
     }),
@@ -207,6 +209,7 @@ export function registerPrivacyGraphQL() {
       args: {
         id: t.arg({ type: "UUID", required: true }),
         expectedVersion: t.arg.int({ required: true }),
+        idempotencyKey: t.arg.string(),
       },
       resolve: (_, args, ctx) => ctx.services.privacy.cancelRequest(args),
     }),

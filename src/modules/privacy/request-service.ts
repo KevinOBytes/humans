@@ -15,7 +15,11 @@ import {
   createAuditService,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
-import { runResearchTransaction } from "@/modules/audit/transactions";
+import {
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
+  runResearchTransaction,
+} from "@/modules/audit/transactions";
 import { createCasesService } from "@/modules/cases/service";
 import {
   normalizePrivacyRequest,
@@ -205,6 +209,108 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
       },
     );
   }
+  async function transition(
+    operation: "review" | "fulfill" | "cancel",
+    input: {
+      id: string;
+      expectedVersion: number;
+      idempotencyKey?: string | null;
+      state?: "reviewing" | "approved" | "rejected";
+      verificationEvidenceId?: string | null;
+      completionEvidenceId?: string | null;
+    },
+    run: (scoped: ResearchServiceContext) => Promise<PrivacyRequestRow>,
+  ) {
+    if (input.idempotencyKey == null) return mutation(run);
+    privacyPermission(context, true);
+    if (!context.idempotencyHmacKey) precondition();
+    const normalized = z
+      .object({
+        id: z.uuid().transform((id) => id.toLowerCase()),
+        expectedVersion: z
+          .number()
+          .int()
+          .positive()
+          .max(Number.MAX_SAFE_INTEGER - 1),
+        state: z.enum(["reviewing", "approved", "rejected"]).optional(),
+        verificationEvidenceId: z
+          .uuid()
+          .nullish()
+          .transform((id) => id?.toLowerCase() ?? null),
+        completionEvidenceId: z
+          .uuid()
+          .nullish()
+          .transform((id) => id?.toLowerCase() ?? null),
+      })
+      .safeParse(input);
+    if (!normalized.success)
+      throw createGraphQLError(
+        "VALIDATION_FAILED",
+        "The privacy request transition is invalid.",
+      );
+    const material = normalized.data;
+    const derived = derivePrincipalResearchIdempotency(context, {
+      expiresAt: new Date(Date.now() + 86_400_000),
+      idempotencyKey: input.idempotencyKey,
+      operation: `privacy.request.${operation}`,
+      requestMaterial: {
+        id: material.id,
+        expectedVersion: material.expectedVersion,
+        state: operation === "cancel" ? "cancelled" : (material.state ?? null),
+        verificationEvidenceId: material.verificationEvidenceId,
+        completionEvidenceId: material.completionEvidenceId,
+      },
+      secret: context.idempotencyHmacKey,
+    });
+    const executed = await runPrincipalIdempotentResearchWrite(
+      context,
+      derived,
+      ["workspace:update"],
+      async (scoped) => {
+        await privacyPolicyLock(scoped);
+        const row = await run(scoped);
+        return {
+          privacyRequestId: row.id,
+          version: row.version,
+          state: row.state,
+        };
+      },
+    );
+    const reference = z
+      .object({
+        privacyRequestId: z.uuid(),
+        version: z.number().int().positive(),
+        state: z.string(),
+      })
+      .strict()
+      .safeParse(executed.responseReference);
+    const allowedStates =
+      operation === "fulfill"
+        ? ["fulfilling", "completed"]
+        : [operation === "cancel" ? "cancelled" : material.state];
+    // Validate identity and expected result before any replay resource lookup.
+    // The shared ledger binds workspace and live principal, not just a raw key.
+    if (
+      !reference.success ||
+      reference.data.privacyRequestId !== material.id ||
+      reference.data.version !== material.expectedVersion + 1 ||
+      !allowedStates.includes(reference.data.state)
+    )
+      precondition();
+    const expected = reference.data;
+    // A fresh, non-nested transaction reauthorizes even completed claims and
+    // serializes current-row checks against subsequent privacy transitions.
+    return mutation(async (scoped) => {
+      const current = await read(scoped, expected.privacyRequestId, true);
+      if (
+        current.version !== expected.version ||
+        current.state !== expected.state ||
+        current.updatedBy !== scoped.actor.principalId
+      )
+        throw createGraphQLError("CONFLICT", "The request version is stale.");
+      return current;
+    });
+  }
   return {
     getRequest: (id: string) => read(context, id),
     async createRequest(input: unknown) {
@@ -302,8 +408,9 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
       expectedVersion: number;
       state: "reviewing" | "approved" | "rejected";
       verificationEvidenceId?: string | null;
+      idempotencyKey?: string | null;
     }) {
-      return mutation(async (scoped) => {
+      return transition("review", input, async (scoped) => {
         const row = await read(scoped, input.id, true);
         if (row.version !== input.expectedVersion)
           throw createGraphQLError("CONFLICT", "The request version is stale.");
@@ -343,8 +450,9 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
       id: string;
       expectedVersion: number;
       completionEvidenceId?: string | null;
+      idempotencyKey?: string | null;
     }) {
-      return mutation(async (scoped) => {
+      return transition("fulfill", input, async (scoped) => {
         const row = await read(scoped, input.id, true);
         if (row.version !== input.expectedVersion)
           throw createGraphQLError("CONFLICT", "The request version is stale.");
@@ -498,8 +606,12 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
         );
       });
     },
-    async cancelRequest(input: { id: string; expectedVersion: number }) {
-      return mutation(async (scoped) => {
+    async cancelRequest(input: {
+      id: string;
+      expectedVersion: number;
+      idempotencyKey?: string | null;
+    }) {
+      return transition("cancel", input, async (scoped) => {
         const row = await read(scoped, input.id, true);
         if (row.version !== input.expectedVersion)
           throw createGraphQLError("CONFLICT", "The request version is stale.");

@@ -40,12 +40,14 @@ mutation ReviewPrivacyRequest(
   $expectedVersion: Int!
   $state: PrivacyReviewState!
   $verificationEvidenceId: UUID
+  $idempotencyKey: String
 ) {
   reviewPrivacyRequest(
     id: $id
     expectedVersion: $expectedVersion
     state: $state
     verificationEvidenceId: $verificationEvidenceId
+    idempotencyKey: $idempotencyKey
   ) {
     ...PrivacyRequestFields
   }
@@ -54,17 +56,27 @@ mutation FulfillPrivacyRequest(
   $id: UUID!
   $expectedVersion: Int!
   $completionEvidenceId: UUID
+  $idempotencyKey: String
 ) {
   fulfillPrivacyRequest(
     id: $id
     expectedVersion: $expectedVersion
     completionEvidenceId: $completionEvidenceId
+    idempotencyKey: $idempotencyKey
   ) {
     ...PrivacyRequestFields
   }
 }
-mutation CancelPrivacyRequest($id: UUID!, $expectedVersion: Int!) {
-  cancelPrivacyRequest(id: $id, expectedVersion: $expectedVersion) {
+mutation CancelPrivacyRequest(
+  $id: UUID!
+  $expectedVersion: Int!
+  $idempotencyKey: String
+) {
+  cancelPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
     ...PrivacyRequestFields
   }
 }

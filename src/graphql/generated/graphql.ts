@@ -3812,6 +3812,7 @@ export type ReviewPrivacyRequestMutationVariables = Exact<{
   expectedVersion: number;
   state: PrivacyReviewState;
   verificationEvidenceId?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type ReviewPrivacyRequestMutation = {
@@ -3826,6 +3827,7 @@ export type FulfillPrivacyRequestMutationVariables = Exact<{
   id: string;
   expectedVersion: number;
   completionEvidenceId?: string | null | undefined;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type FulfillPrivacyRequestMutation = {
@@ -3839,6 +3841,7 @@ export type FulfillPrivacyRequestMutation = {
 export type CancelPrivacyRequestMutationVariables = Exact<{
   id: string;
   expectedVersion: number;
+  idempotencyKey?: string | null | undefined;
 }>;
 
 export type CancelPrivacyRequestMutation = {
@@ -10311,12 +10314,13 @@ export const CreatePrivacyRequestDocument = new TypedDocumentString(
 >;
 export const ReviewPrivacyRequestDocument = new TypedDocumentString(
   `
-    mutation ReviewPrivacyRequest($id: UUID!, $expectedVersion: Int!, $state: PrivacyReviewState!, $verificationEvidenceId: UUID) {
+    mutation ReviewPrivacyRequest($id: UUID!, $expectedVersion: Int!, $state: PrivacyReviewState!, $verificationEvidenceId: UUID, $idempotencyKey: String) {
   reviewPrivacyRequest(
     id: $id
     expectedVersion: $expectedVersion
     state: $state
     verificationEvidenceId: $verificationEvidenceId
+    idempotencyKey: $idempotencyKey
   ) {
     ...PrivacyRequestFields
   }
@@ -10332,7 +10336,7 @@ export const ReviewPrivacyRequestDocument = new TypedDocumentString(
   auditReference
 }`,
   {
-    hash: "sha256:880f5accdcadbdd35f48c9f539b59dad54c12c6c1918b2c2e2dea4bd5594f42d",
+    hash: "sha256:52f164cd2b3b2d67e878e03acacab0f88431a8b76b07c6f0d45691a140b799bb",
   },
 ) as unknown as TypedDocumentString<
   ReviewPrivacyRequestMutation,
@@ -10340,11 +10344,12 @@ export const ReviewPrivacyRequestDocument = new TypedDocumentString(
 >;
 export const FulfillPrivacyRequestDocument = new TypedDocumentString(
   `
-    mutation FulfillPrivacyRequest($id: UUID!, $expectedVersion: Int!, $completionEvidenceId: UUID) {
+    mutation FulfillPrivacyRequest($id: UUID!, $expectedVersion: Int!, $completionEvidenceId: UUID, $idempotencyKey: String) {
   fulfillPrivacyRequest(
     id: $id
     expectedVersion: $expectedVersion
     completionEvidenceId: $completionEvidenceId
+    idempotencyKey: $idempotencyKey
   ) {
     ...PrivacyRequestFields
   }
@@ -10360,7 +10365,7 @@ export const FulfillPrivacyRequestDocument = new TypedDocumentString(
   auditReference
 }`,
   {
-    hash: "sha256:4cadf1242130f5bcf8c8aa5bf2b8b3becf72afb6ed73fd1ea97496f3047e3be6",
+    hash: "sha256:6122cdfd2d6fac728cf94a18219166baff6088041d94ef5bfceb60efaad4c561",
   },
 ) as unknown as TypedDocumentString<
   FulfillPrivacyRequestMutation,
@@ -10368,8 +10373,12 @@ export const FulfillPrivacyRequestDocument = new TypedDocumentString(
 >;
 export const CancelPrivacyRequestDocument = new TypedDocumentString(
   `
-    mutation CancelPrivacyRequest($id: UUID!, $expectedVersion: Int!) {
-  cancelPrivacyRequest(id: $id, expectedVersion: $expectedVersion) {
+    mutation CancelPrivacyRequest($id: UUID!, $expectedVersion: Int!, $idempotencyKey: String) {
+  cancelPrivacyRequest(
+    id: $id
+    expectedVersion: $expectedVersion
+    idempotencyKey: $idempotencyKey
+  ) {
     ...PrivacyRequestFields
   }
 }
@@ -10384,7 +10393,7 @@ export const CancelPrivacyRequestDocument = new TypedDocumentString(
   auditReference
 }`,
   {
-    hash: "sha256:0227e11fa725e90d8df8b5de070d3cca8336fad4c9d4551daf475ed8656203b3",
+    hash: "sha256:46ee11a7c2562b1a185c7d599fb427078b6dfca84314584d78143754db972cbb",
   },
 ) as unknown as TypedDocumentString<
   CancelPrivacyRequestMutation,

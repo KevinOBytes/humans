@@ -1553,3 +1553,20 @@ every integration file shares one database in parallel; the required CI
 database matrix and all bounded acceptance suites pass, so hosted
 authenticated/provider proof and the remaining incomplete requirements stay
 open.
+
+Bounded HUM-NFR-008 privacy-request transition evidence (2026-09-13):
+generated `reviewPrivacyRequest`, `fulfillPrivacyRequest`, and
+`cancelPrivacyRequest` accept optional durable principal-bound HMAC keys while
+preserving unkeyed callers. The shared outer transaction atomically commits
+one transition/audit and any deletion enqueue or processor propagation. Only
+an opaque request ID, committed version, and state are retained for replay;
+references are validated before lookup, and a fresh authorized transaction
+checks the current scoped request. The 23-case disposable PostgreSQL matrix
+in `privacy-request-idempotency.test.ts`, included in `test:db`, covers
+overlapping convergence, changed material, malformed/redirected references,
+expired pending takeover, expired stale-version rejection, tenant/principal
+key isolation, deleted/current-version and revoked-session fencing, independent
+approval, legal-hold preservation, and generated GraphQL lifecycle replay.
+Existing unkeyed lifecycle and retention legal-hold suites also pass. The
+remaining retryable mutation, browser, and hosted/provider matrices remain
+open; HUM-NFR-008 stays Incomplete.

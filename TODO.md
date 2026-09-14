@@ -912,3 +912,18 @@ operation tests pass locally. Remaining work is intentionally open: dedicated
 team/investigation UI, disposable PostgreSQL lifecycle coverage, assignment
 scope integration, hosted/provider acceptance, and the full role/redaction/
 accessibility matrix.
+
+Bounded HUM-NFR-008 privacy-request transition evidence (2026-09-13):
+`reviewPrivacyRequest`, `fulfillPrivacyRequest`, and `cancelPrivacyRequest`
+accept optional principal-bound durable idempotency keys. Their shared outer
+transaction commits the transition, redacted audit, and any deletion enqueue
+or processor propagation once. Exact opaque request/version/state references
+are validated before lookup and replay rechecks live identity, scoped access,
+and current state. The 23-case disposable PostgreSQL suite covers overlapping
+retries, changed material, malformed/redirected references, expired pending
+claim takeover, stale-version rejection after expiry, workspace/principal
+fencing, session revocation, independent approval, legal holds, and generated
+GraphQL lifecycle replay. It is included in `test:db`; the existing lifecycle
+and retention legal-hold suites also pass. This does not close HUM-NFR-008:
+other mutation families, browser retry, and hosted/provider acceptance remain
+open.
