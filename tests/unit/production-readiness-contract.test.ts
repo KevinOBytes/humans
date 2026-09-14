@@ -55,6 +55,7 @@ describe("production readiness smoke contract", () => {
     const logs: string[] = [];
     const workspaceId = "00000000-0000-4000-8000-000000000001";
     const personId = "00000000-0000-4000-8000-000000000002";
+    let syntheticDisplayName = "";
     const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(input.toString());
       const body = typeof init?.body === "string" ? init.body : undefined;
@@ -92,21 +93,28 @@ describe("production readiness smoke contract", () => {
             },
             { status: 200 },
           );
-        if (query.includes("SmokeCreatePerson"))
+        if (query.includes("SmokeCreatePerson")) {
+          syntheticDisplayName = JSON.parse(body ?? "{}").variables.input
+            .displayName;
           return Response.json(
             {
               data: {
                 createPerson: {
-                  person: { id: personId, displayName: "Smoke" },
+                  person: { id: personId, displayName: syntheticDisplayName },
                   code: "CREATED",
                 },
               },
             },
             { status: 200 },
           );
+        }
         if (query.includes("SmokePerson"))
           return Response.json(
-            { data: { person: { id: personId, displayName: "Smoke" } } },
+            {
+              data: {
+                person: { id: personId, displayName: syntheticDisplayName },
+              },
+            },
             { status: 200 },
           );
       }
@@ -162,6 +170,7 @@ describe("production readiness smoke contract", () => {
     const workspaceId = "00000000-0000-4000-8000-000000000001";
     const personId = "00000000-0000-4000-8000-000000000002";
     const totp = "739201";
+    let syntheticDisplayName = "";
     const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(input.toString());
       const headers = new Headers(init?.headers);
@@ -229,21 +238,28 @@ describe("production readiness smoke contract", () => {
             },
             { status: 200 },
           );
-        if (query.includes("SmokeCreatePerson"))
+        if (query.includes("SmokeCreatePerson")) {
+          syntheticDisplayName = JSON.parse(body ?? "{}").variables.input
+            .displayName;
           return Response.json(
             {
               data: {
                 createPerson: {
-                  person: { id: personId, displayName: "Smoke" },
+                  person: { id: personId, displayName: syntheticDisplayName },
                   code: "CREATED",
                 },
               },
             },
             { status: 200 },
           );
+        }
         if (query.includes("SmokePerson"))
           return Response.json(
-            { data: { person: { id: personId, displayName: "Smoke" } } },
+            {
+              data: {
+                person: { id: personId, displayName: syntheticDisplayName },
+              },
+            },
             { status: 200 },
           );
       }
@@ -402,6 +418,60 @@ describe("production readiness smoke contract", () => {
         log: () => undefined,
       }),
     ).rejects.toThrow("external provider contracts failed for upstash-rest");
+
+    await expect(
+      runExternalProviderContracts({
+        env: {},
+        execute: async () => ({ exitCode: 0 }),
+        log: () => undefined,
+      }),
+    ).rejects.toThrow(/explicit.*opt-in/i);
+    await expect(
+      runExternalProviderContracts({
+        env: { RUN_EXTERNAL_PROVIDER_CONTRACTS: "true" },
+        execute: async () => ({ exitCode: 0 }),
+        log: () => undefined,
+      }),
+    ).rejects.toThrow(/no complete credential set/i);
+  });
+
+  it("rejects an HTTP-200 GraphQL error when reading the synthetic person", async () => {
+    const { validateSyntheticPersonRead } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+    const response = Response.json(
+      { errors: [{ message: "private provider detail" }] },
+      {
+        status: 200,
+        headers: {
+          "x-request-id": "00000000-0000-4000-8000-000000000004",
+        },
+      },
+    );
+
+    await expect(
+      validateSyntheticPersonRead(response, {
+        expectedId: "00000000-0000-4000-8000-000000000002",
+        expectedDisplayName: "Production smoke 00000000",
+      }),
+    ).rejects.toThrow(/authenticated person read failed/);
+  });
+
+  it.each([
+    ["wrong person", "00000000-0000-4000-8000-000000000003", "Expected"],
+    ["wrong display name", "00000000-0000-4000-8000-000000000002", "Other"],
+  ])("rejects an HTTP-200 %s read payload", async (_case, id, displayName) => {
+    const { validateSyntheticPersonRead } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+
+    await expect(
+      validateSyntheticPersonRead(
+        Response.json({ data: { person: { id, displayName } } }),
+        {
+          expectedId: "00000000-0000-4000-8000-000000000002",
+          expectedDisplayName: "Expected",
+        },
+      ),
+    ).rejects.toThrow(/authenticated person read failed/);
   });
 
   it("rejects a nominal readiness response that omits required dependency evidence", async () => {

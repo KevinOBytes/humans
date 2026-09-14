@@ -165,16 +165,14 @@ export async function runExternalProviderContracts({
 } = {}) {
   const plan = externalProviderContractPlan(env);
   if (env.RUN_EXTERNAL_PROVIDER_CONTRACTS !== "true") {
-    log(
-      "provider contracts skipped (set RUN_EXTERNAL_PROVIDER_CONTRACTS=true to opt in)",
+    throw new Error(
+      "external provider contracts require explicit RUN_EXTERNAL_PROVIDER_CONTRACTS=true opt-in",
     );
-    return { enabled: [], ran: false };
   }
   if (plan.enabled.length === 0) {
-    log(
-      `provider contracts unavailable: no complete credential set injected (${plan.unavailable.join(", ")})`,
+    throw new Error(
+      `external provider contracts unavailable: no complete credential set injected (${plan.unavailable.join(", ")})`,
     );
-    return { enabled: [], ran: false };
   }
 
   const result = await execute(providerContractChildEnvironment(env));
@@ -204,6 +202,24 @@ export function parseBaseUrl(value) {
       "production smoke requires a credential-free HTTP(S) base URL",
     );
   return url;
+}
+
+export async function validateSyntheticPersonRead(
+  response,
+  { expectedId, expectedDisplayName },
+) {
+  const body = await response.json().catch(() => null);
+  const person = body?.data?.person;
+  if (
+    !response.ok ||
+    !body ||
+    (Array.isArray(body.errors) && body.errors.length > 0) ||
+    person?.id !== expectedId ||
+    person?.displayName !== expectedDisplayName
+  )
+    throw new Error(
+      `authenticated person read failed (request ${requestId(response.headers)})`,
+    );
 }
 
 function requestId(headers) {
@@ -443,6 +459,7 @@ export async function runProductionSmoke({
     }
     const sessionHeaders = { cookie: cookieHeader(emailSession.jar) };
     const idempotencyKey = randomUUID();
+    const expectedDisplayName = `Production smoke ${idempotencyKey.slice(0, 8)}`;
     const create = await call("/api/graphql", {
       method: "POST",
       headers: {
@@ -456,7 +473,7 @@ export async function runProductionSmoke({
           "mutation SmokeCreatePerson($input: CreatePersonInput!) { createPerson(input: $input) { person { id displayName } code } }",
         variables: {
           input: {
-            displayName: `Production smoke ${idempotencyKey.slice(0, 8)}`,
+            displayName: expectedDisplayName,
             biography: "Fictional smoke-test record",
             idempotencyKey,
           },
@@ -486,10 +503,10 @@ export async function runProductionSmoke({
         variables: { id: personId },
       }),
     });
-    if (!read.ok)
-      throw new Error(
-        `authenticated person read returned ${read.status} (request ${requestId(read.headers)})`,
-      );
+    await validateSyntheticPersonRead(read, {
+      expectedId: personId,
+      expectedDisplayName,
+    });
     log(
       `authenticated synthetic person read 200 request=${requestId(read.headers)}`,
     );

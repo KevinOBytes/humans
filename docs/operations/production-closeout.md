@@ -137,11 +137,15 @@ Provider lifecycle contracts are separately opt-in. Add
 `--provider-contracts` to the same `op run` command only when
 `RUN_EXTERNAL_PROVIDER_CONTRACTS=true` and at least one complete Upstash REST or
 S3-compatible test credential group is injected. Partial credential groups fail
-closed before any provider request. No complete group produces an explicit
-`unavailable` result and no request. When enabled, the child provider suite
+closed before any provider request. If opt-in is absent or no complete group is
+available, the requested acceptance exits nonzero with a redacted diagnostic
+and makes no request. When enabled, the child provider suite
 round-trips disposable, namespaced Redis and private object-storage fixtures,
-deletes them, suppresses all child output, and reports provider labels only.
-This is destructive only to the generated test keys/objects and must use an
+deletes them in a failure-safe cleanup boundary, suppresses all child output,
+and reports provider labels only. R2 and generic S3 buckets must be
+pre-provisioned; the suite never creates an external bucket. Only isolated local
+MinIO may create a missing test bucket. A cleanup failure fails the acceptance
+run. This is destructive only to generated test keys/objects and must use an
 approved test bucket/database rather than irreplaceable data.
 
 The readiness endpoint and these lifecycle checks cover PostgreSQL, Redis, and
