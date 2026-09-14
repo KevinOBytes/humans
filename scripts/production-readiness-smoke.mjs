@@ -99,8 +99,10 @@ function providerContractChildEnvironment(env) {
       .filter((variable) => env[variable] !== undefined)
       .map((variable) => [variable, env[variable]]),
   );
-  child.UPSTASH_REDIS_REST_URL ??= env.KV_REST_API_URL;
-  child.UPSTASH_REDIS_REST_TOKEN ??= env.KV_REST_API_TOKEN;
+  if (!isPresent(child.UPSTASH_REDIS_REST_URL))
+    child.UPSTASH_REDIS_REST_URL = env.KV_REST_API_URL;
+  if (!isPresent(child.UPSTASH_REDIS_REST_TOKEN))
+    child.UPSTASH_REDIS_REST_TOKEN = env.KV_REST_API_TOKEN;
   delete child.KV_REST_API_URL;
   delete child.KV_REST_API_TOKEN;
   return child;

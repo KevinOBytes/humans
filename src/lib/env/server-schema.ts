@@ -527,5 +527,9 @@ export function parseBootstrapAdminEnv(
 export function parseAdminOperationEnv(
   source: NodeJS.ProcessEnv,
 ): AdminOperationEnv {
-  return adminOperationEnvSchema.parse(source);
+  const normalized = { ...source };
+  if (!normalized.DATABASE_URL?.trim()) {
+    normalized.DATABASE_URL = source.POSTGRES_URL;
+  }
+  return adminOperationEnvSchema.parse(normalized);
 }

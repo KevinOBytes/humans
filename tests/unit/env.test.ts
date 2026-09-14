@@ -634,6 +634,26 @@ describe("parseAdminOperationEnv", () => {
     });
   });
 
+  it("normalizes the Vercel PostgreSQL alias for attended recovery", () => {
+    expect(
+      parseAdminOperationEnv({
+        NODE_ENV: "production",
+        DATABASE_URL: "",
+        POSTGRES_URL: productionEnv.DATABASE_URL,
+        ADMIN_EMAIL: productionEnv.ADMIN_EMAIL,
+        ADMIN_USERNAME: productionEnv.ADMIN_USERNAME,
+        ADMIN_DISPLAY_NAME: productionEnv.ADMIN_DISPLAY_NAME,
+        ADMIN_PASSWORD: productionEnv.ADMIN_PASSWORD,
+      }),
+    ).toEqual({
+      DATABASE_URL: productionEnv.DATABASE_URL,
+      ADMIN_EMAIL: productionEnv.ADMIN_EMAIL,
+      ADMIN_USERNAME: productionEnv.ADMIN_USERNAME,
+      ADMIN_DISPLAY_NAME: productionEnv.ADMIN_DISPLAY_NAME,
+      ADMIN_PASSWORD: productionEnv.ADMIN_PASSWORD,
+    });
+  });
+
   it("keeps the bootstrap password safety checks for attended recovery", () => {
     expect(() =>
       parseAdminOperationEnv({

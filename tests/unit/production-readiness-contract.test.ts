@@ -649,6 +649,8 @@ describe("production readiness smoke contract", () => {
       runExternalProviderContracts({
         env: {
           RUN_EXTERNAL_PROVIDER_CONTRACTS: "true",
+          UPSTASH_REDIS_REST_URL: "",
+          UPSTASH_REDIS_REST_TOKEN: "",
           KV_REST_API_URL: "https://example.upstash.io",
           KV_REST_API_TOKEN: secret,
         },
@@ -667,6 +669,37 @@ describe("production readiness smoke contract", () => {
     expect(executions[0]).not.toHaveProperty("KV_REST_API_URL");
     expect(executions[0]).not.toHaveProperty("KV_REST_API_TOKEN");
   });
+
+  it("does not let empty canonical Upstash values skip the real child contract", async () => {
+    const { runExternalProviderContracts } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+    const secret = "upstash-contract-token-that-must-not-escape";
+    const logs: string[] = [];
+
+    let error: unknown;
+    try {
+      await runExternalProviderContracts({
+        env: {
+          RUN_EXTERNAL_PROVIDER_CONTRACTS: "true",
+          UPSTASH_REDIS_REST_URL: "",
+          UPSTASH_REDIS_REST_TOKEN: "",
+          KV_REST_API_URL: "http://127.0.0.1:1",
+          KV_REST_API_TOKEN: secret,
+          PATH: process.env.PATH,
+        },
+        log: (line: string) => logs.push(line),
+      });
+    } catch (candidate) {
+      error = candidate;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      "external provider contracts failed for upstash-rest",
+    );
+    expect(logs).toEqual([]);
+    expect((error as Error).message).not.toContain(secret);
+  }, 20_000);
 
   it("runs the opted-in AI and Resend adapters against controlled provider boundaries", async () => {
     const { runExternalProviderContracts } =
