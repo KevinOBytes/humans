@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { directRouteErrorResponse } from "@/lib/api/direct-route-error";
+import { requestCorrelationId } from "@/lib/api/request-id";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import {
   changeTwoFactorStateAtomically,
@@ -36,16 +38,6 @@ function response(body: object, status: number, requestId: string): Response {
   });
 }
 
-function requestId(request: Request): string {
-  const value = request.headers.get("x-request-id")?.trim();
-  return value &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
-      value,
-    )
-    ? value.toLowerCase()
-    : crypto.randomUUID();
-}
-
 function trustedOrigin(request: Request, origins: readonly string[]): boolean {
   const raw = request.headers.get("origin");
   if (
@@ -63,46 +55,43 @@ function trustedOrigin(request: Request, origins: readonly string[]): boolean {
   }
 }
 
+function error(
+  code:
+    | "FORBIDDEN"
+    | "INVALID_INPUT"
+    | "SECURITY_CHANGE_REJECTED"
+    | "SECURITY_CHANGE_UNAVAILABLE"
+    | "UNAUTHORIZED",
+  status: number,
+  requestId: string,
+): Response {
+  return directRouteErrorResponse({ code, requestId, status });
+}
+
 export function createTwoFactorDisableHandler(dependencies: Dependencies) {
   return async function POST(request: Request): Promise<Response> {
-    const correlationId = requestId(request);
+    const correlationId = requestCorrelationId(request);
     if (
       request.headers.has("authorization") ||
       request.headers.has("x-api-key") ||
       !trustedOrigin(request, dependencies.trustedOrigins)
     ) {
-      return response(
-        { code: "FORBIDDEN", requestId: correlationId },
-        403,
-        correlationId,
-      );
+      return error("FORBIDDEN", 403, correlationId);
     }
     let session: Session;
     try {
       session = await dependencies.getSession(request.headers);
     } catch {
-      return response(
-        { code: "SECURITY_CHANGE_UNAVAILABLE", requestId: correlationId },
-        503,
-        correlationId,
-      );
+      return error("SECURITY_CHANGE_UNAVAILABLE", 503, correlationId);
     }
     if (!session) {
-      return response(
-        { code: "UNAUTHORIZED", requestId: correlationId },
-        401,
-        correlationId,
-      );
+      return error("UNAUTHORIZED", 401, correlationId);
     }
     let body: z.infer<typeof bodySchema>;
     try {
       body = bodySchema.parse(await request.json());
     } catch {
-      return response(
-        { code: "INVALID_INPUT", requestId: correlationId },
-        400,
-        correlationId,
-      );
+      return error("INVALID_INPUT", 400, correlationId);
     }
     let attemptAllowed = true;
     try {
@@ -113,18 +102,10 @@ export function createTwoFactorDisableHandler(dependencies: Dependencies) {
           userId: session.user.id,
         }));
     } catch {
-      return response(
-        { code: "SECURITY_CHANGE_UNAVAILABLE", requestId: correlationId },
-        503,
-        correlationId,
-      );
+      return error("SECURITY_CHANGE_UNAVAILABLE", 503, correlationId);
     }
     if (!attemptAllowed) {
-      return response(
-        { code: "SECURITY_CHANGE_REJECTED", requestId: correlationId },
-        400,
-        correlationId,
-      );
+      return error("SECURITY_CHANGE_REJECTED", 400, correlationId);
     }
     try {
       const result = await (
@@ -136,20 +117,12 @@ export function createTwoFactorDisableHandler(dependencies: Dependencies) {
         userId: session.user.id,
       });
       return response({ status: true, result }, 200, correlationId);
-    } catch (error) {
-      if (error instanceof TwoFactorLifecycleError) {
-        const status = error.code === "CONFLICT" ? 409 : 400;
-        return response(
-          { code: "SECURITY_CHANGE_REJECTED", requestId: correlationId },
-          status,
-          correlationId,
-        );
+    } catch (caught) {
+      if (caught instanceof TwoFactorLifecycleError) {
+        const status = caught.code === "CONFLICT" ? 409 : 400;
+        return error("SECURITY_CHANGE_REJECTED", status, correlationId);
       }
-      return response(
-        { code: "SECURITY_CHANGE_UNAVAILABLE", requestId: correlationId },
-        503,
-        correlationId,
-      );
+      return error("SECURITY_CHANGE_UNAVAILABLE", 503, correlationId);
     }
   };
 }
@@ -241,7 +214,7 @@ export function createTwoFactorDisableRoute(
     return pending;
   };
   return async (request: Request): Promise<Response> => {
-    const correlationId = requestId(request);
+    const correlationId = requestCorrelationId(request);
     try {
       return await (
         await load()
@@ -252,11 +225,7 @@ export function createTwoFactorDisableRoute(
         requestId: correlationId,
         severity: "error",
       });
-      return response(
-        { code: "SECURITY_CHANGE_UNAVAILABLE", requestId: correlationId },
-        503,
-        correlationId,
-      );
+      return error("SECURITY_CHANGE_UNAVAILABLE", 503, correlationId);
     }
   };
 }

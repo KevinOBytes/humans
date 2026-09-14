@@ -93,6 +93,7 @@ describe("readiness", () => {
     expect(response.status).toBe(503);
     expect(body).toEqual({
       code: "PROVIDER_UNAVAILABLE",
+      message: "A required provider is unavailable.",
       status: "unavailable",
       service: "humans",
       dependencies: { configuration: "ok", redis: "failed" },
@@ -125,6 +126,7 @@ describe("readiness", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
       code: "PROVIDER_UNAVAILABLE",
+      message: "A required provider is unavailable.",
       status: "unavailable",
       service: "humans",
       dependencies: { storage: "failed" },

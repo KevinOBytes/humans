@@ -62,6 +62,9 @@ describe("direct JSON route input and authorization envelopes", () => {
         expect(response.headers.get("x-request-id")).toBe(requestId);
         expect(await response.json()).toEqual({
           code: denied ? "FORBIDDEN" : "INVALID_INPUT",
+          message: denied
+            ? "This request is not permitted."
+            : "The request is invalid.",
           requestId,
         });
         expect(mutation).not.toHaveBeenCalled();
@@ -107,6 +110,7 @@ describe("direct JSON route input and authorization envelopes", () => {
       expect(response.headers.get("x-request-id")).toBe(requestId);
       expect(await response.json()).toEqual({
         code: "UNAUTHORIZED",
+        message: "Authentication is required.",
         requestId,
       });
       expect(mutation).not.toHaveBeenCalled();
@@ -132,6 +136,7 @@ describe("direct JSON route input and authorization envelopes", () => {
     expect(response.headers.get("x-request-id")).toBe(requestId);
     expect(await response.json()).toEqual({
       code: "UNAUTHORIZED",
+      message: "Authentication is required.",
       requestId,
     });
     expect(response.headers.get("set-cookie")).toBeNull();

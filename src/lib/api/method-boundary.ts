@@ -1,4 +1,5 @@
 import { correlationHeaders, requestCorrelationId } from "./request-id";
+import { directRouteErrorResponse } from "./direct-route-error";
 
 /** Explicitly replace Next's uncorrelated automatic 405/OPTIONS responses.
  * These handlers never initialize providers, read bodies, or grant CORS access.
@@ -17,19 +18,25 @@ export function createMethodBoundary(
       if (request.method === "HEAD") {
         return new Response(null, { status: 405, headers });
       }
-      return Response.json(
-        format === "graphql"
-          ? {
-              errors: [
-                {
-                  message: "The HTTP method is not supported.",
-                  extensions: { code: "VALIDATION_FAILED", requestId },
-                },
-              ],
-            }
-          : { code: "METHOD_NOT_ALLOWED", requestId },
-        { status: 405, headers },
-      );
+      if (format === "graphql") {
+        return Response.json(
+          {
+            errors: [
+              {
+                message: "The HTTP method is not supported.",
+                extensions: { code: "VALIDATION_FAILED", requestId },
+              },
+            ],
+          },
+          { status: 405, headers },
+        );
+      }
+      return directRouteErrorResponse({
+        code: "METHOD_NOT_ALLOWED",
+        headers,
+        requestId,
+        status: 405,
+      });
     },
     options(request: Request): Response {
       const headers = correlationHeaders(requestCorrelationId(request));

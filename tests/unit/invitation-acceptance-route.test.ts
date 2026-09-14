@@ -54,6 +54,7 @@ describe("atomic invitation acceptance route", () => {
       expect(body).not.toContain("credential detail");
       expect(JSON.parse(body)).toEqual({
         code: "INVITATION_UNAVAILABLE",
+        message: "The invitation is unavailable.",
         requestId: "a4e128f2-c057-43e9-bf32-7b0e30cc2cf1",
       });
     }
@@ -80,6 +81,7 @@ describe("atomic invitation acceptance route", () => {
       expect(body).not.toContain("token detail");
       expect(JSON.parse(body)).toMatchObject({
         code: "INVITATION_UNAVAILABLE",
+        message: "The invitation is unavailable.",
         requestId: result.headers.get("x-request-id"),
       });
     }

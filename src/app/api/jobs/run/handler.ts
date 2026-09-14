@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { directRouteErrorResponse } from "@/lib/api/direct-route-error";
 import { createMethodBoundary } from "@/lib/api/method-boundary";
+import { requestCorrelationId } from "@/lib/api/request-id";
 
 import type { JobRunSummary } from "@/worker/run-once";
 
@@ -11,16 +13,6 @@ type JobsRunRouteDependencies = {
   getSecret(): string | undefined;
   run(): Promise<JobRunSummary>;
 };
-
-const requestIdPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-
-function requestId(request: Request): string {
-  const candidate = request.headers.get("x-request-id")?.trim();
-  return candidate && requestIdPattern.test(candidate)
-    ? candidate.toLowerCase()
-    : crypto.randomUUID();
-}
 
 function json(body: object, status: number, correlationId: string): Response {
   return Response.json(body, {
@@ -44,27 +36,25 @@ function isAuthorized(request: Request, secret: string | undefined): boolean {
 
 export function createJobsRunHandler(input: JobsRunRouteDependencies) {
   return async (request: Request): Promise<Response> => {
-    const correlationId = requestId(request);
+    const correlationId = requestCorrelationId(request);
     let secret: string | undefined;
     try {
       secret = input.getSecret();
     } catch {
-      return json(
-        { success: false, code: "INTERNAL", requestId: correlationId },
-        503,
-        correlationId,
-      );
+      return directRouteErrorResponse({
+        code: "INTERNAL",
+        extra: { success: false },
+        requestId: correlationId,
+        status: 503,
+      });
     }
     if (!isAuthorized(request, secret)) {
-      return json(
-        {
-          success: false,
-          code: "UNAUTHENTICATED",
-          requestId: correlationId,
-        },
-        401,
-        correlationId,
-      );
+      return directRouteErrorResponse({
+        code: "UNAUTHENTICATED",
+        extra: { success: false },
+        requestId: correlationId,
+        status: 401,
+      });
     }
     try {
       await input.bootstrap?.();
@@ -75,11 +65,12 @@ export function createJobsRunHandler(input: JobsRunRouteDependencies) {
         correlationId,
       );
     } catch {
-      return json(
-        { success: false, code: "INTERNAL", requestId: correlationId },
-        503,
-        correlationId,
-      );
+      return directRouteErrorResponse({
+        code: "INTERNAL",
+        extra: { success: false },
+        requestId: correlationId,
+        status: 503,
+      });
     }
   };
 }

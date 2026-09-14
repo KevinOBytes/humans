@@ -22,6 +22,7 @@ describe("unmatched storage object route", () => {
       await expect(response.json()).resolves.toEqual({
         status: "error",
         code: "NOT_FOUND",
+        message: "The requested resource was not found.",
         requestId: requestId.toLowerCase(),
       });
     },

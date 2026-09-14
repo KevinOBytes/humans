@@ -106,13 +106,25 @@ describe("complete direct route method boundary", () => {
         } else {
           const body = await response.json();
           expect(JSON.stringify(body)).not.toContain("private-secret");
-          expect(
-            path === "graphql" ? body.errors[0].extensions : body,
-          ).toMatchObject({
-            code:
-              path === "graphql" ? "VALIDATION_FAILED" : "METHOD_NOT_ALLOWED",
-            requestId: correlationId,
-          });
+          if (path === "graphql") {
+            expect(body).toEqual({
+              errors: [
+                {
+                  message: "The HTTP method is not supported.",
+                  extensions: {
+                    code: "VALIDATION_FAILED",
+                    requestId: correlationId,
+                  },
+                },
+              ],
+            });
+          } else {
+            expect(body).toEqual({
+              code: "METHOD_NOT_ALLOWED",
+              message: "The HTTP method is not supported.",
+              requestId: correlationId,
+            });
+          }
         }
       });
     }

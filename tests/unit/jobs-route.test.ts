@@ -87,6 +87,7 @@ describe("bounded Vercel job route", () => {
       await expect(response.json()).resolves.toMatchObject({
         success: false,
         code: "UNAUTHENTICATED",
+        message: "Authentication is required.",
         requestId: expect.any(String),
       });
       expect(run).not.toHaveBeenCalled();
@@ -117,6 +118,7 @@ describe("bounded Vercel job route", () => {
       expect(await response.json()).toMatchObject({
         success: false,
         code: "INTERNAL",
+        message: "An internal error occurred.",
         requestId: expect.any(String),
       });
     }

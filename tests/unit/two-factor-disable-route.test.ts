@@ -57,6 +57,7 @@ describe("atomic two-factor disable route", () => {
       expect(body).not.toContain("credential detail");
       expect(JSON.parse(body)).toEqual({
         code: "SECURITY_CHANGE_UNAVAILABLE",
+        message: "The security change is temporarily unavailable.",
         requestId: "a4e128f2-c057-43e9-bf32-7b0e30cc2cf1",
       });
     }
@@ -90,6 +91,7 @@ describe("atomic two-factor disable route", () => {
       expect(body).not.toContain("token detail");
       expect(JSON.parse(body)).toMatchObject({
         code: "SECURITY_CHANGE_UNAVAILABLE",
+        message: "The security change is temporarily unavailable.",
         requestId: result.headers.get("x-request-id"),
       });
     }
@@ -192,6 +194,7 @@ describe("atomic two-factor disable route", () => {
     expect(result.status).toBe(400);
     await expect(result.json()).resolves.toMatchObject({
       code: "SECURITY_CHANGE_REJECTED",
+      message: "The security change was rejected.",
     });
     expect(change).not.toHaveBeenCalled();
   });
@@ -218,6 +221,7 @@ describe("atomic two-factor disable route", () => {
     expect(result.headers.get("cache-control")).toBe("private, no-store");
     await expect(result.json()).resolves.toEqual({
       code: "SECURITY_CHANGE_UNAVAILABLE",
+      message: "The security change is temporarily unavailable.",
       requestId: "a4e128f2-c057-43e9-bf32-7b0e30cc2cf1",
     });
     expect(change).not.toHaveBeenCalled();
