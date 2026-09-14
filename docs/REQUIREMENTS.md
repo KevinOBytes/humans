@@ -1858,3 +1858,21 @@ administrator authentication/bootstrap, live Resend/R2/S3/Upstash/OpenAI/
 Ollama contracts, complete role/resource/redaction/performance matrices, and
 the remaining incomplete requirements must still be closed with their own
 runtime evidence before the project can be called fully production-complete.
+
+Current release verification (2026-09-14): main commit
+`9f095ae24a0b0f9eb19fee97ca825b5dd513090c` passed GitHub Actions run
+[`34869351707`](https://github.com/KevinOBytes/humans/actions/runs/34869351707)
+with all nine required jobs green, including the real PostgreSQL/Redis
+integration and security matrix, browser acceptance, production build,
+Compose lifecycle, generated-artifact drift, image security, dependency
+policy, quality, and secret scanning. The exact clean checkout was deployed
+to Vercel as `dpl_695dYyXriayY2ryoogoufHxpUqHj`; Vercel reports
+`target=production`, `readyState=READY`, Node `24.x`, and aliases
+`humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. This closes the current bounded
+implementation tranche only. Hosted administrator sign-in,
+bootstrap/recovery/2FA acceptance, live Resend/R2/S3/Upstash/OpenAI/Ollama
+contracts, irreversible hard-delete/anonymization (currently fail-closed),
+whole-product role/redaction/accessibility/performance matrices, and the
+remaining provider/privacy acceptance rows are still incomplete and require
+separate operator evidence.

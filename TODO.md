@@ -1210,3 +1210,19 @@ contract. This is verified release evidence for the merged tranche, not full
 MVP closure: hosted administrator sign-in/bootstrap, external Resend/R2/S3/
 Upstash/OpenAI/Ollama contracts, full role/resource/redaction/performance
 matrices, and the other incomplete rows above remain open.
+
+Current release closeout evidence (2026-09-14): main commit
+`9f095ae24a0b0f9eb19fee97ca825b5dd513090c` passed all nine required jobs in
+GitHub Actions run
+[`34869351707`](https://github.com/KevinOBytes/humans/actions/runs/34869351707),
+including the real PostgreSQL/Redis integration and security matrix, browser
+acceptance, quality, production build, Compose lifecycle, generated drift,
+image security, dependency policy, and secret scanning. That exact clean
+checkout is deployed as Vercel `dpl_695dYyXriayY2ryoogoufHxpUqHj` with
+`READY` production state and aliases `humans.kevinbytes.com`,
+`humans-dun.vercel.app`, and `humans-tkoresearch.vercel.app`. Do not mark the
+project fully production-complete yet: hosted admin sign-in/bootstrap/
+recovery/2FA, live Resend/R2/S3/Upstash/OpenAI/Ollama acceptance, irreversible
+hard-delete/anonymization (fail-closed by design), and the full role,
+redaction, accessibility, performance, and provider/privacy matrices remain
+operator gates.
