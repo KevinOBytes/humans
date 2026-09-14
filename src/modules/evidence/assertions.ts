@@ -685,6 +685,8 @@ export async function requireRelationshipPromotion(
     state: string;
     nextState: string;
     reviewState: string;
+    epistemicStatus: string;
+    nextEpistemicStatus: string;
     caseId: string | null;
     purpose: string | null | undefined;
     evidenceAssertionId?: string | null;
@@ -696,6 +698,8 @@ export async function requireRelationshipPromotion(
       from: input.state,
       to: input.nextState,
       reviewState: input.reviewState,
+      epistemicStatus: input.epistemicStatus,
+      nextEpistemicStatus: input.nextEpistemicStatus,
     })
   )
     return;
@@ -722,6 +726,8 @@ export async function requireRelationshipPromotion(
     from: input.state,
     to: input.nextState,
     reviewState: input.reviewState,
+    epistemicStatus: input.epistemicStatus,
+    nextEpistemicStatus: input.nextEpistemicStatus,
     reviewer:
       context.actor.type === "user" &&
       context.permissions.has("workspace:update"),

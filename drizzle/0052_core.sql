@@ -1,0 +1,1 @@
+ALTER TABLE "relationships" ALTER COLUMN "epistemic_status" SET DEFAULT 'analyst_hypothesis';

@@ -64,17 +64,23 @@ export function requiresRelationshipPromotionReview(input: {
   from: string;
   to: string;
   reviewState?: string;
+  epistemicStatus?: string;
+  nextEpistemicStatus?: string;
 }) {
   return (
-    ["asserted", "corroborated"].includes(input.to) &&
-    (input.from === "inferred" ||
-      (input.from !== input.to && input.reviewState !== "approved"))
+    (["asserted", "corroborated"].includes(input.to) &&
+      (input.from === "inferred" ||
+        (input.from !== input.to && input.reviewState !== "approved"))) ||
+    (input.epistemicStatus === "analyst_hypothesis" &&
+      input.nextEpistemicStatus === "documented")
   );
 }
 export function requireReviewedPromotion(input: {
   from: string;
   to: string;
   reviewState?: string;
+  epistemicStatus?: string;
+  nextEpistemicStatus?: string;
   reviewer: boolean;
   assertionApproved: boolean;
   approvalRecorded: boolean;
