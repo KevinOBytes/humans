@@ -786,6 +786,7 @@ export type LinkEvidenceAssertionInput = {
   confidence: number;
   evidenceId: string;
   explicitConfirmed: boolean;
+  /** Optional cited field. Public person identifiers use identifiers.<uuid>.v<version>.<field>; protected identifier citations are not supported by plaintext evidence storage. */
   fieldPath?: string | null | undefined;
   idempotencyKey?: string | null | undefined;
   locator: string;
