@@ -22,6 +22,7 @@ import {
   S3ObjectStore,
   type ObjectStoreProvider,
 } from "@/lib/storage/s3";
+import { validateExternalStorageContractBucket } from "../../scripts/provider-contract-storage-config.mjs";
 import {
   ensureProviderContractBucket,
   withProviderContractObjectCleanup,
@@ -224,7 +225,15 @@ if (runStorage) {
       throw new TypeError(
         "TEST_STORAGE_BUCKET is required for external storage provider contracts",
       );
-    const approvedBucket = bucket ?? "humans-provider-contract";
+    const approvedBucket = validateExternalStorageContractBucket({
+      bucket: bucket ?? "humans-provider-contract",
+      provider: storageProvider,
+      storageBucket: process.env.STORAGE_BUCKET,
+    });
+    if (!approvedBucket)
+      throw new TypeError(
+        "storage provider contract requires a configured contract bucket",
+      );
     const client = new S3Client({
       ...s3ClientConfig({
         endpoint: storageEndpoint!,
