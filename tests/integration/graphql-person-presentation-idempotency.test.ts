@@ -220,7 +220,7 @@ liveDescribe("person presentation mutation idempotency", () => {
     const input = {
       personId: person.id,
       expectedVersion: person.version,
-      idempotencyKey: "person-presentation-expiry-v1",
+      idempotencyKey: "presentation-expiry",
     };
     expect(
       (await selectPresentation({ jar: actor.jar }, input)).body?.errors,
@@ -282,7 +282,7 @@ liveDescribe("person presentation mutation idempotency", () => {
       foreignCreated.body?.data?.createPerson?.person,
       "foreign presentation person",
     );
-    const idempotencyKey = "person-presentation-principal-fence-v1";
+    const idempotencyKey = "principal-fence";
 
     const [userResult, apiResult, foreignResult] = await Promise.all([
       selectPresentation(
