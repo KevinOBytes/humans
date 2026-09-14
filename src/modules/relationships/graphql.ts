@@ -61,10 +61,10 @@ const RelationshipState = enumType("RelationshipState", [
   "disproven",
   "inactive",
 ]);
-const RelationshipEpistemicStatus = enumType("RelationshipEpistemicStatus", [
-  "documented",
-  "analyst_hypothesis",
-]);
+export const RelationshipEpistemicStatus = enumType(
+  "RelationshipEpistemicStatus",
+  ["documented", "analyst_hypothesis"],
+);
 const RelationshipFilterInput = builder.inputType("RelationshipFilterInput", {
   fields: (t) => ({
     personId: t.field({ type: "UUID" }),

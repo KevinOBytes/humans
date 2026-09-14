@@ -1,6 +1,7 @@
 import { builder } from "@/graphql/builder";
 import { requirePermission } from "@/graphql/context";
 import { PageInfo, Sensitivity } from "@/modules/people/graphql";
+import { RelationshipEpistemicStatus } from "@/modules/relationships/graphql";
 
 import type { GraphMetric } from "./metrics";
 import type { AnalysisRunRow, GraphSnapshotRow } from "./repository";
@@ -112,6 +113,11 @@ const GraphEdgeType = builder.objectRef<GraphEdge>("GraphEdge").implement({
       resolve: (edge) => edge.sensitivity,
     }),
     confidence: t.exposeFloat("confidence"),
+    epistemicStatus: t.field({
+      type: RelationshipEpistemicStatus,
+      nullable: true,
+      resolve: (edge) => (edge.epistemicStatus ?? null) as never,
+    }),
     strength: t.exposeFloat("strength", { nullable: true }),
     temporalSemantics: t.exposeString("temporalSemantics"),
     temporalPrecision: t.exposeString("temporalPrecision"),

@@ -2,6 +2,13 @@
 
 ## Relationship semantic contract checkpoint (2026-09-14)
 
+Follow-up graph projection: the repository/service, canonical GraphQL enum,
+generated graph and snapshot operations, browser mapper, and inspector now
+carry explicit epistemic status. Legacy projections without it display an
+unknown status rather than inferring documentation from corroboration.
+Focused GraphQL serialization and inspector tests pass; the generated live
+graph tenant-isolation test remains pending a configured disposable database.
+
 Profile relationship cards now derive evidence status only from the stored
 `epistemicStatus`; an approved analyst hypothesis is never relabelled as
 documented, and missing/unknown status is not treated as documentation.

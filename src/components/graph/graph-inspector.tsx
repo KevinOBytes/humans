@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { RefObject } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { relationshipSemanticPresentation } from "@/components/relationships/relationship-presentation";
 import { Button } from "@/components/ui/button";
 import type { GraphResult } from "@/modules/graph/types";
 
@@ -135,6 +136,12 @@ export function GraphInspector({
           <div>
             <dt className="text-muted-foreground text-xs">Confidence</dt>
             <dd className="mt-1">{Math.round(edge.confidence * 100)}%</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">Evidence status</dt>
+            <dd className="mt-1">
+              {relationshipSemanticPresentation(edge).evidenceLabel}
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground text-xs">Relationship ID</dt>

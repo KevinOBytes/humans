@@ -191,6 +191,12 @@ export function graphPageResult(
       inverseLabel: required(edge.inverseLabel, "edge.inverseLabel"),
       directed: required(edge.directed, "edge.directed"),
       state: relationshipState(edge.state),
+      epistemicStatus:
+        edge.epistemicStatus === "DOCUMENTED"
+          ? "documented"
+          : edge.epistemicStatus === "ANALYST_HYPOTHESIS"
+            ? "analyst_hypothesis"
+            : null,
       sensitivity: sensitivity(edge.sensitivity),
       confidence: required(edge.confidence, "edge.confidence"),
       strength: edge.strength ?? null,

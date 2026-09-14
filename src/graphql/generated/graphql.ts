@@ -2910,6 +2910,7 @@ export type RunGraphAnalysisMutation = {
         sensitivity: Sensitivity | null;
         confidence: number | null;
         strength: number | null;
+        epistemicStatus: RelationshipEpistemicStatus | null;
         temporalSemantics: string | null;
         temporalPrecision: string | null;
         validFrom: string | null;
@@ -2991,6 +2992,7 @@ export type RerunGraphAnalysisMutation = {
         sensitivity: Sensitivity | null;
         confidence: number | null;
         strength: number | null;
+        epistemicStatus: RelationshipEpistemicStatus | null;
         temporalSemantics: string | null;
         temporalPrecision: string | null;
         validFrom: string | null;
@@ -3103,6 +3105,7 @@ export type GraphPageQuery = {
       sensitivity: Sensitivity | null;
       confidence: number | null;
       strength: number | null;
+      epistemicStatus: RelationshipEpistemicStatus | null;
       temporalSemantics: string | null;
       temporalPrecision: string | null;
       validFrom: string | null;
@@ -8994,6 +8997,7 @@ export const RunGraphAnalysisDocument = new TypedDocumentString(
         sensitivity
         confidence
         strength
+        epistemicStatus
         temporalSemantics
         temporalPrecision
         validFrom
@@ -9005,7 +9009,7 @@ export const RunGraphAnalysisDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:07bb6f3dbb32587c0e3c5b252daeb9560a82a89eb3388dad4864a85981b2f1c5",
+    hash: "sha256:974e46e9e9953a09c91bc8f4ebffb1711ef4d9242ba3375725cac9d569331f31",
   },
 ) as unknown as TypedDocumentString<
   RunGraphAnalysisMutation,
@@ -9080,6 +9084,7 @@ export const RerunGraphAnalysisDocument = new TypedDocumentString(
         sensitivity
         confidence
         strength
+        epistemicStatus
         temporalSemantics
         temporalPrecision
         validFrom
@@ -9091,7 +9096,7 @@ export const RerunGraphAnalysisDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:c0b0fe9789c55292ac5a79ddc77d7016a6c70160d462033cf562a735bfdebaef",
+    hash: "sha256:9b3583b116110d538512fbb2add677340531dc1b599c6e44a080fab1449c66e8",
   },
 ) as unknown as TypedDocumentString<
   RerunGraphAnalysisMutation,
@@ -9210,6 +9215,7 @@ export const GraphPageDocument = new TypedDocumentString(
       sensitivity
       confidence
       strength
+      epistemicStatus
       temporalSemantics
       temporalPrecision
       validFrom
@@ -9220,7 +9226,7 @@ export const GraphPageDocument = new TypedDocumentString(
 }
     `,
   {
-    hash: "sha256:8b365f40dc459f1ed606495a28938b3c41cca7aa7715a49833317a0f6f275eb4",
+    hash: "sha256:553cc4bb842d20231ccf0c80e409704c2fbfbd06463f0d42763db637939ba4df",
   },
 ) as unknown as TypedDocumentString<GraphPageQuery, GraphPageQueryVariables>;
 export const GraphSavedViewPageDocument = new TypedDocumentString(

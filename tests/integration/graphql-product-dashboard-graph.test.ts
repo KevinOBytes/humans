@@ -12,6 +12,7 @@ import {
   GraphAnalysisExportDocument,
   GraphAnalysisResultsDocument,
   GraphAnalysisRunsDocument,
+  GraphPageDocument,
   ReplayGraphSnapshotDocument,
   RerunGraphAnalysisDocument,
   RunGraphAnalysisDocument,
@@ -101,6 +102,50 @@ liveDescribe(
       mode: "WORKSPACE" as const,
       nodeLimit: 10,
     };
+
+    it("projects stored evidence status through the generated graph without crossing tenants", async () => {
+      const owner = await fixture.createActor();
+      await seedGraph(owner);
+      const outsider = await fixture.createActor();
+      const [edge] = await fixture.database
+        .select({ id: relationships.id })
+        .from(relationships)
+        .where(eq(relationships.workspaceId, owner.workspaceId));
+      await fixture.database
+        .update(relationships)
+        .set({ epistemicStatus: "documented" })
+        .where(eq(relationships.id, edge!.id));
+      const graph = dataField<{
+        edges: Array<{ id: string; epistemicStatus: string; state: string }>;
+      }>(
+        await fixture.execute({
+          jar: owner.jar,
+          query: GraphPageDocument,
+          variables: { filter: boundedFilter },
+        }),
+        "graph",
+      );
+      expect(graph.edges.find(({ id }) => id === edge!.id)).toMatchObject({
+        epistemicStatus: "DOCUMENTED",
+        state: "ASSERTED",
+      });
+      expect(
+        graph.edges
+          .filter(({ id }) => id !== edge!.id)
+          .every(
+            ({ epistemicStatus }) => epistemicStatus === "ANALYST_HYPOTHESIS",
+          ),
+      ).toBe(true);
+      const foreign = dataField<{ edges: unknown[] }>(
+        await fixture.execute({
+          jar: outsider.jar,
+          query: GraphPageDocument,
+          variables: { filter: boundedFilter },
+        }),
+        "graph",
+      );
+      expect(foreign.edges).toEqual([]);
+    });
 
     it("reads the composed owner and viewer dashboards through the generated document", async () => {
       const owner = await fixture.createActor();
