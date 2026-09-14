@@ -1,7 +1,9 @@
 import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
+import { evidenceExcerpts, evidenceItems } from "@/db/schema/evidence";
 import { files } from "@/db/schema/files";
 import { auditEvents } from "@/db/schema/operations";
+import { relationships } from "@/db/schema/relationships";
 import { searchDocuments } from "@/db/schema/search";
 import {
   deletionRequests,
@@ -22,6 +24,14 @@ export type PrivacyProcessorAdapter = (input: {
   idempotencyKey: string;
 }) => Promise<PropagationResult>;
 
+/** A processor can fail closed with a stable, redacted operational reason. */
+export class PrivacyProcessorError extends Error {
+  constructor(readonly resultCode: string) {
+    super(resultCode);
+    this.name = "PrivacyProcessorError";
+  }
+}
+
 /**
  * Purges app-owned search contributions for the people covered by a privacy
  * request. The workspace predicate is deliberately repeated on every branch:
@@ -37,25 +47,97 @@ export type PrivacyProcessorAdapter = (input: {
 export function createSearchPrivacyProcessorAdapter(): PrivacyProcessorAdapter {
   return async ({ database, request }) => {
     const personIds = request.scope.personIds;
+    const fileIds = request.scope.fileIds;
     const evidenceReference = `search-purge:${request.id}`;
-    if (!personIds.length)
+    if (request.requestType === "correction")
+      throw new PrivacyProcessorError("search_reindex_required");
+    if (!personIds.length && !fileIds.length)
       return {
         state: "not_applicable",
         evidenceReference: "search:no-scoped-people",
       };
+
+    const evidenceItemIds = fileIds.length
+      ? database
+          .select({ id: evidenceItems.id })
+          .from(evidenceItems)
+          .where(
+            and(
+              eq(evidenceItems.workspaceId, request.workspaceId),
+              inArray(evidenceItems.fileId, fileIds),
+            ),
+          )
+      : null;
+    const evidenceExcerptIds = fileIds.length
+      ? database
+          .select({ id: evidenceExcerpts.id })
+          .from(evidenceExcerpts)
+          .innerJoin(
+            evidenceItems,
+            and(
+              eq(evidenceItems.workspaceId, evidenceExcerpts.workspaceId),
+              eq(evidenceItems.id, evidenceExcerpts.evidenceItemId),
+            ),
+          )
+          .where(
+            and(
+              eq(evidenceExcerpts.workspaceId, request.workspaceId),
+              inArray(evidenceItems.fileId, fileIds),
+            ),
+          )
+      : null;
+    const relationshipIds = personIds.length
+      ? database
+          .select({ id: relationships.id })
+          .from(relationships)
+          .where(
+            and(
+              eq(relationships.workspaceId, request.workspaceId),
+              or(
+                inArray(relationships.sourcePersonId, personIds),
+                inArray(relationships.targetPersonId, personIds),
+              ),
+              isNull(relationships.deletedAt),
+            ),
+          )
+      : null;
+
+    const documentScope = [
+      personIds.length
+        ? or(
+            inArray(searchDocuments.subjectPersonId, personIds),
+            and(
+              eq(searchDocuments.resourceKind, "person"),
+              inArray(searchDocuments.resourceId, personIds),
+            ),
+          )
+        : null,
+      relationshipIds
+        ? and(
+            eq(searchDocuments.resourceKind, "relationship"),
+            inArray(searchDocuments.resourceId, relationshipIds),
+          )
+        : null,
+      evidenceItemIds
+        ? and(
+            eq(searchDocuments.resourceKind, "evidence_item"),
+            inArray(searchDocuments.resourceId, evidenceItemIds),
+          )
+        : null,
+      evidenceExcerptIds
+        ? and(
+            eq(searchDocuments.resourceKind, "evidence_excerpt"),
+            inArray(searchDocuments.resourceId, evidenceExcerptIds),
+          )
+        : null,
+    ].filter((scope): scope is NonNullable<typeof scope> => scope !== null);
 
     await database
       .delete(searchDocuments)
       .where(
         and(
           eq(searchDocuments.workspaceId, request.workspaceId),
-          or(
-            inArray(searchDocuments.subjectPersonId, personIds),
-            and(
-              eq(searchDocuments.resourceKind, "person"),
-              inArray(searchDocuments.resourceId, personIds),
-            ),
-          ),
+          or(...documentScope),
         ),
       );
 
@@ -198,9 +280,12 @@ export async function executePrivacyPropagations(input: {
             };
           else resultCode = "file_cleanup_pending";
         }
-      } catch {
+      } catch (error) {
         result = null;
-        resultCode = "processor_failed";
+        resultCode =
+          error instanceof PrivacyProcessorError
+            ? error.resultCode
+            : "processor_failed";
       }
       const auditReference = newId();
       await tx.insert(auditEvents).values({

@@ -2,9 +2,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { newId } from "@/db/id";
+import { evidenceExcerpts, evidenceItems, sources } from "@/db/schema/evidence";
 import { files } from "@/db/schema/files";
 import { auditEvents } from "@/db/schema/operations";
-import { privacyProcessorPropagations } from "@/db/schema/privacy";
+import {
+  deletionRequests,
+  privacyProcessorPropagations,
+} from "@/db/schema/privacy";
+import { relationships, relationshipTypes } from "@/db/schema/relationships";
 import { searchDocuments } from "@/db/schema/search";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
 import {
@@ -61,7 +66,8 @@ live("privacy search propagation", () => {
 
   async function insertDocument(input: {
     workspaceId: string;
-    resourceKind: "person" | "note";
+    resourceKind:
+      "person" | "note" | "relationship" | "evidence_item" | "evidence_excerpt";
     resourceId: string;
     resultId: string;
     subjectPersonId?: string | null;
@@ -73,7 +79,12 @@ live("privacy search propagation", () => {
       resourceId: input.resourceId,
       sourceVersion: 1,
       chunkOrdinal: 0,
-      resultKind: input.resourceKind === "person" ? "PERSON" : "EVIDENCE",
+      resultKind:
+        input.resourceKind === "person"
+          ? "PERSON"
+          : input.resourceKind === "relationship"
+            ? "RELATIONSHIP"
+            : "EVIDENCE",
       resultId: input.resultId,
       subjectPersonId: input.subjectPersonId ?? null,
       sensitivity: "internal",
@@ -85,10 +96,16 @@ live("privacy search propagation", () => {
     });
   }
 
-  async function fulfillCorrection(personId: string) {
+  async function fulfillRequest(
+    personIds: string[],
+    requestType: "correction" | "restriction" | "deletion",
+    fileIds: string[] = [],
+  ) {
     const request = await createPrivacyRequestService(context).createRequest({
-      requestType: "correction",
-      personIds: [personId],
+      requestType,
+      personIds,
+      fileIds,
+      ...(requestType === "restriction" ? { purpose: "research" } : {}),
       dueAt: new Date(Date.now() + 86_400_000),
       idempotencyKey: newId(),
     });
@@ -99,10 +116,16 @@ live("privacy search propagation", () => {
       state: "approved",
       verificationEvidenceId: evidenceId,
     });
-    return service.fulfillRequest({
+    const fulfilled = await service.fulfillRequest({
       id: request.id,
       expectedVersion: approved.version,
     });
+    if (fulfilled.legacyDeletionRequestId)
+      await fixture.database
+        .update(deletionRequests)
+        .set({ state: "completed", completedAt: new Date() })
+        .where(eq(deletionRequests.id, fulfilled.legacyDeletionRequestId));
+    return fulfilled;
   }
 
   it("purges direct and dependent documents without crossing workspace boundaries", async () => {
@@ -113,6 +136,26 @@ live("privacy search propagation", () => {
       await fixture.createActor(),
     );
     const foreignPerson = await coveredPerson(foreignContext);
+    const relationshipTypeId = newId();
+    await fixture.database.insert(relationshipTypes).values({
+      id: relationshipTypeId,
+      workspaceId: context.workspaceId,
+      key: "knows",
+      forwardLabel: "knows",
+      inverseLabel: "known by",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    const relationshipId = newId();
+    await fixture.database.insert(relationships).values({
+      id: relationshipId,
+      workspaceId: context.workspaceId,
+      sourcePersonId: unrelated.id,
+      targetPersonId: person.id,
+      relationshipTypeId,
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
 
     await insertDocument({
       workspaceId: context.workspaceId,
@@ -129,6 +172,13 @@ live("privacy search propagation", () => {
     });
     await insertDocument({
       workspaceId: context.workspaceId,
+      resourceKind: "relationship",
+      resourceId: relationshipId,
+      resultId: relationshipId,
+      subjectPersonId: unrelated.id,
+    });
+    await insertDocument({
+      workspaceId: context.workspaceId,
       resourceKind: "person",
       resourceId: unrelated.id,
       resultId: unrelated.id,
@@ -140,7 +190,7 @@ live("privacy search propagation", () => {
       resultId: foreignPerson.id,
     });
 
-    const request = await fulfillCorrection(person.id);
+    const request = await fulfillRequest([person.id], "restriction");
     await executePrivacyPropagations({
       adapters: {
         cache: createCachePrivacyProcessorAdapter(),
@@ -171,6 +221,7 @@ live("privacy search propagation", () => {
             person.id,
             unrelated.id,
             foreignPerson.id,
+            relationshipId,
           ]),
         ),
       );
@@ -225,6 +276,115 @@ live("privacy search propagation", () => {
           (audit.redactedDiff as { processor?: string }).processor === "search",
       ),
     ).toHaveLength(1);
+  });
+
+  it("fails closed for correction until a safe reindex path is available", async () => {
+    const person = await coveredPerson(context);
+    await insertDocument({
+      workspaceId: context.workspaceId,
+      resourceKind: "person",
+      resourceId: person.id,
+      resultId: person.id,
+    });
+
+    const request = await fulfillRequest([person.id], "correction");
+    await executePrivacyPropagations({
+      adapters: {
+        cache: createCachePrivacyProcessorAdapter(),
+        search: createSearchPrivacyProcessorAdapter(),
+      },
+      database: fixture.database,
+      now: new Date(Date.now() + 1_000),
+    });
+
+    expect(
+      await fixture.database
+        .select({ id: searchDocuments.id })
+        .from(searchDocuments)
+        .where(eq(searchDocuments.resourceId, person.id)),
+    ).toHaveLength(1);
+    expect(
+      (
+        await fixture.database
+          .select()
+          .from(privacyProcessorPropagations)
+          .where(eq(privacyProcessorPropagations.privacyRequestId, request.id))
+      ).find((row) => row.processor === "search"),
+    ).toMatchObject({
+      state: "failed",
+      resultCode: "search_reindex_required",
+      evidenceReference: null,
+    });
+  });
+
+  it("purges file-scoped evidence item and excerpt documents", async () => {
+    const sourceId = newId();
+    const evidenceItemId = newId();
+    const excerptId = newId();
+    await fixture.database.insert(sources).values({
+      id: sourceId,
+      workspaceId: context.workspaceId,
+      kind: "document",
+      title: "File-only privacy source",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    await fixture.database.insert(evidenceItems).values({
+      id: evidenceItemId,
+      workspaceId: context.workspaceId,
+      sourceId,
+      fileId: evidenceId,
+      checksum: "file-only-evidence",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    await fixture.database.insert(evidenceExcerpts).values({
+      id: excerptId,
+      workspaceId: context.workspaceId,
+      evidenceItemId,
+      excerpt: "File-only excerpt",
+      checksum: "file-only-excerpt",
+      createdBy: context.actor.principalId,
+    });
+    await insertDocument({
+      workspaceId: context.workspaceId,
+      resourceKind: "evidence_item",
+      resourceId: evidenceItemId,
+      resultId: evidenceItemId,
+    });
+    await insertDocument({
+      workspaceId: context.workspaceId,
+      resourceKind: "evidence_excerpt",
+      resourceId: excerptId,
+      resultId: evidenceItemId,
+    });
+
+    const request = await fulfillRequest([], "deletion", [evidenceId]);
+    await executePrivacyPropagations({
+      adapters: {
+        cache: createCachePrivacyProcessorAdapter(),
+        search: createSearchPrivacyProcessorAdapter(),
+      },
+      database: fixture.database,
+      now: new Date(Date.now() + 1_000),
+    });
+
+    expect(
+      await fixture.database
+        .select({ id: searchDocuments.id })
+        .from(searchDocuments)
+        .where(
+          inArray(searchDocuments.resourceId, [evidenceItemId, excerptId]),
+        ),
+    ).toHaveLength(0);
+    expect(
+      (
+        await fixture.database
+          .select()
+          .from(privacyProcessorPropagations)
+          .where(eq(privacyProcessorPropagations.privacyRequestId, request.id))
+      ).find((row) => row.processor === "search"),
+    ).toMatchObject({ state: "succeeded" });
   });
 
   it("is idempotent and returns opaque stable evidence for an empty person scope", async () => {

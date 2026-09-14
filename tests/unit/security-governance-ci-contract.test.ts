@@ -12,6 +12,9 @@ const requiredSuites = [
   "tests/integration/graphql-case-idempotency.test.ts",
   "tests/integration/break-glass-access.test.ts",
 ];
+const requiredPrivacySuites = [
+  "tests/integration/privacy-search-propagation.test.ts",
+];
 
 function databaseIntegrationJob(workflow: string): string {
   const match = workflow.match(
@@ -49,5 +52,16 @@ describe("security and governance CI contract", () => {
     const databaseJob = databaseIntegrationJob(workflow);
 
     expect(databaseJob).toContain("corepack pnpm test:db:security");
+  });
+
+  it("keeps privacy propagation coverage in the required database matrix", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const databaseScript = packageJson.scripts?.["test:db"];
+
+    expect(databaseScript, "package.json must define test:db").toBeDefined();
+    for (const suite of requiredPrivacySuites)
+      expect(databaseScript, `test:db must include ${suite}`).toContain(suite);
   });
 });
