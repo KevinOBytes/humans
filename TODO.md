@@ -2,16 +2,21 @@
 
 ## Production deployment verification (2026-09-14)
 
-- Verified: deployed reviewed application commit `dcbb36431abec2793d66930f8b5c188705bc6517`
-  to Vercel production as `dpl_BkV534V7M832BTkt1ahb3YX76btc` (`READY`).
+- Verified: reviewed application commit `f15f235c6f1a1b29c654eff47c3ce37fa06febd5`
+  is deployed to Vercel production as `dpl_DqwTBiVrRd6nCW7xx69f4t4YjfTQ`
+  (`READY`) on Node `24.x`.
 - Verified: aliases `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
   `humans-tkoresearch.vercel.app` resolve to that deployment.
-- Verified: homepage, sign-in, liveness, and readiness routes all return 200.
-- Verified: unauthenticated GraphQL fails closed with 401
-  `UNAUTHENTICATED` and a request ID.
-- Verified: GitHub Actions run `34850702071` passed all nine required jobs,
-  including real PostgreSQL integration, browser acceptance, build,
-  Compose, generated-drift, image-security, dependency, and secret-scan.
+- Verified: GitHub Actions run `34883551069` passed all nine required jobs:
+  quality, image-security, dependency-policy, Compose lifecycle, secret-scan,
+  generated-drift, browser integration, production build, and database
+  integration against real PostgreSQL.
+- Verified: the final profile/fact surface includes paginated person-reference
+  options, preserving workspace authorization and malformed-cursor rejection;
+  focused tests and the production build pass.
+- This proves the reviewed code is built, tested, and READY on Vercel. It does
+  not prove hosted administrator credentials, recovery/2FA, or live external
+  provider contracts, which still require an attended credential-safe run.
 - Open operator evidence: run attended hosted administrator sign-in, recovery, optional 2FA, and
   first-person creation using credentials supplied through the ignored
   mode-0600 operator templates; do not print secrets.
