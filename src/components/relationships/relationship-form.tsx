@@ -84,6 +84,10 @@ export function RelationshipForm({
         epistemicStatus: String(data.get("epistemicStatus")) as
           "DOCUMENTED" | "ANALYST_HYPOTHESIS",
         confidence: Number(data.get("confidence")),
+        strength:
+          String(data.get("strength") ?? "").trim() === ""
+            ? null
+            : Number(data.get("strength")),
         temporalSemantics,
         temporalPrecision,
         validFrom: optionalUtcDate(
@@ -197,6 +201,40 @@ export function RelationshipForm({
           defaultValue="1"
           className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
         />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="relationship-strength">Strength (optional)</Label>
+        <input
+          id="relationship-strength"
+          name="strength"
+          type="number"
+          min="0"
+          max="1"
+          step="0.001"
+          aria-describedby={
+            fieldMutationIssue(feedback, "strength")
+              ? "relationship-strength-help relationship-strength-error"
+              : "relationship-strength-help"
+          }
+          aria-invalid={Boolean(fieldMutationIssue(feedback, "strength"))}
+          className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
+        />
+        <p
+          id="relationship-strength-help"
+          className="text-muted-foreground text-xs"
+        >
+          Optional relationship intensity from 0 to 1, not confidence in the
+          claim. Leave blank when unassessed. This is not a person or threat
+          score.
+        </p>
+        {fieldMutationIssue(feedback, "strength") ? (
+          <p
+            id="relationship-strength-error"
+            className="text-destructive text-sm"
+          >
+            {fieldMutationIssue(feedback, "strength")!.message}
+          </p>
+        ) : null}
       </div>
       <div className="space-y-2">
         <Label htmlFor="relationship-epistemic-status">Evidence status</Label>

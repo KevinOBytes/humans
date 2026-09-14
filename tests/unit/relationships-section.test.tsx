@@ -74,6 +74,7 @@ function relationship(
     observedAt: "2024-02-01T00:00:00.000Z",
     creationMethod: "MANUAL",
     reviewState: "APPROVED",
+    epistemicStatus: "ANALYST_HYPOTHESIS",
     version: 1,
     createdAt: "2024-02-01T00:00:00.000Z",
     updatedAt: "2024-02-01T00:00:00.000Z",
@@ -148,5 +149,10 @@ describe("RelationshipsSection", () => {
     expect(within(cards[0]!).getByText("page 14")).toBeVisible();
     expect(within(cards[0]!).getByText("accepted")).toBeVisible();
     expect(within(cards[1]!).getByText("No evidence linked.")).toBeVisible();
+    expect(within(cards[0]!).getByText("Strength 70%")).toBeVisible();
+    expect(within(cards[0]!).getByText("Confidence 85%")).toBeVisible();
+    expect(within(cards[0]!).getByText("Analyst hypothesis")).toBeVisible();
+    expect(within(cards[0]!).getByText("Approved")).toBeVisible();
+    expect(within(cards[0]!).queryByText(/Documented/)).toBeNull();
   });
 });

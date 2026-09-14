@@ -1,5 +1,19 @@
 # MVP closure and production hardening backlog
 
+## Relationship semantic contract checkpoint (2026-09-14)
+
+Profile relationship cards now derive evidence status only from the stored
+`epistemicStatus`; an approved analyst hypothesis is never relabelled as
+documented, and missing/unknown status is not treated as documentation.
+Corroboration/claim state, review state, confidence, and nullable relationship
+strength remain separate. The profile create form exposes optional strength
+through the existing generated, authorized `CreateRelationship` mutation,
+preserving unassessed (`null`) versus zero and accessible validation feedback.
+The focused semantic/form/card suite passes 23 tests. The research-core browser
+journey now asserts persisted strength on both directional profile views;
+execution of that extended journey and full hosted/whole-profile acceptance
+remain open. No schema or policy boundary was replaced.
+
 ## Current closure tranche (2026-09-14)
 
 Commits `a1eab94`, `142a1cb`, `a9352f4`, and `deec37d` are merged on local
