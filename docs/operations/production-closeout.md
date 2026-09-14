@@ -148,7 +148,12 @@ and reports provider labels only. R2 and generic S3 buckets must be
 pre-provisioned; the suite never creates an external bucket. Only isolated local
 MinIO may create a missing test bucket. A cleanup failure fails the acceptance
 run. This is destructive only to generated test keys/objects and must use an
-approved test bucket/database rather than irreplaceable data.
+approved test bucket/database rather than irreplaceable data. External R2/S3
+contracts additionally require both `STORAGE_BUCKET` and a distinct
+`TEST_STORAGE_BUCKET` named with the `humans-contract-...` convention. The
+test credential must be least-privilege and limited to that dedicated contract
+bucket; validation fails before a child process or provider client can start
+when this isolation contract is not met.
 
 The readiness endpoint and these lifecycle checks cover PostgreSQL, Redis, and
 object storage. They do not prove Resend delivery, OpenAI-compatible/Ollama

@@ -3,6 +3,8 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { validateExternalStorageContractBucket } from "./provider-contract-storage-config.mjs";
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -53,6 +55,7 @@ const providerContractEnvironmentVariables = [
   "TEST_STORAGE_BUCKET",
   "TEST_STORAGE_ACCESS_KEY_ID",
   "TEST_STORAGE_SECRET_ACCESS_KEY",
+  "STORAGE_BUCKET",
 ];
 
 const childRuntimeEnvironmentVariables = [
@@ -109,6 +112,12 @@ export function externalProviderContractPlan(env = {}) {
       !["minio", "r2", "s3"].includes(env.TEST_STORAGE_PROVIDER)
     )
       throw new Error("TEST_STORAGE_PROVIDER must be one of minio, r2, or s3");
+    if (group.label === "storage")
+      validateExternalStorageContractBucket({
+        bucket: env.TEST_STORAGE_BUCKET,
+        provider: env.TEST_STORAGE_PROVIDER,
+        storageBucket: env.STORAGE_BUCKET,
+      });
     enabled.push(
       group.label === "storage" ? env.TEST_STORAGE_PROVIDER : group.label,
     );

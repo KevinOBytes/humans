@@ -326,7 +326,8 @@ describe("production readiness smoke contract", () => {
         TEST_STORAGE_PROVIDER: "r2",
         TEST_STORAGE_ENDPOINT: "https://account.r2.cloudflarestorage.com",
         TEST_STORAGE_REGION: "auto",
-        TEST_STORAGE_BUCKET: "humans-provider-contract",
+        TEST_STORAGE_BUCKET: "humans-contract-r2-acceptance",
+        STORAGE_BUCKET: "humans-private",
         TEST_STORAGE_ACCESS_KEY_ID: "access-key",
         TEST_STORAGE_SECRET_ACCESS_KEY: secret,
       }),
@@ -365,10 +366,114 @@ describe("production readiness smoke contract", () => {
         TEST_STORAGE_ENDPOINT: "https://storage.example.test",
         TEST_STORAGE_REGION: "us-east-1",
         TEST_STORAGE_BUCKET: "humans-provider-contract",
+        STORAGE_BUCKET: "humans-private",
         TEST_STORAGE_ACCESS_KEY_ID: "access-key",
         TEST_STORAGE_SECRET_ACCESS_KEY: secret,
       }),
     ).toThrow(/TEST_STORAGE_PROVIDER/);
+  });
+
+  it("fails closed on an external storage bucket that is not isolated before a provider suite can run", async () => {
+    const { externalProviderContractPlan } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+    const secret = "external-storage-secret-that-must-not-escape";
+    const endpoint = "https://private-account.r2.cloudflarestorage.com";
+
+    for (const testStorageBucket of [
+      "humans-private",
+      "humans-contract-private",
+      "humans-contract-application",
+      "humans-contract-shared",
+    ]) {
+      let error: unknown;
+      try {
+        externalProviderContractPlan({
+          RUN_EXTERNAL_PROVIDER_CONTRACTS: "true",
+          STORAGE_BUCKET:
+            testStorageBucket === "humans-contract-shared"
+              ? "humans-contract-shared"
+              : "humans-application-data",
+          TEST_STORAGE_PROVIDER: "r2",
+          TEST_STORAGE_ENDPOINT: endpoint,
+          TEST_STORAGE_REGION: "auto",
+          TEST_STORAGE_BUCKET: testStorageBucket,
+          TEST_STORAGE_ACCESS_KEY_ID: "contract-access-key",
+          TEST_STORAGE_SECRET_ACCESS_KEY: secret,
+        });
+      } catch (candidate) {
+        error = candidate;
+      }
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(
+        /isolated contract-test bucket/i,
+      );
+      expect((error as Error).message).not.toContain(testStorageBucket);
+      expect((error as Error).message).not.toContain(endpoint);
+      expect((error as Error).message).not.toContain(secret);
+    }
+  });
+
+  it("accepts only a distinct external contract-test bucket", async () => {
+    const { externalProviderContractPlan } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+
+    expect(
+      externalProviderContractPlan({
+        RUN_EXTERNAL_PROVIDER_CONTRACTS: "true",
+        STORAGE_BUCKET: "humans-private",
+        TEST_STORAGE_PROVIDER: "s3",
+        TEST_STORAGE_ENDPOINT: "https://s3.example.test",
+        TEST_STORAGE_REGION: "us-east-1",
+        TEST_STORAGE_BUCKET: "humans-contract-s3-acceptance",
+        TEST_STORAGE_ACCESS_KEY_ID: "contract-access-key",
+        TEST_STORAGE_SECRET_ACCESS_KEY: "contract-secret",
+      }),
+    ).toEqual({ enabled: ["s3"], unavailable: ["upstash-rest"] });
+  });
+
+  it("keeps local MinIO contract planning independent of an application bucket", async () => {
+    const { externalProviderContractPlan } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+
+    expect(
+      externalProviderContractPlan({
+        RUN_EXTERNAL_PROVIDER_CONTRACTS: "true",
+        TEST_STORAGE_PROVIDER: "minio",
+        TEST_STORAGE_ENDPOINT: "http://minio.internal:9000",
+        TEST_STORAGE_REGION: "us-east-1",
+        TEST_STORAGE_BUCKET: "humans-provider-contract",
+        TEST_STORAGE_ACCESS_KEY_ID: "local-access-key",
+        TEST_STORAGE_SECRET_ACCESS_KEY: "local-secret",
+      }),
+    ).toEqual({ enabled: ["minio"], unavailable: ["upstash-rest"] });
+  });
+
+  it("does not start a provider child suite when storage isolation is unsafe", async () => {
+    const { runExternalProviderContracts } =
+      await import("../../scripts/production-readiness-smoke.mjs");
+    let executed = false;
+
+    await expect(
+      runExternalProviderContracts({
+        env: {
+          RUN_EXTERNAL_PROVIDER_CONTRACTS: "true",
+          STORAGE_BUCKET: "humans-private",
+          TEST_STORAGE_PROVIDER: "r2",
+          TEST_STORAGE_ENDPOINT: "https://private.example.test",
+          TEST_STORAGE_REGION: "auto",
+          TEST_STORAGE_BUCKET: "humans-contract-private",
+          TEST_STORAGE_ACCESS_KEY_ID: "contract-access-key",
+          TEST_STORAGE_SECRET_ACCESS_KEY: "contract-secret",
+        },
+        execute: async () => {
+          executed = true;
+          return { exitCode: 0 };
+        },
+        log: () => undefined,
+      }),
+    ).rejects.toThrow(/isolated contract-test bucket/i);
+    expect(executed).toBe(false);
   });
 
   it("runs only complete opted-in provider contracts and suppresses child output", async () => {
