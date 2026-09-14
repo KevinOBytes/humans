@@ -9,7 +9,9 @@ import {
   sources,
 } from "@/db/schema/evidence";
 import { relationships, relationshipTypes } from "@/db/schema/relationships";
+import { RelationshipEvidenceDocument } from "@/graphql/generated/graphql";
 
+import { expectGraphQLError } from "../support/graphql";
 import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -294,5 +296,20 @@ liveDescribe("relationship evidence discoverability", () => {
     );
     expect(JSON.stringify(secondPage.body)).not.toContain(hiddenEvidenceId);
     expect(JSON.stringify(secondPage.body)).not.toContain("hidden locator");
+
+    const relationshipOnlyKey = await fixture.provisionKey(owner, {
+      relationship: ["read"],
+    });
+    const denied = await fixture.execute({
+      apiKey: relationshipOnlyKey.key,
+      query: RelationshipEvidenceDocument,
+      variables: { id: relationshipId, first: 1 },
+    });
+    expectGraphQLError(denied, "FORBIDDEN");
+    expect(JSON.stringify(denied.body)).not.toContain("Published interview");
+    expect(JSON.stringify(denied.body)).not.toContain(
+      "Interview transcript, 2024",
+    );
+    expect(JSON.stringify(denied.body)).not.toContain(visibleEvidenceId);
   });
 });

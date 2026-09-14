@@ -435,6 +435,33 @@ query PersonRelationships($id: UUID!, $first: Int, $after: String) {
               }
             }
           }
+          pageInfo {
+            ...PageDetails
+          }
+        }
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+
+query RelationshipEvidence($id: UUID!, $first: Int, $after: String) {
+  relationship(id: $id) {
+    id
+    evidence(first: $first, after: $after) {
+      nodes {
+        id
+        locator
+        evidenceItem {
+          id
+          reviewState
+          source {
+            id
+            title
+            citation
+          }
         }
       }
       pageInfo {

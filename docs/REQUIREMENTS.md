@@ -393,6 +393,24 @@ counts. Focused component and live-service tests cover workspace and source
 sensitivity fencing; this is a local bounded slice and does not close
 HUM-FR-023, HUM-FR-028, or the whole-product hosted/accessibility matrix.
 
+Bounded rich-profile and temporal-graph contract audit (2026-09-14): aliases,
+biography, contacts, dated addresses, identifiers, and notes remain on their
+workspace-authorized dedicated records; pronouns, employment, education,
+languages, organizations, and custom fields use the catalog-backed fact path
+with temporal, review, sensitivity, revision, and evidence controls. Directed
+relationships already preserve source/target direction, temporal bounds,
+creation method, review state, and the documented-versus-analyst-hypothesis
+distinction. The smallest concrete readback gap was relationship evidence:
+generated `RelationshipEvidence` pagination now lets the profile traverse every
+authorized evidence page instead of stopping after its one-item preview, while
+preserving explicit hypothesis/documented labels. Focused component coverage
+proves the accessible pagination and generated-operation request; the
+live-when-configured PostgreSQL authorization test now also proves that a
+relationship-read-only API key cannot traverse evidence or disclose source
+metadata. Existing-workspace fact-catalog backfill, protected identifier
+citations, relationship-evidence authoring, and the whole hosted/browser matrix
+remain open.
+
 Bounded relationship epistemic-status evidence (2026-09-14): migration
 `0052_core.sql` changes only the default for future edges to
 `analyst_hypothesis`; it deliberately does not rewrite historical rows. A new

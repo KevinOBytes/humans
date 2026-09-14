@@ -4801,6 +4801,39 @@ export type PersonRelationshipsQuery = {
               } | null;
             } | null;
           }> | null;
+          pageInfo: {
+            " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+          } | null;
+        } | null;
+      }> | null;
+      pageInfo: {
+        " $fragmentRefs"?: { PageDetailsFragment: PageDetailsFragment };
+      } | null;
+    } | null;
+  } | null;
+};
+
+export type RelationshipEvidenceQueryVariables = Exact<{
+  id: string;
+  first?: number | null | undefined;
+  after?: string | null | undefined;
+}>;
+
+export type RelationshipEvidenceQuery = {
+  relationship: {
+    id: string | null;
+    evidence: {
+      nodes: Array<{
+        id: string | null;
+        locator: string | null;
+        evidenceItem: {
+          id: string | null;
+          reviewState: string | null;
+          source: {
+            id: string | null;
+            title: string | null;
+            citation: string | null;
+          } | null;
         } | null;
       }> | null;
       pageInfo: {
@@ -11711,6 +11744,9 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
               }
             }
           }
+          pageInfo {
+            ...PageDetails
+          }
         }
       }
       pageInfo {
@@ -11724,11 +11760,47 @@ export const PersonRelationshipsDocument = new TypedDocumentString(
   hasNextPage
 }`,
   {
-    hash: "sha256:c5f7610b6395796cd55c9d32bd8d04c523b13b13b15ed28f1fd8a4c2f18371be",
+    hash: "sha256:109e169ef5aa8079aa43df421ac7f29295e3bc967a72909c3f55922613b69c29",
   },
 ) as unknown as TypedDocumentString<
   PersonRelationshipsQuery,
   PersonRelationshipsQueryVariables
+>;
+export const RelationshipEvidenceDocument = new TypedDocumentString(
+  `
+    query RelationshipEvidence($id: UUID!, $first: Int, $after: String) {
+  relationship(id: $id) {
+    id
+    evidence(first: $first, after: $after) {
+      nodes {
+        id
+        locator
+        evidenceItem {
+          id
+          reviewState
+          source {
+            id
+            title
+            citation
+          }
+        }
+      }
+      pageInfo {
+        ...PageDetails
+      }
+    }
+  }
+}
+    fragment PageDetails on PageInfo {
+  endCursor
+  hasNextPage
+}`,
+  {
+    hash: "sha256:09d95819b51a886444365e1ec562e790f402a3054e28da3285a0f651f1495f89",
+  },
+) as unknown as TypedDocumentString<
+  RelationshipEvidenceQuery,
+  RelationshipEvidenceQueryVariables
 >;
 export const RelationshipTypeDetailDocument = new TypedDocumentString(
   `
