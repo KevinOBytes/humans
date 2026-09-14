@@ -1582,3 +1582,11 @@ queued hold-vs-purge, direct-artifact-hold, and settings-versus-purge cases.
 This is bounded local evidence for the AI-retention portion of HUM-FR-005 and
 HUM-FR-023; the whole retention, hosted, and provider matrices remain
 Incomplete.
+
+High-risk tranche CI evidence (2026-09-14): GitHub Actions run
+`34801651438` for `main` commit `018dad6` passed all nine required jobs,
+including the real PostgreSQL integration matrix, browser acceptance,
+production build, generated-artifact drift, quality, Compose lifecycle, image
+security, dependency policy, and secret scanning. This is release evidence for
+the bounded tranche, not hosted authenticated/provider acceptance or closure
+of the broader incomplete requirement rows.
