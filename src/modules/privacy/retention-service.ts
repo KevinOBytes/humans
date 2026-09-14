@@ -39,6 +39,36 @@ export type PrivacyResource = {
   resourceKind: PrivacyResourceKind;
   resourceId: string;
 };
+
+/**
+ * Retention automation is deliberately narrower than the resource vocabulary.
+ * Only resource kinds with an implemented, legal-hold-fenced soft-delete
+ * worker path may become deletion candidates. Every other combination stays
+ * review-only until its dependency and provider propagation contract exists.
+ */
+export const retentionCapabilities = {
+  person: { soft_delete: "queue_review" },
+  file: { soft_delete: "queue_review" },
+} as const;
+export const retentionSoftDeleteResourceKinds = Object.freeze(
+  Object.keys(retentionCapabilities) as Array<
+    keyof typeof retentionCapabilities
+  >,
+);
+export type RetentionAutomatedResourceKind = keyof typeof retentionCapabilities;
+
+export function supportsRetentionAutomation(input: {
+  resourceKind: string;
+  deletionBehavior: string;
+}) {
+  return (
+    input.deletionBehavior === "soft_delete" &&
+    Object.prototype.hasOwnProperty.call(
+      retentionCapabilities,
+      input.resourceKind,
+    )
+  );
+}
 export function privacyArtifactVisible(input: {
   actorPrincipalId: string | null;
   threadOwnerId?: string | null;
@@ -338,10 +368,16 @@ export function retentionDecision(input: {
   now: Date;
   createdAt: Date;
   held: boolean;
+  /**
+   * Optional for compatibility with older service callers. New callers must
+   * provide it so the capability matrix can distinguish supported resources.
+   */
+  resourceKind?: string;
   policy: {
     id: string;
     retentionDays: number;
     deletionBehavior: string;
+    resourceKind?: string;
   } | null;
 }): {
   state:
@@ -359,6 +395,12 @@ export function retentionDecision(input: {
       (!Number.isSafeInteger(policy.retentionDays) || policy.retentionDays < 0))
   )
     throw new TypeError("Invalid retention inputs");
+  // The legacy service API represented a generic record and historically
+  // behaved like the person path. Preserve that API while making all explicit
+  // resource kinds capability-aware. evaluateRetention and the worker always
+  // provide the concrete policy/resource kind.
+  const resourceKind =
+    input.resourceKind ?? input.policy?.resourceKind ?? "person";
   const policyId = policy?.id ?? null;
   if (input.held)
     return {
@@ -373,7 +415,10 @@ export function retentionDecision(input: {
     input.createdAt.getTime() + policy.retentionDays * 86_400_000
   )
     return { state: "retained", policyId, reason: "retention_period_active" };
-  return policy.deletionBehavior === "soft_delete"
+  return supportsRetentionAutomation({
+    resourceKind,
+    deletionBehavior: policy.deletionBehavior,
+  })
     ? {
         state: "eligible_for_deletion",
         policyId,
@@ -382,7 +427,10 @@ export function retentionDecision(input: {
     : {
         state: "review_required",
         policyId,
-        reason: "retention_elapsed_requires_review",
+        reason:
+          policy.deletionBehavior === "soft_delete"
+            ? "retention_capability_unavailable_requires_review"
+            : "retention_elapsed_requires_review",
       };
 }
 export async function evaluateRetention(
@@ -406,6 +454,7 @@ export async function evaluateRetention(
     now: new Date(),
     createdAt: row.createdAt,
     held: await hasLegalHold(context, resource),
+    resourceKind: resource.resourceKind,
     policy: policy ?? null,
   });
 }

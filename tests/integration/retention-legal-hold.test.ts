@@ -29,6 +29,28 @@ live("retention legal hold boundary", () => {
     context = await caseContext(fixture, actor);
   });
   afterAll(async () => fixture.close());
+  it("does not enqueue unsupported resource-kind policies", async () => {
+    await fixture.database.insert(retentionPolicies).values({
+      id: newId(),
+      workspaceId: context.workspaceId,
+      resourceKind: "ai_thread",
+      retentionDays: 0,
+      deletionBehavior: "soft_delete",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+
+    expect(
+      await enqueueExpiredRetentionRequests({
+        database: fixture.database,
+        idempotencyHmacKey: "ab".repeat(32),
+        now: new Date("2026-09-12T00:00:00Z"),
+      }),
+    ).toBe(0);
+    expect(await fixture.database.select().from(privacyRequests)).toHaveLength(
+      0,
+    );
+  });
   it.each(["person", "file"] as const)(
     "held %s records cannot starve the bounded retention review queue",
     async (resourceKind) => {
