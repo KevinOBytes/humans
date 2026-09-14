@@ -3,10 +3,14 @@ import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
+import { auditEvents } from "@/db/schema/operations";
 import {
   consentRecords,
   privacyProcessorPropagations,
 } from "@/db/schema/privacy";
+import { people } from "@/db/schema/people";
+import { retentionPolicies } from "@/db/schema/workspaces";
+import { executeApprovedDeletionRequests } from "@/modules/privacy/deletion-executor";
 import { createPrivacyRequestService } from "@/modules/privacy/request-service";
 import type { ResearchServiceContext } from "@/modules/audit/service";
 import { ResearchFixture } from "../support/research-fixture";
@@ -115,6 +119,70 @@ live("privacy request lifecycle", () => {
         idempotencyKey: "access-1",
       }),
     ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+  });
+  it("surfaces a governed unsupported retention action as a durable rejection", async () => {
+    const person = await coveredPerson(context);
+    await fixture.database.insert(retentionPolicies).values({
+      id: newId(),
+      workspaceId: context.workspaceId,
+      resourceKind: "person",
+      retentionDays: 0,
+      deletionBehavior: "anonymize",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    const service = createPrivacyRequestService(context);
+    const request = await service.createRequest({
+      requestType: "deletion",
+      personIds: [person.id],
+      purpose: "subject deletion",
+      dueAt: new Date(Date.now() + 86_400_000),
+      idempotencyKey: "unsupported-retention-action",
+    });
+    const approved = await createPrivacyRequestService(reviewer).reviewRequest({
+      id: request.id,
+      expectedVersion: request.version,
+      state: "approved",
+      verificationEvidenceId: evidenceId,
+    });
+    const fulfilling = await createPrivacyRequestService(
+      reviewer,
+    ).fulfillRequest({
+      id: approved.id,
+      expectedVersion: approved.version,
+    });
+    expect(fulfilling.state).toBe("fulfilling");
+
+    expect(
+      await executeApprovedDeletionRequests({
+        database: fixture.database,
+        encryptionKey: "ab".repeat(32),
+        now: new Date(),
+      }),
+    ).toBe(0);
+
+    const rejected = await createPrivacyRequestService(reviewer).getRequest(
+      request.id,
+    );
+    expect(rejected).toMatchObject({
+      auditReference: expect.any(String),
+      state: "rejected",
+      version: fulfilling.version + 1,
+    });
+    const [unchanged] = await fixture.database
+      .select({ deletedAt: people.deletedAt, status: people.status })
+      .from(people)
+      .where(eq(people.id, person.id));
+    expect(unchanged).toEqual({ deletedAt: null, status: "active" });
+    const [audit] = await fixture.database
+      .select({ redactedDiff: auditEvents.redactedDiff })
+      .from(auditEvents)
+      .where(eq(auditEvents.id, rejected.auditReference!));
+    expect(audit?.redactedDiff).toEqual({
+      deletionBehavior: "anonymize",
+      reason: "retention_action_unsupported",
+    });
+    expect(JSON.stringify(audit)).not.toContain(person.id);
   });
   it("withdraws matching consent atomically and leaves processors pending", async () => {
     const person = await coveredPerson(context);

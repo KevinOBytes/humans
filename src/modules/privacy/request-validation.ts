@@ -96,7 +96,7 @@ export function assertPrivacyTransition(input: {
     requested: ["reviewing", "approved", "rejected", "cancelled"],
     reviewing: ["approved", "rejected", "cancelled"],
     approved: ["fulfilling", "cancelled"],
-    fulfilling: ["completed"],
+    fulfilling: ["completed", "rejected"],
     completed: [],
     rejected: [],
     cancelled: [],
