@@ -258,8 +258,8 @@ export function PersonResearchPanel({
         <AiReviewQueue
           suggestions={suggestions}
           canReview={canUpdate}
-          onChange={() => {
-            void reload();
+          onChange={async () => {
+            await reload();
             router.refresh();
           }}
         />
