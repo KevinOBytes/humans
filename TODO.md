@@ -817,6 +817,22 @@ PostgreSQL coverage places 25 rejected processor rows ahead of a valid request
 and verifies forward progress without changing rejected request/processor/audit
 history. Irreversible-action support remains open.
 
+Task 2 privacy execution-contract checkpoint (2026-09-14): independent deletion
+approval freezes the request/case/scope binding, action, policy identity/version
+and keyed hashes, lawful-purpose/consent digest, and processor capability/version
+set. Fulfillment refuses changed snapshots; the worker revalidates them under the
+existing workspace policy lock before mutation. Purpose-policy/consent writes
+use that same lock, and a waiting consent writer rechecks the subject's live
+visibility to prevent stale inserts. A workspace/request-unique local execution
+receipt uses PostgreSQL-clock leases, monotonic generations, atomic
+redacted audit references, and person/file counts with request-bound keyed identity
+hashes. Known transaction rollback permits immediate retry; abandoned claims expire
+for fenced takeover. GraphQL exposes only authorized local status, not manifests or
+policy digests. The focused PostgreSQL/unit matrix and production build pass.
+Historical records are not backfilled with invented approvals or receipts.
+Hard-delete/anonymization, dependency closure, external processor erasure, and
+hosted/browser acceptance remain open; no overall privacy requirement is closed.
+
 Task 3 local checkpoint (2026-09-11): the AI review ledger preserves typed proposals, evidence or validated web-source snapshots, confidence/uncertainty, run/provider/model/prompt-policy attribution, and explicit accept/reject/defer decisions. The person research panel uses generated review mutations instead of direct AI-driven profile updates. Acceptance requires current AI/write purpose coverage, case/resource visibility, human confirmation, and an owned completed source run; fact/relationship acceptance uses domain services and evidence assertions in one transaction. Batch acceptance is explicitly approved and atomic; AI-created relationships remain inferred until the existing independent assertion review permits promotion. Local unit/build/schema gates are required before commit. Live PostgreSQL lifecycle, browser and provider verification remain pending when the test database/provider is unavailable; this does not close HUM-FR-023 or the overall MVP.
 
 Catalog-backed web-fact checkpoint (2026-09-13): consented person web research may now propose active workspace text fact definitions (for example employment, education, language, organization, or a workspace custom text field) in addition to profile fields. The provider receives only bounded catalog metadata and validated public sources; a proposal is rejected unless its definition UUID came from that catalog and its cited URLs are immutable run snapshots. Fact proposals remain pending in the same independent human accept/reject/defer queue, and acceptance creates a regular `human_reviewed_ai` fact while retaining the originating run and source snapshots. Date, JSON, sensitive/contact/address/identifier fields and web-derived relationships remain excluded. Focused unit coverage is present; live provider, browser, retention, and source-to-evidence-assertion matrix evidence remains open, so HUM-FR-023 stays incomplete.

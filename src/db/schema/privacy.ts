@@ -26,6 +26,11 @@ import { files } from "./files";
 import { people } from "./people";
 import { workspaces } from "./workspaces";
 import { cases } from "./cases";
+import { auditEvents } from "./operations";
+import type {
+  PrivacyExecutionContract,
+  PrivacyExecutionManifest,
+} from "@/modules/privacy/execution-manifest";
 
 const domainTimestamp = (name: string) =>
   timestamp(name, { mode: "date", precision: 3, withTimezone: true });
@@ -143,6 +148,8 @@ export const privacyRequests = pgTable(
       .$type<{ personIds: string[]; fileIds: string[] }>()
       .notNull(),
     purpose: text("purpose"),
+    executionContract:
+      jsonb("execution_contract").$type<PrivacyExecutionContract>(),
     idempotencyHash: text("idempotency_hash").notNull(),
     requestHash: text("request_hash").notNull(),
     dueAt: domainTimestamp("due_at").notNull(),
@@ -199,6 +206,60 @@ export const privacyRequests = pgTable(
     }).onDelete("restrict"),
     check("privacy_requests_version_check", sql`${t.version} > 0`),
     check("privacy_requests_deadline_check", sql`${t.dueAt} >= ${t.createdAt}`),
+  ],
+);
+
+/** Local execution only: terminal success does not prove external erasure. */
+export const privacyExecutionOutcomes = pgTable(
+  "privacy_execution_outcomes",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    privacyRequestId: uuid("privacy_request_id").notNull(),
+    state: text("state")
+      .$type<"pending" | "claimed" | "completed" | "rejected">()
+      .default("pending")
+      .notNull(),
+    generation: integer("generation").default(0).notNull(),
+    claimExpiresAt: domainTimestamp("claim_expires_at"),
+    resultCode: text("result_code"),
+    auditReference: uuid("audit_reference"),
+    manifest: jsonb("manifest").$type<PrivacyExecutionManifest>(),
+    completedAt: domainTimestamp("completed_at"),
+    createdAt: domainTimestamp("created_at").defaultNow().notNull(),
+    updatedAt: domainTimestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("privacy_execution_outcomes_workspace_id_unique").on(
+      t.workspaceId,
+      t.id,
+    ),
+    unique("privacy_execution_outcomes_request_unique").on(
+      t.workspaceId,
+      t.privacyRequestId,
+    ),
+    foreignKey({
+      name: "privacy_execution_outcomes_request_fk",
+      columns: [t.workspaceId, t.privacyRequestId],
+      foreignColumns: [privacyRequests.workspaceId, privacyRequests.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "privacy_execution_outcomes_audit_fk",
+      columns: [t.workspaceId, t.auditReference],
+      foreignColumns: [auditEvents.workspaceId, auditEvents.id],
+    }).onDelete("restrict"),
+    check(
+      "privacy_execution_outcomes_generation_check",
+      sql`${t.generation} >= 0`,
+    ),
+    check(
+      "privacy_execution_outcomes_state_check",
+      sql`(${t.state} = 'pending' AND ${t.claimExpiresAt} IS NULL AND ${t.resultCode} IS NULL AND ${t.auditReference} IS NULL AND ${t.manifest} IS NULL AND ${t.completedAt} IS NULL)
+    OR (${t.state} = 'claimed' AND ${t.generation} > 0 AND ${t.claimExpiresAt} IS NOT NULL AND ${t.resultCode} IS NULL AND ${t.auditReference} IS NULL AND ${t.manifest} IS NULL AND ${t.completedAt} IS NULL)
+    OR (${t.state} IN ('completed', 'rejected') AND ${t.generation} > 0 AND ${t.claimExpiresAt} IS NULL AND ${t.resultCode} IS NOT NULL AND ${t.auditReference} IS NOT NULL AND ${t.manifest} IS NOT NULL AND ${t.completedAt} IS NOT NULL)`,
+    ),
   ],
 );
 

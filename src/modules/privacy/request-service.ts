@@ -9,6 +9,7 @@ import {
   deletionRequests,
   privacyRequests,
   privacyProcessorPropagations,
+  privacyExecutionOutcomes,
 } from "@/db/schema/privacy";
 import { createGraphQLError } from "@/graphql/errors";
 import {
@@ -38,7 +39,11 @@ import {
   privacyPolicyLock,
   requirePrivacyResource,
 } from "./retention-service";
-import { retentionRequestPolicyIsCurrent } from "./retention-request-policy";
+import {
+  currentPrivacyExecutionContract,
+  retentionRequestPolicyIsCurrent,
+} from "./retention-request-policy";
+import { executionContractsMatch } from "./execution-manifest";
 
 function unavailable(): never {
   throw createGraphQLError(
@@ -319,6 +324,24 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
       );
     },
     getRequest: (id: string) => read(context, id),
+    async getLocalExecution(id: string) {
+      await read(context, id);
+      const [outcome] = await context.database
+        .select({
+          state: privacyExecutionOutcomes.state,
+          generation: privacyExecutionOutcomes.generation,
+          resultCode: privacyExecutionOutcomes.resultCode,
+          auditReference: privacyExecutionOutcomes.auditReference,
+        })
+        .from(privacyExecutionOutcomes)
+        .where(
+          and(
+            eq(privacyExecutionOutcomes.workspaceId, context.workspaceId),
+            eq(privacyExecutionOutcomes.privacyRequestId, id),
+          ),
+        );
+      return outcome ?? null;
+    },
     async createRequest(input: unknown) {
       return mutation(async (scoped) => {
         const key = z
@@ -440,6 +463,18 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
             state: input.state,
             reviewedAt: new Date(),
             reviewedBy: scoped.actor.principalId,
+            ...(row.requestType === "deletion" && input.state === "approved"
+              ? {
+                  executionContract: await currentPrivacyExecutionContract(
+                    {
+                      database: scoped.database,
+                      workspaceId: scoped.workspaceId,
+                      secret: scoped.idempotencyHmacKey ?? "",
+                    },
+                    row,
+                  ),
+                }
+              : {}),
             ...(input.verificationEvidenceId
               ? {
                   verificationEvidenceId: input.verificationEvidenceId,
@@ -472,6 +507,23 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
           precondition();
         await evidence(scoped, row.verificationEvidenceId);
         if (row.requestType === "deletion") {
+          // Historical completed requests remain readable. Never invent approval
+          // snapshots for queued historical requests or silently refresh drift.
+          if (
+            row.state === "approved" &&
+            !executionContractsMatch(
+              row.executionContract,
+              await currentPrivacyExecutionContract(
+                {
+                  database: scoped.database,
+                  workspaceId: scoped.workspaceId,
+                  secret: scoped.idempotencyHmacKey ?? "",
+                },
+                row,
+              ),
+            )
+          )
+            precondition();
           if (!(await retentionRequestPolicyIsCurrent(scoped, row)))
             precondition();
           if (await privacyRequestHeld(scoped, row)) precondition();
@@ -491,6 +543,21 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
               )
               .limit(1);
             if (legacy?.state !== "completed") precondition();
+            if (row.executionContract) {
+              const [outcome] = await scoped.database
+                .select({ state: privacyExecutionOutcomes.state })
+                .from(privacyExecutionOutcomes)
+                .where(
+                  and(
+                    eq(
+                      privacyExecutionOutcomes.workspaceId,
+                      scoped.workspaceId,
+                    ),
+                    eq(privacyExecutionOutcomes.privacyRequestId, row.id),
+                  ),
+                );
+              if (outcome?.state !== "completed") precondition();
+            }
           }
           const propagations = await scoped.database
             .select()
@@ -547,6 +614,11 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
             reviewedBy: row.reviewedBy,
             createdBy: scoped.actor.principalId,
             updatedBy: scoped.actor.principalId,
+          });
+          await scoped.database.insert(privacyExecutionOutcomes).values({
+            id: newId(),
+            workspaceId: scoped.workspaceId,
+            privacyRequestId: row.id,
           });
         }
         if (

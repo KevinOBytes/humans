@@ -1,7 +1,14 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { retentionPolicies } from "@/db/schema/workspaces";
 import type { Database } from "@/modules/auth/bootstrap-admin";
+import { consentRecords } from "@/db/schema/privacy";
+import { consentScopes, purposePolicies } from "@/db/schema/governance";
+import { privacyProcessors } from "./request-types";
+import {
+  privacyExecutionDigest,
+  type PrivacyExecutionContract,
+} from "./execution-manifest";
 
 const RETENTION_WORKER = "worker:retention";
 const RETENTION_PURPOSE =
@@ -88,4 +95,133 @@ export async function retentionRequestPolicyIsCurrent(
   if (request.requesterId !== RETENTION_WORKER) return true;
   const policy = await currentRetentionRequestPolicy(context, request);
   return Boolean(policy);
+}
+
+/** Caller holds the workspace policy lock. These hashes are evidence, not grants. */
+export async function currentPrivacyExecutionContract(
+  context: { database: Database; workspaceId: string; secret: string },
+  request: RetentionRequestPolicyInput & { id: string; caseId: string | null },
+): Promise<PrivacyExecutionContract> {
+  const kinds = [
+    ...(request.scope.personIds.length ? ["person"] : []),
+    ...(request.scope.fileIds.length ? ["file"] : []),
+  ];
+  const policies = await context.database
+    .select()
+    .from(retentionPolicies)
+    .where(
+      and(
+        eq(retentionPolicies.workspaceId, context.workspaceId),
+        inArray(retentionPolicies.resourceKind, kinds),
+        isNull(retentionPolicies.deletedAt),
+      ),
+    )
+    .orderBy(asc(retentionPolicies.id))
+    .for("share");
+  const purposes = await context.database
+    .select()
+    .from(purposePolicies)
+    .where(
+      and(
+        eq(purposePolicies.workspaceId, context.workspaceId),
+        isNull(purposePolicies.deletedAt),
+      ),
+    )
+    .orderBy(asc(purposePolicies.id))
+    .for("share");
+  const consents = request.scope.personIds.length
+    ? await context.database
+        .select()
+        .from(consentRecords)
+        .where(
+          and(
+            eq(consentRecords.workspaceId, context.workspaceId),
+            inArray(consentRecords.personId, [...request.scope.personIds]),
+            isNull(consentRecords.deletedAt),
+          ),
+        )
+        .orderBy(asc(consentRecords.id))
+        .for("share")
+    : [];
+  const scopes = consents.length
+    ? await context.database
+        .select()
+        .from(consentScopes)
+        .where(
+          and(
+            eq(consentScopes.workspaceId, context.workspaceId),
+            inArray(
+              consentScopes.consentRecordId,
+              consents.map((row) => row.id),
+            ),
+            isNull(consentScopes.deletedAt),
+          ),
+        )
+        .orderBy(asc(consentScopes.id))
+        .for("share")
+    : [];
+  const clock = await context.database.execute(
+    sql`select clock_timestamp() as now`,
+  );
+  const now = new Date(String(clock[0]!.now));
+  const hash = (domain: string, value: unknown) =>
+    privacyExecutionDigest(context.secret, domain, [
+      context.workspaceId,
+      value,
+    ]);
+  const policySnapshots = policies.length
+    ? policies.map((policy) => ({
+        id: policy.id,
+        version: policy.version,
+        hash: hash("policy", policy),
+      }))
+    : [
+        {
+          id: "governed-soft-delete",
+          version: 1,
+          hash: hash("policy", {
+            id: "governed-soft-delete",
+            version: 1,
+            action: "soft_delete",
+          }),
+        },
+      ];
+  return {
+    version: 1,
+    action: policies.some((p) => p.deletionBehavior === "hard_delete")
+      ? "hard_delete"
+      : policies.some((p) => p.deletionBehavior === "anonymize")
+        ? "anonymize"
+        : "soft_delete",
+    binding: hash("request", {
+      id: request.id,
+      requesterId: request.requesterId,
+      caseId: request.caseId,
+      purpose: request.purpose,
+      scope: {
+        personIds: [...request.scope.personIds].sort(),
+        fileIds: [...request.scope.fileIds].sort(),
+      },
+    }),
+    policies: policySnapshots,
+    policyHash: hash("policies", policySnapshots),
+    legalBasisDigest: hash("legal-basis", {
+      purpose: request.purpose,
+      purposes: purposes.map((p) => ({
+        ...p,
+        currentlyEffective:
+          p.effectiveFrom <= now &&
+          (!p.effectiveUntil || p.effectiveUntil > now),
+      })),
+      consents: consents.map((p) => ({
+        ...p,
+        currentlyEffective:
+          p.effectiveFrom <= now &&
+          (!p.effectiveUntil || p.effectiveUntil > now),
+      })),
+      scopes,
+    }),
+    processorCapabilityVersion: 1,
+    requiredProcessors: [...privacyProcessors],
+  };
 }

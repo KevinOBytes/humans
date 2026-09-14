@@ -688,6 +688,23 @@ anonymization remain unavailable: complete processor coverage and a
 provenance-preserving irreversible-redaction contract are not implemented.
 This checkpoint does not close HUM-FR-005.
 
+Task 2 privacy execution-contract checkpoint (2026-09-14): deletion approval now
+persists a request/case/scope-bound contract containing the reviewed action,
+policy identities/versions/keyed hashes, lawful-purpose/consent digest, processor
+capability version, and required processor set. Fulfillment and the locked worker
+reject snapshot drift without changing the approved action. The workspace policy
+lock also fences purpose-policy/consent inserts and withdrawals; a consent writer
+rechecks the live subject after acquiring it. A request/workspace-unique local
+receipt records PostgreSQL-clock claim expiry and generation, terminal
+result code, redacted audit reference, and value-free person/file identity hashes
+and counts. Claim takeover, stale-generation denial, completed/rejected replay,
+audit rollback, and authorized GraphQL status have focused PostgreSQL/unit evidence;
+the production build passes. Local completion is not privacy-request completion or
+proof of external erasure. Historical approvals and receipts are not fabricated.
+Irreversible deletion/anonymization, complete dependency/processor closure, and
+hosted/browser acceptance remain unimplemented or unverified. HUM-FR-005 and the
+overall privacy acceptance matrix remain incomplete.
+
 Privacy-governance convergence checkpoint (2026-09-14): the legacy settings
 deletion fields remain in the GraphQL schema only as stable deprecated
 compatibility errors and can no longer insert or transition `deletion_requests`.

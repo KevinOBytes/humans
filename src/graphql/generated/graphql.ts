@@ -3802,6 +3802,19 @@ export type PrivacyRequestQuery = {
   }> | null;
 };
 
+export type PrivacyLocalExecutionQueryVariables = Exact<{
+  requestId: string;
+}>;
+
+export type PrivacyLocalExecutionQuery = {
+  privacyLocalExecution: {
+    state: string | null;
+    generation: number | null;
+    resultCode: string | null;
+    auditReference: string | null;
+  } | null;
+};
+
 export type CreatePrivacyRequestMutationVariables = Exact<{
   input: CreatePrivacyRequestInput;
 }>;
@@ -10386,6 +10399,24 @@ export const PrivacyRequestDocument = new TypedDocumentString(
 ) as unknown as TypedDocumentString<
   PrivacyRequestQuery,
   PrivacyRequestQueryVariables
+>;
+export const PrivacyLocalExecutionDocument = new TypedDocumentString(
+  `
+    query PrivacyLocalExecution($requestId: UUID!) {
+  privacyLocalExecution(requestId: $requestId) {
+    state
+    generation
+    resultCode
+    auditReference
+  }
+}
+    `,
+  {
+    hash: "sha256:3933ba79a39d2bfcc39d9b3f484c703f5c05d0798333d27342d3a7733e594ad6",
+  },
+) as unknown as TypedDocumentString<
+  PrivacyLocalExecutionQuery,
+  PrivacyLocalExecutionQueryVariables
 >;
 export const CreatePrivacyRequestDocument = new TypedDocumentString(
   `

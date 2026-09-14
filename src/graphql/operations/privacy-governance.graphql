@@ -30,6 +30,14 @@ query PrivacyRequest($id: UUID!) {
     auditReference
   }
 }
+query PrivacyLocalExecution($requestId: UUID!) {
+  privacyLocalExecution(requestId: $requestId) {
+    state
+    generation
+    resultCode
+    auditReference
+  }
+}
 mutation CreatePrivacyRequest($input: CreatePrivacyRequestInput!) {
   createPrivacyRequest(input: $input) {
     ...PrivacyRequestFields

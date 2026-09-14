@@ -379,6 +379,13 @@
       "when": 1789400102772,
       "tag": "0053_protected-citation-storage",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789417772122,
+      "tag": "0054_privacy_execution_contract",
+      "breakpoints": true
     }
   ]
 }
