@@ -17,17 +17,26 @@ type RetentionRequestPolicyInput = {
   };
 };
 
+export type RetentionPolicyAction =
+  "review" | "soft_delete" | "hard_delete" | "anonymize";
+export type RetentionPolicySnapshot = {
+  id: string;
+  resourceKind: "person" | "file";
+  version: number;
+  deletionBehavior: RetentionPolicyAction;
+};
+
 /**
  * Worker-created retention requests remain bound to the exact active policy
  * snapshot that queued them. Callers hold the workspace policy advisory lock,
  * so a policy mutation cannot race this check and a subsequent destructive
  * transition in the same transaction.
  */
-export async function retentionRequestPolicyIsCurrent(
+export async function currentRetentionRequestPolicy(
   context: { database: Database; workspaceId: string },
   request: RetentionRequestPolicyInput,
-) {
-  if (request.requesterId !== RETENTION_WORKER) return true;
+): Promise<RetentionPolicySnapshot | null> {
+  if (request.requesterId !== RETENTION_WORKER) return null;
   const purpose = request.purpose?.match(RETENTION_PURPOSE);
   const policyVersion = Number(purpose?.[2]);
   const personRequest =
@@ -40,10 +49,15 @@ export async function retentionRequestPolicyIsCurrent(
     !Number.isSafeInteger(policyVersion) ||
     (!personRequest && !fileRequest)
   )
-    return false;
+    return null;
 
   const [policy] = await context.database
-    .select({ id: retentionPolicies.id })
+    .select({
+      deletionBehavior: retentionPolicies.deletionBehavior,
+      id: retentionPolicies.id,
+      resourceKind: retentionPolicies.resourceKind,
+      version: retentionPolicies.version,
+    })
     .from(retentionPolicies)
     .where(
       and(
@@ -51,11 +65,27 @@ export async function retentionRequestPolicyIsCurrent(
         eq(retentionPolicies.id, purpose[1]!.toLowerCase()),
         eq(retentionPolicies.resourceKind, personRequest ? "person" : "file"),
         eq(retentionPolicies.version, policyVersion),
-        eq(retentionPolicies.deletionBehavior, "soft_delete"),
         isNull(retentionPolicies.deletedAt),
       ),
     )
     .limit(1)
     .for("share");
+  if (
+    !policy ||
+    !["person", "file"].includes(policy.resourceKind) ||
+    !["review", "soft_delete", "hard_delete", "anonymize"].includes(
+      policy.deletionBehavior,
+    )
+  )
+    return null;
+  return policy as RetentionPolicySnapshot;
+}
+
+export async function retentionRequestPolicyIsCurrent(
+  context: { database: Database; workspaceId: string },
+  request: RetentionRequestPolicyInput,
+) {
+  if (request.requesterId !== RETENTION_WORKER) return true;
+  const policy = await currentRetentionRequestPolicy(context, request);
   return Boolean(policy);
 }

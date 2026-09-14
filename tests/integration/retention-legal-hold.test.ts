@@ -51,6 +51,74 @@ live("retention legal hold boundary", () => {
       0,
     );
   });
+  it.each(["hard_delete", "anonymize"] as const)(
+    "rejects %s policy actions before mutating a person",
+    async (deletionBehavior) => {
+      const person = await coveredPerson(context);
+      const policyId = newId();
+      const requestId = newId();
+      await fixture.database.insert(retentionPolicies).values({
+        id: policyId,
+        workspaceId: context.workspaceId,
+        resourceKind: "person",
+        retentionDays: 0,
+        deletionBehavior,
+        createdBy: context.actor.principalId,
+        updatedBy: context.actor.principalId,
+      });
+      await fixture.database.insert(deletionRequests).values({
+        id: requestId,
+        workspaceId: context.workspaceId,
+        requesterId: context.actor.principalId,
+        scope: { personIds: [person.id], fileIds: [] },
+        state: "approved",
+        reviewedAt: new Date("2026-09-12T00:00:00Z"),
+        reviewedBy: context.actor.principalId,
+        createdBy: context.actor.principalId,
+        updatedBy: context.actor.principalId,
+      });
+
+      expect(
+        await executeApprovedDeletionRequests({
+          database: fixture.database,
+          encryptionKey: "ab".repeat(32),
+          now: new Date("2026-09-12T00:00:00Z"),
+        }),
+      ).toBe(0);
+      const [request] = await fixture.database
+        .select({
+          reviewNotes: deletionRequests.reviewNotes,
+          state: deletionRequests.state,
+        })
+        .from(deletionRequests)
+        .where(eq(deletionRequests.id, requestId));
+      expect(request).toEqual({
+        reviewNotes:
+          "The configured retention action is not supported for this resource.",
+        state: "rejected",
+      });
+      const [unchanged] = await fixture.database
+        .select({ deletedAt: people.deletedAt, status: people.status })
+        .from(people)
+        .where(eq(people.id, person.id));
+      expect(unchanged).toEqual({ deletedAt: null, status: "active" });
+      const [audit] = await fixture.database
+        .select({ redactedDiff: auditEvents.redactedDiff })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, context.workspaceId),
+            eq(auditEvents.resourceId, requestId),
+            eq(auditEvents.action, "deletion_request.rejected"),
+          ),
+        );
+      expect(audit?.redactedDiff).toEqual({
+        deletionBehavior,
+        reason: "retention_action_unsupported",
+      });
+      expect(JSON.stringify(audit)).not.toContain(person.id);
+    },
+  );
   it.each(["person", "file"] as const)(
     "held %s records cannot starve the bounded retention review queue",
     async (resourceKind) => {
