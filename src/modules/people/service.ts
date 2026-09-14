@@ -13,7 +13,6 @@ import {
   derivePrincipalResearchIdempotency,
   deriveResearchIdempotency,
   runPrincipalIdempotentResearchWrite,
-  runIdempotentResearchWrite,
   withResearchWriteTransaction as writeTransaction,
   type CanonicalRequestMaterial,
 } from "@/modules/audit/transactions";
@@ -3124,18 +3123,29 @@ export function createPeopleService(context: ResearchServiceContext) {
             "Idempotent person merges are not configured.",
           );
         }
-        const idempotency = deriveResearchIdempotency(context, {
+        const requestMaterial = {
+          loserPersonId: input.loserPersonId,
+          reason: input.reason.trim(),
+          winnerPersonId: input.winnerPersonId,
+        } satisfies Readonly<Record<string, CanonicalRequestMaterial>>;
+        const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey: input.idempotencyKey,
           operation: "person.merge",
-          requestMaterial: {
-            loserPersonId: input.loserPersonId,
-            reason: input.reason.trim(),
-            winnerPersonId: input.winnerPersonId,
-          },
+          requestMaterial,
           secret,
         });
-        const result = await runIdempotentResearchWrite(
+        const legacyIdempotency =
+          context.actor.type === "user"
+            ? deriveResearchIdempotency(context, {
+                expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+                idempotencyKey: input.idempotencyKey,
+                operation: "person.merge",
+                requestMaterial,
+                secret,
+              })
+            : undefined;
+        const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
           ["person:merge"],
@@ -3156,6 +3166,7 @@ export function createPeopleService(context: ResearchServiceContext) {
               version: outcome.resource.version,
             };
           },
+          legacyIdempotency,
         );
         const replayed = await replayPerson(result.responseReference);
         return { resource: replayed, issues: [], code: null };
@@ -3747,17 +3758,28 @@ export function createPeopleService(context: ResearchServiceContext) {
         }
         const versionIssues = validateVersion(input.expectedVersion);
         if (versionIssues.length) return invalid(versionIssues);
-        const idempotency = deriveResearchIdempotency(context, {
+        const requestMaterial = {
+          expectedVersion: input.expectedVersion,
+          loserPersonId: input.loserPersonId,
+        } satisfies Readonly<Record<string, CanonicalRequestMaterial>>;
+        const idempotency = derivePrincipalResearchIdempotency(context, {
           expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
           idempotencyKey: input.idempotencyKey,
           operation: "person.unmerge",
-          requestMaterial: {
-            expectedVersion: input.expectedVersion,
-            loserPersonId: input.loserPersonId,
-          },
+          requestMaterial,
           secret,
         });
-        const result = await runIdempotentResearchWrite(
+        const legacyIdempotency =
+          context.actor.type === "user"
+            ? deriveResearchIdempotency(context, {
+                expiresAt: new Date(Date.now() + PERSON_IDEMPOTENCY_TTL_MS),
+                idempotencyKey: input.idempotencyKey,
+                operation: "person.unmerge",
+                requestMaterial,
+                secret,
+              })
+            : undefined;
+        const result = await runPrincipalIdempotentResearchWrite(
           context,
           idempotency,
           ["person:merge"],
@@ -3777,6 +3799,7 @@ export function createPeopleService(context: ResearchServiceContext) {
               version: outcome.resource.version,
             };
           },
+          legacyIdempotency,
         );
         const replayed = await replayPerson(result.responseReference);
         return { resource: replayed, issues: [], code: null };

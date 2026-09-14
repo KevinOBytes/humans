@@ -1749,7 +1749,7 @@ export async function runPrincipalIdempotentResearchWrite<
   input: DerivedPrincipalIdempotency,
   requiredPermissions: readonly string[],
   write: (context: ResearchServiceContext) => Promise<T>,
-  legacyCorePersonIdempotency?: DerivedResearchIdempotency,
+  legacyIdempotency?: DerivedResearchIdempotency,
   transactionOptions?: Readonly<{
     isolationLevel?: "read committed" | "repeatable read" | "serializable";
   }>,
@@ -1779,16 +1779,18 @@ export async function runPrincipalIdempotentResearchWrite<
   ) {
     return invalidIdempotency();
   }
-  const legacyMetadata = legacyCorePersonIdempotency
-    ? derivedIdempotencyInputs.get(legacyCorePersonIdempotency)
+  const legacyMetadata = legacyIdempotency
+    ? derivedIdempotencyInputs.get(legacyIdempotency)
     : undefined;
   const legacyOperation = {
     "person.archive.graphql": "person.archive",
     "person.create.graphql": "person.create",
+    "person.merge": "person.merge",
+    "person.unmerge": "person.unmerge",
     "person.update.graphql": "person.update",
   }[metadata.operation];
   if (
-    legacyCorePersonIdempotency &&
+    legacyIdempotency &&
     (!legacyMetadata ||
       context.actor.type !== "user" ||
       legacyOperation === undefined ||
