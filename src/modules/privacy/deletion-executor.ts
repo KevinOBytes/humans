@@ -172,7 +172,8 @@ export async function executeApprovedDeletionRequests(input: {
             eq(privacyRequests.legacyDeletionRequestId, request.id),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (
         governed &&
         !governed.idempotencyHash.startsWith("legacy:") &&
@@ -186,12 +187,19 @@ export async function executeApprovedDeletionRequests(input: {
 
       const scope = parseScope(request.scope);
       const requestId = `worker:deletion:${request.id}`;
-      if (!scope) {
-        await transaction
+      // Terminal rejection is one outcome across both request ledgers. Keep
+      // the audit and both state changes in this transaction so a retry never
+      // observes a rejected local request with a stuck fulfilling parent.
+      const reject = async (
+        reviewNotes: string,
+        reason: string,
+        details: Record<string, unknown> = {},
+      ) => {
+        const [rejected] = await transaction
           .update(deletionRequests)
           .set({
             state: "rejected",
-            reviewNotes: "The deletion scope is invalid.",
+            reviewNotes,
             updatedAt: now,
             updatedBy: WORKER_ACTOR,
             version: sql`${deletionRequests.version} + 1`,
@@ -203,16 +211,60 @@ export async function executeApprovedDeletionRequests(input: {
               eq(deletionRequests.state, "approved"),
               eq(deletionRequests.version, request.version),
             ),
-          );
-        await auditRequest({
+          )
+          .returning({ id: deletionRequests.id });
+        if (!rejected) throw new Error("Deletion rejection lost its claim");
+        const [audit] = await auditRequest({
           database: transaction as unknown as Database,
           action: "deletion_request.rejected",
           requestId,
           resourceId: request.id,
           workspaceId: request.workspaceId,
-          redactedDiff: { reason: "invalid_scope" },
+          redactedDiff: { ...details, reason },
           outcome: "failure",
         });
+        if (!audit) throw new Error("Deletion rejection audit missing");
+        if (governed && governed.state === "fulfilling") {
+          const [terminal] = await transaction
+            .update(privacyRequests)
+            .set({
+              auditReference: audit.id,
+              state: "rejected",
+              updatedAt: now,
+              updatedBy: WORKER_ACTOR,
+              version: governed.version + 1,
+            })
+            .where(
+              and(
+                eq(privacyRequests.workspaceId, request.workspaceId),
+                eq(privacyRequests.id, governed.id),
+                eq(privacyRequests.state, "fulfilling"),
+                eq(privacyRequests.version, governed.version),
+              ),
+            )
+            .returning({ id: privacyRequests.id });
+          if (!terminal) throw new Error("Privacy rejection lost its claim");
+        }
+      };
+      if (!scope) {
+        await reject("The deletion scope is invalid.", "invalid_scope");
+        return;
+      }
+      const approvedScope = governed ? parseScope(governed.scope) : null;
+      if (
+        governed &&
+        (!approvedScope ||
+          approvedScope.personIds.length !== scope.personIds.length ||
+          approvedScope.fileIds.length !== scope.fileIds.length ||
+          !scope.personIds.every((id) =>
+            approvedScope.personIds.includes(id),
+          ) ||
+          !scope.fileIds.every((id) => approvedScope.fileIds.includes(id)))
+      ) {
+        await reject(
+          "The deletion scope does not match the approved privacy request.",
+          "governed_scope_mismatch",
+        );
         return;
       }
 
@@ -528,32 +580,10 @@ export async function executeApprovedDeletionRequests(input: {
         personRows.length !== scope.personIds.length ||
         fileRows.length !== scope.fileIds.length
       ) {
-        await transaction
-          .update(deletionRequests)
-          .set({
-            state: "rejected",
-            reviewNotes: "The deletion scope contains unavailable resources.",
-            updatedAt: now,
-            updatedBy: WORKER_ACTOR,
-            version: sql`${deletionRequests.version} + 1`,
-          })
-          .where(
-            and(
-              eq(deletionRequests.workspaceId, request.workspaceId),
-              eq(deletionRequests.id, request.id),
-              eq(deletionRequests.state, "approved"),
-              eq(deletionRequests.version, request.version),
-            ),
-          );
-        await auditRequest({
-          database: transaction as unknown as Database,
-          action: "deletion_request.rejected",
-          requestId,
-          resourceId: request.id,
-          workspaceId: request.workspaceId,
-          redactedDiff: { reason: "scope_unavailable" },
-          outcome: "failure",
-        });
+        await reject(
+          "The deletion scope contains unavailable resources.",
+          "scope_unavailable",
+        );
         return;
       }
 
@@ -689,54 +719,11 @@ export async function executeApprovedDeletionRequests(input: {
           )?.deletionBehavior ?? null;
       }
       if (unsupportedRetentionAction) {
-        await transaction
-          .update(deletionRequests)
-          .set({
-            state: "rejected",
-            reviewNotes:
-              "The configured retention action is not supported for this resource.",
-            updatedAt: now,
-            updatedBy: WORKER_ACTOR,
-            version: sql`${deletionRequests.version} + 1`,
-          })
-          .where(
-            and(
-              eq(deletionRequests.workspaceId, request.workspaceId),
-              eq(deletionRequests.id, request.id),
-              eq(deletionRequests.state, "approved"),
-              eq(deletionRequests.version, request.version),
-            ),
-          );
-        const [audit] = await auditRequest({
-          database: transaction as unknown as Database,
-          action: "deletion_request.rejected",
-          requestId,
-          resourceId: request.id,
-          workspaceId: request.workspaceId,
-          redactedDiff: {
-            deletionBehavior: unsupportedRetentionAction,
-            reason: "retention_action_unsupported",
-          },
-          outcome: "failure",
-        });
-        if (governed && audit) {
-          await transaction
-            .update(privacyRequests)
-            .set({
-              auditReference: audit.id,
-              state: "rejected",
-              updatedAt: now,
-              updatedBy: WORKER_ACTOR,
-              version: sql`${privacyRequests.version} + 1`,
-            })
-            .where(
-              and(
-                eq(privacyRequests.workspaceId, request.workspaceId),
-                eq(privacyRequests.id, governed.id),
-                eq(privacyRequests.state, "fulfilling"),
-              ),
-            );
-        }
+        await reject(
+          "The configured retention action is not supported for this resource.",
+          "retention_action_unsupported",
+          { deletionBehavior: unsupportedRetentionAction },
+        );
         return;
       }
 
