@@ -47,6 +47,7 @@ query GraphPage($filter: GraphFilterInput!) {
       sensitivity
       confidence
       strength
+      epistemicStatus
       temporalSemantics
       temporalPrecision
       validFrom

@@ -183,6 +183,14 @@ journey is extended to assert persisted strength from each relationship
 direction but has not yet been executed for this checkpoint. This does not
 close HUM-FR-028 or the whole-profile/hosted acceptance matrix.
 
+The graph repository/service projection and generated graph/snapshot operations
+also carry the canonical nullable `RelationshipEpistemicStatus` enum to the
+browser mapper and inspector. Claim-state corroboration never supplies a
+missing evidence status; legacy clients/projections retain explicit unknown
+handling. Focused serialization and inspector tests pass. A generated graph
+integration case covers stored status plus tenant isolation when a disposable
+PostgreSQL database is configured; it has not been executed for this checkpoint.
+
 Rich-profile definition catalog checkpoint (2026-09-13): newly provisioned
 workspaces receive active, workspace-scoped fact-definition templates for
 pronouns, employment, education, languages, organizations, birth dates, and

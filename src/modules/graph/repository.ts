@@ -68,6 +68,7 @@ export type GraphEdgeRow = {
   labelOverride: string | null;
   strength: string | null;
   confidence: string;
+  epistemicStatus: string;
   state: string;
   sensitivity: (typeof relationships.$inferSelect)["sensitivity"];
   temporalSemantics: (typeof relationships.$inferSelect)["temporalSemantics"];
@@ -152,6 +153,7 @@ function graphEdgeColumns() {
     labelOverride: relationships.labelOverride,
     strength: relationships.strength,
     confidence: relationships.confidence,
+    epistemicStatus: relationships.epistemicStatus,
     state: relationships.state,
     sensitivity: relationships.sensitivity,
     temporalSemantics: relationships.temporalSemantics,

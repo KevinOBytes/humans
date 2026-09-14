@@ -38,6 +38,8 @@ export type GraphEdge = {
   inverseLabel: string;
   directed: boolean;
   state: GraphRelationshipState;
+  /** Absent on legacy client projections; never infer from claim state. */
+  epistemicStatus?: "documented" | "analyst_hypothesis" | null;
   sensitivity: GraphSensitivity;
   confidence: number;
   strength: number | null;

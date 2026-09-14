@@ -1,9 +1,32 @@
-import { GraphQLEnumType } from "graphql";
+import { GraphQLEnumType, GraphQLObjectType } from "graphql";
 import { describe, expect, it } from "vitest";
 
 import { schema } from "@/graphql/schema";
 
 describe("graph GraphQL schema", () => {
+  it.each([
+    ["documented", "DOCUMENTED"],
+    ["analyst_hypothesis", "ANALYST_HYPOTHESIS"],
+    [undefined, null],
+  ])(
+    "serializes explicit graph evidence status %s independently of claim state",
+    async (epistemicStatus, expected) => {
+      const edgeType = schema.getType("GraphEdge") as GraphQLObjectType;
+      const field = edgeType.getFields().epistemicStatus;
+      expect(field).toBeDefined();
+      const value = await field!.resolve!(
+        { state: "corroborated", epistemicStatus },
+        {},
+        {},
+        {} as never,
+      );
+      expect(
+        value == null
+          ? null
+          : (field!.type as GraphQLEnumType).serialize(value),
+      ).toBe(expected);
+    },
+  );
   it("exposes the bounded graph, saved view, and analysis contract", () => {
     const query = schema.getQueryType()?.getFields();
     const mutation = schema.getMutationType()?.getFields();

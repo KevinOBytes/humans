@@ -534,6 +534,11 @@ function toEdge(row: GraphEdgeRow): GraphEdge {
     inverseLabel: row.labelOverride ?? row.inverseLabel,
     directed: row.directed,
     state: row.state as GraphRelationshipState,
+    epistemicStatus:
+      row.epistemicStatus === "documented" ||
+      row.epistemicStatus === "analyst_hypothesis"
+        ? row.epistemicStatus
+        : null,
     sensitivity: row.sensitivity,
     confidence: Number(row.confidence),
     strength: row.strength === null ? null : Number(row.strength),

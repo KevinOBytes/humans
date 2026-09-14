@@ -230,6 +230,33 @@ describe("GraphTable", () => {
 });
 
 describe("GraphInspector", () => {
+  it.each([
+    ["analyst_hypothesis", "Analyst hypothesis"],
+    ["documented", "Documented source claim"],
+    [undefined, "Evidence status not recorded"],
+  ] as const)(
+    "displays evidence status %s without inferring it from corroboration",
+    (epistemicStatus, label) => {
+      render(
+        <GraphInspector
+          onClose={() => {}}
+          selection={{ kind: "edge", id: IDS.directed }}
+          result={{
+            ...graphResultFixture,
+            edges: [
+              {
+                ...graphResultFixture.edges[0]!,
+                state: "corroborated",
+                epistemicStatus,
+              },
+            ],
+          }}
+        />,
+      );
+      expect(screen.getByText(label)).toBeVisible();
+      expect(screen.getByText("corroborated", { exact: true })).toBeVisible();
+    },
+  );
   it("links every visible relationship to its source profile workflow", () => {
     render(
       <GraphInspector
@@ -1998,6 +2025,7 @@ describe("graphPageResult", () => {
       })),
       edges: graphResultFixture.edges.map((edge) => ({
         ...edge,
+        epistemicStatus: "ANALYST_HYPOTHESIS" as const,
         state: edge.state.toUpperCase() as
           | "ASSERTED"
           | "CORROBORATED"
@@ -2027,6 +2055,7 @@ describe("graphPageResult", () => {
     expect(mapped.nodes[0]?.id).toBe(IDS.alice);
     expect(mapped.nodes[0]?.sensitivity).toBe("internal");
     expect(mapped.edges[0]?.id).toBe(IDS.directed);
+    expect(mapped.edges[0]?.epistemicStatus).toBe("analyst_hypothesis");
   });
 
   it("maps a reauthorized saved view into a fresh graph query and positions", () => {
