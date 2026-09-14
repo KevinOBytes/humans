@@ -78,15 +78,19 @@ schema and service tests cover the contract; hosted/provider and whole-role
 acceptance remain tracked as incomplete.
 
 Bounded investigation-read authorization checkpoint (2026-09-13): generated
-investigation reads now apply the same information-sharing boundary as the
+investigation reads apply the same information-sharing boundary as the
 assignment queue. Workspace owners/administrators retain workspace visibility;
 other principals must lead the investigation, belong to a linked case, or
 belong to a team with an active linked-case share. The predicate is applied in
 both point reads and paginated lists, so unrelated readers cannot infer an
 investigation from list membership. API-key principals remain non-manager
-principals and therefore need an explicit linked scope. Focused unit coverage
-passes; live PostgreSQL, hosted, and full role/resource matrix evidence remain
-open, so the governing requirements stay incomplete.
+principals and therefore need an explicit linked scope. A disposable PostgreSQL
+18.3 run of `tests/integration/research-assignment-lifecycle.test.ts` passed
+nine tests, including manager, lead, linked-case-member, linked-team-member,
+explicitly shared API-key, foreign-workspace, archived-team, and unrelated
+reader point-read/list boundaries across two linked cases. Hosted and broader
+role/resource acceptance remain open, so the governing requirements stay
+incomplete.
 
 Identifier citation boundary checkpoint (2026-09-13): public person identifier
 citations reuse `linkEvidenceAssertion` with the canonical field path

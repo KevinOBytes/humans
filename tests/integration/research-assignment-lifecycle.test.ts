@@ -3,9 +3,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, count, eq } from "drizzle-orm";
 
 import { caseMembers, caseResourceLinks, cases } from "@/db/schema/cases";
+import { workspacePrincipals } from "@/db/schema/principals";
 import { createInvestigationsService } from "@/modules/investigations/service";
+import type { ResearchServiceContext } from "@/modules/audit/service";
 import { createTeamsService } from "@/modules/teams/service";
-import { teamMembers } from "@/db/schema/teams";
+import { teamMembers, teams as teamsTable } from "@/db/schema/teams";
 import {
   researchAssignmentEvents,
   researchAssignmentItems,
@@ -414,6 +416,134 @@ liveDescribe("research assignment queue lifecycle", () => {
     ).rejects.toMatchObject({
       extensions: { code: "NOT_FOUND" },
     });
+  });
+
+  it("limits investigation reads to managers and explicitly shared principals", async () => {
+    const investigations = createInvestigationsService(context);
+    const teams = createTeamsService(context);
+    const casesService = createCasesService(context);
+    const lead = await fixture.createWorkspaceMember(owner, "analyst");
+    const caseMember = await fixture.createWorkspaceMember(owner, "analyst");
+    const teamMember = await fixture.createWorkspaceMember(owner, "analyst");
+    const archivedTeamMember = await fixture.createWorkspaceMember(
+      owner,
+      "analyst",
+    );
+    const unrelated = await fixture.createWorkspaceMember(owner, "analyst");
+    const apiKey = await fixture.provisionKey(owner, {
+      investigation: ["read"],
+    });
+    const [apiKeyPrincipal] = await fixture.database
+      .select({ id: workspacePrincipals.id })
+      .from(workspacePrincipals)
+      .where(eq(workspacePrincipals.apiKeyId, apiKey.id));
+    if (!apiKeyPrincipal) throw new Error("API-key principal is missing.");
+
+    const visible = await investigations.createInvestigation({
+      title: "Explicitly shared investigation",
+      objective: "Prove the investigation reader boundary.",
+      purpose: "research",
+      leadPrincipalId: lead.principalId,
+    });
+    const linkedCase = await casesService.createCase({
+      title: "Second investigation case",
+      purpose: "research",
+    });
+    const unrelatedInvestigation = await investigations.createInvestigation({
+      title: "Unshared investigation",
+      objective: "Ensure list results remain relationship-scoped.",
+      purpose: "research",
+    });
+    await investigations.linkCase({ investigationId: visible.id, caseId });
+    await investigations.linkCase({
+      investigationId: visible.id,
+      caseId: linkedCase.id,
+    });
+    await casesService.addMember({
+      caseId: linkedCase.id,
+      principalId: caseMember.principalId,
+      role: "reviewer",
+    });
+
+    const activeTeam = await teams.createTeam({
+      name: "Active investigation team",
+    });
+    await teams.linkCase({ caseId, teamId: activeTeam.id });
+    await teams.addMember({
+      teamId: activeTeam.id,
+      principalId: teamMember.principalId,
+      role: "member",
+    });
+    await teams.addMember({
+      teamId: activeTeam.id,
+      principalId: apiKeyPrincipal.id,
+      role: "member",
+    });
+
+    const archivedTeam = await teams.createTeam({
+      name: "Archived investigation team",
+    });
+    await teams.linkCase({ caseId, teamId: archivedTeam.id });
+    await teams.addMember({
+      teamId: archivedTeam.id,
+      principalId: archivedTeamMember.principalId,
+      role: "member",
+    });
+    await fixture.database
+      .update(teamsTable)
+      .set({ state: "archived" })
+      .where(eq(teamsTable.id, archivedTeam.id));
+
+    const readerContext = async (actor: typeof lead) => {
+      const reader = await caseContext(fixture, actor);
+      reader.actor.role = "analyst";
+      reader.permissions = new Set(rolePermissionKeys("analyst"));
+      return reader;
+    };
+    const apiKeyContext: ResearchServiceContext = {
+      ...context,
+      actor: {
+        type: "apiKey",
+        id: apiKey.id,
+        principalId: apiKeyPrincipal.id,
+        role: null,
+      },
+      permissions: new Set(["investigation:read"]),
+    };
+    const assertVisible = async (reader: ResearchServiceContext) => {
+      const service = createInvestigationsService(reader);
+      expect((await service.getInvestigation(visible.id)).id).toBe(visible.id);
+      expect(
+        (await service.listInvestigations({ first: 1 })).nodes.map(
+          (row) => row.id,
+        ),
+      ).toEqual([visible.id]);
+    };
+    const assertHidden = async (reader: ResearchServiceContext) => {
+      const service = createInvestigationsService(reader);
+      await expect(service.getInvestigation(visible.id)).rejects.toMatchObject({
+        extensions: { code: "NOT_FOUND" },
+      });
+      expect((await service.listInvestigations({ first: 1 })).nodes).toEqual(
+        [],
+      );
+    };
+
+    expect(
+      (await investigations.listInvestigations({ first: 10 })).nodes.map(
+        (row) => row.id,
+      ),
+    ).toEqual(expect.arrayContaining([visible.id, unrelatedInvestigation.id]));
+    await assertVisible(await readerContext(lead));
+    await assertVisible(await readerContext(caseMember));
+    await assertVisible(await readerContext(teamMember));
+    await assertVisible(apiKeyContext);
+    await assertHidden(await readerContext(unrelated));
+    await assertHidden(await readerContext(archivedTeamMember));
+
+    const foreignOwner = await fixture.createActor();
+    const foreignContext = await caseContext(fixture, foreignOwner);
+    await assertHidden(foreignContext);
   });
 
   it("binds assignments to investigation and team scopes and enforces membership", async () => {
