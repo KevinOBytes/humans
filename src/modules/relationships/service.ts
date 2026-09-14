@@ -978,13 +978,15 @@ export function createRelationshipsService(context: ResearchServiceContext) {
           (provenance.creationMethod === "manual" ? "asserted" : "inferred"),
       );
       const epistemicStatus = validateRelationshipEpistemicStatus(
-        input.epistemicStatus ??
-          (provenance.creationMethod === "ai"
-            ? "analyst_hypothesis"
-            : "documented"),
+        input.epistemicStatus ?? "analyst_hypothesis",
       );
       issues.push(...state.issues, ...epistemicStatus.issues);
       if (issues.length) return invalid(issues);
+      if (epistemicStatus.value !== "analyst_hypothesis")
+        throw createGraphQLError(
+          "PRECONDITION_FAILED",
+          "New relationships must begin as analyst hypotheses.",
+        );
       if (input.idempotencyKey != null) {
         const secret = context.idempotencyHmacKey;
         if (!secret) {
@@ -1360,10 +1362,18 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             ? "restricted"
             : (input.sensitivity?.toLowerCase() ?? locked.sensitivity),
         );
+        const requestedEpistemicStatus =
+          input.epistemicStatus === undefined
+            ? { value: locked.epistemicStatus, issues: [] }
+            : validateRelationshipEpistemicStatus(input.epistemicStatus);
+        if (requestedEpistemicStatus.issues.length)
+          return invalid<RelationshipRow>(requestedEpistemicStatus.issues);
         const promotion = requiresRelationshipPromotionReview({
           from: locked.state,
           to: nextState,
           reviewState: locked.reviewState,
+          epistemicStatus: locked.epistemicStatus,
+          nextEpistemicStatus: requestedEpistemicStatus.value!,
         });
         if (
           input.reviewState !== undefined &&
@@ -1382,6 +1392,8 @@ export function createRelationshipsService(context: ResearchServiceContext) {
             state: locked.state,
             nextState,
             reviewState: locked.reviewState,
+            epistemicStatus: locked.epistemicStatus,
+            nextEpistemicStatus: requestedEpistemicStatus.value!,
             caseId: locked.caseId,
             purpose,
             evidenceAssertionId: input.evidenceAssertionId,
@@ -1447,14 +1459,10 @@ export function createRelationshipsService(context: ResearchServiceContext) {
           );
         }
         if (input.epistemicStatus !== undefined) {
-          const epistemicStatus = validateRelationshipEpistemicStatus(
-            input.epistemicStatus,
-          );
-          issues.push(...epistemicStatus.issues);
-          if (epistemicStatus.issues.length === 0)
-            patch.epistemicStatus = epistemicStatus.value;
+          patch.epistemicStatus = requestedEpistemicStatus.value;
           changed.push("epistemicStatus");
         }
+        if (promotion) changed.push("reviewState");
         if (input.sensitivity !== undefined) {
           const value = input.sensitivity?.toLowerCase();
           if (

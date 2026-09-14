@@ -87,7 +87,9 @@ export const relationships = pgTable(
      * `state` and `reviewState`: an approved hypothesis is still a hypothesis
      * until a source-backed assertion is created.
      */
-    epistemicStatus: text("epistemic_status").default("documented").notNull(),
+    epistemicStatus: text("epistemic_status")
+      .default("analyst_hypothesis")
+      .notNull(),
     reviewState: text("review_state").default("unreviewed").notNull(),
     strength: numeric("strength", { precision: 4, scale: 3 }),
     confidence: numeric("confidence", { precision: 4, scale: 3 })

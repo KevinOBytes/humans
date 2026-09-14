@@ -301,13 +301,18 @@ evidence counts are not treated as proof. Focused component and live-service
 tests pass. This narrows but does not close HUM-FR-023/HUM-FR-028 or the full
 hosted/provider/accessibility matrix.
 
-Bounded relationship epistemic-status evidence (2026-09-13): migration
-`0047_relationship-epistemic-status.sql` adds a constrained, persisted
-`documented` versus `analyst_hypothesis` value. Generated GraphQL mutations and
-profile reads expose it; AI-created edges default to hypotheses and historical
-AI edges are backfilled. The relationship form and cards show the explicit
-status. Focused form tests and schema/codegen checks pass. Full hosted/provider
-and whole-product acceptance remain open.
+Bounded relationship epistemic-status evidence (2026-09-14): migration
+`0052_core.sql` changes only the default for future edges to
+`analyst_hypothesis`; it deliberately does not rewrite historical rows. A new
+edge cannot claim `documented`. Promoting a hypothesis requires explicit
+confirmation and the same workspace/case/purpose/resource/version-bound,
+independently reviewed supporting assertion; the promotion updates epistemic
+and review state atomically with one redacted relationship audit. Focused
+PostgreSQL acceptance covers omitted/default status, documented-create
+rejection, missing/unreviewed/contradictory/foreign/stale evidence, concurrent
+promotion, and consent withdrawal; the relationship form exposes only the
+truthful hypothesis default. Full hosted/provider and whole-product acceptance
+remain open.
 
 Bounded temporal fact authoring evidence (2026-09-13, commits `afd2525`,
 `ef96dbc`, `39b26aa`, `9d978a7`, `68ad246`): the fact form now captures

@@ -203,14 +203,14 @@ export function RelationshipForm({
         <select
           id="relationship-epistemic-status"
           name="epistemicStatus"
-          defaultValue="DOCUMENTED"
+          defaultValue="ANALYST_HYPOTHESIS"
           className="border-input bg-background min-h-11 w-full rounded-xl border px-3 text-sm"
         >
-          <option value="DOCUMENTED">Documented in a source</option>
           <option value="ANALYST_HYPOTHESIS">Analyst hypothesis</option>
         </select>
         <p className="text-muted-foreground text-xs">
-          Keep source-backed claims distinct from analyst interpretation.
+          New relationships begin as hypotheses. A reviewed source assertion is
+          required before a relationship can be documented.
         </p>
       </div>
       <div className="space-y-2">

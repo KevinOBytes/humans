@@ -8,6 +8,7 @@ import {
   sources,
   evidenceAssertionReviews,
 } from "@/db/schema/evidence";
+import { relationships } from "@/db/schema/relationships";
 import { auditEvents } from "@/db/schema/operations";
 import { createRelationshipsService } from "@/modules/relationships/service";
 import {
@@ -92,14 +93,19 @@ liveDescribe("relationship evidence review and promotion", () => {
     });
   });
   afterAll(async () => fixture.close());
-  function assertion() {
+  function assertion(
+    input: Partial<{
+      resourceId: string;
+      role: "supports" | "contradicts" | "context";
+    }> = {},
+  ) {
     return linkEvidenceAssertion(context, {
       evidenceId,
       resourceKind: "relationship",
-      resourceId: id,
+      resourceId: input.resourceId ?? id,
       locator: "page 1",
       quote: "A private fixture quote",
-      role: "supports",
+      role: input.role ?? "supports",
       confidence: 0.8,
       purpose: "research",
       explicitConfirmed: true,
@@ -115,6 +121,237 @@ liveDescribe("relationship evidence review and promotion", () => {
         explicitConfirmed: true,
       }),
     ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+  });
+  it("defaults new relationships to hypotheses and rejects unsupported documented creation", async () => {
+    const service = createRelationshipsService(context);
+    const type = await service.createType({
+      key: "colleague",
+      forwardLabel: "colleague of",
+      inverseLabel: "colleague of",
+    });
+    const documentedType = await service.createType({
+      key: "housemate",
+      forwardLabel: "housemate of",
+      inverseLabel: "housemate of",
+    });
+    const [relationship] = await fixture.database
+      .select({
+        sourcePersonId: relationships.sourcePersonId,
+        targetPersonId: relationships.targetPersonId,
+      })
+      .from(relationships)
+      .where(eq(relationships.id, id));
+    const { sourcePersonId, targetPersonId } = relationship!;
+    const defaulted = await service.create({
+      sourcePersonId,
+      targetPersonId,
+      relationshipTypeId: type.resource!.id,
+      governancePurpose: "research",
+      explicitConfirmed: true,
+    });
+    expect(defaulted.resource).toMatchObject({
+      epistemicStatus: "analyst_hypothesis",
+      reviewState: "unreviewed",
+    });
+    await expect(
+      service.create({
+        sourcePersonId,
+        targetPersonId,
+        relationshipTypeId: documentedType.resource!.id,
+        governancePurpose: "research",
+        explicitConfirmed: true,
+        epistemicStatus: "documented",
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+    expect(
+      await fixture.database
+        .select({ id: relationships.id })
+        .from(relationships)
+        .where(
+          eq(relationships.relationshipTypeId, documentedType.resource!.id),
+        ),
+    ).toEqual([]);
+  });
+  it("requires a reviewed supporting assertion to document a hypothesis", async () => {
+    await expect(
+      createRelationshipsService(reviewer).update({
+        id,
+        expectedVersion: 1,
+        epistemicStatus: "documented",
+        governancePurpose: "research",
+        explicitConfirmed: true,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+    const unreviewed = await assertion();
+    await expect(
+      createRelationshipsService(reviewer).update({
+        id,
+        expectedVersion: 1,
+        epistemicStatus: "documented",
+        governancePurpose: "research",
+        explicitConfirmed: true,
+        evidenceAssertionId: unreviewed.id,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+    await reviewEvidenceAssertion(reviewer, {
+      id: unreviewed.id,
+      expectedVersion: 1,
+      state: "approved",
+      reason: "Verified source",
+    });
+    const promoted = await createRelationshipsService(reviewer).update({
+      id,
+      expectedVersion: 1,
+      epistemicStatus: "documented",
+      governancePurpose: "research",
+      explicitConfirmed: true,
+      evidenceAssertionId: unreviewed.id,
+    });
+    expect(promoted.resource).toMatchObject({
+      epistemicStatus: "documented",
+      reviewState: "approved",
+      version: 2,
+    });
+  });
+  it("allows only one concurrent documented promotion and emits one redacted audit", async () => {
+    const supporting = await assertion();
+    await reviewEvidenceAssertion(reviewer, {
+      id: supporting.id,
+      expectedVersion: 1,
+      state: "approved",
+      reason: "Verified source",
+    });
+    const input = {
+      id,
+      expectedVersion: 1,
+      epistemicStatus: "documented",
+      governancePurpose: "research",
+      explicitConfirmed: true,
+      evidenceAssertionId: supporting.id,
+    } as const;
+    const outcomes = await Promise.all([
+      createRelationshipsService(reviewer).update(input),
+      createRelationshipsService(reviewer).update(input),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.resource)).toHaveLength(1);
+    expect(
+      outcomes.filter((outcome) => outcome.code === "CONFLICT"),
+    ).toHaveLength(1);
+    const audits = await fixture.database
+      .select({ redactedDiff: auditEvents.redactedDiff })
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "relationship.update"));
+    expect(audits).toHaveLength(1);
+    expect(JSON.stringify(audits[0])).not.toContain("A private fixture quote");
+  });
+  it("rejects a contradictory assertion for documentation", async () => {
+    const contradicted = await assertion({ role: "contradicts" });
+    await reviewEvidenceAssertion(reviewer, {
+      id: contradicted.id,
+      expectedVersion: 1,
+      state: "approved",
+      reason: "Contradictory source",
+    });
+    await expect(
+      createRelationshipsService(reviewer).update({
+        id,
+        expectedVersion: 1,
+        epistemicStatus: "documented",
+        governancePurpose: "research",
+        explicitConfirmed: true,
+        evidenceAssertionId: contradicted.id,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+  });
+  it("rejects an approved assertion for another relationship", async () => {
+    const service = createRelationshipsService(context);
+    const type = await service.createType({
+      key: "coworker",
+      forwardLabel: "coworker of",
+      inverseLabel: "coworker of",
+    });
+    const [relationship] = await fixture.database
+      .select({
+        sourcePersonId: relationships.sourcePersonId,
+        targetPersonId: relationships.targetPersonId,
+      })
+      .from(relationships)
+      .where(eq(relationships.id, id));
+    const unrelated = await service.create({
+      sourcePersonId: relationship!.sourcePersonId,
+      targetPersonId: relationship!.targetPersonId,
+      relationshipTypeId: type.resource!.id,
+      creationMethod: "ai",
+      governancePurpose: "research",
+      explicitConfirmed: true,
+    });
+    const foreign = await assertion({ resourceId: unrelated.resource!.id });
+    await reviewEvidenceAssertion(reviewer, {
+      id: foreign.id,
+      expectedVersion: 1,
+      state: "approved",
+      reason: "Verified unrelated relationship",
+    });
+    await expect(
+      createRelationshipsService(reviewer).update({
+        id,
+        expectedVersion: 1,
+        epistemicStatus: "documented",
+        governancePurpose: "research",
+        explicitConfirmed: true,
+        evidenceAssertionId: foreign.id,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+  });
+  it("rejects an approval bound to a stale relationship version", async () => {
+    const supporting = await assertion();
+    await reviewEvidenceAssertion(reviewer, {
+      id: supporting.id,
+      expectedVersion: 1,
+      state: "approved",
+      reason: "Verified source",
+    });
+    const intervening = await createRelationshipsService(context).update({
+      id,
+      expectedVersion: 1,
+      state: "disputed",
+      governancePurpose: "research",
+    });
+    expect(intervening.resource?.version).toBe(2);
+    await expect(
+      createRelationshipsService(reviewer).update({
+        id,
+        expectedVersion: 2,
+        epistemicStatus: "documented",
+        governancePurpose: "research",
+        explicitConfirmed: true,
+        evidenceAssertionId: supporting.id,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
+  });
+  it("rechecks consent coverage before documenting a reviewed assertion", async () => {
+    const supporting = await assertion();
+    await reviewEvidenceAssertion(reviewer, {
+      id: supporting.id,
+      expectedVersion: 1,
+      state: "approved",
+      reason: "Verified source",
+    });
+    await createGovernanceService(context).withdrawConsent({
+      idempotencyKey: newId(),
+      id: consentId,
+      expectedVersion: 1,
+    });
+    await expect(
+      createRelationshipsService(reviewer).update({
+        id,
+        expectedVersion: 1,
+        epistemicStatus: "documented",
+        governancePurpose: "research",
+        explicitConfirmed: true,
+        evidenceAssertionId: supporting.id,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
   });
   it("records provenance and redacts quote/locator from audit", async () => {
     const row = await assertion();

@@ -16,6 +16,25 @@ vi.mock("@/graphql/client", () => ({
 describe("RelationshipForm", () => {
   beforeEach(() => execute.mockReset());
 
+  it("defaults new relationships to an analyst hypothesis and does not offer unsupported documentation", () => {
+    render(
+      <RelationshipForm
+        people={[{ id: "person-b", name: "Grace Collaborator" }]}
+        relationshipTypes={[{ id: "type-a", label: "Knows" }]}
+        sourcePersonId="person-a"
+      />,
+    );
+
+    expect(screen.getByLabelText("Evidence status")).toHaveValue(
+      "ANALYST_HYPOTHESIS",
+    );
+    expect(
+      screen
+        .getByLabelText("Evidence status")
+        .querySelector('option[value="DOCUMENTED"]'),
+    ).toBeNull();
+  });
+
   it("submits bounded temporal and provenance fields through the generated operation", async () => {
     const user = userEvent.setup();
     execute.mockResolvedValue({
