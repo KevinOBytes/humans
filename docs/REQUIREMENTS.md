@@ -1606,3 +1606,14 @@ malformed references, expiry takeover, authorization changes and atomic batch
 rollback. Component tests cover transport-uncertain retry keys and replacement
 when material changes. Unkeyed callers remain supported. HUM-NFR-008 and the
 broader AI/hosted/provider acceptance requirements remain Incomplete.
+
+Merged provenance/provider hardening verification (2026-09-14): clean `main`
+now includes the reviewed AI review idempotency, documented-relationship
+evidence gate, external R2/S3 contract-bucket isolation, and migration-count
+contract update. Local Node 24.19.0 verification passes 1,556 unit tests,
+formatting, lint, TypeScript, Drizzle check/drift, and the production build.
+The supported PostgreSQL 18.3/Redis run passes 46 integration files and 651
+tests with five documented skips, followed by the three focused AI-retention
+tests. This proves the merged local tranche only; hosted authenticated flows,
+live external providers, and the remaining incomplete requirement matrix stay
+open.
