@@ -166,8 +166,13 @@ export function normalizeAiReviewDecision(input: unknown) {
   const decision = parse(
     z
       .object({
-        id: z.uuid(),
-        expectedVersion: z.number().int().positive(),
+        id: z.uuid().transform((id) => id.toLowerCase()),
+        expectedVersion: z
+          .number()
+          .int()
+          .positive()
+          .max(Number.MAX_SAFE_INTEGER - 1),
+        idempotencyKey: text(128).nullish(),
         decision: z.enum(["accepted", "rejected", "deferred"]),
         explicitConfirmed: z.boolean().optional(),
         reason: text(2000).optional(),

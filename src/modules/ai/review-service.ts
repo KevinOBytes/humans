@@ -1,4 +1,5 @@
 import "server-only";
+import { z } from "zod";
 import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { aiReviewSuggestions, aiRuns, aiCitations } from "@/db/schema/ai";
@@ -31,6 +32,8 @@ import {
 import {
   applySearchIndexMaintenance,
   runResearchTransaction,
+  derivePrincipalResearchIdempotency,
+  runPrincipalIdempotentResearchWrite,
 } from "@/modules/audit/transactions";
 import {
   createCasesService,
@@ -934,13 +937,18 @@ export function createAiReviewService(context: ResearchServiceContext) {
     });
     return row;
   }
-  async function decide(scoped: ResearchServiceContext, raw: unknown) {
+  async function decide(
+    scoped: ResearchServiceContext,
+    raw: unknown,
+    keyed = false,
+  ) {
     if (scoped.actor.type !== "user")
       throw createGraphQLError("FORBIDDEN", "A human reviewer is required.");
     const input = normalizeAiReviewDecision(raw);
     const row = await get(scoped, input.id, true);
     await requireIndependentReviewer(scoped, row);
     if (
+      !keyed &&
       row.status === "accepted" &&
       input.decision === "accepted" &&
       row.version === input.expectedVersion + 1
@@ -1095,12 +1103,163 @@ export function createAiReviewService(context: ResearchServiceContext) {
     });
     return project(scoped, updated);
   }
-  const decision = (raw: unknown) =>
-    runResearchTransaction(
+  async function decisions(
+    items: ReturnType<typeof normalizeAiReviewDecision>[],
+    idempotencyKey: string | null | undefined,
+    batch = false,
+  ) {
+    if (context.actor.type !== "user")
+      throw createGraphQLError("FORBIDDEN", "A human reviewer is required.");
+    const permissions = [...readPermissions, "analysis:run"];
+    // Stable lock order prevents opposite-order batches from deadlocking. The
+    // caller's complete ordered material remains bound to its one ledger claim.
+    const apply = async (scoped: ResearchServiceContext) => {
+      const result = [];
+      for (const item of [...items].sort((a, b) => a.id.localeCompare(b.id)))
+        result.push(await decide(scoped, item, idempotencyKey != null));
+      return result;
+    };
+    if (idempotencyKey == null)
+      return runResearchTransaction(
+        context,
+        { requiredPermissions: permissions },
+        apply,
+      );
+    if (!context.idempotencyHmacKey)
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "Retry protection is unavailable.",
+      );
+    const claim = derivePrincipalResearchIdempotency(context, {
+      idempotencyKey,
+      operation: batch ? "ai.review.batch" : "ai.review.decision",
+      secret: context.idempotencyHmacKey,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      requestMaterial: {
+        suggestions: items.map((item) => ({
+          id: item.id,
+          expectedVersion: item.expectedVersion,
+          decision: item.decision,
+          reason: item.reason ?? null,
+          explicitConfirmed: item.explicitConfirmed ?? false,
+        })),
+      },
+    });
+    const executed = await runPrincipalIdempotentResearchWrite(
       context,
-      { requiredPermissions: [...readPermissions, "analysis:run"] },
-      (scoped) => decide(scoped, raw),
+      claim,
+      permissions,
+      async (scoped) => {
+        const result = await apply(scoped);
+        // Only opaque identifiers and committed state enter the shared ledger.
+        return {
+          suggestions: JSON.stringify(
+            result.map((row) => ({
+              id: row.id,
+              version: row.version,
+              status: row.status,
+            })),
+          ),
+        };
+      },
     );
+    const opaque = z
+      .object({ suggestions: z.string().max(8000) })
+      .strict()
+      .safeParse(executed.responseReference);
+    let decoded: unknown;
+    try {
+      decoded = opaque.success ? JSON.parse(opaque.data.suggestions) : null;
+    } catch {
+      decoded = null;
+    }
+    const references = z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            version: z.number().int().positive(),
+            status: z.enum(["accepted", "rejected", "deferred"]),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(20)
+      .safeParse(decoded);
+    const expected = [...items].sort((a, b) => a.id.localeCompare(b.id));
+    if (
+      !references.success ||
+      references.data.length !== expected.length ||
+      references.data.some(
+        (ref, i) =>
+          ref.id !== expected[i]!.id ||
+          ref.version !== expected[i]!.expectedVersion + 1 ||
+          ref.status !== expected[i]!.decision,
+      )
+    )
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "The review retry reference is invalid.",
+      );
+    // Fresh transaction reauthorizes completed claims; a ledger hit is never
+    // permission to disclose stale person, case, provenance, or evidence data.
+    return runResearchTransaction(
+      context,
+      { requiredPermissions: permissions },
+      async (scoped) => {
+        if (scoped.actor.type !== "user")
+          throw createGraphQLError(
+            "FORBIDDEN",
+            "A human reviewer is required.",
+          );
+        const result = [];
+        for (const ref of references.data) {
+          const row = await get(scoped, ref.id, true);
+          await requireIndependentReviewer(scoped, row);
+          if (
+            row.version !== ref.version ||
+            row.status !== ref.status ||
+            row.reviewedBy !== scoped.actor.principalId
+          )
+            throw createGraphQLError(
+              "CONFLICT",
+              "The suggestion has already changed.",
+            );
+          if (row.status === "accepted") {
+            const resource = await acceptedHistoryVisibleResources(scoped, [
+              row,
+            ]);
+            const evidence = await acceptedHistoryVisibleEvidence(scoped, [
+              row,
+            ]);
+            const refs = acceptedAiEvidenceReferenceSchema
+              .array()
+              .safeParse(row.acceptedEvidenceReferences);
+            if (
+              !row.acceptedResourceId ||
+              !resource.has(row.acceptedResourceId) ||
+              !refs.success ||
+              refs.data.some(
+                (r) =>
+                  !evidence.has(
+                    r.kind === "evidence"
+                      ? r.evidenceId
+                      : (r.promotedEvidenceId ?? ""),
+                  ),
+              )
+            )
+              fail();
+          }
+          result.push(await project(scoped, row));
+        }
+        return result;
+      },
+    );
+  }
+  const decision = async (raw: unknown) => {
+    const input = normalizeAiReviewDecision(raw);
+    return (await decisions([input], input.idempotencyKey))[0]!;
+  };
   return {
     async listAcceptedHistory(
       input: {
@@ -1230,21 +1389,25 @@ export function createAiReviewService(context: ResearchServiceContext) {
         async (scoped) => project(scoped, await get(scoped, id)),
       ),
     acceptSuggestion: (input: {
+      idempotencyKey?: string | null;
       id: string;
       expectedVersion: number;
       explicitConfirmed: boolean;
     }) => decision({ ...input, decision: "accepted" }),
     rejectSuggestion: (input: {
+      idempotencyKey?: string | null;
       id: string;
       expectedVersion: number;
       reason: string;
     }) => decision({ ...input, decision: "rejected" }),
     deferSuggestion: (input: {
+      idempotencyKey?: string | null;
       id: string;
       expectedVersion: number;
       reason?: string;
     }) => decision({ ...input, decision: "deferred" }),
     reviewBatch: async (input: {
+      idempotencyKey?: string | null;
       suggestions: Array<{ id: string; expectedVersion: number }>;
       approved: boolean;
     }) => {
@@ -1252,24 +1415,18 @@ export function createAiReviewService(context: ResearchServiceContext) {
         ids: input.suggestions.map((s) => s.id),
         approved: input.approved,
       });
-      return runResearchTransaction(
-        context,
-        { requiredPermissions: [...readPermissions, "analysis:run"] },
-        async (scoped) => {
-          const result = [];
-          for (const item of [...input.suggestions].sort((a, b) =>
-            a.id.localeCompare(b.id),
-          ))
-            result.push(
-              await decide(scoped, {
-                ...item,
-                decision: "accepted",
-                explicitConfirmed: true,
-              }),
-            );
-          return result;
-        },
+      const items = input.suggestions.map((item) =>
+        normalizeAiReviewDecision({
+          ...item,
+          decision: "accepted",
+          explicitConfirmed: true,
+        }),
       );
+      requireAiBatchApproval({
+        ids: items.map((item) => item.id),
+        approved: input.approved,
+      });
+      return decisions(items, input.idempotencyKey, true);
     },
   };
 }

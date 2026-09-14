@@ -128,7 +128,12 @@ describe("PersonResearchPanel governed review", () => {
     await user.click(screen.getByRole("button", { name: "Accept biography" }));
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
     expect(execute).toHaveBeenCalledWith(AcceptAiSuggestionDocument, {
-      input: { id: runId, expectedVersion: 1, explicitConfirmed: true },
+      input: {
+        id: runId,
+        expectedVersion: 1,
+        explicitConfirmed: true,
+        idempotencyKey: expect.any(String),
+      },
     });
   });
   it("keeps read-only reviewers from accepting a field", async () => {
