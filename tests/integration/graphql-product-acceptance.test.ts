@@ -454,6 +454,7 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
             id: suggestion!.id,
             expectedVersion: suggestion!.version,
             explicitConfirmed: true,
+            idempotencyKey: "graphql-ai-review-accept-v1",
           },
         },
       });

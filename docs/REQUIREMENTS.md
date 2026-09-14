@@ -1617,3 +1617,12 @@ tests with five documented skips, followed by the three focused AI-retention
 tests. This proves the merged local tranche only; hosted authenticated flows,
 live external providers, and the remaining incomplete requirement matrix stay
 open.
+
+Browser acceptance repair (2026-09-14): the authenticated GraphQL context now
+passes the configured AI retry HMAC into the AI review service. The prior
+Playwright failure was traced to the accept mutation returning
+`PRECONDITION_FAILED` (`Retry protection is unavailable`) for its generated
+idempotency key, leaving the pending proposal visible by design. The generated
+GraphQL acceptance matrix now exercises a keyed AI accept, and the focused
+local Chromium journey passes. Fresh GitHub browser and hosted authenticated
+acceptance evidence remain required before closing the related requirements.

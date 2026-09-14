@@ -641,6 +641,7 @@ function createServices(input: {
     aiReview: createAiReviewService({
       ...input.context,
       database: input.database,
+      idempotencyHmacKey: input.aiRuntime.hmacKey,
       searchIndexMaintenance: input.searchIndexMaintenance,
     }),
   };
