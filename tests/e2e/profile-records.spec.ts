@@ -65,6 +65,9 @@ test("fictional profile names and events persist through keyboard editing and ar
   const result = await fixture.createPerson(owner, {
     displayName: "Fictional Morgan Archive",
     biography: "Synthetic consent-based browser acceptance record.",
+    confidence: 0.73,
+    confidenceExplanation:
+      "Two consented fictional archive sources were reviewed.",
   });
   const personId = result.body?.data?.createPerson?.person?.id;
   if (!personId) throw new Error("Fictional profile was not created");
@@ -73,6 +76,13 @@ test("fictional profile names and events persist through keyboard editing and ar
   await expect(
     page.getByRole("heading", { name: "Fictional Morgan Archive" }),
   ).toBeVisible();
+  const provenance = page.getByRole("region", { name: "Record provenance" });
+  await expect(provenance).toContainText("73%");
+  await expect(provenance).toContainText(
+    "Two consented fictional archive sources were reviewed.",
+  );
+  await expect(provenance.getByText("Created", { exact: true })).toBeVisible();
+  await expect(provenance.getByText("Updated", { exact: true })).toBeVisible();
   await expectAccessibleReflow(page);
 
   const longAlias = `FictionalAlias${"x".repeat(100)}`;

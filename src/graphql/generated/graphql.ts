@@ -4402,9 +4402,13 @@ export type PersonHeaderQueryVariables = Exact<{
 }>;
 
 export type PersonHeaderQuery = {
-  person: {
-    " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
-  } | null;
+  person:
+    | ({
+        updatedBy: { kind: ActorKind | null; label: string | null } | null;
+      } & {
+        " $fragmentRefs"?: { PersonSummaryFragment: PersonSummaryFragment };
+      })
+    | null;
 };
 
 export type PersonNameSummaryFragment = {
@@ -11132,6 +11136,10 @@ export const PersonHeaderDocument = new TypedDocumentString(
     query PersonHeader($id: UUID!) {
   person(id: $id) {
     ...PersonSummary
+    updatedBy {
+      kind
+      label
+    }
   }
 }
     fragment PersonSummary on Person {
@@ -11152,7 +11160,7 @@ export const PersonHeaderDocument = new TypedDocumentString(
   updatedAt
 }`,
   {
-    hash: "sha256:b555a9ded188ed98eba05d7105e34ef3057603f34c59ee3525cc454deb300218",
+    hash: "sha256:160358ad8809360b83b0d6975473901763bac2d9496fcd9826760f518d2a669c",
   },
 ) as unknown as TypedDocumentString<
   PersonHeaderQuery,

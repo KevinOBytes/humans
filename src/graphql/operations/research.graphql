@@ -102,6 +102,10 @@ query PeopleList($first: Int, $after: String, $filter: PersonFilterInput) {
 query PersonHeader($id: UUID!) {
   person(id: $id) {
     ...PersonSummary
+    updatedBy {
+      kind
+      label
+    }
   }
 }
 
