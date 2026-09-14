@@ -21,7 +21,7 @@ Post-merge verification: GitHub Actions run `34811260101` passed all nine
 required jobs, including the full PostgreSQL/Redis/MinIO integration seam,
 browser acceptance, production build, generated drift, Compose lifecycle,
 image security, dependency policy, and secret scanning. Vercel deployment
-`dpl_27Rd1g28zgcDZp3RGk5kjkNjqyaa` is `READY` for the merged runtime and is
+`dpl_AWPhqDz47mmcAPeHwtEDf1rivSdD` is `READY` for the merged runtime and is
 aliased to `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`. Anonymous public probes returned 200 for the
 homepage, liveness, and readiness routes; unauthenticated GraphQL returned the

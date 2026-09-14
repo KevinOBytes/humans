@@ -19,7 +19,7 @@ rows remain explicitly open below.
 Post-merge evidence (2026-09-14): GitHub Actions run `34811260101` passed all
 nine required jobs, including real PostgreSQL/Redis/MinIO integration and
 browser acceptance. Vercel deployment
-`dpl_27Rd1g28zgcDZp3RGk5kjkNjqyaa` is `READY` and serves all three configured
+`dpl_AWPhqDz47mmcAPeHwtEDf1rivSdD` is `READY` and serves all three configured
 aliases: `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
 `humans-tkoresearch.vercel.app`. Anonymous probes returned 200 for `/`,
 `/api/health/live`, and `/api/health/ready`; unauthenticated GraphQL returned
