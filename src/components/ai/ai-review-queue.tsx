@@ -44,7 +44,7 @@ export function AiReviewQueue({
 }: {
   suggestions: Projection[];
   canReview: boolean;
-  onChange: () => void;
+  onChange: () => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +96,7 @@ export function AiReviewQueue({
         );
       else {
         retryKeys.current.delete(row.id);
-        onChange();
+        await onChange();
       }
     } catch {
       setError("The review could not be saved.");
