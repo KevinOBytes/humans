@@ -741,6 +741,19 @@ See `docs/operations/consent-governance.md`.
 
 Task 4 local checkpoint (2026-09-11): generalized access/correction/export/restriction/consent-withdrawal/deletion requests have bounded scope, deadlines, material-bound creation replay, independent approval with verification evidence, optimistic transitions, and evidence-required completion. Generated GraphQL operations expose requests, processor outcomes, deterministic retention evaluation, and governed legal holds. Existing deletion records remain readable; new deletion fulfillment only queues the legal-hold-fenced worker. A bounded propagation worker records retryable failures when provider adapters are unavailable and checks actual file-cleanup completion. Live database lifecycle/migration execution, external search/cache/email/AI-provider propagation adapters, the complete retention-policy worker matrix, legacy-settings-path convergence, and browser acceptance remain open. No overall privacy requirement is newly checked.
 
+Privacy-governance convergence checkpoint (2026-09-14): legacy settings
+deletion mutations now return a stable deprecated compatibility error before
+writing either deletion ledger, while generated settings operations expose the
+canonical privacy create/review/fulfill path. Settings legal holds use the
+canonical retention service and therefore share resource visibility, workspace
+fencing, redacted immutable audit, optimistic versions, independent release,
+and principal-bound replay. The deletion worker rejects orphaned approved rows
+and governed rows missing the complete configured processor set. The focused
+PostgreSQL 18 matrix passes 35/35 across settings, privacy lifecycle, and
+retention/legal holds. Keep HUM-FR-005/HUM-NFR-008 open pending external
+processor, hosted, browser, and full-role/resource acceptance; hard delete and
+anonymization remain disabled.
+
 Task 1 retention-worker checkpoint (2026-09-12): the shared worker now scans active soft-delete policies for expired, workspace-scoped people and files and queues deterministic, HMAC-bound privacy deletion requests in `requested` state. Candidate planning is exact at the retention boundary, skips active legal holds under the same workspace advisory lock used by hold/deletion mutations, and records a redacted queue audit; independent review and the existing deletion worker remain required before mutation. Focused unit coverage passes; the complete retention matrix, external propagation, and hosted evidence remain open.
 
 Task 3 retention queue follow-up (2026-09-12): active legal holds are excluded

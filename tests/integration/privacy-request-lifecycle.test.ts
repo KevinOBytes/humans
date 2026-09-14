@@ -86,6 +86,103 @@ live("privacy request lifecycle", () => {
       encryptionKey: "ab".repeat(32),
     });
 
+  it("rejects an approved deletion queue row without its canonical request and processors", async () => {
+    const person = await coveredPerson(context);
+    const rawRequestId = newId();
+    await fixture.database.insert(deletionRequests).values({
+      id: rawRequestId,
+      workspaceId: context.workspaceId,
+      requesterId: context.actor.principalId,
+      scope: { personIds: [person.id], fileIds: [] },
+      state: "approved",
+      reviewedAt: new Date(),
+      reviewedBy: context.actor.principalId,
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+
+    expect(await execute()).toBe(0);
+    const [rawRequest] = await fixture.database
+      .select({
+        reviewNotes: deletionRequests.reviewNotes,
+        state: deletionRequests.state,
+      })
+      .from(deletionRequests)
+      .where(eq(deletionRequests.id, rawRequestId));
+    expect(rawRequest).toEqual({
+      reviewNotes: "Deletion requires a governed privacy request.",
+      state: "rejected",
+    });
+    const [subject] = await fixture.database
+      .select({ deletedAt: people.deletedAt })
+      .from(people)
+      .where(eq(people.id, person.id));
+    expect(subject?.deletedAt).toBeNull();
+    expect(
+      await fixture.database
+        .select()
+        .from(privacyProcessorPropagations)
+        .where(
+          eq(privacyProcessorPropagations.workspaceId, context.workspaceId),
+        ),
+    ).toHaveLength(0);
+    const audits = await fixture.database
+      .select({ redactedDiff: auditEvents.redactedDiff })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, rawRequestId),
+          eq(auditEvents.action, "deletion_request.rejected"),
+        ),
+      );
+    expect(audits).toEqual([
+      { redactedDiff: { reason: "missing_governance_parent" } },
+    ]);
+  });
+
+  it("rejects a governed deletion queue row when processor governance is incomplete", async () => {
+    const person = await coveredPerson(context);
+    const request = await startDeletion([person.id]);
+    await fixture.database
+      .delete(privacyProcessorPropagations)
+      .where(eq(privacyProcessorPropagations.privacyRequestId, request.id));
+
+    expect(await execute()).toBe(0);
+    const [rawRequest] = await fixture.database
+      .select({
+        reviewNotes: deletionRequests.reviewNotes,
+        state: deletionRequests.state,
+      })
+      .from(deletionRequests)
+      .where(eq(deletionRequests.id, request.legacyDeletionRequestId!));
+    expect(rawRequest).toEqual({
+      reviewNotes: "Deletion requires configured processor governance.",
+      state: "rejected",
+    });
+    const [governed] = await fixture.database
+      .select({ state: privacyRequests.state })
+      .from(privacyRequests)
+      .where(eq(privacyRequests.id, request.id));
+    expect(governed?.state).toBe("rejected");
+    const [subject] = await fixture.database
+      .select({ deletedAt: people.deletedAt })
+      .from(people)
+      .where(eq(people.id, person.id));
+    expect(subject?.deletedAt).toBeNull();
+    const audits = await fixture.database
+      .select({ redactedDiff: auditEvents.redactedDiff })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.resourceId, request.legacyDeletionRequestId!),
+          eq(auditEvents.action, "deletion_request.rejected"),
+        ),
+      );
+    expect(audits).toEqual([
+      { redactedDiff: { reason: "missing_processor_governance" } },
+    ]);
+  });
+
   it("does not let rejected requests starve the default processor batch or discard their history", async () => {
     const person = await coveredPerson(context);
     const policyId = newId();

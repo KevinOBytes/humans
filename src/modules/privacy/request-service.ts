@@ -312,6 +312,12 @@ export function createPrivacyRequestService(context: ResearchServiceContext) {
     });
   }
   return {
+    rejectLegacySettingsDeletionMutation(): never {
+      throw createGraphQLError(
+        "PRECONDITION_FAILED",
+        "Legacy deletion mutations are unavailable. Use the governed privacy request workflow.",
+      );
+    },
     getRequest: (id: string) => read(context, id),
     async createRequest(input: unknown) {
       return mutation(async (scoped) => {

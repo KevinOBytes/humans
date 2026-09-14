@@ -2,6 +2,7 @@ import { builder } from "@/graphql/builder";
 import { requirePermission } from "@/graphql/context";
 import { createGraphQLError } from "@/graphql/errors";
 import { Sensitivity } from "@/modules/people/graphql";
+import type { PrivacyResourceKind } from "@/modules/privacy/retention-service";
 
 import type {
   PolicySettingsReadModel,
@@ -894,25 +895,46 @@ export function registerSettingsGraphQL(): void {
       type: SettingsPolicyMutationPayload,
       nullable: false,
       args: { input: t.arg({ type: CreateLegalHoldInput, required: true }) },
-      resolve: (_root, args, context) => {
+      resolve: async (_root, args, context) => {
         requirePermission(context, "workspace", "update");
-        return context.services.settings.policyMutations.createLegalHold(
-          args.input,
-        );
+        const hold = await context.services.retention.createLegalHold({
+          ...args.input,
+          resourceKind: args.input.resourceKind as PrivacyResourceKind,
+        });
+        return {
+          code: "APPLIED" as const,
+          id: hold.id,
+          requestId:
+            "operationRequestId" in hold &&
+            typeof hold.operationRequestId === "string"
+              ? hold.operationRequestId
+              : context.requestId,
+          version: hold.version,
+        };
       },
     }),
     releaseLegalHold: t.field({
       type: SettingsPolicyMutationPayload,
       nullable: false,
       args: { input: t.arg({ type: ReleaseLegalHoldInput, required: true }) },
-      resolve: (_root, args, context) => {
+      resolve: async (_root, args, context) => {
         requirePermission(context, "workspace", "update");
-        return context.services.settings.policyMutations.releaseLegalHold(
-          args.input.id,
-          args.input.expectedVersion,
-          args.input.releaseReason,
-          args.input.idempotencyKey,
-        );
+        const hold = await context.services.retention.releaseLegalHold({
+          expectedVersion: args.input.expectedVersion,
+          id: args.input.id,
+          idempotencyKey: args.input.idempotencyKey,
+          reason: args.input.releaseReason,
+        });
+        return {
+          code: "APPLIED" as const,
+          id: hold.id,
+          requestId:
+            "operationRequestId" in hold &&
+            typeof hold.operationRequestId === "string"
+              ? hold.operationRequestId
+              : context.requestId,
+          version: hold.version,
+        };
       },
     }),
     createConsentRecord: t.field({
@@ -944,36 +966,27 @@ export function registerSettingsGraphQL(): void {
     createDeletionRequest: t.field({
       type: SettingsPolicyMutationPayload,
       nullable: false,
+      deprecationReason:
+        "Use createPrivacyRequest with requestType DELETION; governed verification and review are required.",
       args: {
         input: t.arg({ type: CreateDeletionRequestInput, required: true }),
       },
-      resolve: (_root, args, context) => {
+      resolve: (_root, _args, context) => {
         requirePermission(context, "workspace", "update");
-        return context.services.settings.policyMutations.createDeletionRequest({
-          scope: args.input.scope,
-          idempotencyKey: args.input.idempotencyKey,
-        });
+        return context.services.privacy.rejectLegacySettingsDeletionMutation();
       },
     }),
     reviewDeletionRequest: t.field({
       type: SettingsPolicyMutationPayload,
       nullable: false,
+      deprecationReason:
+        "Use reviewPrivacyRequest and fulfillPrivacyRequest; direct deletion state transitions are unavailable.",
       args: {
         input: t.arg({ type: ReviewDeletionRequestInput, required: true }),
       },
-      resolve: (_root, args, context) => {
+      resolve: (_root, _args, context) => {
         requirePermission(context, "workspace", "update");
-        return context.services.settings.policyMutations.reviewDeletionRequest({
-          ...args.input,
-          state: args.input.state.toLowerCase() as
-            | "reviewing"
-            | "approved"
-            | "rejected"
-            | "exporting"
-            | "deleting"
-            | "completed"
-            | "cancelled",
-        });
+        return context.services.privacy.rejectLegacySettingsDeletionMutation();
       },
     }),
   }));

@@ -66,33 +66,63 @@ live("retention legal hold boundary", () => {
         createdBy: context.actor.principalId,
         updatedBy: context.actor.principalId,
       });
-      await fixture.database.insert(deletionRequests).values({
-        id: requestId,
+      const evidenceId = newId();
+      await fixture.database.insert(files).values({
+        id: evidenceId,
         workspaceId: context.workspaceId,
-        requesterId: context.actor.principalId,
-        scope: { personIds: [person.id], fileIds: [] },
-        state: "approved",
-        reviewedAt: new Date("2026-09-12T00:00:00Z"),
-        reviewedBy: context.actor.principalId,
+        storageProvider: "s3",
+        storageBucket: "test",
+        storageKey: evidenceId,
+        originalName: "retention-verification.txt",
+        byteSize: 1,
+        checksum: "a".repeat(64),
+        quarantineState: "available",
+        scanState: "clean",
+        uploadedBy: actor.userId,
         createdBy: context.actor.principalId,
         updatedBy: context.actor.principalId,
       });
+      const request = await createPrivacyRequestService(context).createRequest({
+        requestType: "deletion",
+        personIds: [person.id],
+        dueAt: new Date(Date.now() + 86_400_000),
+        idempotencyKey: requestId,
+      });
+      const second = await fixture.createWorkspaceMember(actor, "admin");
+      const reviewer = await caseContext(fixture, second);
+      reviewer.actor = {
+        ...reviewer.actor,
+        role: "admin",
+      } as typeof reviewer.actor;
+      const service = createPrivacyRequestService(reviewer);
+      const approved = await service.reviewRequest({
+        id: request.id,
+        expectedVersion: request.version,
+        state: "approved",
+        verificationEvidenceId: evidenceId,
+      });
+      const fulfilling = await service.fulfillRequest({
+        id: request.id,
+        expectedVersion: approved.version,
+      });
+      const deletionRequestId = fulfilling.legacyDeletionRequestId;
+      if (!deletionRequestId)
+        throw new Error("Missing governed deletion queue row");
 
       expect(
         await executeApprovedDeletionRequests({
           database: fixture.database,
           encryptionKey: "ab".repeat(32),
-          now: new Date("2026-09-12T00:00:00Z"),
         }),
       ).toBe(0);
-      const [request] = await fixture.database
+      const [rawRequest] = await fixture.database
         .select({
           reviewNotes: deletionRequests.reviewNotes,
           state: deletionRequests.state,
         })
         .from(deletionRequests)
-        .where(eq(deletionRequests.id, requestId));
-      expect(request).toEqual({
+        .where(eq(deletionRequests.id, deletionRequestId));
+      expect(rawRequest).toEqual({
         reviewNotes:
           "The configured retention action is not supported for this resource.",
         state: "rejected",
@@ -108,7 +138,7 @@ live("retention legal hold boundary", () => {
         .where(
           and(
             eq(auditEvents.workspaceId, context.workspaceId),
-            eq(auditEvents.resourceId, requestId),
+            eq(auditEvents.resourceId, deletionRequestId),
             eq(auditEvents.action, "deletion_request.rejected"),
           ),
         );
@@ -266,7 +296,18 @@ live("retention legal hold boundary", () => {
       ...resource,
       reason: "Preservation",
       authority: "Reviewer decision",
+      idempotencyKey: "canonical-hold-create",
     });
+    expect(
+      (
+        await service.createLegalHold({
+          ...resource,
+          reason: "Preservation",
+          authority: "Reviewer decision",
+          idempotencyKey: "canonical-hold-create",
+        })
+      ).id,
+    ).toBe(hold.id);
     expect(hold.auditReference).toBeTruthy();
     expect((await service.evaluateRetention(resource)).state).toBe(
       "blocked_by_legal_hold",
@@ -276,9 +317,32 @@ live("retention legal hold boundary", () => {
         id: hold.id,
         expectedVersion: 1,
         reason: "Release",
+        idempotencyKey: "canonical-hold-self-release",
       }),
     ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
     expect(await service.listLegalHolds(resource)).toHaveLength(1);
+    const second = await fixture.createWorkspaceMember(actor, "admin");
+    const reviewer = await caseContext(fixture, second);
+    reviewer.actor = {
+      ...reviewer.actor,
+      role: "admin",
+    } as typeof reviewer.actor;
+    const reviewerService = createRetentionService(reviewer);
+    const releaseInput = {
+      id: hold.id,
+      expectedVersion: 1,
+      reason: "Release",
+      idempotencyKey: "canonical-hold-independent-release",
+    };
+    const released = await reviewerService.releaseLegalHold(releaseInput);
+    expect(released).toMatchObject({
+      id: hold.id,
+      state: "released",
+      version: 2,
+    });
+    expect(await reviewerService.releaseLegalHold(releaseInput)).toEqual(
+      released,
+    );
     const [row] = await fixture.database
       .select()
       .from(people)
