@@ -77,14 +77,35 @@ liveDescribe("GraphQL security boundaries", () => {
 
   it("rejects malformed API-key header boundaries before authentication", async () => {
     for (const apiKey of ["", "hum_valid,hum_other", "x".repeat(513)]) {
+      const requestId = "01984e93-7644-72c6-82d0-fda7f590580e";
       const result = await boundaryFixture.execute({
-        headers: { "x-api-key": apiKey },
+        headers: { "x-api-key": apiKey, "x-request-id": requestId },
         origin: null,
         query: "query { viewer { id } }",
       });
       expectGraphQLError(result, "UNAUTHENTICATED");
       expect(result.status).toBe(401);
+      expect(result.headers.get("cache-control")).toBe("private, no-store");
+      expect(result.headers.get("x-request-id")).toBe(requestId);
+      expect(JSON.stringify(result.body)).not.toContain(apiKey);
     }
+  });
+
+  it("does not disclose a foreign workspace through a request header", async () => {
+    const actor = await boundaryFixture.createSessionActor();
+    const foreign = await boundaryFixture.createSessionActor();
+    const result = await boundaryFixture.execute({
+      headers: { "x-workspace-id": foreign.workspaceId },
+      jar: actor.jar,
+      query: "query { workspace { id } }",
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body?.errors).toBeUndefined();
+    expect(result.body?.data).toEqual({
+      workspace: { id: actor.workspaceId },
+    });
+    expect(JSON.stringify(result.body)).not.toContain(foreign.workspaceId);
   });
 });
 

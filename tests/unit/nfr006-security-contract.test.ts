@@ -109,6 +109,31 @@ describe("HUM-NFR-006 repository security contract", () => {
     }
   });
 
+  it("preserves a valid correlation ID and replaces malformed IDs for every API route", () => {
+    const trustedId = "01984e93-7644-72c6-82d0-fda7f590580e";
+    for (const route of apiRouteFiles()) {
+      const path = apiRoutePath(route);
+      const correlated = proxy(
+        new NextRequest(`https://humans.example.test${path}`, {
+          headers: { "x-request-id": trustedId.toUpperCase() },
+        }),
+      );
+      const replaced = proxy(
+        new NextRequest(`https://humans.example.test${path}`, {
+          headers: { "x-request-id": "private-invalid-correlation" },
+        }),
+      );
+
+      expect(correlated.headers.get("x-request-id"), path).toBe(trustedId);
+      expect(replaced.headers.get("x-request-id"), path).toMatch(
+        /^[0-9a-f-]{36}$/u,
+      );
+      expect(replaced.headers.get("x-request-id"), path).not.toBe(
+        "private-invalid-correlation",
+      );
+    }
+  });
+
   it("keeps every concrete object-store adapter behind input and filename validators", () => {
     const adapters = filesUnder(resolve("src/lib/storage"))
       .filter((file) => file.endsWith(".ts") && !file.endsWith("/types.ts"))

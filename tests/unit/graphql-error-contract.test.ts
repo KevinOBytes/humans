@@ -54,6 +54,28 @@ describe("GraphQL public error contract", () => {
     });
   });
 
+  it("retains only a valid correlation ID when an unknown error carries private metadata", () => {
+    const secret = "workspace=private-workspace api-key=private-key";
+    const result = normalizePublicGraphQLError(
+      {
+        extensions: {
+          code: "UPSTREAM_DATABASE_ERROR",
+          requestId,
+          workspaceId: secret,
+        },
+        message: secret,
+      },
+      requestId,
+    );
+
+    expect(result).toEqual({
+      code: "INTERNAL",
+      message: publicErrorMessage("INTERNAL"),
+      requestId,
+    });
+    expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
   it("does not trust exception text even when a code is allowlisted", () => {
     expect(
       normalizePublicGraphQLError(

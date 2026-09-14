@@ -42,7 +42,39 @@ describe("complete direct route method boundary", () => {
     );
   });
 
-  for (const { path, allowed } of routes) {
+  for (const { path, allowed } of routes.filter(
+    ({ allowed }) => allowed.length < methods.length - 1,
+  )) {
+    it(`${path} replaces an invalid correlation ID at its closed method boundary`, async () => {
+      const advertised = [
+        ...allowed,
+        ...(allowed.includes("GET") ? ["HEAD"] : []),
+        "OPTIONS",
+      ];
+      const method = methods.find(
+        (candidate) => !advertised.includes(candidate),
+      );
+      if (!method) throw new Error(`No denied method fixture for ${path}`);
+      const route = (await loaders[path]()) as Route;
+      const response = await route[method](
+        new Request(`https://humans.example/api/${path}`, {
+          method,
+          headers: {
+            authorization: "Bearer private-secret",
+            "x-request-id": "private-invalid-correlation",
+          },
+        }),
+      );
+
+      expect(response.status).toBe(405);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(response.headers.get("x-request-id")).not.toBe(
+        "private-invalid-correlation",
+      );
+      expect(await response.text()).not.toContain("private-secret");
+    });
+
     const advertised = [
       ...allowed,
       ...(allowed.includes("GET") ? ["HEAD"] : []),
