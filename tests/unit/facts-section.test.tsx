@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const executeServer = vi.hoisted(() => vi.fn());
@@ -15,16 +15,8 @@ vi.mock("@/lib/verified-field-selections", () => ({
     verified: true,
   })),
 }));
-vi.mock("@/components/facts/fact-form", () => ({
-  FactForm: (props: { personOptions?: readonly { id: string }[] }) => (
-    <div
-      data-testid="fact-form"
-      data-person-options={props.personOptions
-        ?.map((person) => person.id)
-        .join(",")}
-    />
-  ),
-  FactSelectionButton: () => null,
+vi.mock("@/graphql/client", () => ({
+  executeBrowserGraphQL: vi.fn(),
 }));
 vi.mock("@/components/facts/fact-display-value", () => ({
   factDisplayValue: () => "fact value",
@@ -49,10 +41,8 @@ vi.mock("@/components/people/person-profile", () => ({
     </div>
   ),
 }));
-vi.mock("@/components/research/paginated-research-list", () => ({
-  PageControls: () => null,
-}));
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
   notFound: vi.fn(() => {
     throw new Error("not found");
   }),
@@ -131,13 +121,119 @@ describe("FactsSection", () => {
       }),
     );
 
-    expect(screen.getByTestId("fact-form")).toHaveAttribute(
-      "data-person-options",
+    expect(screen.getByRole("option", { name: "Grace Hopper" })).toHaveValue(
       referencedPersonId,
     );
     expect(executeServer).toHaveBeenCalledTimes(4);
     expect(String(executeServer.mock.calls[3]?.[0])).toContain("PeopleOptions");
     expect(executeServer.mock.calls[3]?.[1]).toEqual({ first: 25 });
+  });
+
+  it("lets an author page beyond 25 people and select a later reference", async () => {
+    const nodes = Array.from({ length: 26 }, (_, index) => ({
+      id: `person-${index + 1}`,
+      displayName: `Fictional person ${index + 1}`,
+    }));
+    executeServer.mockImplementation(async (document, variables) => {
+      if (String(document).includes("PeopleOptions")) {
+        if (variables.first !== 25) throw new Error("Unbounded picker request");
+        return {
+          people: {
+            nodes:
+              variables.after === "people-cursor-25"
+                ? nodes.slice(25)
+                : nodes.slice(0, 25),
+            pageInfo:
+              variables.after === "people-cursor-25"
+                ? pageInfo()
+                : { hasNextPage: true, endCursor: "people-cursor-25" },
+          },
+        };
+      }
+      if (String(document).includes("PersonContradictoryFacts"))
+        return baseResponses()[1];
+      if (String(document).includes("FactCatalog")) return baseResponses()[2];
+      return baseResponses()[0];
+    });
+    const props = {
+      canCreate: true,
+      canSelect: false,
+      person: person() as never,
+      personId,
+    };
+    const view = render(
+      await FactsSection({
+        ...props,
+        search: { catalogAfter: "catalog-cursor", factAfter: "fact-cursor" },
+      }),
+    );
+    const navigation = screen.getByRole("navigation", {
+      name: "Person reference options pagination",
+    });
+    const href = within(navigation)
+      .getByRole("link", { name: "More people" })
+      .getAttribute("href")!;
+    expect(href).toBe(
+      `/people/${personId}?view=facts&factAfter=fact-cursor&catalogAfter=catalog-cursor&personReferenceAfter=people-cursor-25`,
+    );
+    expect(
+      screen.queryByRole("option", { name: "Fictional person 26" }),
+    ).not.toBeInTheDocument();
+    const search = Object.fromEntries(
+      new URL(href, "https://humans.example").searchParams,
+    );
+    view.rerender(await FactsSection({ ...props, search }));
+    fireEvent.change(screen.getByLabelText("Value"), {
+      target: { value: "person-26" },
+    });
+    expect(screen.getByLabelText("Value")).toHaveValue("person-26");
+    expect(
+      screen.queryByRole("link", { name: "More people" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("navigation", {
+          name: "Person reference options pagination",
+        }),
+      ).getByRole("link", { name: "First page" }),
+    ).toHaveAttribute(
+      "href",
+      `/people/${personId}?view=facts&factAfter=fact-cursor&catalogAfter=catalog-cursor`,
+    );
+  });
+
+  it("ignores malformed reference cursors rather than forwarding them to GraphQL", async () => {
+    executeServer
+      .mockResolvedValueOnce(baseResponses()[0])
+      .mockResolvedValueOnce(baseResponses()[1])
+      .mockResolvedValueOnce(baseResponses()[2])
+      .mockResolvedValueOnce({
+        people: {
+          nodes: [{ id: referencedPersonId, displayName: "Grace Hopper" }],
+          pageInfo: pageInfo(),
+        },
+      });
+    render(
+      await FactsSection({
+        canCreate: true,
+        canSelect: false,
+        person: person() as never,
+        personId,
+        search: { personReferenceAfter: "invalid/cursor?secret=value" },
+      }),
+    );
+    expect(executeServer.mock.calls[3]?.[1]).toEqual({
+      first: 25,
+      after: undefined,
+    });
+    expect(
+      screen.queryByRole("navigation", {
+        name: "Person reference options pagination",
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Grace Hopper" })).toHaveValue(
+      referencedPersonId,
+    );
   });
 
   it("carries authorized citation strength from generated fact detail into the profile", async () => {

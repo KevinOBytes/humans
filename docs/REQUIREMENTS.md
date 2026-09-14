@@ -295,6 +295,13 @@ the attended, single-workspace
 backfill was run, and the whole-profile hosted/browser/accessibility matrix
 remains open.
 
+Person-reference pagination checkpoint (2026-09-14): the fact editor retains
+the GraphQL-safe 25-person page size and provides accessible next/first-page
+controls through the authorized generated people query. A 26-person component
+regression exercises the real form and pagination controls, navigates to the
+second page, and selects the later person; malformed cursors are discarded.
+This is focused local evidence, not hosted or whole-profile acceptance.
+
 Rich-profile entry guidance checkpoint (2026-09-13): the generated fact catalog
 description and category now flow into the profile fact editor. The selected
 field presents an accessible, human-readable guide such as “Work · Employment”

@@ -51,6 +51,7 @@ export async function FactsSection({
   const factAfter = cursorParam(search, "factAfter");
   const contradictoryAfter = cursorParam(search, "contradictoryAfter");
   const catalogAfter = cursorParam(search, "catalogAfter");
+  const personReferenceAfter = cursorParam(search, "personReferenceAfter");
   const requestedDetail = uuidParam(search, "factDetail");
   const revisionAfter = cursorParam(search, "factRevisionAfter");
   const evidenceAfter = cursorParam(search, "factEvidenceAfter");
@@ -163,10 +164,15 @@ export async function FactsSection({
     canCreate && personReferenceDefinitions
       ? await executeServerGraphQL(PeopleOptionsDocument, {
           first: PERSON_REFERENCE_OPTIONS_PAGE_SIZE,
+          after: personReferenceAfter,
         })
       : null;
   const personOptions = (peopleOptions?.people.nodes ?? []).filter(
     (person) => person.id && person.displayName,
+  );
+  const personOptionsPage = readFragment(
+    PageDetailsFragmentDoc,
+    peopleOptions?.people.pageInfo,
   );
   const factPage = readFragment(
     PageDetailsFragmentDoc,
@@ -193,6 +199,37 @@ export async function FactsSection({
           <h2 id="fact-editor-heading" className="sr-only">
             Fact editor
           </h2>
+          {personReferenceDefinitions ? (
+            <div>
+              {personReferenceAfter || personOptionsPage?.hasNextPage ? (
+                <p className="text-muted-foreground text-sm">
+                  Person references show up to 25 accessible people at a time.
+                  Choose a page before entering your fact.
+                </p>
+              ) : null}
+              <PageControls
+                label="Person reference options"
+                resetHref={
+                  personReferenceAfter
+                    ? profilePageHref(personId, "facts", {
+                        factAfter,
+                        catalogAfter,
+                      })
+                    : null
+                }
+                nextHref={
+                  personOptionsPage?.hasNextPage && personOptionsPage.endCursor
+                    ? profilePageHref(personId, "facts", {
+                        factAfter,
+                        catalogAfter,
+                        personReferenceAfter: personOptionsPage.endCursor,
+                      })
+                    : null
+                }
+                nextLabel="More people"
+              />
+            </div>
+          ) : null}
           <FactForm
             definitions={definitions}
             personId={personId}
@@ -213,13 +250,17 @@ export async function FactsSection({
             label="Fact field options"
             resetHref={
               catalogAfter
-                ? profilePageHref(personId, "facts", { factAfter })
+                ? profilePageHref(personId, "facts", {
+                    factAfter,
+                    personReferenceAfter,
+                  })
                 : null
             }
             nextHref={
               catalogPage?.hasNextPage && catalogPage.endCursor
                 ? profilePageHref(personId, "facts", {
                     factAfter,
+                    personReferenceAfter,
                     catalogAfter: catalogPage.endCursor,
                   })
                 : null
