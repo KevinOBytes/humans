@@ -79,19 +79,23 @@ function auditRequest(input: {
   redactedDiff: Record<string, unknown>;
   outcome: "failure" | "success";
 }) {
-  return input.database.insert(auditEvents).values({
-    id: newId(),
-    workspaceId: input.workspaceId,
-    actorUserId: null,
-    sessionId: null,
-    apiKeyId: null,
-    action: input.action,
-    resourceKind: "deletion_request",
-    resourceId: input.resourceId,
-    requestId: input.requestId,
-    redactedDiff: input.redactedDiff,
-    outcome: input.outcome,
-  });
+  const id = newId();
+  return input.database
+    .insert(auditEvents)
+    .values({
+      id,
+      workspaceId: input.workspaceId,
+      actorUserId: null,
+      sessionId: null,
+      apiKeyId: null,
+      action: input.action,
+      resourceKind: "deletion_request",
+      resourceId: input.resourceId,
+      requestId: input.requestId,
+      redactedDiff: input.redactedDiff,
+      outcome: input.outcome,
+    })
+    .returning({ id: auditEvents.id });
 }
 
 /**
@@ -703,7 +707,7 @@ export async function executeApprovedDeletionRequests(input: {
               eq(deletionRequests.version, request.version),
             ),
           );
-        await auditRequest({
+        const [audit] = await auditRequest({
           database: transaction as unknown as Database,
           action: "deletion_request.rejected",
           requestId,
@@ -715,6 +719,24 @@ export async function executeApprovedDeletionRequests(input: {
           },
           outcome: "failure",
         });
+        if (governed && audit) {
+          await transaction
+            .update(privacyRequests)
+            .set({
+              auditReference: audit.id,
+              state: "rejected",
+              updatedAt: now,
+              updatedBy: WORKER_ACTOR,
+              version: sql`${privacyRequests.version} + 1`,
+            })
+            .where(
+              and(
+                eq(privacyRequests.workspaceId, request.workspaceId),
+                eq(privacyRequests.id, governed.id),
+                eq(privacyRequests.state, "fulfilling"),
+              ),
+            );
+        }
         return;
       }
 
