@@ -1429,25 +1429,6 @@ export function createFactsService(
       ];
       if (value.issues.length === 0) {
         const reference = value.value!;
-        for (const [kind, id] of [
-          ["person", reference.referencedPersonId],
-          ["place", reference.placeId],
-          ["file", reference.fileId],
-        ] as const) {
-          if (
-            id &&
-            !(await repository.resourceReferenceExists({
-              workspaceId: context.workspaceId,
-              kind,
-              id,
-            }))
-          )
-            issues.push({
-              path: ["value"],
-              code: "NOT_FOUND",
-              message: "A referenced value is unavailable.",
-            });
-        }
         if (
           definition.validationSchema != null &&
           definition.allowedValueType === "json"
@@ -1531,10 +1512,43 @@ export function createFactsService(
       if (issues.length > 0) return invalid(issues);
       const id = newId();
       const now = new Date();
-      const row = await writeTransaction(context, async (transaction) => {
+      return writeTransaction(context, async (transaction) => {
         const scoped = createFactsRepository(
           transaction as unknown as typeof context.database,
         );
+        const referenceIssues: ValidationIssue[] = [];
+        const reference = value.value!;
+        for (const [kind, referencedId] of [
+          ["person", reference.referencedPersonId],
+          ["place", reference.placeId],
+          ["file", reference.fileId],
+        ] as const) {
+          if (!referencedId) continue;
+          const referencedResource = await scoped.getResourceReference({
+            workspaceId: context.workspaceId,
+            kind,
+            id: referencedId,
+          });
+          if (
+            !referencedResource ||
+            !(await canAccessResource(
+              transaction as unknown as typeof context.database,
+              context,
+              {
+                id: referencedResource.id,
+                resourceKind: kind,
+                sensitivity: referencedResource.sensitivity,
+              },
+            ))
+          )
+            referenceIssues.push({
+              path: ["value"],
+              code: "NOT_FOUND",
+              message: "A referenced value is unavailable.",
+            });
+        }
+        if (referenceIssues.length > 0)
+          return invalid<FactRow>(referenceIssues);
         const created = await scoped.createFact({
           workspaceId: context.workspaceId,
           value: {
@@ -1610,9 +1624,8 @@ export function createFactsService(
             workspaceId: context.workspaceId,
           },
         ]);
-        return created;
+        return { resource: created, issues: [], code: null };
       });
-      return { resource: row, issues: [], code: null };
     },
     async createIdempotent(
       input: FactCreateInput & { idempotencyKey: string },

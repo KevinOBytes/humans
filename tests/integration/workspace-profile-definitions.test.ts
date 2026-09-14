@@ -1,28 +1,59 @@
 // @vitest-environment node
 
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { newId } from "@/db/id";
+import { caseResourceLinks, cases } from "@/db/schema/cases";
 import { auditEvents } from "@/db/schema/operations";
-import { factDefinitions } from "@/db/schema/facts";
-import { FactCatalogDocument } from "@/graphql/generated/graphql";
+import { factDefinitions, factRevisions, facts } from "@/db/schema/facts";
+import { people } from "@/db/schema/people";
+import {
+  CreateFactDocument,
+  FactCatalogDocument,
+  PersonHeaderDocument,
+} from "@/graphql/generated/graphql";
 import { backfillWorkspaceProfileDefinitions } from "@/modules/auth/workspace-profile-definitions";
+import type { SearchIndexMaintenance } from "@/modules/search/index-maintenance";
 
 import { ResearchFixture } from "../support/research-fixture";
 
 const liveDescribe = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
+function required<T>(value: T | null | undefined): T {
+  if (value == null) throw new Error("Required fixture value is missing");
+  return value;
+}
+
 liveDescribe("workspace rich-profile fact catalog", () => {
   let fixture: ResearchFixture;
   let initialized = false;
+  const applySearchIndex = vi.fn<SearchIndexMaintenance["apply"]>(
+    async () => undefined,
+  );
 
   beforeAll(() => {
-    fixture = new ResearchFixture();
+    fixture = new ResearchFixture({
+      searchIndexMaintenance: {
+        mode: "transactional",
+        apply: applySearchIndex,
+      },
+    });
     initialized = true;
   });
 
-  beforeEach(async () => fixture.reset());
+  beforeEach(async () => {
+    await fixture.reset();
+    applySearchIndex.mockClear();
+  });
 
   afterAll(async () => {
     if (initialized) await fixture.close();
@@ -129,6 +160,153 @@ liveDescribe("workspace rich-profile fact catalog", () => {
     expect(provisioningAudits).toEqual([
       { action: "factDefinition.catalogBackfill" },
     ]);
+  });
+
+  it("creates only person-reference facts whose targets the contributor can read", async () => {
+    const owner = await fixture.createActor();
+    const foreignOwner = await fixture.createActor();
+    const contributor = await fixture.createWorkspaceMember(
+      owner,
+      "contributor",
+    );
+    const subject = await fixture.createPerson(owner, {
+      displayName: "Reference subject",
+    });
+    const permitted = await fixture.createPerson(owner, {
+      displayName: "Permitted reference",
+    });
+    const hidden = await fixture.createPerson(owner, {
+      displayName: "Hidden confidential reference",
+    });
+    const caseHidden = await fixture.createPerson(owner, {
+      displayName: "Hidden case reference",
+    });
+    const foreign = await fixture.createPerson(foreignOwner, {
+      displayName: "Foreign workspace reference",
+    });
+    const subjectId = required(subject.body?.data?.createPerson?.person?.id);
+    const permittedId = required(
+      permitted.body?.data?.createPerson?.person?.id,
+    );
+    const hiddenId = required(hidden.body?.data?.createPerson?.person?.id);
+    const caseHiddenId = required(
+      caseHidden.body?.data?.createPerson?.person?.id,
+    );
+    const foreignId = required(foreign.body?.data?.createPerson?.person?.id);
+    await fixture.database
+      .update(people)
+      .set({ sensitivity: "confidential" })
+      .where(eq(people.id, hiddenId));
+    const hiddenCaseId = newId();
+    await fixture.database.insert(cases).values({
+      id: hiddenCaseId,
+      workspaceId: owner.workspaceId,
+      title: "Hidden person-reference case",
+      purpose: "Restricted case membership",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database.insert(caseResourceLinks).values({
+      id: newId(),
+      workspaceId: owner.workspaceId,
+      caseId: hiddenCaseId,
+      resourceKind: "person",
+      resourceId: caseHiddenId,
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+
+    const catalog = await fixture.execute<{
+      factDefinitions: { nodes: Array<{ id: string; fieldKey: string }> };
+    }>({
+      jar: contributor.jar,
+      operationName: "FactCatalog",
+      query: FactCatalogDocument,
+      variables: { first: 20 },
+    });
+    const definitionId = required(
+      catalog.body?.data?.factDefinitions.nodes.find(
+        ({ fieldKey }) => fieldKey === "person_reference",
+      )?.id,
+    );
+    for (const hiddenTargetId of [hiddenId, caseHiddenId, foreignId]) {
+      const hiddenRead = await fixture.execute<{
+        person: { id: string } | null;
+      }>({
+        jar: contributor.jar,
+        operationName: "PersonHeader",
+        query: PersonHeaderDocument,
+        variables: { id: hiddenTargetId },
+      });
+      expect(hiddenRead.body?.errors).toBeUndefined();
+      expect(hiddenRead.body?.data?.person).toBeNull();
+    }
+
+    const createReference = (referencedPersonId: string) =>
+      fixture.execute<{
+        createFact: {
+          code: string | null;
+          issues: Array<{ code: string; path: string[] }>;
+          fact: { id: string } | null;
+        };
+      }>({
+        jar: contributor.jar,
+        operationName: "CreateFact",
+        query: CreateFactDocument,
+        variables: {
+          input: {
+            definitionId,
+            personId: subjectId,
+            value: { referencedPersonId },
+          },
+        },
+      });
+
+    const permittedResult = await createReference(permittedId);
+    expect(permittedResult.body?.errors).toBeUndefined();
+    expect(permittedResult.body?.data?.createFact).toMatchObject({
+      code: null,
+      issues: [],
+      fact: { value: { referencedPersonId: permittedId } },
+    });
+    applySearchIndex.mockClear();
+
+    for (const hiddenTargetId of [hiddenId, caseHiddenId, foreignId]) {
+      applySearchIndex.mockClear();
+      const hiddenResult = await createReference(hiddenTargetId);
+      expect(hiddenResult.body?.errors).toBeUndefined();
+      expect(hiddenResult.body?.data?.createFact).toMatchObject({
+        code: "VALIDATION_FAILED",
+        issues: [{ code: "NOT_FOUND", path: ["value"] }],
+        fact: null,
+      });
+      expect(applySearchIndex).not.toHaveBeenCalled();
+    }
+
+    const createdFacts = await fixture.database
+      .select({ id: facts.id, referencedPersonId: facts.referencedPersonId })
+      .from(facts)
+      .where(eq(facts.personId, subjectId));
+    expect(createdFacts).toEqual([
+      expect.objectContaining({ referencedPersonId: permittedId }),
+    ]);
+    expect(
+      await fixture.database
+        .select({ id: factRevisions.id })
+        .from(factRevisions)
+        .where(eq(factRevisions.factId, createdFacts[0]!.id)),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, owner.workspaceId),
+            eq(auditEvents.action, "fact.create"),
+          ),
+        ),
+    ).toHaveLength(1);
   });
 
   it("backfills only missing catalog rows and records one idempotent audit", async () => {
@@ -246,6 +424,48 @@ liveDescribe("workspace rich-profile fact catalog", () => {
         insertedCount: 2,
       },
     });
+  });
+
+  it("serializes concurrent catalog claims without duplicate rows or audits", async () => {
+    const actor = await fixture.createActor();
+    await fixture.database
+      .delete(factDefinitions)
+      .where(eq(factDefinitions.workspaceId, actor.workspaceId));
+
+    const results = await Promise.all([
+      backfillWorkspaceProfileDefinitions(fixture.database, {
+        workspaceId: actor.workspaceId,
+        actorId: actor.principalId,
+        requestId: "concurrent-profile-backfill-a",
+      }),
+      backfillWorkspaceProfileDefinitions(fixture.database, {
+        workspaceId: actor.workspaceId,
+        actorId: actor.principalId,
+        requestId: "concurrent-profile-backfill-b",
+      }),
+    ]);
+
+    expect(results.map(({ inserted }) => inserted.length).sort()).toEqual([
+      0, 8,
+    ]);
+    expect(
+      await fixture.database
+        .select({ id: factDefinitions.id })
+        .from(factDefinitions)
+        .where(eq(factDefinitions.workspaceId, actor.workspaceId)),
+    ).toHaveLength(8);
+    const concurrentAudits = (
+      await fixture.database
+        .select({ requestId: auditEvents.requestId })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, actor.workspaceId),
+            eq(auditEvents.action, "factDefinition.catalogBackfill"),
+          ),
+        )
+    ).filter(({ requestId }) => requestId.startsWith("concurrent-"));
+    expect(concurrentAudits).toHaveLength(1);
   });
 
   it("rejects a foreign-workspace actor without inserting rows", async () => {

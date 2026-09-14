@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { locationMutationIdempotency } from "@/db/schema/locations";
@@ -377,7 +377,16 @@ liveDescribe("generated core-person mutation idempotency", () => {
       await fixture.database
         .select({ id: auditEvents.id })
         .from(auditEvents)
-        .where(eq(auditEvents.workspaceId, actor.workspaceId)),
+        .where(
+          and(
+            eq(auditEvents.workspaceId, actor.workspaceId),
+            inArray(auditEvents.action, [
+              "person.create",
+              "person.update",
+              "person.archive",
+            ]),
+          ),
+        ),
     ).toHaveLength(3);
   });
 });
