@@ -235,6 +235,48 @@ fail before any network call and transport failures expose only a fixed request
 path. See the [production closeout runbook](docs/operations/production-closeout.md)
 for the approved operator procedure and the still-open hosted acceptance gates.
 
+### Acceptance contract and attended closeout
+
+Run the credential-free acceptance contract before selecting a deployment or
+injecting any operator values:
+
+```sh
+corepack pnpm acceptance:local
+```
+
+This inventories every direct API route, exercises its method, input,
+authorization, correlation, cache, and redaction boundaries, checks the
+provider adapters and rendered Compose contracts, and then prints a
+configuration-only JSON plan. Diagnostic entries use stable `ACCEPTANCE_*`
+codes and include only the local/external scope, provider label, status, and
+missing variable names. `networkProbes` is always `false`: this step never
+initializes PostgreSQL, Redis, MinIO, Ollama, Upstash, R2/S3, OpenAI-compatible,
+or Resend clients and is not provider-readiness evidence.
+
+The operator closeout order is explicit:
+
+1. Run `corepack pnpm test:compose:config`, then the isolated
+   `corepack pnpm test:compose:lifecycle` and browser/security matrices in the
+   approved local CI environment. Local PostgreSQL, Redis, MinIO, and optional
+   Ollama evidence does not prove an external provider.
+2. If the hosted administrator credential must be created or recovered, use
+   only the mode-0600 recovery template and the one-shot `operator:rotate-admin-password`
+   procedure in the [production closeout runbook](docs/operations/production-closeout.md).
+   Record only the redacted booleans and timestamp.
+3. In a new least-privilege `op run`, execute the hosted authenticated smoke
+   for both email and username. Add `--two-factor` with exactly one current
+   TOTP or approved disposable backup code when 2FA is enabled; a backup code
+   is consumed.
+4. Run Upstash, isolated R2/S3, OpenAI-compatible, and Resend contracts in
+   separate `op run` invocations using their dedicated templates. Never combine
+   provider and administrator profiles. Ollama remains a separate local,
+   explicitly enabled Compose check.
+5. Keep each hosted/provider requirement incomplete until its attended command
+   succeeds and the exact deployment identity, timestamp, provider labels,
+   request IDs, and redacted outcome are recorded. Do not record endpoint,
+   bucket, account, token, cookie, TOTP, backup-code, or provider-response
+   content.
+
 The application is designed for one contract in two modes, but only the local
 dependency topology and self-hosted application path are part of the current
 usable alpha boundary. The hosted Vercel path still requires deployment
