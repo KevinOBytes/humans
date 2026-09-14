@@ -13,6 +13,16 @@ MinIO, app, worker, migration, admin bootstrap, and synthetic seed; the
 remaining hosted credential rotation/provider and whole-product acceptance
 rows below are still intentionally open.
 
+Hosted acceptance-harness checkpoint (2026-09-14): the redacted production
+smoke now has an explicit `--authenticated` operator switch while accepting
+credentials only through the caller environment (the existing
+`PRODUCTION_SMOKE_AUTH=1` remains automation-compatible). It validates missing
+administrator variable names before any network call and collapses transport
+exceptions to a fixed request-path diagnostic, so values and credential-bearing
+URLs cannot enter smoke output. The focused contract suite passes; no hosted
+credential or external-provider run was performed, so the related release rows
+remain incomplete.
+
 The expanded scope for this backlog is explicit: rich, multi-fact person
 profiles; temporal and epistemically-labelled relationship graphs; source and
 field-level provenance; workspace/case/investigation/team boundaries; consent,

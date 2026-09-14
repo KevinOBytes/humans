@@ -10,6 +10,16 @@ workspace-catalog-backed web fact suggestions with immutable run/source
 provenance and human review; the tracked hosted credential/provider and
 whole-product acceptance requirements remain explicitly incomplete.
 
+Hosted acceptance-harness checkpoint (2026-09-14): the redacted production
+smoke now has an explicit `--authenticated` operator switch while accepting
+credentials only through the caller environment (the existing
+`PRODUCTION_SMOKE_AUTH=1` remains automation-compatible). It validates missing
+administrator variable names before any network call and collapses transport
+exceptions to a fixed request-path diagnostic, so values and credential-bearing
+URLs cannot enter smoke output. The focused contract suite passes; no hosted
+credential or external-provider run was performed, so the related release rows
+remain incomplete.
+
 ## Expanded product scope
 
 The requirements below include the full consent-governed research scope: rich

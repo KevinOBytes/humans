@@ -10,6 +10,7 @@ const UUID =
 
 export function parseArgs(argv = []) {
   const options = {
+    authenticated: false,
     baseUrl: null,
     providerContracts: false,
     twoFactor: false,
@@ -18,6 +19,7 @@ export function parseArgs(argv = []) {
     const value = argv[index];
     if (value === "--") continue;
     if (value === "--base-url") options.baseUrl = argv[++index] ?? "";
+    else if (value === "--authenticated") options.authenticated = true;
     else if (value === "--provider-contracts") options.providerContracts = true;
     else if (value === "--two-factor") options.twoFactor = true;
     else if (value === "--help") options.help = true;
@@ -213,6 +215,24 @@ export function parseBaseUrl(value) {
   return url;
 }
 
+export function validateAuthenticatedSmokeConfiguration({
+  adminEmail = "",
+  adminUsername = "",
+  adminPassword = "",
+} = {}) {
+  const missing = [
+    ["ADMIN_EMAIL", adminEmail],
+    ["ADMIN_USERNAME", adminUsername],
+    ["ADMIN_PASSWORD", adminPassword],
+  ]
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (missing.length > 0)
+    throw new Error(
+      `authenticated production smoke requires ${missing.join(", ")}`,
+    );
+}
+
 export async function validateSyntheticPersonRead(
   response,
   { expectedId, expectedDisplayName },
@@ -254,6 +274,12 @@ export async function runProductionSmoke({
     process.stdout.write(`${line}\n`);
   },
 }) {
+  if (auth)
+    validateAuthenticatedSmokeConfiguration({
+      adminEmail,
+      adminUsername,
+      adminPassword,
+    });
   if (twoFactor) {
     if (!auth)
       throw new Error(
@@ -271,11 +297,15 @@ export async function runProductionSmoke({
     try {
       const headers = new Headers(init.headers ?? {});
       headers.set("x-request-id", randomUUID());
-      return await fetchImpl(new URL(path, base), {
-        ...init,
-        headers,
-        signal: controller.signal,
-      });
+      try {
+        return await fetchImpl(new URL(path, base), {
+          ...init,
+          headers,
+          signal: controller.signal,
+        });
+      } catch {
+        throw new Error(`request ${path} failed`);
+      }
     } finally {
       clearTimeout(timer);
     }
@@ -341,10 +371,6 @@ export async function runProductionSmoke({
   );
 
   if (auth) {
-    if (!adminEmail || !adminUsername || !adminPassword)
-      throw new Error(
-        "PRODUCTION_SMOKE_AUTH=1 requires ADMIN_EMAIL, ADMIN_USERNAME, and ADMIN_PASSWORD",
-      );
     const cookieHeader = (jar) =>
       [...jar.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
     const absorbCookies = (response, jar) => {
@@ -464,7 +490,11 @@ export async function runProductionSmoke({
         "authenticated username password accepted; two-factor challenge required",
       );
     } else {
-      await verifyViewer(usernameSignIn);
+      const usernameSession = await verifyViewer(usernameSignIn);
+      if (usernameSession.workspaceId !== emailSession.workspaceId)
+        throw new Error(
+          "authenticated email and username sign-in did not resolve the same workspace",
+        );
     }
     const sessionHeaders = { cookie: cookieHeader(emailSession.jar) };
     const idempotencyKey = randomUUID();
@@ -530,7 +560,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const options = parseArgs(process.argv.slice(2));
     if (options.help) {
       process.stdout.write(
-        "Usage: pnpm production:smoke -- --base-url https://host [--two-factor] [--provider-contracts]\n",
+        "Usage: pnpm production:smoke -- --base-url https://host [--authenticated] [--two-factor] [--provider-contracts]\n",
       );
       process.exit(0);
     }
@@ -539,7 +569,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     );
     await runProductionSmoke({
       base,
-      auth: process.env.PRODUCTION_SMOKE_AUTH === "1",
+      auth: options.authenticated || process.env.PRODUCTION_SMOKE_AUTH === "1",
       adminEmail: process.env.ADMIN_EMAIL,
       adminUsername: process.env.ADMIN_USERNAME,
       adminPassword: process.env.ADMIN_PASSWORD,

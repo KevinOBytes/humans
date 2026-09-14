@@ -114,7 +114,7 @@ copy it to an ignored file and edit only its `op://` references:
 cp docs/operations/production-operator.op.env.example .env.operator.op.tpl
 $EDITOR .env.operator.op.tpl
 op run --env-file .env.operator.op.tpl -- \
-  pnpm production:smoke -- --base-url https://humans.kevinbytes.com --two-factor
+  pnpm production:smoke -- --base-url https://humans.kevinbytes.com --authenticated --two-factor
 ```
 
 The private template contains references, not rendered values. `op run` resolves
@@ -123,6 +123,13 @@ never use `--no-masking`. Do not use `op inject`, `vercel env pull`, shell
 assignments, command substitutions, or a populated temporary environment file
 for this acceptance procedure. Use a narrowly scoped 1Password account or
 service account with access only to the required items.
+
+`--authenticated` is the canonical attended-run opt-in. The legacy
+`PRODUCTION_SMOKE_AUTH=1` environment opt-in remains supported for automation,
+but no option accepts a credential value. The harness validates required
+administrator variable _names_ before it opens a network request, and transport
+failures use a fixed redacted request-path diagnostic. It never fetches values
+from Vercel, 1Password, or any other provider itself.
 
 The authenticated smoke checks password acceptance through both the email and
 username endpoints. With `--two-factor`, it requires the same account policy on
