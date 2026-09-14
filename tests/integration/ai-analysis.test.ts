@@ -17,6 +17,8 @@ import { evidenceItems, sources } from "@/db/schema/evidence";
 import { locationMutationIdempotency } from "@/db/schema/locations";
 import { auditEvents, jobs } from "@/db/schema/operations";
 import { people } from "@/db/schema/people";
+import { consentScopes, purposePolicies } from "@/db/schema/governance";
+import { consentRecords } from "@/db/schema/privacy";
 import { workspacePrincipals } from "@/db/schema/principals";
 import {
   accessPolicies,
@@ -150,6 +152,46 @@ liveDescribe("atomic AI analysis persistence", () => {
       encryptionKey,
       hmacKey,
       provider,
+    });
+  }
+
+  async function allowPersonScopedAiAnalysis(
+    context: ResearchServiceContext,
+    personId: string,
+  ) {
+    const effectiveFrom = new Date(Date.now() - 60_000);
+    const purposePolicyId = newId();
+    const consentId = newId();
+    await context.database.insert(purposePolicies).values({
+      id: purposePolicyId,
+      workspaceId: context.workspaceId,
+      purpose: "retention",
+      lawfulBases: ["consent"],
+      effectiveFrom,
+      state: "active",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    await context.database.insert(consentRecords).values({
+      id: consentId,
+      workspaceId: context.workspaceId,
+      personId,
+      purpose: "retention",
+      status: "granted",
+      source: "test",
+      lawfulBasis: "consent",
+      effectiveFrom,
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
+    });
+    await context.database.insert(consentScopes).values({
+      id: newId(),
+      workspaceId: context.workspaceId,
+      consentRecordId: consentId,
+      purpose: "retention",
+      scope: "ai_operation",
+      createdBy: context.actor.principalId,
+      updatedBy: context.actor.principalId,
     });
   }
 
@@ -967,6 +1009,211 @@ liveDescribe("atomic AI analysis persistence", () => {
         .from(aiThreads)
         .where(eq(aiThreads.id, threadId)),
     ).toHaveLength(1);
+  });
+
+  it("preserves person-scoped expired analysis under an active legal hold until release", async () => {
+    const owner = await fixture.createActor();
+    const reviewer = await fixture.createWorkspaceMember(owner, "admin");
+    const context = await userContext(owner);
+    const personId = newId();
+    await fixture.database.insert(people).values({
+      id: personId,
+      workspaceId: owner.workspaceId,
+      displayName: "Retention-held research subject",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database
+      .update(workspaceSettings)
+      .set({ retentionDays: 0 })
+      .where(eq(workspaceSettings.workspaceId, owner.workspaceId));
+    await allowPersonScopedAiAnalysis(context, personId);
+    const run = await service(context).startAiAnalysis({
+      question: "Person-scoped retention hold",
+      governancePurpose: "retention",
+      scope: { personIds: [personId] },
+      idempotencyKey: "retention-person-hold",
+    });
+    const [runRow] = await fixture.database
+      .select({ threadId: aiRuns.threadId })
+      .from(aiRuns)
+      .where(eq(aiRuns.id, run.id));
+    const threadId = required(runRow).threadId;
+    const old = new Date(Date.now() - 60_000);
+    await fixture.database
+      .update(aiThreads)
+      .set({ updatedAt: old })
+      .where(eq(aiThreads.id, threadId));
+    await fixture.database
+      .update(aiRuns)
+      .set({ state: "completed", completedAt: old })
+      .where(eq(aiRuns.id, run.id));
+    const holdId = newId();
+    await fixture.database.insert(legalHolds).values({
+      id: holdId,
+      workspaceId: owner.workspaceId,
+      resourceId: personId,
+      resourceKind: "person",
+      reason: "Preserve person-scoped research",
+      authority: "Test legal review",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+
+    await expect(
+      purgeExpiredAiThreads({ database: fixture.database, now: new Date() }),
+    ).resolves.toBe(0);
+    expect(
+      await fixture.database
+        .select({ id: aiThreads.id })
+        .from(aiThreads)
+        .where(eq(aiThreads.id, threadId)),
+    ).toHaveLength(1);
+    expect(
+      await fixture.database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "ai.retention.purged")),
+    ).toHaveLength(0);
+
+    await fixture.database
+      .update(legalHolds)
+      .set({
+        state: "released",
+        releasedAt: new Date(),
+        releasedBy: reviewer.principalId,
+        releaseReason: "Independent hold release",
+      })
+      .where(eq(legalHolds.id, holdId));
+    await expect(
+      purgeExpiredAiThreads({ database: fixture.database, now: new Date() }),
+    ).resolves.toBe(1);
+    expect(
+      await fixture.database
+        .select({ id: aiThreads.id })
+        .from(aiThreads)
+        .where(eq(aiThreads.id, threadId)),
+    ).toHaveLength(0);
+    expect(
+      await fixture.database
+        .select({
+          action: auditEvents.action,
+          redactedDiff: auditEvents.redactedDiff,
+        })
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "ai.retention.purged")),
+    ).toEqual([
+      {
+        action: "ai.retention.purged",
+        redactedDiff: { reason: "retention_expired" },
+      },
+    ]);
+  });
+
+  it("rechecks a queued person legal hold after taking the workspace retention lock", async () => {
+    const owner = await fixture.createActor();
+    const context = await userContext(owner);
+    const personId = newId();
+    await fixture.database.insert(people).values({
+      id: personId,
+      workspaceId: owner.workspaceId,
+      displayName: "Retention race subject",
+      createdBy: owner.principalId,
+      updatedBy: owner.principalId,
+    });
+    await fixture.database
+      .update(workspaceSettings)
+      .set({ retentionDays: 0 })
+      .where(eq(workspaceSettings.workspaceId, owner.workspaceId));
+    await allowPersonScopedAiAnalysis(context, personId);
+    const run = await service(context).startAiAnalysis({
+      question: "Person-hold race",
+      governancePurpose: "retention",
+      scope: { personIds: [personId] },
+      idempotencyKey: "retention-person-hold-race",
+    });
+    const [runRow] = await fixture.database
+      .select({ threadId: aiRuns.threadId })
+      .from(aiRuns)
+      .where(eq(aiRuns.id, run.id));
+    const threadId = required(runRow).threadId;
+    const old = new Date(Date.now() - 60_000);
+    await fixture.database
+      .update(aiThreads)
+      .set({ updatedAt: old })
+      .where(eq(aiThreads.id, threadId));
+    await fixture.database
+      .update(aiRuns)
+      .set({ state: "completed", completedAt: old })
+      .where(eq(aiRuns.id, run.id));
+
+    const lockConnection = createTestConnection(1);
+    const holdConnection = createTestConnection(1);
+    const purgeConnection = createTestConnection(1);
+    const holdName = `retention_person_hold_${newId()}`;
+    const purgeName = `retention_person_purge_${newId()}`;
+    let lockHeld = false;
+    let holdPromise: Promise<void> | undefined;
+    let purgePromise: Promise<number> | undefined;
+    try {
+      await holdConnection`SELECT set_config('application_name', ${holdName}, false)`;
+      await purgeConnection`SELECT set_config('application_name', ${purgeName}, false)`;
+      await lockConnection`SELECT pg_advisory_lock(hashtextextended(${owner.workspaceId}, 0))`;
+      lockHeld = true;
+      holdPromise = holdConnection.begin(async (transaction) => {
+        await transaction`SELECT pg_advisory_xact_lock(hashtextextended(${owner.workspaceId}, 0))`;
+        await transaction`
+          INSERT INTO legal_holds (
+            id, workspace_id, resource_id, resource_kind, reason, authority,
+            created_by, updated_by
+          ) VALUES (
+            ${newId()}, ${owner.workspaceId}, ${personId}, 'person',
+            'Queued person preservation', 'Test legal review',
+            ${owner.principalId}, ${owner.principalId}
+          )
+        `;
+      });
+      await waitForActivity(holdName, "AdvisoryLock");
+
+      purgePromise = purgeExpiredAiThreads({
+        database: createTestDatabase(purgeConnection),
+        now: new Date(),
+      });
+      await waitForActivity(purgeName, "AdvisoryLock");
+      await lockConnection`SELECT pg_advisory_unlock(hashtextextended(${owner.workspaceId}, 0))`;
+      lockHeld = false;
+      await holdPromise;
+      await expect(purgePromise).resolves.toBe(0);
+      expect(
+        await fixture.database
+          .select({ id: aiThreads.id })
+          .from(aiThreads)
+          .where(eq(aiThreads.id, threadId)),
+      ).toHaveLength(1);
+      expect(
+        await fixture.database
+          .select({ id: auditEvents.id })
+          .from(auditEvents)
+          .where(eq(auditEvents.action, "ai.retention.purged")),
+      ).toHaveLength(0);
+    } finally {
+      if (lockHeld) {
+        await lockConnection`
+          SELECT pg_advisory_unlock(hashtextextended(${owner.workspaceId}, 0))
+        `.catch(() => undefined);
+      }
+      await Promise.allSettled(
+        [holdPromise, purgePromise].filter(
+          (promise): promise is Promise<void> | Promise<number> =>
+            promise != null,
+        ),
+      );
+      await Promise.all([
+        lockConnection.end(),
+        holdConnection.end(),
+        purgeConnection.end(),
+      ]);
+    }
   });
 
   it("revalidates live authority before enqueue, read, and cancel", async () => {

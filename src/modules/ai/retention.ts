@@ -179,6 +179,20 @@ export async function purgeExpiredAiThreads(input: {
           not(
             sql`exists (select 1 from ${legalHolds} where ${legalHolds.workspaceId} = ${aiThreads.workspaceId} and ${legalHolds.resourceId} = ${aiThreads.id} and ${legalHolds.resourceKind} = 'ai_thread' and ${legalHolds.state} = 'active' and ${legalHolds.deletedAt} is null)`,
           ),
+          not(
+            sql`exists (
+              select 1
+              from ${aiRuns}
+              inner join ${legalHolds}
+                on ${legalHolds.workspaceId} = ${aiRuns.workspaceId}
+                and ${legalHolds.resourceKind} = 'person'
+                and ${legalHolds.state} = 'active'
+                and ${legalHolds.deletedAt} is null
+                and ${aiRuns.reviewPersonIds} @> jsonb_build_array(${legalHolds.resourceId}::text)
+              where ${aiRuns.workspaceId} = ${aiThreads.workspaceId}
+                and ${aiRuns.threadId} = ${aiThreads.id}
+            )`,
+          ),
         ),
       )
       .orderBy(aiThreads.updatedAt, aiThreads.id)
@@ -186,8 +200,15 @@ export async function purgeExpiredAiThreads(input: {
       .for("update");
 
     for (const candidate of candidates) {
+      // Legal-hold creation/release uses this same workspace lock. Candidate
+      // filtering keeps a held backlog out of the bounded batch, but this
+      // lock-protected check below is authoritative against a hold committed
+      // after selection and before the destructive write.
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${candidate.workspaceId}, 0))`,
+      );
       const runs = await transaction
-        .select({ id: aiRuns.id })
+        .select({ id: aiRuns.id, reviewPersonIds: aiRuns.reviewPersonIds })
         .from(aiRuns)
         .where(
           and(
@@ -254,6 +275,24 @@ export async function purgeExpiredAiThreads(input: {
           ),
         );
       if (artifactHolds.length) continue;
+      const reviewPersonIds = [
+        ...new Set(runs.flatMap((run) => run.reviewPersonIds)),
+      ];
+      const personHolds = reviewPersonIds.length
+        ? await transaction
+            .select({ id: legalHolds.id })
+            .from(legalHolds)
+            .where(
+              and(
+                eq(legalHolds.workspaceId, candidate.workspaceId),
+                eq(legalHolds.resourceKind, "person"),
+                eq(legalHolds.state, "active"),
+                isNull(legalHolds.deletedAt),
+                inArray(legalHolds.resourceId, reviewPersonIds),
+              ),
+            )
+        : [];
+      if (personHolds.length) continue;
       if (suggestions.length) {
         await transaction.delete(aiReviewSuggestions).where(
           and(
