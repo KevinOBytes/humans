@@ -41,8 +41,12 @@ export const evidenceAssertions = pgTable(
     fieldPath: text("field_path"),
     caseId: uuid("case_id"),
     purpose: text("purpose").notNull(),
-    locator: text("locator").notNull(),
-    quote: text("quote").notNull(),
+    /** Public citations retain their compatible plaintext representation. */
+    locator: text("locator"),
+    quote: text("quote"),
+    /** Protected identifier citations are sealed with the deployment data key. */
+    encryptedLocator: text("encrypted_locator"),
+    encryptedQuote: text("encrypted_quote"),
     role: text("role").notNull(),
     confidence: numeric("confidence", { precision: 4, scale: 3 }).notNull(),
     reviewState: text("review_state").default("unreviewed").notNull(),
@@ -89,7 +93,11 @@ export const evidenceAssertions = pgTable(
     ),
     check(
       "evidence_assertions_text_check",
-      sql`length(${t.locator}) BETWEEN 1 AND 2048 AND length(${t.quote}) BETWEEN 1 AND 8000 AND length(${t.purpose}) BETWEEN 1 AND 200`,
+      sql`(${t.locator} IS NULL OR length(${t.locator}) BETWEEN 1 AND 2048) AND (${t.quote} IS NULL OR length(${t.quote}) BETWEEN 1 AND 8000) AND (${t.encryptedLocator} IS NULL OR octet_length(${t.encryptedLocator}) <= 10000) AND (${t.encryptedQuote} IS NULL OR octet_length(${t.encryptedQuote}) <= 20000) AND length(${t.purpose}) BETWEEN 1 AND 200`,
+    ),
+    check(
+      "evidence_assertions_citation_storage_check",
+      sql`(${t.locator} IS NOT NULL AND ${t.quote} IS NOT NULL AND ${t.encryptedLocator} IS NULL AND ${t.encryptedQuote} IS NULL) OR (${t.locator} IS NULL AND ${t.quote} IS NULL AND ${t.encryptedLocator} IS NOT NULL AND ${t.encryptedQuote} IS NOT NULL)`,
     ),
     check(
       "evidence_assertions_field_path_check",

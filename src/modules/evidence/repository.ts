@@ -67,6 +67,8 @@ export function createEvidenceRepository(database: Database) {
           purpose: evidenceAssertions.purpose,
           locator: evidenceAssertions.locator,
           quote: evidenceAssertions.quote,
+          encryptedLocator: evidenceAssertions.encryptedLocator,
+          encryptedQuote: evidenceAssertions.encryptedQuote,
           role: evidenceAssertions.role,
           confidence: evidenceAssertions.confidence,
           reviewState: evidenceAssertions.reviewState,

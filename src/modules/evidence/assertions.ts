@@ -43,7 +43,12 @@ import {
   requireReviewedPromotion,
   requiresRelationshipPromotionReview,
 } from "./assertions-validation";
-import { requireIdentifierCitation } from "./identifier-citations";
+import {
+  assertIdentifierCitationStorage,
+  openProtectedIdentifierCitation,
+  requireIdentifierCitation,
+  sealProtectedIdentifierCitation,
+} from "./identifier-citations";
 import { createEvidenceRepository } from "./repository";
 
 type AssertionInput = {
@@ -120,7 +125,7 @@ async function replayAssertion(
       assertionId,
     );
     return {
-      ...row,
+      ...materializeAssertion({ ...context, database }, row),
       auditReference,
       sourceReliability: evidence.sourceReliability,
       informationCredibility: row.confidence,
@@ -261,7 +266,10 @@ async function listPersonIdentifierCitations(
           if (!citation) continue;
           // Locks parent then identifier and rechecks public sensitivity/current
           // version. Historical citations are not silently rebound to new values.
-          await requireIdentifierCitation(scoped, row, true);
+          const identifier = await requireIdentifierCitation(scoped, row, true);
+          if (identifier)
+            assertIdentifierCitationStorage(identifier.sensitivity, row);
+          const materialized = openProtectedIdentifierCitation(scoped, row);
           if (row.caseId) {
             const caseRow = await createCasesService(scoped).getCase(
               row.caseId,
@@ -298,8 +306,8 @@ async function listPersonIdentifierCitations(
             sourceId: row.sourceId,
             sourceTitle: row.sourceTitle.slice(0, 512),
             sourceUrl,
-            locator: row.locator.slice(0, 2048),
-            quote: row.quote.slice(0, 8000),
+            locator: materialized.locator.slice(0, 2048),
+            quote: materialized.quote.slice(0, 8000),
             role: row.role,
             confidence: row.confidence,
             sourceReliability: row.sourceReliability,
@@ -412,7 +420,8 @@ async function requireAssertion(context: ResearchServiceContext, id: string) {
     row.resourceKind as CaseResourceKind,
     row.resourceId,
   );
-  await requireIdentifierCitation(context, row, false);
+  const identifier = await requireIdentifierCitation(context, row, false);
+  if (identifier) assertIdentifierCitationStorage(identifier.sensitivity, row);
   await requireResourceCoverage(
     context,
     resource,
@@ -423,6 +432,14 @@ async function requireAssertion(context: ResearchServiceContext, id: string) {
   const evidence = await requireEvidence(context, row.evidenceId);
   return { row, evidence };
 }
+
+function materializeAssertion(
+  context: ResearchServiceContext,
+  row: typeof evidenceAssertions.$inferSelect,
+) {
+  return openProtectedIdentifierCitation(context, row);
+}
+
 export async function linkEvidenceAssertion(
   context: ResearchServiceContext,
   input: AssertionInput,
@@ -501,15 +518,6 @@ export async function linkEvidenceAssertion(
       normalized.resourceKind,
       input.resourceId,
     );
-    await requireIdentifierCitation(
-      scoped,
-      {
-        resourceKind: normalized.resourceKind,
-        resourceId: input.resourceId,
-        fieldPath: normalized.fieldPath,
-      },
-      true,
-    );
     await requireResourceCoverage(
       scoped,
       resource,
@@ -518,12 +526,42 @@ export async function linkEvidenceAssertion(
       "write",
     );
     const evidence = await requireEvidence(scoped, input.evidenceId);
+    const identifier = await requireIdentifierCitation(
+      scoped,
+      {
+        resourceKind: normalized.resourceKind,
+        resourceId: input.resourceId,
+        fieldPath: normalized.fieldPath,
+      },
+      true,
+    );
+    const citationStorage =
+      identifier?.sensitivity === "public"
+        ? {
+            locator: normalized.locator,
+            quote: normalized.quote,
+            encryptedLocator: null,
+            encryptedQuote: null,
+          }
+        : identifier
+          ? {
+              locator: null,
+              quote: null,
+              ...sealProtectedIdentifierCitation(scoped, normalized),
+            }
+          : {
+              locator: normalized.locator,
+              quote: normalized.quote,
+              encryptedLocator: null,
+              encryptedQuote: null,
+            };
     const [row] = await database
       .insert(evidenceAssertions)
       .values({
         id: newId(),
         workspaceId: context.workspaceId,
         ...normalized,
+        ...citationStorage,
         evidenceId: input.evidenceId,
         resourceId: input.resourceId,
         caseId: input.caseId,
@@ -541,7 +579,7 @@ export async function linkEvidenceAssertion(
       sensitivity: resource.sensitivity,
     });
     return {
-      ...row,
+      ...materializeAssertion(scoped, row),
       auditReference,
       sourceReliability: evidence.sourceReliability,
       informationCredibility: row.confidence,
@@ -670,7 +708,7 @@ export async function reviewEvidenceAssertion(
       changedFields: ["reviewState"],
     });
     return {
-      ...updated,
+      ...materializeAssertion(scoped, updated),
       auditReference,
       sourceReliability: evidence.sourceReliability,
       informationCredibility: updated.confidence,

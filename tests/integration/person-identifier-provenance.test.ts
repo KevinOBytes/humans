@@ -338,13 +338,17 @@ liveDescribe("version-bound public identifier provenance", () => {
   });
   it("denies a foreign-workspace identifier even when the selected person and evidence are visible", async () => {
     const foreign = await caseContext(fixture, await fixture.createActor());
+    foreign.protectedExactRuntime = {
+      encryptionKey: "ac".repeat(32),
+      blindIndexKey: "bc".repeat(32),
+    };
     const foreignPerson = (await coveredPerson(foreign)).id;
     const created = await createIdentifierService(foreign).createIdentifier({
       personId: foreignPerson,
       namespace: "fictional",
       identifierType: "Membership",
-      value: "foreign",
-      sensitivity: "public",
+      value: "SYNTHETIC-FOREIGN-PROTECTED",
+      sensitivity: "internal",
     });
     await expect(
       linkEvidenceAssertion(context, {
@@ -356,7 +360,7 @@ liveDescribe("version-bound public identifier provenance", () => {
       await fixture.database.select().from(evidenceAssertions),
     ).toHaveLength(0);
   });
-  it("fails closed for protected identifiers without persisting the supplied plaintext quote", async () => {
+  it("seals protected identifier citations and decrypts only for an authorized reader", async () => {
     const created = await createIdentifierService(context).createIdentifier({
       personId,
       namespace: "fictional",
@@ -364,20 +368,30 @@ liveDescribe("version-bound public identifier provenance", () => {
       value: "SYNTHETIC-PROTECTED-SECRET",
       sensitivity: "internal",
     });
-    await expect(
-      linkEvidenceAssertion(context, {
-        ...input(),
-        quote: "SYNTHETIC-PROTECTED-SECRET",
-        fieldPath: `identifiers.${created.resource!.id}.v1.value`,
-      }),
-    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
-    expect(
-      await fixture.database.select().from(evidenceAssertions),
-    ).toHaveLength(0);
+    const linked = await linkEvidenceAssertion(context, {
+      ...input(),
+      quote: "SYNTHETIC-PROTECTED-SECRET",
+      fieldPath: `identifiers.${created.resource!.id}.v1.value`,
+    });
+    const [stored] = await fixture.database
+      .select()
+      .from(evidenceAssertions)
+      .where(eq(evidenceAssertions.id, linked.id));
+    expect(stored).toMatchObject({
+      locator: null,
+      quote: null,
+      encryptedLocator: expect.any(String),
+      encryptedQuote: expect.any(String),
+    });
+    expect(JSON.stringify(stored)).not.toContain("SYNTHETIC-PROTECTED-SECRET");
+    expect((await readback()).nodes[0]).toMatchObject({
+      locator: "page 7",
+      quote: "SYNTHETIC-PROTECTED-SECRET",
+    });
     const events = await fixture.database.select().from(auditEvents);
     expect(JSON.stringify(events)).not.toContain("SYNTHETIC-PROTECTED-SECRET");
   });
-  it("reaches the protected-storage precondition for an explicitly granted confidential identifier", async () => {
+  it("requires an explicit grant before disclosing a restricted protected citation", async () => {
     const created = await createIdentifierService(context).createIdentifier({
       personId,
       namespace: "fictional",
@@ -391,7 +405,7 @@ liveDescribe("version-bound public identifier provenance", () => {
       id: policyId,
       workspaceId: context.workspaceId,
       name: "Citation fixture readers",
-      sensitivityCeiling: "confidential",
+      sensitivityCeiling: "restricted",
       resourceKinds: ["personIdentifier"],
       state: "active",
       createdBy: context.actor.principalId,
@@ -411,19 +425,35 @@ liveDescribe("version-bound public identifier provenance", () => {
     const changed = await createIdentifierService(context).updateIdentifier({
       id: protectedId,
       expectedVersion: 1,
-      sensitivity: "confidential",
+      sensitivity: "restricted",
       value: "SYNTHETIC-PROTECTED-SECRET",
     });
     expect(changed.resource?.sensitivity).toBe("confidential");
-    await expect(
-      linkEvidenceAssertion(context, {
-        ...input(),
-        fieldPath: `identifiers.${protectedId}.v2.value`,
-      }),
-    ).rejects.toMatchObject({ extensions: { code: "PRECONDITION_FAILED" } });
-    expect(
-      await fixture.database.select().from(evidenceAssertions),
-    ).toHaveLength(0);
+    const linked = await linkEvidenceAssertion(context, {
+      ...input(),
+      quote: "SYNTHETIC-PROTECTED-SECRET",
+      fieldPath: `identifiers.${protectedId}.v2.value`,
+    });
+    expect((await readback()).nodes[0]).toMatchObject({
+      locator: "page 7",
+      quote: "SYNTHETIC-PROTECTED-SECRET",
+    });
+    const viewer = await fixture.createWorkspaceMember(actor, "viewer");
+    const hidden = await fixture.execute<{
+      personIdentifierCitations: { nodes: unknown[] };
+    }>({
+      jar: viewer.jar,
+      query: readbackQuery,
+      variables: { personId },
+    });
+    expect(hidden.body?.errors).toBeUndefined();
+    expect(hidden.body?.data?.personIdentifierCitations.nodes).toEqual([]);
+    const [stored] = await fixture.database
+      .select()
+      .from(evidenceAssertions)
+      .where(eq(evidenceAssertions.id, linked.id));
+    expect(stored?.locator).toBeNull();
+    expect(stored?.quote).toBeNull();
   });
   it.each([undefined, "SYNTHETIC-PUBLIC-100", "SYNTHETIC-REPLACEMENT-200"])(
     "rejects reclassifying a cited public identifier with replacement %s",

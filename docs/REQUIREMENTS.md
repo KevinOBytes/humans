@@ -186,10 +186,20 @@ Focused
 real-PostgreSQL tests cover linkage/replay, wrong parent/workspace, protected
 value rejection, stale versions, archive, source preservation, and generated
 GraphQL author permissions. This is not full identifier provenance completion:
-protected citations require an encrypted/redacted assertion design because the
-current assertion quote and locator are plaintext. Citation discovery/authoring
-UI, version-history readback, migration of any legacy identifier paths, and the
-broader rich-profile citation matrix remain open.
+the broader rich-profile citation matrix, hosted acceptance, and citation
+authoring UI remain open.
+
+Protected citation storage checkpoint (2026-09-14): migration `0053` adds
+paired sealed-envelope columns for identifier citation locators and quotes while
+preserving the public GraphQL citation shape. Protected links require the
+configured deployment data key, store no plaintext locator or quote, and decrypt
+only after workspace, person, identifier visibility, and current-version checks
+pass. Unauthorized readers omit protected candidates; malformed storage and
+out-of-band sensitivity reclassification fail closed; active-citation guards
+cover legacy path prefixes, and audit events remain field-metadata only. A
+focused unit suite covers purpose/key binding and storage-mode guards. The live
+PostgreSQL integration remains gated when `TEST_DATABASE_URL` is absent, so this
+bounded evidence does not close hosted or whole-profile acceptance.
 
 Field-level provenance checkpoint (2026-09-13): evidence assertions now carry
 an optional bounded `fieldPath` (migration `0051`) so a source quote can point
