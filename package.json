@@ -99,7 +99,7 @@
     "graphology-metrics": "2.4.0",
     "graphology-shortest-path": "2.1.0",
     "graphql": "16.14.2",
-    "graphql-scalars": "1.25.0",
+    "graphql-scalars": "2.0.0",
     "graphql-yoga": "5.21.2",
     "ioredis": "6.0.0",
     "lucide-react": "1.30.0",
