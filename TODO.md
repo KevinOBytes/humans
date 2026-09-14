@@ -973,3 +973,13 @@ and 651 tests with five documented skips, followed by the three focused AI
 retention tests. Temporary synthetic containers and all obsolete local
 worktrees/branches were removed. GitHub CI, hosted authenticated acceptance,
 and live external-provider contracts still require their normal remote runs.
+
+Browser acceptance repair (2026-09-14): the authenticated GraphQL context now
+passes the configured AI retry HMAC into the AI review service. The prior
+browser failure was proven by the Playwright trace to be the API returning
+`PRECONDITION_FAILED` (`Retry protection is unavailable`) when accepting a
+proposal with its browser-generated idempotency key; the queue therefore
+correctly retained the pending row. The generated GraphQL acceptance test now
+covers a keyed AI accept, and the focused local Chromium journey passes. A
+fresh GitHub browser run is still required before marking the hosted/browser
+acceptance row complete.
