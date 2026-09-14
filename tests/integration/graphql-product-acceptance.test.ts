@@ -4,13 +4,25 @@ import { caseContext } from "../support/cases";
 
 import { readFile } from "node:fs/promises";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { auditEvents } from "@/db/schema/operations";
 import { facts } from "@/db/schema/facts";
-import { personWebResearchRuns } from "@/db/schema/person-research";
+import {
+  personWebResearchRuns,
+  personWebResearchSources,
+} from "@/db/schema/person-research";
+import { people } from "@/db/schema/people";
 import { locationMutationIdempotency } from "@/db/schema/locations";
 import {
   AiRunDocument,
@@ -487,6 +499,104 @@ liveDescribe("whole-product generated GraphQL acceptance matrix", () => {
       });
     } finally {
       await persisted.close();
+    }
+  });
+
+  it("rechecks current person sensitivity after search before provider disclosure", async () => {
+    const sources = [
+      {
+        url: "https://example.org/revoked-research-subject",
+        title: "Public research profile",
+        snippet: "A public profile excerpt.",
+      },
+    ];
+    let personId: string | undefined;
+    const generate = vi.fn(async () => ({
+      type: "answer" as const,
+      answer: JSON.stringify({ suggestions: [] }),
+      citations: [],
+    }));
+    const raced = new ResearchFixture({
+      personResearchRuntime: {
+        search: {
+          search: async () => {
+            await raced.database
+              .update(people)
+              .set({ sensitivity: "restricted" })
+              .where(eq(people.id, personId!));
+            return sources;
+          },
+        },
+        provider: {
+          baseUrlFingerprint: "48".repeat(32),
+          disclosure: { model: "research-test-model", provider: "OLLAMA" },
+          generate,
+        },
+      },
+    });
+    await raced.reset();
+    try {
+      const owner = await raced.createActor();
+      const created = await raced.createPerson(owner, {
+        displayName: "Revoked research subject",
+        sensitivity: "PUBLIC",
+      });
+      personId = created.body?.data?.createPerson?.person?.id;
+      expect(personId).toBeTruthy();
+
+      const governance = createGovernanceService(
+        await caseContext(raced, owner),
+      );
+      await governance.createPurposePolicy({
+        idempotencyKey: newId(),
+        purpose: "research",
+        lawfulBases: ["consent"],
+        effectiveFrom: new Date(Date.now() - 60_000),
+        state: "active",
+      });
+      await governance.recordConsent({
+        idempotencyKey: newId(),
+        personId: personId!,
+        purpose: "research",
+        scopes: ["read", "write", "ai_operation"],
+        lawfulBasis: "consent",
+        effectiveFrom: new Date(Date.now() - 60_000),
+      });
+
+      const result = await raced.execute({
+        jar: owner.jar,
+        query:
+          "mutation PersonWebResearch($personId: UUID!, $consent: Boolean!, $purpose: String!) { personWebResearch(personId: $personId, consent: $consent, purpose: $purpose) { personId runId } }",
+        variables: { personId, consent: true, purpose: "research" },
+      });
+      // The active context's visibility policy hides newly restricted records,
+      // preserving the application's closed non-disclosure response.
+      expectGraphQLError(result, "NOT_FOUND");
+      expect(generate).not.toHaveBeenCalled();
+      await expect(
+        raced.database
+          .select()
+          .from(personWebResearchRuns)
+          .where(
+            and(
+              eq(personWebResearchRuns.workspaceId, owner.workspaceId),
+              eq(personWebResearchRuns.personId, personId!),
+            ),
+          ),
+      ).resolves.toEqual([]);
+      await expect(
+        raced.database
+          .select()
+          .from(personWebResearchSources)
+          .where(
+            and(
+              eq(personWebResearchSources.workspaceId, owner.workspaceId),
+              eq(personWebResearchSources.personId, personId!),
+            ),
+          ),
+      ).resolves.toEqual([]);
+    } finally {
+      await raced.close();
     }
   });
 

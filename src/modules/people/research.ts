@@ -268,16 +268,6 @@ export function createPersonResearchService(input: {
           ttlMs: 600_000,
         },
       });
-      // Internal records disclose the confirmed search name only; never their biography or other fields.
-      const profile =
-        person.sensitivity === "public"
-          ? {
-              displayName: person.displayName,
-              preferredName: person.preferredName,
-              sortName: person.sortName,
-              biography: person.biography?.slice(0, 4000) ?? null,
-            }
-          : { displayName: person.displayName };
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 45_000);
       try {
@@ -297,6 +287,37 @@ export function createPersonResearchService(input: {
         const allowedFactDefinitionIds = new Set(
           (factDefinitions ?? []).map((definition) => definition.id),
         );
+        // Search and catalog calls are remote/asynchronous boundaries. Reload and
+        // re-authorize immediately before composing the provider disclosure so a
+        // withdrawn purpose, changed workspace membership, deletion, or stricter
+        // sensitivity cannot cause the earlier person snapshot to be disclosed.
+        const refreshedPerson = await input.loadPerson(request.personId);
+        if (
+          !refreshedPerson ||
+          refreshedPerson.workspaceId !== input.workspaceId
+        )
+          throw createGraphQLError(
+            "NOT_FOUND",
+            "The requested resource was not found.",
+          );
+        if (!["public", "internal"].includes(refreshedPerson.sensitivity))
+          throw createGraphQLError(
+            "FORBIDDEN",
+            "Web research is unavailable for this sensitivity level.",
+          );
+        await input.authorizeResearch?.(request);
+        // Internal records disclose the confirmed search name only; never their
+        // biography or other profile fields. This projection is deliberately built
+        // from the refreshed row rather than the pre-search snapshot.
+        const profile =
+          refreshedPerson.sensitivity === "public"
+            ? {
+                displayName: refreshedPerson.displayName,
+                preferredName: refreshedPerson.preferredName,
+                sortName: refreshedPerson.sortName,
+                biography: refreshedPerson.biography?.slice(0, 4000) ?? null,
+              }
+            : { displayName: refreshedPerson.displayName };
         let suggestions: PersonResearchSuggestion[] = [];
         if (sources.length) {
           const turn = await input.runtime.provider.generate({
@@ -353,7 +374,7 @@ export function createPersonResearchService(input: {
               await input.persistResearch({
                 purpose: request.purpose,
                 caseId: request.caseId,
-                personId: person.id,
+                personId: refreshedPerson.id,
                 queryHash: createHash("sha256")
                   .update(query, "utf8")
                   .digest("hex"),
@@ -372,7 +393,7 @@ export function createPersonResearchService(input: {
           }
         }
         return {
-          personId: person.id,
+          personId: refreshedPerson.id,
           runId,
           sources,
           suggestions,
