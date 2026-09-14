@@ -1,7 +1,8 @@
-import { and, asc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { files } from "@/db/schema/files";
 import { auditEvents } from "@/db/schema/operations";
+import { searchDocuments } from "@/db/schema/search";
 import {
   deletionRequests,
   privacyRequests,
@@ -20,6 +21,59 @@ export type PrivacyProcessorAdapter = (input: {
   request: PrivacyRequestRow;
   idempotencyKey: string;
 }) => Promise<PropagationResult>;
+
+/**
+ * Purges app-owned search contributions for the people covered by a privacy
+ * request. The workspace predicate is deliberately repeated on every branch:
+ * a subject id is not a sufficient tenant boundary on its own. Direct person
+ * documents are included even when an older index row did not carry the
+ * subjectPersonId column, while dependent contributions use that explicit
+ * subject link.
+ *
+ * The operation is intentionally idempotent. A retry sees zero rows and
+ * returns the same opaque request-scoped evidence reference. It never scans
+ * Redis, calls a hosted search provider, or returns indexed content.
+ */
+export function createSearchPrivacyProcessorAdapter(): PrivacyProcessorAdapter {
+  return async ({ database, request }) => {
+    const personIds = request.scope.personIds;
+    const evidenceReference = `search-purge:${request.id}`;
+    if (!personIds.length)
+      return {
+        state: "not_applicable",
+        evidenceReference: "search:no-scoped-people",
+      };
+
+    await database
+      .delete(searchDocuments)
+      .where(
+        and(
+          eq(searchDocuments.workspaceId, request.workspaceId),
+          or(
+            inArray(searchDocuments.subjectPersonId, personIds),
+            and(
+              eq(searchDocuments.resourceKind, "person"),
+              inArray(searchDocuments.resourceId, personIds),
+            ),
+          ),
+        ),
+      );
+
+    return { state: "succeeded", evidenceReference };
+  };
+}
+
+/**
+ * Redis is operational-only in this deployment. It does not contain
+ * person-derived records, so privacy propagation records that capability
+ * explicitly instead of pretending that a shared key scan or flush is safe.
+ */
+export function createCachePrivacyProcessorAdapter(): PrivacyProcessorAdapter {
+  return async () => ({
+    state: "not_applicable",
+    evidenceReference: "cache:not-applicable:operational-only",
+  });
+}
 
 /** Processor adapters must honor the stable key and return an opaque evidence
  * reference, never personal content. Missing adapters fail visibly and retry;

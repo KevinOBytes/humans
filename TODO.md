@@ -1048,6 +1048,19 @@ and retention legal-hold suites also pass. This does not close HUM-NFR-008:
 other mutation families, browser retry, and hosted/provider acceptance remain
 open.
 
+Bounded HUM-FR-005/HUM-NFR-008 privacy search propagation evidence
+(2026-09-14): the privacy worker now wires a transactional, workspace-scoped
+search adapter that removes direct person documents and dependent indexed
+contributions for the request's person scope. Repeated execution is safe and
+returns the same opaque request-scoped evidence reference; same-workspace
+non-targets and foreign-workspace documents remain untouched. Redis is marked
+explicitly `not_applicable` because this deployment uses it for operational
+state only, while Resend and AI-provider processors remain failed-closed until
+provider-specific erasure contracts exist. The focused PostgreSQL suite is
+`tests/integration/privacy-search-propagation.test.ts`; local runs skip without
+`TEST_DATABASE_URL`, so this bounded implementation does not close the hosted,
+external-provider, or whole-product privacy matrix.
+
 High-risk governance closeout follow-up (2026-09-13): the AI retention
 candidate lock now targets only `ai_threads`, acquires the workspace advisory
 lock before authoritative revalidation, and re-reads current workspace
