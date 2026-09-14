@@ -13,6 +13,10 @@ import {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const SAFE_FAILURE = JSON.stringify({
+  code: "PROFILE_DEFINITION_BACKFILL_FAILED",
+  message: "Profile definition backfill failed.",
+});
 
 export function parseWorkspaceProfileDefinitionBackfillArgs(args: string[]): {
   workspaceId: string;
@@ -88,8 +92,26 @@ export async function main(): Promise<void> {
   }
 }
 
+/**
+ * Keep database-driver and configuration errors out of attended command output.
+ * Those errors can contain the complete connection URL, including credentials.
+ */
+export async function runWorkspaceProfileDefinitionBackfillCli(): Promise<number> {
+  try {
+    await main();
+    return 0;
+  } catch {
+    process.stderr.write(`${SAFE_FAILURE}\n`);
+    return 1;
+  }
+}
+
 const invokedPath = process.argv[1]
   ? pathToFileURL(process.argv[1]).href
   : undefined;
 
-if (invokedPath === import.meta.url) void main();
+if (invokedPath === import.meta.url) {
+  void runWorkspaceProfileDefinitionBackfillCli().then((exitCode) => {
+    process.exitCode = exitCode;
+  });
+}

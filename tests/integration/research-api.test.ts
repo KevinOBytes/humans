@@ -1555,10 +1555,12 @@ liveDescribe("research API", () => {
       biography: "private biography must not enter audit",
       displayName: "Audited Person",
     });
-    const personId = success.body?.data?.createPerson?.person?.id;
-    expect(personId).toEqual(expect.any(String));
+    const personId = required(success.body?.data?.createPerson?.person?.id);
 
-    const auditRows = await fixture.database.select().from(auditEvents);
+    const auditRows = await fixture.database
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.resourceId, personId));
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
       action: "person.create",
