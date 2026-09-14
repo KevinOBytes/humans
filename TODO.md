@@ -1058,8 +1058,19 @@ explicitly `not_applicable` because this deployment uses it for operational
 state only, while Resend and AI-provider processors remain failed-closed until
 provider-specific erasure contracts exist. The focused PostgreSQL suite is
 `tests/integration/privacy-search-propagation.test.ts`; local runs skip without
-`TEST_DATABASE_URL`, so this bounded implementation does not close the hosted,
+`TEST_DATABASE_URL`, and the suite is now required by `test:db` plus its CI
+contract. This bounded implementation does not close the hosted,
 external-provider, or whole-product privacy matrix.
+
+Reviewer hardening for the same tranche: correction requests now fail closed
+with `search_reindex_required` rather than deleting stale search rows without a
+transactional reindex contract. File-only scopes delete only workspace-owned
+`evidence_item` and `evidence_excerpt` documents reached through
+`evidence_items.file_id`; relationship documents are removed when either the
+source or target endpoint is in the person scope. The index contribution still
+stores one source-side `subjectPersonId`, so endpoint-complete privacy cleanup
+is implemented in the adapter query and guarded by a target-endpoint
+regression case; richer dual-endpoint index attribution remains future work.
 
 High-risk governance closeout follow-up (2026-09-13): the AI retention
 candidate lock now targets only `ai_threads`, acquires the workspace advisory
