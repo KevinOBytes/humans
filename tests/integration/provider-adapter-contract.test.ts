@@ -22,6 +22,10 @@ import {
   S3ObjectStore,
   type ObjectStoreProvider,
 } from "@/lib/storage/s3";
+import {
+  ensureProviderContractBucket,
+  withProviderContractObjectCleanup,
+} from "../support/provider-contract-storage";
 
 /**
  * The production Redis boundary is intentionally exercised with both client
@@ -215,8 +219,12 @@ const runStorage =
 
 if (runStorage) {
   describe("S3-compatible provider adapter contract", () => {
-    const bucket =
-      process.env.TEST_STORAGE_BUCKET ?? "humans-provider-contract";
+    const bucket = process.env.TEST_STORAGE_BUCKET;
+    if (storageProvider !== "minio" && !bucket)
+      throw new TypeError(
+        "TEST_STORAGE_BUCKET is required for external storage provider contracts",
+      );
+    const approvedBucket = bucket ?? "humans-provider-contract";
     const client = new S3Client({
       ...s3ClientConfig({
         endpoint: storageEndpoint!,
@@ -228,28 +236,21 @@ if (runStorage) {
         secretAccessKey: storageSecretAccessKey!,
       },
     });
-    const store = new S3ObjectStore(client, bucket);
+    const store = new S3ObjectStore(client, approvedBucket);
 
-    beforeAll(async () => {
-      try {
-        await client.send(new HeadBucketCommand({ Bucket: bucket }));
-      } catch (error) {
-        const candidate = error as {
-          name?: unknown;
-          $metadata?: { httpStatusCode?: unknown };
-          $response?: { statusCode?: unknown };
-        };
-        const statusCode =
-          candidate.$metadata?.httpStatusCode ??
-          candidate.$response?.statusCode;
-        const missingBucket =
-          statusCode === 404 ||
-          candidate.name === "NotFound" ||
-          candidate.name === "NoSuchBucket";
-        if (!missingBucket) throw error;
-        await client.send(new CreateBucketCommand({ Bucket: bucket }));
-      }
-    });
+    beforeAll(() =>
+      ensureProviderContractBucket({
+        provider: storageProvider,
+        headBucket: async () => {
+          await client.send(new HeadBucketCommand({ Bucket: approvedBucket }));
+        },
+        createBucket: async () => {
+          await client.send(
+            new CreateBucketCommand({ Bucket: approvedBucket }),
+          );
+        },
+      }),
+    );
 
     afterAll(() => client.destroy());
 
@@ -259,54 +260,57 @@ if (runStorage) {
       const body = Buffer.from("provider adapter contract\n", "utf8");
       const checksum = createHash("sha256").update(body).digest("hex");
 
-      const upload = await store.createUpload({
-        actorId: "provider-contract-actor",
-        uploadSessionId: randomUUID(),
-        sessionExpiresAt: new Date(Date.now() + 60_000),
-        workspaceId,
-        key,
-        contentType: "text/plain",
-        bytes: body.byteLength,
-        checksumSha256: checksum,
-      });
-      const uploaded = await fetch(upload.url, {
-        method: upload.method,
-        headers: upload.headers,
-        body,
-      });
-      expect([200, 204]).toContain(uploaded.status);
+      await withProviderContractObjectCleanup({
+        cleanup: () => store.delete({ workspaceId, key }),
+        run: async () => {
+          const upload = await store.createUpload({
+            actorId: "provider-contract-actor",
+            uploadSessionId: randomUUID(),
+            sessionExpiresAt: new Date(Date.now() + 60_000),
+            workspaceId,
+            key,
+            contentType: "text/plain",
+            bytes: body.byteLength,
+            checksumSha256: checksum,
+          });
+          const uploaded = await fetch(upload.url, {
+            method: upload.method,
+            headers: upload.headers,
+            body,
+          });
+          expect([200, 204]).toContain(uploaded.status);
 
-      await expect(store.exists({ workspaceId, key })).resolves.toBe(true);
-      await expect(
-        store.exists({ workspaceId: `${workspaceId}-other`, key }),
-      ).resolves.toBe(false);
-      await expect(
-        store.getMetadata({ workspaceId, key }),
-      ).resolves.toMatchObject({
-        bytes: body.byteLength,
-      });
+          await expect(store.exists({ workspaceId, key })).resolves.toBe(true);
+          await expect(
+            store.exists({ workspaceId: `${workspaceId}-other`, key }),
+          ).resolves.toBe(false);
+          await expect(
+            store.getMetadata({ workspaceId, key }),
+          ).resolves.toMatchObject({
+            bytes: body.byteLength,
+          });
 
-      const opened = await store.openRead(
-        { workspaceId, key },
-        { maxBytes: body.byteLength },
-      );
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of opened?.body ?? []) chunks.push(chunk);
-      expect(Buffer.concat(chunks)).toEqual(body);
+          const opened = await store.openRead(
+            { workspaceId, key },
+            { maxBytes: body.byteLength },
+          );
+          const chunks: Uint8Array[] = [];
+          for await (const chunk of opened?.body ?? []) chunks.push(chunk);
+          expect(Buffer.concat(chunks)).toEqual(body);
 
-      const download = await store.createDownload({
-        workspaceId,
-        key,
-        fileName: "evidence.txt",
+          const download = await store.createDownload({
+            workspaceId,
+            key,
+            fileName: "evidence.txt",
+          });
+          const downloaded = await fetch(download.url, {
+            method: download.method,
+            headers: download.headers,
+          });
+          expect(downloaded.status).toBe(200);
+          expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(body);
+        },
       });
-      const downloaded = await fetch(download.url, {
-        method: download.method,
-        headers: download.headers,
-      });
-      expect(downloaded.status).toBe(200);
-      expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(body);
-
-      await store.delete({ workspaceId, key });
       await expect(store.exists({ workspaceId, key })).resolves.toBe(false);
     });
   });
