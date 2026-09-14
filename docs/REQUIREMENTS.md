@@ -2,7 +2,7 @@
 
 ## Production deployment verification (2026-09-14)
 
-The reviewed `main` head `dcbb36431abec2793d66930f8b5c188705bc6517` is now
+The reviewed application commit `dcbb36431abec2793d66930f8b5c188705bc6517` is now
 deployed to Vercel production as `dpl_BkV534V7M832BTkt1ahb3YX76btc` with
 `READY` status. The deployment is aliased to `humans.kevinbytes.com`,
 `humans-dun.vercel.app`, and `humans-tkoresearch.vercel.app`. Public probes
