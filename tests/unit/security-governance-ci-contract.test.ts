@@ -15,14 +15,14 @@ const requiredSuites = [
 
 function databaseIntegrationJob(workflow: string): string {
   const match = workflow.match(
-    /^  database-integration:\n(?<body>(?: {4}.*(?:\n|$)|\s*\n)+)/m,
+    /^  database-integration:\n((?: {4}.*(?:\n|$)|\s*\n)+)/m,
   );
 
-  if (!match?.groups?.body) {
+  if (!match?.[1]) {
     throw new Error("Missing database-integration workflow job");
   }
 
-  return match.groups.body;
+  return match[1];
 }
 
 describe("security and governance CI contract", () => {
