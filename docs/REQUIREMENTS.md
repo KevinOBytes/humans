@@ -745,6 +745,26 @@ public-value display, protected-value redaction, and foreign-workspace
 non-disclosure. Source-level citations and the broader reconciliation/conflict
 and whole-profile matrices remain open.
 
+Bounded public identifier citation readback evidence (2026-09-13): the generated
+`PersonIdentifierCitations(personId, first, after)` connection and profile
+Sources & citations panel now expose only authorized, current public identifier
+citation metadata. Live principal/workspace authority, person/identifier
+visibility and ownership, canonical field/version binding, evidence/source
+visibility, optional case access, and current purpose coverage are rechecked in
+the read transaction. Protected identifiers fail closed without selecting or
+decrypting identifier value columns; stale, malformed, archived, and hidden
+bindings are omitted. Sealed workspace/person/principal-bound cursors hide
+skipped assertion IDs and enforce bounded candidate pagination. The panel
+includes source title/URL, field/version, locator, bounded quote, confidence,
+source reliability, evidence role, and review state, plus accessible
+loading/error/empty presentation. Local evidence consists of 33 passing live
+PostgreSQL provenance tests, 1,528 passing unit tests (including focused panel
+coverage), passing formatting/lint/typecheck/schema/migration gates, regenerated
+GraphQL artifacts, and a passing production build. This does not establish
+protected citation storage, historical-version readback, citation authoring
+UI, hosted behavior, or the whole-profile browser/accessibility matrix;
+HUM-FR-010/HUM-FR-028 remain incomplete.
+
 Bounded identifier authoring checkpoint (2026-09-13): generated
 `CreatePersonIdentifier`, `UpdatePersonIdentifier`, and
 `ArchivePersonIdentifier` operations now back the profile's accessible

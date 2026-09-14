@@ -11,12 +11,22 @@ import { auditEvents } from "@/db/schema/operations";
 import { personIdentifiers } from "@/db/schema/people";
 import { accessPolicies, resourceGrants } from "@/db/schema/workspaces";
 import type { ResearchServiceContext } from "@/modules/audit/service";
-import { linkEvidenceAssertion } from "@/modules/evidence/assertions";
+import {
+  linkEvidenceAssertion,
+  createEvidenceAssertionsService,
+} from "@/modules/evidence/assertions";
 import {
   createIdentifierService,
   prepareIdentifierWrite,
 } from "@/modules/people/identifier-service";
-import { LinkEvidenceAssertionDocument } from "@/graphql/generated/graphql";
+import {
+  LinkEvidenceAssertionDocument,
+  PersonIdentifierCitationsDocument,
+} from "@/graphql/generated/graphql";
+import { createCasesService } from "@/modules/cases/service";
+import { cases } from "@/db/schema/cases";
+import { people } from "@/db/schema/people";
+import { consentRecords } from "@/db/schema/privacy";
 import type { SessionActor } from "../support/graphql";
 import { caseContext, coveredPerson } from "../support/cases";
 import { ResearchFixture } from "../support/research-fixture";
@@ -57,6 +67,7 @@ liveDescribe("version-bound public identifier provenance", () => {
       workspaceId: context.workspaceId,
       kind: "document",
       title: "Fictional directory",
+      canonicalUrl: "https://example.test/directory",
       contentHash: "synthetic-source-hash",
       reliability: "0.800",
       createdBy: context.actor.principalId,
@@ -87,6 +98,206 @@ liveDescribe("version-bound public identifier provenance", () => {
       idempotencyKey: "public-identifier-citation-v1",
     };
   }
+  const readbackQuery = PersonIdentifierCitationsDocument;
+  function readback(first = 25, after?: string) {
+    return createEvidenceAssertionsService(
+      context,
+    ).listPersonIdentifierCitations({ personId, first, after });
+  }
+  it("reads authorized public metadata through GraphQL and paginates without identifier values", async () => {
+    const linked = await linkEvidenceAssertion(context, input());
+    await linkEvidenceAssertion(context, {
+      ...input(),
+      idempotencyKey: "second-citation",
+      locator: "page 8",
+    });
+    const first = await readback(1);
+    expect(first.nodes).toHaveLength(1);
+    expect(first.pageInfo.hasNextPage).toBe(true);
+    const next = await readback(1, first.pageInfo.endCursor!);
+    expect(next.nodes).toHaveLength(1);
+    expect(next.nodes[0]!.id).not.toBe(first.nodes[0]!.id);
+    expect(next.pageInfo.hasNextPage).toBe(false);
+    const response = await fixture.execute({
+      jar: actor.jar,
+      query: readbackQuery,
+      variables: { personId },
+    });
+    expect(response.body?.errors).toBeUndefined();
+    expect(JSON.stringify(response.body)).toContain(linked.id);
+    expect(JSON.stringify(response.body)).toContain("Fictional directory");
+    expect(JSON.stringify(response.body)).not.toContain("SYNTHETIC-PUBLIC-100");
+    expect(first.nodes[0]).toMatchObject({
+      identifierId,
+      identifierVersion: 1,
+      field: "value",
+      sourceReliability: "0.800",
+      reviewState: "unreviewed",
+    });
+  });
+  it("denies cross-workspace person reads", async () => {
+    await linkEvidenceAssertion(context, input());
+    const foreign = await caseContext(fixture, await fixture.createActor());
+    await expect(
+      createEvidenceAssertionsService(foreign).listPersonIdentifierCitations({
+        personId,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+  });
+  it.each(["source", "evidence", "identifier", "person"])(
+    "omits a citation after its %s is hidden",
+    async (kind) => {
+      await linkEvidenceAssertion(context, input());
+      if (kind === "source")
+        await fixture.database
+          .update(sources)
+          .set({ sensitivity: "restricted" })
+          .where(eq(sources.id, sourceId));
+      if (kind === "evidence")
+        await fixture.database
+          .update(evidenceItems)
+          .set({ sensitivity: "restricted" })
+          .where(eq(evidenceItems.id, evidenceId));
+      if (kind === "identifier")
+        await fixture.database
+          .update(personIdentifiers)
+          .set({ deletedAt: new Date() })
+          .where(eq(personIdentifiers.id, identifierId));
+      if (kind === "person") {
+        const foreignPerson = (await coveredPerson(context, { policy: false }))
+          .id;
+        await fixture.database
+          .update(evidenceAssertions)
+          .set({ resourceId: foreignPerson })
+          .where(eq(evidenceAssertions.resourceId, personId));
+      }
+      expect((await readback()).nodes).toEqual([]);
+    },
+  );
+  it.each([
+    "!invalid",
+    "a".repeat(1025),
+    Buffer.from(JSON.stringify({ v: 1, id: "invalid" })).toString("base64url"),
+  ])("rejects malformed cursor %s", async (after) => {
+    await expect(readback(1, after)).rejects.toMatchObject({
+      extensions: { code: "VALIDATION_FAILED" },
+    });
+  });
+  it("does not rebind stale citations to the edited identifier", async () => {
+    await linkEvidenceAssertion(context, input());
+    await createIdentifierService(context).updateIdentifier({
+      id: identifierId,
+      expectedVersion: 1,
+      value: "SYNTHETIC-NEW-200",
+    });
+    expect((await readback()).nodes).toEqual([]);
+  });
+  it("denies a hidden parent person instead of disclosing citation metadata", async () => {
+    await linkEvidenceAssertion(context, input());
+    await fixture.database
+      .update(people)
+      .set({ sensitivity: "restricted" })
+      .where(eq(people.id, personId));
+    await expect(readback()).rejects.toMatchObject({
+      extensions: { code: "NOT_FOUND" },
+    });
+  });
+  it("omits citations bound to an archived case", async () => {
+    const researchCase = await createCasesService(context).createCase({
+      title: "Citation case",
+      purpose: "research",
+    });
+    await linkEvidenceAssertion(context, {
+      ...input(),
+      caseId: researchCase.id,
+    });
+    expect((await readback()).nodes).toHaveLength(1);
+    await fixture.database
+      .update(cases)
+      .set({ deletedAt: new Date() })
+      .where(eq(cases.id, researchCase.id));
+    expect((await readback()).nodes).toEqual([]);
+  });
+  it("omits a private case citation for an unrelated workspace viewer", async () => {
+    const researchCase = await createCasesService(context).createCase({
+      title: "Private citation case",
+      purpose: "research",
+    });
+    await linkEvidenceAssertion(context, {
+      ...input(),
+      caseId: researchCase.id,
+    });
+    const viewer = await fixture.createWorkspaceMember(actor, "viewer");
+    const response = await fixture.execute<{
+      personIdentifierCitations: { nodes: unknown[] };
+    }>({ jar: viewer.jar, query: readbackQuery, variables: { personId } });
+    expect(response.body?.errors).toBeUndefined();
+    expect(response.body?.data?.personIdentifierCitations.nodes).toEqual([]);
+  });
+  it("omits citations when current purpose coverage has expired", async () => {
+    await linkEvidenceAssertion(context, input());
+    await fixture.database
+      .update(consentRecords)
+      .set({ effectiveUntil: new Date(Date.now() - 1000) })
+      .where(eq(consentRecords.personId, personId));
+    expect((await readback()).nodes).toEqual([]);
+  });
+  it.each([0, 101, -1, 1.5])(
+    "rejects out-of-bounds page size %s",
+    async (first) => {
+      await expect(readback(first)).rejects.toMatchObject({
+        extensions: { code: "VALIDATION_FAILED" },
+      });
+    },
+  );
+  it("binds sealed cursors to the person and rejects tampering", async () => {
+    await linkEvidenceAssertion(context, input());
+    const cursor = (await readback(1)).pageInfo.endCursor!;
+    expect(Buffer.from(cursor, "base64url").toString()).not.toContain(
+      identifierId,
+    );
+    const other = (await coveredPerson(context, { policy: false })).id;
+    await expect(
+      createEvidenceAssertionsService(context).listPersonIdentifierCitations({
+        personId: other,
+        after: cursor,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "VALIDATION_FAILED" } });
+    await expect(
+      readback(1, `${cursor.slice(0, -4)}AAAA`),
+    ).rejects.toMatchObject({ extensions: { code: "VALIDATION_FAILED" } });
+  });
+  it("omits malformed legacy paths and returns no unsafe source links", async () => {
+    const linked = await linkEvidenceAssertion(context, input());
+    await fixture.database
+      .update(sources)
+      .set({ canonicalUrl: "javascript:alert(1)" })
+      .where(eq(sources.id, sourceId));
+    expect((await readback()).nodes[0]?.sourceUrl).toBeNull();
+    await fixture.database
+      .update(evidenceAssertions)
+      .set({ fieldPath: `identifiers.${identifierId}.v01.value` })
+      .where(eq(evidenceAssertions.id, linked.id));
+    expect((await readback()).nodes).toEqual([]);
+  });
+  it("fails closed after out-of-band protected reclassification, even for visible internal rows", async () => {
+    await linkEvidenceAssertion(context, {
+      ...input(),
+      quote: "SYNTHETIC-PUBLIC-100",
+    });
+    await fixture.database
+      .update(personIdentifiers)
+      .set({ sensitivity: "internal" })
+      .where(eq(personIdentifiers.id, identifierId));
+    const response = await fixture.execute({
+      jar: actor.jar,
+      query: readbackQuery,
+      variables: { personId },
+    });
+    expect(response.body?.errors).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toContain("SYNTHETIC-PUBLIC-100");
+    expect((await readback()).nodes).toEqual([]);
+  });
   it("links and replays one versioned citation without copying or mutating source provenance", async () => {
     const [before] = await fixture.database
       .select()

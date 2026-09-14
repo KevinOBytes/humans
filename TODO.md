@@ -145,9 +145,26 @@ real-PostgreSQL tests cover linkage/replay, wrong parent/workspace, protected
 value rejection, stale versions, archive, source preservation, and generated
 GraphQL author permissions. This is not full identifier provenance completion:
 protected citations require an encrypted/redacted assertion design because the
-current assertion quote and locator are plaintext. Citation discovery/authoring
+current assertion quote and locator are plaintext. Citation authoring
 UI, version-history readback, migration of any legacy identifier paths, and the
 broader rich-profile citation matrix remain open.
+
+Public identifier citation readback checkpoint (2026-09-13): generated
+`PersonIdentifierCitations` backs the profile's Sources & citations panel.
+The read transaction revalidates the live principal, workspace, person,
+identifier, current version, source, evidence, optional case, and current
+purpose coverage. It returns only bounded public citation metadata; protected,
+stale, malformed, archived, or inaccessible bindings are omitted. Sealed,
+workspace/person/principal-bound cursors keep skipped assertion IDs private;
+bounded candidate pages may be empty while a next page remains. The panel
+shows the source title/URL, identifier field/version, locator/quote, confidence,
+reliability, role, and review state, with loading/error/empty states.
+Local evidence: all 33 real-PostgreSQL identifier provenance tests and 1,528
+unit tests pass, including the focused panel tests; formatting, lint, typecheck,
+schema/migration checks, and the production build pass. Generated artifacts
+were refreshed. Protected citation storage, historical-version readback,
+authoring UI, hosted acceptance, and whole-profile browser/accessibility
+coverage remain open; HUM-FR-010/HUM-FR-028 remain incomplete.
 
 Field-level provenance checkpoint (2026-09-13): evidence assertions now accept
 an optional normalized `fieldPath` and expose it through the generated
