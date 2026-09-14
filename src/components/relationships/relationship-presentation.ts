@@ -56,6 +56,8 @@ function temporalDateLabel(
 
 export function relationshipSemanticPresentation(input: {
   confidence?: number | null;
+  strength?: number | null;
+  epistemicStatus?: string | null;
   creationMethod?: string | null;
   reviewState?: string | null;
   state?: string | null;
@@ -66,6 +68,8 @@ export function relationshipSemanticPresentation(input: {
 }): {
   claimLabel: string;
   confidenceLabel: string;
+  strengthLabel: string;
+  evidenceLabel: string;
   originLabel: string;
   reviewLabel: string;
   temporalLabel: string;
@@ -82,13 +86,22 @@ export function relationshipSemanticPresentation(input: {
           ? "Manual"
           : titleCase(creationMethod, "Origin not recorded");
   const claimLabel =
-    reviewState === "approved"
-      ? "Documented"
-      : state === "inferred"
-        ? "Hypothesis"
-        : state === "asserted" && creationMethod === "manual"
-          ? "Manual assertion"
-          : titleCase(state, "Claim state not recorded");
+    state === "inferred"
+      ? "Hypothesis"
+      : state === "asserted" && creationMethod === "manual"
+        ? "Manual assertion"
+        : titleCase(state, "Claim state not recorded");
+  const epistemicStatus = input.epistemicStatus?.toLowerCase();
+  const evidenceLabel =
+    epistemicStatus === "documented"
+      ? "Documented source claim"
+      : epistemicStatus === "analyst_hypothesis"
+        ? "Analyst hypothesis"
+        : "Evidence status not recorded";
+  const strengthLabel =
+    input.strength == null
+      ? "Strength not recorded"
+      : `Strength ${Math.round(input.strength * 100)}%`;
   const confidenceLabel =
     input.confidence == null
       ? "Confidence not recorded"
@@ -124,6 +137,8 @@ export function relationshipSemanticPresentation(input: {
   return {
     claimLabel,
     confidenceLabel,
+    strengthLabel,
+    evidenceLabel,
     originLabel,
     reviewLabel: titleCase(reviewState, "Review state not recorded"),
     temporalLabel,

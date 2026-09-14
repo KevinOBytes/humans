@@ -701,6 +701,10 @@ test("authenticated research core preserves tenant and claim boundaries", async 
     .getByLabel("Related person", { exact: true })
     .selectOption({ label: "Grace Collaborator" });
   await page.getByLabel("Confidence").fill("0.82");
+  const strength = page.getByLabel("Strength (optional)");
+  await expect(strength).toHaveValue("");
+  await expect(strength).toHaveAccessibleDescription(/not confidence/);
+  await strength.fill("0.35");
   await page.getByLabel("Temporal meaning").selectOption("YEAR_ONLY");
   await page.getByLabel("Date precision").selectOption("YEAR");
   await page.getByLabel("Valid from").fill("1840-01-01");
@@ -721,6 +725,8 @@ test("authenticated research core preserves tenant and claim boundaries", async 
     "Manual",
     "Unreviewed",
     "Confidence 82%",
+    "Strength 35%",
+    "Analyst hypothesis",
     "1840",
   ]) {
     await expect(
@@ -742,6 +748,8 @@ test("authenticated research core preserves tenant and claim boundaries", async 
     "Manual",
     "Unreviewed",
     "Confidence 82%",
+    "Strength 35%",
+    "Analyst hypothesis",
     "1840",
   ]) {
     await expect(

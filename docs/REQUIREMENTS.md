@@ -170,6 +170,19 @@ enforcement evidence. This closes only the field-addressability gap;
 source-to-field authoring UX, hosted/provider acceptance, and the whole-profile
 provenance matrix remain incomplete.
 
+Relationship semantic contract checkpoint (2026-09-14): profile cards derive
+documentation only from the explicit stored `epistemicStatus`. Review approval
+does not promote a hypothesis, missing/unknown status does not imply a source,
+and corroboration/claim state remains distinct from evidence status. Nullable
+strength is displayed separately from confidence and can be supplied through
+the existing generated, authorized `CreateRelationship` operation; blank
+means unassessed rather than zero. The focused semantic/form/card suite passes
+23 tests, including zero/null preservation, bounds, retained server-validation
+feedback, and approved-hypothesis presentation. The research-core browser
+journey is extended to assert persisted strength from each relationship
+direction but has not yet been executed for this checkpoint. This does not
+close HUM-FR-028 or the whole-profile/hosted acceptance matrix.
+
 Rich-profile definition catalog checkpoint (2026-09-13): newly provisioned
 workspaces receive active, workspace-scoped fact-definition templates for
 pronouns, employment, education, languages, organizations, birth dates, and

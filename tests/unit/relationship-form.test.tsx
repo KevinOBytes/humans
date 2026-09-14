@@ -64,6 +64,7 @@ describe("RelationshipForm", () => {
     );
     await user.clear(screen.getByLabelText("Confidence"));
     await user.type(screen.getByLabelText("Confidence"), "0.72");
+    await user.type(screen.getByLabelText("Strength (optional)"), "0.35");
     await user.selectOptions(
       screen.getByLabelText("Temporal meaning"),
       "APPROXIMATE",
@@ -79,6 +80,7 @@ describe("RelationshipForm", () => {
     expect(execute).toHaveBeenCalledWith(CreateRelationshipDocument, {
       input: {
         confidence: 0.72,
+        strength: 0.35,
         creationMethod: "import",
         explicitConfirmed: true,
         epistemicStatus: "ANALYST_HYPOTHESIS",
@@ -98,6 +100,99 @@ describe("RelationshipForm", () => {
     expect(
       screen.getByLabelText("Origin").querySelector('option[value="AI"]'),
     ).toBeNull();
+  });
+
+  it.each([
+    ["", null],
+    ["0", 0],
+  ])(
+    "preserves an unknown or zero strength (%s) without borrowing confidence",
+    async (draft, expected) => {
+      const user = userEvent.setup();
+      execute.mockResolvedValue({
+        ok: false,
+        errors: [{ code: "CONFLICT", message: "Retry after review." }],
+      });
+      render(
+        <RelationshipForm
+          people={[{ id: "person-b", name: "Grace Collaborator" }]}
+          relationshipTypes={[{ id: "type-a", label: "Knows" }]}
+          sourcePersonId="person-a"
+        />,
+      );
+      const strength = screen.getByLabelText("Strength (optional)");
+      if (draft) await user.type(strength, draft);
+      await user.click(screen.getByRole("checkbox"));
+      await user.click(
+        screen.getByRole("button", { name: "Add relationship" }),
+      );
+      expect(execute).toHaveBeenCalledWith(
+        CreateRelationshipDocument,
+        expect.objectContaining({
+          input: expect.objectContaining({ strength: expected, confidence: 1 }),
+        }),
+      );
+      expect(strength).toHaveValue(draft === "" ? null : 0);
+      expect(strength).toHaveAccessibleDescription(/not confidence/);
+    },
+  );
+
+  it.each(["-0.1", "1.1"])(
+    "rejects out-of-range strength %s before sending",
+    async (value) => {
+      const user = userEvent.setup();
+      render(
+        <RelationshipForm
+          people={[{ id: "person-b", name: "Grace Collaborator" }]}
+          relationshipTypes={[{ id: "type-a", label: "Knows" }]}
+          sourcePersonId="person-a"
+        />,
+      );
+      await user.type(screen.getByLabelText("Strength (optional)"), value);
+      await user.click(screen.getByRole("checkbox"));
+      await user.click(
+        screen.getByRole("button", { name: "Add relationship" }),
+      );
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it("associates server strength validation with its retained draft", async () => {
+    const user = userEvent.setup();
+    execute.mockResolvedValue({
+      ok: true,
+      data: {
+        createRelationship: {
+          relationship: null,
+          code: "VALIDATION_FAILED",
+          currentVersion: null,
+          issues: [
+            {
+              code: "INVALID_VALUE",
+              message: "Review the relationship strength.",
+              path: ["strength"],
+            },
+          ],
+        },
+      },
+      requestId: "strength-validation",
+    });
+    render(
+      <RelationshipForm
+        people={[{ id: "person-b", name: "Grace Collaborator" }]}
+        relationshipTypes={[{ id: "type-a", label: "Knows" }]}
+        sourcePersonId="person-a"
+      />,
+    );
+    const strength = screen.getByLabelText("Strength (optional)");
+    await user.type(strength, "0.125");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Add relationship" }));
+    expect(strength).toHaveValue(0.125);
+    expect(strength).toHaveAttribute("aria-invalid", "true");
+    expect(strength).toHaveAccessibleDescription(
+      /Review the relationship strength/,
+    );
   });
 
   it("keeps the temporal draft and confirmation after a transport validation failure", async () => {
