@@ -3,6 +3,8 @@ import type { InferInsertModel } from "drizzle-orm";
 import { newId } from "@/db/id";
 import { factDefinitions } from "@/db/schema/facts";
 
+export const PROFILE_FACT_DEFINITION_CATALOG_VERSION = 1;
+
 /**
  * The portable profile fields provisioned for every newly-created workspace.
  *
@@ -98,6 +100,21 @@ export const DEFAULT_PROFILE_FACT_DEFINITIONS = [
   },
   {
     namespace: "profile",
+    fieldKey: "person_reference",
+    label: "Person reference",
+    description:
+      "A source-backed reference from this profile to another person in the workspace.",
+    category: "relationship",
+    allowedValueType: "person_reference",
+    cardinality: "many",
+    searchable: false,
+    filterable: true,
+    graphable: true,
+    defaultSensitivity: "internal",
+    state: "active",
+  },
+  {
+    namespace: "profile",
     fieldKey: "custom_note",
     label: "Custom profile field",
     description:
@@ -125,6 +142,7 @@ export function createDefaultProfileFactDefinitions(input: {
     ...definition,
     id: idFactory(),
     workspaceId: input.workspaceId,
+    version: PROFILE_FACT_DEFINITION_CATALOG_VERSION,
     createdBy: input.actorId,
     updatedBy: input.actorId,
   }));

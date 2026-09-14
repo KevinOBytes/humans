@@ -1,9 +1,7 @@
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
-import { createDefaultProfileFactDefinitions } from "@/db/profile-fact-definitions";
 import { apiKeys, members, organizations, users } from "@/db/schema/auth";
-import { factDefinitions } from "@/db/schema/facts";
 import { workspacePrincipals } from "@/db/schema/principals";
 import { workspaceSettings, workspaces } from "@/db/schema/workspaces";
 import type { BetterAuthRuntime } from "@/lib/auth/config";
@@ -16,6 +14,7 @@ import {
   type PermissionResource,
   type WorkspaceRole,
 } from "@/modules/auth/permissions";
+import { provisionWorkspaceProfileDefinitions } from "@/modules/auth/workspace-profile-definitions";
 
 export type WorkspaceIdentity = {
   organizationId: string;
@@ -231,11 +230,13 @@ export async function provisionWorkspace(
       createdBy: input.userId,
       updatedBy: input.userId,
     });
-    await transaction.insert(factDefinitions).values(
-      createDefaultProfileFactDefinitions({
+    await provisionWorkspaceProfileDefinitions(
+      transaction as unknown as Database,
+      {
         workspaceId,
         actorId: principalId,
-      }),
+        requestId: `workspace-provision:${workspaceId}`,
+      },
     );
 
     return { organizationId, workspaceId, memberId, principalId };
