@@ -7,11 +7,12 @@ import {
 
 describe("break-glass request validation", () => {
   it("normalizes a bounded purpose, justification, expiry, and case reference", () => {
+    const expiry = new Date(Date.now() + 60 * 60 * 1_000);
     const result = normalizeBreakGlassRequest({
       purpose: "  urgent subject access  ",
       justification:
         " A documented incident requires a time-limited review of two records. ",
-      expiresAt: "2026-09-14T12:00:00Z",
+      expiresAt: expiry,
       caseReference: "  CASE-42  ",
     });
 
@@ -19,7 +20,7 @@ describe("break-glass request validation", () => {
       purpose: "urgent subject access",
       justification:
         "A documented incident requires a time-limited review of two records.",
-      expiresAt: new Date("2026-09-14T12:00:00Z"),
+      expiresAt: expiry,
       caseReference: "CASE-42",
     });
   });
