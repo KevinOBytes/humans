@@ -42,6 +42,14 @@ const views = [
 ] as const;
 type View = (typeof views)[number];
 
+function profileTimestamp(value: string): string {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
+
 export async function PersonRecordPage({
   params,
   searchParams,
@@ -108,6 +116,59 @@ export async function PersonRecordPage({
             {person.biography}
           </p>
         ) : null}
+        <section
+          aria-labelledby="record-provenance-heading"
+          className="border-border bg-muted/35 mt-5 rounded-xl border p-4"
+        >
+          <h2 id="record-provenance-heading" className="font-semibold">
+            Record provenance
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Confidence applies to the record&apos;s evidence coverage and source
+            agreement.
+          </p>
+          <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div className="min-w-0">
+              <dt className="text-muted-foreground">Confidence</dt>
+              <dd className="mt-1 font-semibold">
+                {Math.round(person.confidence * 100)}%
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-muted-foreground">Created</dt>
+              <dd className="mt-1">
+                <time dateTime={person.createdAt}>
+                  {profileTimestamp(person.createdAt)}
+                </time>
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-muted-foreground">Updated</dt>
+              <dd className="mt-1">
+                <time dateTime={person.updatedAt}>
+                  {profileTimestamp(person.updatedAt)}
+                </time>
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-muted-foreground">Last updated by</dt>
+              <dd className="mt-1 [overflow-wrap:anywhere]">
+                {headerData.person.updatedBy?.label ??
+                  "Attribution unavailable"}
+              </dd>
+            </div>
+          </dl>
+          {person.confidenceExplanation ? (
+            <div className="border-border mt-4 border-t pt-4 text-sm">
+              <h3 className="text-muted-foreground font-medium">
+                Assessment rationale
+              </h3>
+              <p className="mt-1 whitespace-pre-wrap">
+                {person.confidenceExplanation}
+              </p>
+            </div>
+          ) : null}
+        </section>
         {permissions.includes("analysis:read") ? (
           <div className="mt-5 flex flex-wrap gap-3">
             <Link

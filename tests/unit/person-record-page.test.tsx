@@ -52,9 +52,14 @@ const person = {
   preferredName: "Ada",
   sortName: "Researcher, Ada",
   biography: "Original biography",
+  confidence: 0.72,
+  confidenceExplanation: "Two independently reviewed archives agree.",
   status: "ACTIVE" as const,
   sensitivity: "INTERNAL" as const,
   version: 3,
+  createdAt: "2026-09-01T12:00:00.000Z",
+  updatedAt: "2026-09-13T15:30:00.000Z",
+  updatedBy: { kind: "USER" as const, label: "Morgan Reviewer" },
 };
 
 async function renderPage(permissions: string[]) {
@@ -80,6 +85,21 @@ describe("PersonRecordPage overview editing", () => {
     await renderPage(["person:read"]);
 
     expect(screen.queryByRole("button", { name: "Edit overview" })).toBeNull();
+  });
+
+  it("presents the authorized record-level confidence provenance", async () => {
+    await renderPage(["person:read"]);
+
+    const provenance = screen.getByRole("region", {
+      name: "Record provenance",
+    });
+    expect(provenance).toHaveTextContent("72%");
+    expect(provenance).toHaveTextContent(
+      "Two independently reviewed archives agree.",
+    );
+    expect(provenance).toHaveTextContent("Morgan Reviewer");
+    const updatedTime = screen.getByText(/Sep 13, 2026/u).closest("time");
+    expect(updatedTime).toHaveAttribute("datetime", "2026-09-13T15:30:00.000Z");
   });
 
   it("initializes the authorized editor and refreshes after success", async () => {

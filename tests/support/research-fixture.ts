@@ -54,6 +54,8 @@ export class ResearchFixture extends GraphQLFixture {
     actor: SessionActor,
     input: {
       biography?: string;
+      confidence?: number;
+      confidenceExplanation?: string;
       displayName: string;
       sensitivity?: "CONFIDENTIAL" | "INTERNAL" | "PUBLIC" | "RESTRICTED";
       sortName?: string;
