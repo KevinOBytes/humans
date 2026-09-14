@@ -1,5 +1,22 @@
 # MVP requirements
 
+## Full-MVP closeout tranche verification (2026-09-14)
+
+The local `main` branch now contains the independently reviewed closeout
+commits `4d0c810`, `c02f7ed`, `5d04066`, `88f737a`, and `20716f2`. These add
+explicit relationship evidence status and strength to profile/graph surfaces,
+principal-bound reconciliation retries, and redacted provider/environment
+acceptance contracts with Vercel alias normalization. The follow-up review
+specifically closed the empty-canonical-Upstash false-success path and the
+`POSTGRES_URL` administrator-parser mismatch.
+
+Post-merge focused validation passed with 206 changed-surface unit tests,
+formatting, lint, type checking, GraphQL generated-artifact drift, and the
+production build. These checks do not close the remaining hosted administrator,
+database/Compose, browser, live-provider, external storage, accessibility,
+performance, or whole-product acceptance rows; those still require their
+explicit runtime evidence.
+
 ## Current closure tranche (2026-09-14)
 
 The current `main` tree includes the production-closure tranche in commits
