@@ -8,7 +8,11 @@ import { privacyRequests } from "@/db/schema/privacy";
 import { people } from "@/db/schema/people";
 import { legalHolds, retentionPolicies } from "@/db/schema/workspaces";
 import type { Database } from "@/modules/auth/bootstrap-admin";
-import { retentionDecision } from "./retention-service";
+import {
+  retentionDecision,
+  retentionSoftDeleteResourceKinds,
+  type RetentionAutomatedResourceKind,
+} from "./retention-service";
 
 const MAX_RETENTION_BATCH = 100;
 const REVIEW_WINDOW_DAYS = 30;
@@ -23,6 +27,7 @@ export type RetentionResourceCandidate = {
 
 export type RetentionCandidatePlan = {
   id: string;
+  resourceKind: RetentionAutomatedResourceKind;
   reason: "retention_elapsed_soft_delete_requires_approval";
 };
 
@@ -30,6 +35,7 @@ type RetentionPolicy = {
   id: string;
   retentionDays: number;
   deletionBehavior: string;
+  resourceKind?: string;
 };
 
 type RetentionPolicySnapshot = RetentionPolicy & {
@@ -89,14 +95,21 @@ export function planRetentionCandidates(input: {
         now: input.now,
         createdAt: resource.createdAt,
         held: resource.held,
+        resourceKind: input.policy.resourceKind,
         policy: {
           id: input.policy.id,
           retentionDays: input.policy.retentionDays,
           deletionBehavior: input.policy.deletionBehavior,
+          resourceKind: input.policy.resourceKind,
         },
       });
       return decision.state === "eligible_for_deletion" && !resource.held
-        ? { id: resource.id, reason: decision.reason }
+        ? {
+            id: resource.id,
+            resourceKind: input.policy
+              .resourceKind as RetentionAutomatedResourceKind,
+            reason: decision.reason,
+          }
         : null;
     })
     .filter((resource): resource is RetentionCandidatePlan => resource !== null)
@@ -145,7 +158,10 @@ export async function enqueueExpiredRetentionRequests(input: {
       and(
         isNull(retentionPolicies.deletedAt),
         eq(retentionPolicies.deletionBehavior, "soft_delete"),
-        inArray(retentionPolicies.resourceKind, ["person", "file"]),
+        inArray(
+          retentionPolicies.resourceKind,
+          retentionSoftDeleteResourceKinds,
+        ),
       ),
     )
     .orderBy(asc(retentionPolicies.workspaceId), asc(retentionPolicies.id));

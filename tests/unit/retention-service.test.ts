@@ -78,6 +78,20 @@ describe("retention decisions", () => {
         }).state,
       ).toBe("review_required");
   });
+  it("never marks an unsupported resource kind eligible for soft deletion", () => {
+    for (const resourceKind of ["ai_thread", "toString"]) {
+      expect(
+        retentionDecision({
+          ...base,
+          resourceKind,
+          policy: { ...base.policy, resourceKind },
+        }),
+      ).toMatchObject({
+        state: "review_required",
+        reason: "retention_capability_unavailable_requires_review",
+      });
+    }
+  });
   it("rejects invalid dates and policy intervals", () => {
     expect(() =>
       retentionDecision({ ...base, createdAt: new Date("invalid") }),
