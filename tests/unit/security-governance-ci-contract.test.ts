@@ -38,9 +38,10 @@ describe("security and governance CI contract", () => {
     ).toBeDefined();
 
     for (const suite of requiredSuites) {
-      expect(securityScript, `test:db:security must include ${suite}`).toContain(
-        suite,
-      );
+      expect(
+        securityScript,
+        `test:db:security must include ${suite}`,
+      ).toContain(suite);
     }
     expect(securityScript).toContain("--no-file-parallelism");
 
