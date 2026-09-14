@@ -168,6 +168,9 @@ jobs:
       - name: Run real PostgreSQL integration seam
         timeout-minutes: 15
         run: corepack pnpm test:db
+      - name: Run required security and governance integration seam
+        timeout-minutes: 15
+        run: corepack pnpm test:db:security
       - name: Stop disposable MinIO
         if: always()
         run: docker rm --force humans-ci-minio
