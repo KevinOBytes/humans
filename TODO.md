@@ -938,3 +938,12 @@ purge race pass on disposable PostgreSQL; the focused cases are run as a
 separate invocation in `test:db` so the aggregate database matrix is not
 filtered by a test-name selector. The broad retention, hosted, and whole-
 product governance rows remain open.
+
+High-risk tranche CI evidence (2026-09-14): GitHub Actions run `34801651438`
+for pushed `main` commit `018dad6` passed all nine required jobs, including
+the real PostgreSQL integration matrix (with the separate AI-retention
+selector), browser acceptance, production build, generated drift, quality,
+Compose lifecycle, image security, dependency policy, and secret scanning.
+This validates the merged tranche only; hosted authenticated/provider,
+external storage/email/AI, performance, and the remaining incomplete
+requirements are still open.
