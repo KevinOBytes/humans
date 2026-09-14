@@ -1666,6 +1666,20 @@ database matrix and all bounded acceptance suites pass, so hosted
 authenticated/provider proof and the remaining incomplete requirements stay
 open.
 
+Production closeout refresh (2026-09-14): clean `main` commit `3247646` passed
+the complete GitHub Actions workflow `34860080141`
+([run](https://github.com/KevinOBytes/humans/actions/runs/34860080141)),
+including the real PostgreSQL seam, required security/governance integration
+gate, privacy search propagation suite, browser acceptance, Compose lifecycle,
+production build, generated drift, dependency policy, secret scan, and pinned
+Trivy image scan. Vercel production deployment
+`dpl_FEbhCRY5vGYCqyEuCP7XSSTKZK8b` is `READY`, built with Node 24 and aliased
+to `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
+`humans-tkoresearch.vercel.app`. Hosted authenticated sign-in/bootstrap,
+provider credential acceptance, and the whole-product privacy/accessibility/
+performance matrix still require attended operator evidence; no secret values
+are recorded here.
+
 Bounded HUM-NFR-008 privacy-request transition evidence (2026-09-13):
 generated `reviewPrivacyRequest`, `fulfillPrivacyRequest`, and
 `cancelPrivacyRequest` accept optional durable principal-bound HMAC keys while
