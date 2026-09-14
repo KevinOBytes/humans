@@ -3,6 +3,7 @@ import postgres from "postgres";
 // Route-safe implementation kept outside Next.js's reserved route module.
 
 import { getServerEnv } from "@/lib/env/server";
+import { directRouteErrorMessage } from "@/lib/api/direct-route-error";
 import { correlationHeaders, requestCorrelationId } from "@/lib/api/request-id";
 import { createRedisStore, type RedisStore } from "@/lib/redis";
 import { createObjectStore } from "@/lib/storage/s3";
@@ -90,6 +91,9 @@ export function createReadinessHandler(
     return Response.json(
       {
         ...(!ready ? { code: "PROVIDER_UNAVAILABLE" } : {}),
+        ...(!ready
+          ? { message: directRouteErrorMessage("PROVIDER_UNAVAILABLE") }
+          : {}),
         status: ready ? "ready" : "unavailable",
         service: "humans",
         dependencies,

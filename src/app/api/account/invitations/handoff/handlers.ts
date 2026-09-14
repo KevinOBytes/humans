@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 import {
+  directRouteErrorResponse,
+  type DirectRouteErrorCode,
+} from "@/lib/api/direct-route-error";
+import { requestCorrelationId } from "@/lib/api/request-id";
+import {
   INVITATION_HANDOFF_COOKIE,
   openInvitationHandoff,
   readCookieValue,
@@ -15,16 +20,6 @@ type Dependencies = {
 };
 
 const bodySchema = z.object({ invitationId: z.uuid() }).strict();
-
-function requestId(request: Request): string {
-  const candidate = request.headers.get("x-request-id")?.trim();
-  return candidate &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
-      candidate,
-    )
-    ? candidate.toLowerCase()
-    : crypto.randomUUID();
-}
 
 function trusted(request: Request, origins: readonly string[]) {
   const raw = request.headers.get("origin");
@@ -57,30 +52,38 @@ function response(
   return Response.json(body, { status, headers });
 }
 
+function error(
+  code: Extract<
+    DirectRouteErrorCode,
+    "FORBIDDEN" | "INVALID_INPUT" | "INVITATION_UNAVAILABLE" | "UNAUTHORIZED"
+  >,
+  status: number,
+  correlationId: string,
+  setCookie?: string,
+): Response {
+  return directRouteErrorResponse({
+    code,
+    headers: setCookie ? { "set-cookie": setCookie } : undefined,
+    requestId: correlationId,
+    status,
+  });
+}
+
 export function createInvitationHandoffHandlers(dependencies: Dependencies) {
   return {
     async POST(request: Request) {
-      const correlationId = requestId(request);
+      const correlationId = requestCorrelationId(request);
       if (
         request.headers.has("authorization") ||
         request.headers.has("x-api-key") ||
         !trusted(request, dependencies.trustedOrigins)
       ) {
-        return response(
-          { code: "FORBIDDEN", requestId: correlationId },
-          403,
-          correlationId,
-        );
+        return error("FORBIDDEN", 403, correlationId);
       }
       const parsed = bodySchema.safeParse(
         await request.json().catch(() => null),
       );
-      if (!parsed.success)
-        return response(
-          { code: "INVALID_INPUT", requestId: correlationId },
-          400,
-          correlationId,
-        );
+      if (!parsed.success) return error("INVALID_INPUT", 400, correlationId);
       const token = sealInvitationHandoff({
         encryptionKey: dependencies.encryptionKey,
         invitationId: parsed.data.invitationId,
@@ -93,25 +96,16 @@ export function createInvitationHandoffHandlers(dependencies: Dependencies) {
       );
     },
     async GET(request: Request) {
-      const correlationId = requestId(request);
+      const correlationId = requestCorrelationId(request);
       if (
         request.headers.has("authorization") ||
         request.headers.has("x-api-key")
       )
-        return response(
-          { code: "FORBIDDEN", requestId: correlationId },
-          403,
-          correlationId,
-        );
+        return error("FORBIDDEN", 403, correlationId);
       const session = await dependencies
         .getSession(request.headers)
         .catch(() => null);
-      if (!session)
-        return response(
-          { code: "UNAUTHORIZED", requestId: correlationId },
-          401,
-          correlationId,
-        );
+      if (!session) return error("UNAUTHORIZED", 401, correlationId);
       try {
         const token = readCookieValue(
           request.headers,
@@ -128,8 +122,8 @@ export function createInvitationHandoffHandlers(dependencies: Dependencies) {
           correlationId,
         );
       } catch {
-        return response(
-          { code: "INVITATION_UNAVAILABLE", requestId: correlationId },
+        return error(
+          "INVITATION_UNAVAILABLE",
           404,
           correlationId,
           cookie("", dependencies.secureCookies, 0),
@@ -137,17 +131,13 @@ export function createInvitationHandoffHandlers(dependencies: Dependencies) {
       }
     },
     async DELETE(request: Request) {
-      const correlationId = requestId(request);
+      const correlationId = requestCorrelationId(request);
       if (
         request.headers.has("authorization") ||
         request.headers.has("x-api-key") ||
         !trusted(request, dependencies.trustedOrigins)
       )
-        return response(
-          { code: "FORBIDDEN", requestId: correlationId },
-          403,
-          correlationId,
-        );
+        return error("FORBIDDEN", 403, correlationId);
       return response(
         { status: true, requestId: correlationId },
         200,
@@ -182,7 +172,7 @@ export function createInvitationHandoffRoute(
 ) {
   let pending: Promise<HandoffHandlers> | undefined;
   return async (request: Request): Promise<Response> => {
-    const correlationId = requestId(request);
+    const correlationId = requestCorrelationId(request);
     try {
       if (!pending) {
         const current = Promise.resolve().then(loader);
@@ -193,11 +183,7 @@ export function createInvitationHandoffRoute(
       }
       return await (await pending)[method](request);
     } catch {
-      return response(
-        { code: "INVITATION_UNAVAILABLE", requestId: correlationId },
-        503,
-        correlationId,
-      );
+      return error("INVITATION_UNAVAILABLE", 503, correlationId);
     }
   };
 }

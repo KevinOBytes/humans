@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { directRouteErrorResponse } from "@/lib/api/direct-route-error";
+import { requestCorrelationId } from "@/lib/api/request-id";
 import type { Database } from "@/modules/auth/bootstrap-admin";
 import {
   noopSecurityEventLogger,
@@ -23,16 +25,6 @@ type Dependencies = {
   trustedOrigins: readonly string[];
 };
 
-const requestIdPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-
-function sanitizeRequestId(request: Request): string {
-  const candidate = request.headers.get("x-request-id")?.trim();
-  return candidate && requestIdPattern.test(candidate)
-    ? candidate.toLowerCase()
-    : crypto.randomUUID();
-}
-
 function json(
   body: object,
   status: number,
@@ -53,6 +45,21 @@ function json(
   });
 }
 
+function error(
+  code:
+    "FORBIDDEN" | "INVALID_INPUT" | "INVITATION_UNAVAILABLE" | "UNAUTHORIZED",
+  status: number,
+  requestId: string,
+  clearHandoff = false,
+): Response {
+  const headers = clearHandoff
+    ? {
+        "set-cookie": `${INVITATION_HANDOFF_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`,
+      }
+    : undefined;
+  return directRouteErrorResponse({ code, headers, requestId, status });
+}
+
 function trustedOrigin(request: Request, origins: readonly string[]): boolean {
   const origin = request.headers.get("origin");
   if (
@@ -71,31 +78,25 @@ function trustedOrigin(request: Request, origins: readonly string[]): boolean {
 
 export function createInvitationAcceptanceHandler(dependencies: Dependencies) {
   return async function POST(request: Request): Promise<Response> {
-    const requestId = sanitizeRequestId(request);
+    const requestId = requestCorrelationId(request);
     if (
       request.headers.has("authorization") ||
       request.headers.has("x-api-key") ||
       !trustedOrigin(request, dependencies.trustedOrigins)
     ) {
-      return json({ code: "FORBIDDEN", requestId }, 403, requestId);
+      return error("FORBIDDEN", 403, requestId);
     }
     let session: Session;
     try {
       session = await dependencies.getSession(request.headers);
     } catch {
-      return json(
-        { code: "INVITATION_UNAVAILABLE", requestId },
-        503,
-        requestId,
-      );
+      return error("INVITATION_UNAVAILABLE", 503, requestId);
     }
-    if (!session)
-      return json({ code: "UNAUTHORIZED", requestId }, 401, requestId);
+    if (!session) return error("UNAUTHORIZED", 401, requestId);
     const parsed = inputSchema.safeParse(
       await request.json().catch(() => null),
     );
-    if (!parsed.success)
-      return json({ code: "INVALID_INPUT", requestId }, 400, requestId);
+    if (!parsed.success) return error("INVALID_INPUT", 400, requestId);
     try {
       const result = await (dependencies.accept ?? acceptInvitationAtomically)({
         database: dependencies.database,
@@ -103,27 +104,17 @@ export function createInvitationAcceptanceHandler(dependencies: Dependencies) {
         userId: session.user.id,
       });
       return json({ result, status: true }, 200, requestId, true);
-    } catch (error) {
-      if (error instanceof InvitationLifecycleError) {
+    } catch (caught) {
+      if (caught instanceof InvitationLifecycleError) {
         (dependencies.securityLogger ?? noopSecurityEventLogger).log({
           event: "auth.invitation.acceptance_rejected",
-          reason: error.code,
+          reason: caught.code,
           requestId,
           severity: "warn",
         });
-        return json(
-          { code: "INVITATION_UNAVAILABLE", requestId },
-          409,
-          requestId,
-          true,
-        );
+        return error("INVITATION_UNAVAILABLE", 409, requestId, true);
       }
-      return json(
-        { code: "INVITATION_UNAVAILABLE", requestId },
-        503,
-        requestId,
-        true,
-      );
+      return error("INVITATION_UNAVAILABLE", 503, requestId, true);
     }
   };
 }
@@ -187,7 +178,7 @@ export function createInvitationAcceptanceRoute(
     return pending;
   };
   return async (request: Request): Promise<Response> => {
-    const correlationId = sanitizeRequestId(request);
+    const correlationId = requestCorrelationId(request);
     try {
       return await (
         await load()
@@ -198,11 +189,7 @@ export function createInvitationAcceptanceRoute(
         requestId: correlationId,
         severity: "error",
       });
-      return json(
-        { code: "INVITATION_UNAVAILABLE", requestId: correlationId },
-        503,
-        correlationId,
-      );
+      return error("INVITATION_UNAVAILABLE", 503, correlationId);
     }
   };
 }

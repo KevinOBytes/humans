@@ -27,6 +27,7 @@ describe("storage route boundary", () => {
     expect(JSON.parse(serialized)).toEqual({
       status: "error",
       code: "INTERNAL",
+      message: "An internal error occurred.",
       requestId: requestId.toLowerCase(),
     });
     expect(logger.log).toHaveBeenCalledWith({

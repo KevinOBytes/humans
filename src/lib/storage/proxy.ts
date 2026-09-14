@@ -8,6 +8,12 @@ import {
 } from "@aws-sdk/client-s3";
 
 import {
+  directRouteErrorResponse,
+  type DirectRouteErrorCode,
+} from "@/lib/api/direct-route-error";
+import { requestCorrelationId } from "@/lib/api/request-id";
+
+import {
   openSealedEnvelope,
   sealEnvelope,
 } from "@/lib/security/sealed-envelope";
@@ -25,8 +31,6 @@ import type {
 const proxyPath = "/api/storage/objects";
 const MAX_PROXY_BYTES = 50 * 1024 * 1024;
 const PROXY_TIMEOUT_MS = 60_000;
-const requestIdPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type UploadGrant = {
   version: 2;
@@ -268,15 +272,15 @@ function grantForRequest(
 }
 
 export function storageRequestId(request: Request): string {
-  const candidate = request.headers.get("x-request-id")?.trim();
-  return candidate && requestIdPattern.test(candidate)
-    ? candidate.toLowerCase()
-    : crypto.randomUUID();
+  return requestCorrelationId(request);
 }
 
 function errorCode(
   status: number,
-): "FORBIDDEN" | "INTERNAL" | "INVALID_INPUT" | "NOT_FOUND" | "UNAUTHORIZED" {
+): Extract<
+  DirectRouteErrorCode,
+  "FORBIDDEN" | "INTERNAL" | "INVALID_INPUT" | "NOT_FOUND" | "UNAUTHORIZED"
+> {
   if (status === 400) return "INVALID_INPUT";
   if (status === 401) return "UNAUTHORIZED";
   if (status === 403) return "FORBIDDEN";
@@ -288,16 +292,12 @@ export function storageErrorResponse(
   status: number,
   requestId: string,
 ): Response {
-  return Response.json(
-    { status: "error", code: errorCode(status), requestId },
-    {
-      status,
-      headers: {
-        "cache-control": "private, no-store",
-        "x-request-id": requestId,
-      },
-    },
-  );
+  return directRouteErrorResponse({
+    code: errorCode(status),
+    extra: { status: "error" },
+    requestId,
+    status,
+  });
 }
 
 function storageError(error: unknown): {

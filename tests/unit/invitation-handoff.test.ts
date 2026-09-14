@@ -80,7 +80,17 @@ describe("invitation handoff", () => {
     ]);
     expect(first.status).toBe(503);
     expect(shared.status).toBe(503);
-    expect(await first.text()).not.toContain("secret");
+    for (const response of [first, shared]) {
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/u);
+      const body = await response.text();
+      expect(body).not.toContain("secret");
+      expect(JSON.parse(body)).toEqual({
+        code: "INVITATION_UNAVAILABLE",
+        message: "The invitation is unavailable.",
+        requestId: response.headers.get("x-request-id"),
+      });
+    }
     const retry = await route(
       new Request(`${origin}/api/account/invitations/handoff`),
     );
