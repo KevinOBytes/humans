@@ -3,10 +3,111 @@ import { evidenceAssertions } from "@/db/schema/evidence";
 import { people, personIdentifiers } from "@/db/schema/people";
 import { createGraphQLError } from "@/graphql/errors";
 import {
+  openSealedEnvelope,
+  sealEnvelope,
+} from "@/lib/security/sealed-envelope";
+import {
   resourceVisibilitySql,
   type ResearchServiceContext,
 } from "@/modules/audit/service";
 import { parseIdentifierCitationPath } from "./assertions-validation";
+
+export const PROTECTED_CITATION_LOCATOR_PURPOSE =
+  "protected-identifier-citation-locator";
+export const PROTECTED_CITATION_QUOTE_PURPOSE =
+  "protected-identifier-citation-quote";
+
+function protectedCitationKey(context: ResearchServiceContext): string {
+  const key = context.protectedExactRuntime?.encryptionKey;
+  if (!key || !/^[0-9a-f]{64}$/iu.test(key))
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "Protected citation storage is not configured.",
+    );
+  return key;
+}
+
+export function sealProtectedIdentifierCitation(
+  context: ResearchServiceContext,
+  input: { locator: string; quote: string },
+) {
+  const key = protectedCitationKey(context);
+  return {
+    encryptedLocator: sealEnvelope({
+      key,
+      plaintext: input.locator,
+      purpose: PROTECTED_CITATION_LOCATOR_PURPOSE,
+    }),
+    encryptedQuote: sealEnvelope({
+      key,
+      plaintext: input.quote,
+      purpose: PROTECTED_CITATION_QUOTE_PURPOSE,
+    }),
+  };
+}
+
+export function openProtectedIdentifierCitation<
+  T extends {
+    locator: string | null;
+    quote: string | null;
+    encryptedLocator: string | null;
+    encryptedQuote: string | null;
+  },
+>(
+  context: ResearchServiceContext,
+  row: T,
+): T & { locator: string; quote: string } {
+  if (row.locator !== null && row.quote !== null)
+    return row as T & { locator: string; quote: string };
+  if (!row.encryptedLocator || !row.encryptedQuote)
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "Protected citation storage is invalid.",
+    );
+  try {
+    const key = protectedCitationKey(context);
+    return {
+      ...row,
+      locator: openSealedEnvelope({
+        key,
+        purpose: PROTECTED_CITATION_LOCATOR_PURPOSE,
+        token: row.encryptedLocator,
+      }),
+      quote: openSealedEnvelope({
+        key,
+        purpose: PROTECTED_CITATION_QUOTE_PURPOSE,
+        token: row.encryptedQuote,
+      }),
+    };
+  } catch {
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "Protected citation cannot be disclosed.",
+    );
+  }
+}
+
+export function assertIdentifierCitationStorage(
+  sensitivity: string,
+  row: {
+    locator: string | null;
+    quote: string | null;
+    encryptedLocator: string | null;
+    encryptedQuote: string | null;
+  },
+) {
+  const plaintext = row.locator !== null && row.quote !== null;
+  const encrypted =
+    row.encryptedLocator !== null && row.encryptedQuote !== null;
+  if (
+    (sensitivity === "public" && !plaintext) ||
+    (sensitivity !== "public" && !encrypted)
+  )
+    throw createGraphQLError(
+      "PRECONDITION_FAILED",
+      "Protected citation storage is invalid.",
+    );
+}
 
 /** Call within the assertion transaction; parent-first locking matches identifier writes/merges. */
 export async function requireIdentifierCitation(
@@ -68,18 +169,14 @@ export async function requireIdentifierCitation(
       "NOT_FOUND",
       "The requested resource was not found.",
     );
-  // Assertions contain plaintext quotes/locators. Protected identifiers must not
-  // acquire a less protected shadow copy through a person-level assertion.
-  if (identifier.sensitivity !== "public")
-    throw createGraphQLError(
-      "PRECONDITION_FAILED",
-      "Protected identifier citations require protected evidence storage.",
-    );
+  // The caller chooses the storage mode after this current-version and
+  // visibility check; protected values must not acquire a plaintext shadow.
   if (requireCurrentVersion && identifier.version !== citation.version)
     throw createGraphQLError(
       "CONFLICT",
       "The identifier has changed. Refresh before citing it.",
     );
+  return identifier;
 }
 
 /** The caller holds the identifier's parent write lock, excluding new citations. */

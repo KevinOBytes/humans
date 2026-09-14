@@ -372,6 +372,13 @@
       "when": 1789357204267,
       "tag": "0052_core",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1789400102772,
+      "tag": "0053_protected-citation-storage",
+      "breakpoints": true
     }
   ]
 }

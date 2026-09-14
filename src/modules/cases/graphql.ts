@@ -113,7 +113,7 @@ const AssertionInput = builder.inputType("LinkEvidenceAssertionInput", {
     resourceId: t.field({ type: "UUID", required: true }),
     fieldPath: t.string({
       description:
-        "Optional cited field. Public person identifiers use identifiers.<uuid>.v<version>.<field>; protected identifier citations are not supported by plaintext evidence storage.",
+        "Optional cited field. Public and authorized protected person identifier citations use identifiers.<uuid>.v<version>.<field>; protected locator and quote material is encrypted at rest.",
     }),
     locator: t.string({ required: true }),
     quote: t.string({ required: true }),
@@ -172,7 +172,7 @@ export function registerCasesGraphQL() {
     personIdentifierCitations: t.field({
       type: IdentifierCitations,
       description:
-        "Current authorized public identifier citations only. Protected and stale bindings are omitted; a bounded page may be empty while more candidates remain.",
+        "Current authorized identifier citations. Protected and stale bindings are omitted; a bounded page may be empty while more candidates remain.",
       args: {
         personId: t.arg({ type: "UUID", required: true }),
         first: t.arg.int(),
