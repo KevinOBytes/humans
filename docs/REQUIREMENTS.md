@@ -1,5 +1,22 @@
 # MVP requirements
 
+## Production deployment verification (2026-09-14)
+
+The reviewed `main` head `dcbb36431abec2793d66930f8b5c188705bc6517` is now
+deployed to Vercel production as `dpl_BkV534V7M832BTkt1ahb3YX76btc` with
+`READY` status. The deployment is aliased to `humans.kevinbytes.com`,
+`humans-dun.vercel.app`, and `humans-tkoresearch.vercel.app`. Public probes
+returned 200 for `/`, `/sign-in`, `/api/health/live`, and
+`/api/health/ready`; an unauthenticated GraphQL request returned the expected
+401 `UNAUTHENTICATED` envelope with a request ID. GitHub Actions run
+`34850702071` passed all nine required jobs, including the real PostgreSQL
+integration seam, browser acceptance, production build, Compose lifecycle,
+generated drift, image security, dependency policy, and secret scanning.
+This proves the reviewed code is built, tested, and publicly reachable; it
+does not prove hosted administrator credentials, recovery/2FA, or live
+external-provider contracts, which still require an attended credential-safe
+acceptance run.
+
 ## Full-MVP closeout tranche verification (2026-09-14)
 
 The local `main` branch now contains the independently reviewed closeout
