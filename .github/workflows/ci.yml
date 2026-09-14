@@ -472,6 +472,7 @@ jobs:
         with:
           scan-type: image
           image-ref: humans-ci:${{ github.sha }}
+          version: v0.74.0
           severity: HIGH,CRITICAL
           ignore-unfixed: false
           exit-code: 1
