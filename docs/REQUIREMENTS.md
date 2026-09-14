@@ -1516,19 +1516,23 @@ before returning a stored resource. Malformed-reference, expiry-takeover,
 browser retry, performance, and the remaining job/settings mutation matrix
 remain open; `HUM-NFR-008` stays Incomplete.
 
-Updated hosted parity evidence (2026-09-13): reviewed `main` through commit
-`c739f4d` is deployed as Vercel `dpl_FND3s4vZ9tLEoHBY5SNegNCG6HM8` with
+Updated hosted parity evidence (2026-09-14): the reviewed `main` checkout was
+manually deployed as `dpl_4CRY2FAyMWF5ecengRVaE3qUYcuy` (`READY`) and aliased to
 `humans.kevinbytes.com`, `humans-dun.vercel.app`, and
-`humans-tkoresearch.vercel.app` aliases. Public homepage, liveness,
-readiness (PostgreSQL/Redis/storage), unauthenticated POST GraphQL, and
-protected jobs probes passed with correlated private responses. Hosted
-authenticated sign-in remains unverified because sensitive production
-credentials cannot be exported by the CLI; the hosted release requirement
-remains incomplete.
+`humans-tkoresearch.vercel.app`. Public probes passed homepage/sign-in (200 with
+deployment marker), liveness (200), and readiness (200 with
+PostgreSQL/Redis/storage); all probes returned private/no-store and correlation
+headers. Vercel CLI did not expose a Git commit SHA for this manual deployment,
+but it was built from clean local `main` at `340df21`. Hosted authenticated
+sign-in, administrator bootstrap, and provider contract acceptance remain
+unverified because secrets are intentionally not exported.
 
-Current CI evidence (2026-09-13): GitHub Actions run `34749135777` for pushed
-commit `1102a67` passed all nine required jobs, including PostgreSQL
+Current CI evidence (2026-09-14): GitHub Actions run `34797630687` for pushed
+commit `340df21` passed all nine required jobs, including PostgreSQL
 integration, browser acceptance, Compose lifecycle, production build,
 generated drift, quality, image security, dependency policy, and secret
-scanning. The deployed application parent is `c739f4d`; hosted authenticated
-and provider acceptance remain incomplete.
+scanning. The aggregate local test command still has 26 stateful failures when
+every integration file shares one database in parallel; the required CI
+database matrix and all bounded acceptance suites pass, so hosted
+authenticated/provider proof and the remaining incomplete requirements stay
+open.
