@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { executeBrowserGraphQL } from "@/graphql/client";
@@ -51,6 +51,17 @@ export function AiReviewQueue({
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<string[]>([]);
   const [approved, setApproved] = useState(false);
+  const retryKeys = useRef(
+    new Map<string, { material: string; key: string }>(),
+  );
+  function retryKey(slot: string, material: unknown) {
+    const encoded = JSON.stringify(material);
+    const previous = retryKeys.current.get(slot);
+    if (previous?.material === encoded) return previous.key;
+    const key = crypto.randomUUID();
+    retryKeys.current.set(slot, { material: encoded, key });
+    return key;
+  }
   async function decide(
     row: Projection,
     decision: "accept" | "reject" | "defer",
@@ -58,7 +69,17 @@ export function AiReviewQueue({
     setBusy(true);
     setError(null);
     try {
-      const input = { id: row.id, expectedVersion: row.version };
+      const reason = reasons[row.id]?.trim() ?? "";
+      const input = {
+        id: row.id,
+        expectedVersion: row.version,
+        idempotencyKey: retryKey(row.id, {
+          id: row.id,
+          expectedVersion: row.version,
+          decision,
+          reason: decision === "reject" ? reason : null,
+        }),
+      };
       const result =
         decision === "accept"
           ? await executeBrowserGraphQL(AcceptAiSuggestionDocument, {
@@ -66,14 +87,17 @@ export function AiReviewQueue({
             })
           : decision === "reject"
             ? await executeBrowserGraphQL(RejectAiSuggestionDocument, {
-                input: { ...input, reason: reasons[row.id] ?? "" },
+                input: { ...input, reason },
               })
             : await executeBrowserGraphQL(DeferAiSuggestionDocument, { input });
       if (!result.ok)
         setError(
           "The review could not be saved. Refresh to check current access and status.",
         );
-      else onChange();
+      else {
+        retryKeys.current.delete(row.id);
+        onChange();
+      }
     } catch {
       setError("The review could not be saved.");
     } finally {
@@ -85,12 +109,17 @@ export function AiReviewQueue({
     setBusy(true);
     setError(null);
     try {
+      const items = suggestions
+        .filter((s) => selected.includes(s.id))
+        .map((s) => ({ id: s.id, expectedVersion: s.version }));
       const result = await executeBrowserGraphQL(ReviewAiBatchDocument, {
         input: {
           approved: true,
-          suggestions: suggestions
-            .filter((s) => selected.includes(s.id))
-            .map((s) => ({ id: s.id, expectedVersion: s.version })),
+          idempotencyKey: retryKey("batch", {
+            approved: true,
+            suggestions: items,
+          }),
+          suggestions: items,
         },
       });
       if (!result.ok)
@@ -98,6 +127,7 @@ export function AiReviewQueue({
           "The batch was not applied. Check each suggestion and current access.",
         );
       else {
+        retryKeys.current.delete("batch");
         setSelected([]);
         setApproved(false);
         onChange();

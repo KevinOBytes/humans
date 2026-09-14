@@ -12,6 +12,7 @@ export type AcceptAiSuggestionInput = {
   expectedVersion: number;
   explicitConfirmed: boolean;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type AccessPolicyInput = {
@@ -47,6 +48,7 @@ export type AiResourceKind = "EVIDENCE" | "PERSON";
 
 export type AiReviewBatchInput = {
   approved: boolean;
+  idempotencyKey?: string | null | undefined;
   suggestions: Array<AiReviewBatchItem>;
 };
 
@@ -582,6 +584,7 @@ export type CreateWebhookInput = {
 export type DeferAiSuggestionInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
 };
 
 export type DeletionBehavior =
@@ -937,6 +940,7 @@ export type ProtectedSearchKind = "PERSON_IDENTIFIER" | "PHONE";
 export type RejectAiSuggestionInput = {
   expectedVersion: number;
   id: string;
+  idempotencyKey?: string | null | undefined;
   reason: string;
 };
 

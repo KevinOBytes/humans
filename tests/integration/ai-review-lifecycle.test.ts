@@ -23,6 +23,8 @@ import {
 import { factDefinitions, facts } from "@/db/schema/facts";
 import { purposePolicies } from "@/db/schema/governance";
 import { people } from "@/db/schema/people";
+import { sessions } from "@/db/schema/auth";
+import { locationMutationIdempotency } from "@/db/schema/locations";
 import { auditEvents } from "@/db/schema/operations";
 import {
   createAiReviewService,
@@ -171,6 +173,335 @@ liveDescribe("AI suggestion lifecycle and provenance", () => {
       promptPolicyVersion: "synthetic-v1",
     });
   }
+  it.each(["accepted", "rejected", "deferred"] as const)(
+    "durably converges concurrent %s retries with one decision audit",
+    async (decision) => {
+      const row = await draft();
+      const service = createAiReviewService(reviewerContext);
+      const input = {
+        id: row.id,
+        expectedVersion: row.version,
+        explicitConfirmed: true,
+        reason: "Reviewed evidence",
+        idempotencyKey: newId(),
+      };
+      const invoke = () =>
+        decision === "accepted"
+          ? service.acceptSuggestion({
+              id: input.id,
+              expectedVersion: input.expectedVersion,
+              explicitConfirmed: true,
+              idempotencyKey: input.idempotencyKey,
+            })
+          : decision === "rejected"
+            ? service.rejectSuggestion({
+                id: input.id,
+                expectedVersion: input.expectedVersion,
+                reason: input.reason,
+                idempotencyKey: input.idempotencyKey,
+              })
+            : service.deferSuggestion({
+                id: input.id,
+                expectedVersion: input.expectedVersion,
+                idempotencyKey: input.idempotencyKey,
+              });
+      const [first, second] = await Promise.all([invoke(), invoke()]);
+      expect(first.id).toBe(row.id);
+      expect(second).toMatchObject({
+        id: row.id,
+        version: row.version + 1,
+        status: decision,
+      });
+      const audit = await fixture.database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, context.workspaceId),
+            eq(auditEvents.resourceId, row.id),
+            eq(auditEvents.action, `ai.suggestion.${decision}`),
+          ),
+        );
+      expect(audit).toHaveLength(1);
+    },
+  );
+  it("binds a review key to normalized decision material", async () => {
+    const row = await draft();
+    const service = createAiReviewService(reviewerContext);
+    const input = {
+      id: row.id,
+      expectedVersion: row.version,
+      reason: "Reviewed",
+      idempotencyKey: newId(),
+    };
+    await service.rejectSuggestion(input);
+    await expect(
+      service.rejectSuggestion({
+        ...input,
+        id: input.id.toUpperCase(),
+        reason: " Reviewed ",
+      }),
+    ).resolves.toMatchObject({ id: row.id, status: "rejected" });
+    await expect(
+      service.rejectSuggestion({ ...input, reason: "Different reason" }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+    await expect(
+      service.deferSuggestion({
+        id: input.id,
+        expectedVersion: input.expectedVersion,
+        idempotencyKey: input.idempotencyKey,
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+  });
+  async function reviewClaim(operation = "ai.review.decision") {
+    const claims = await fixture.database
+      .select()
+      .from(locationMutationIdempotency)
+      .where(
+        and(
+          eq(locationMutationIdempotency.workspaceId, context.workspaceId),
+          eq(locationMutationIdempotency.operation, operation),
+        ),
+      );
+    expect(claims).toHaveLength(1);
+    return claims[0]!;
+  }
+  it("replays only strict opaque suggestion references and rejects redirected, stale, or surplus fields", async () => {
+    const row = await draft();
+    const service = createAiReviewService(reviewerContext);
+    const input = {
+      id: row.id,
+      expectedVersion: row.version,
+      idempotencyKey: "opaque-decision-key",
+    };
+    await service.deferSuggestion(input);
+    const claim = await reviewClaim();
+    expect(JSON.stringify(claim)).not.toContain(input.idempotencyKey);
+    expect(JSON.stringify(claim.responseReference)).not.toContain("Synthetic");
+    for (const responseReference of [
+      { suggestions: "{" },
+      {
+        suggestions: JSON.stringify([
+          { id: newId(), version: 2, status: "deferred" },
+        ]),
+      },
+      {
+        suggestions: JSON.stringify([
+          { id: row.id, version: 3, status: "deferred" },
+        ]),
+      },
+      {
+        suggestions: JSON.stringify([
+          { id: row.id, version: 2, status: "accepted" },
+        ]),
+      },
+      {
+        suggestions: JSON.stringify([
+          { id: row.id, version: 2, status: "deferred", value: "leak" },
+        ]),
+      },
+      {
+        suggestions: JSON.stringify([
+          { id: row.id, version: 2, status: "deferred" },
+        ]),
+        biography: "leak",
+      },
+    ]) {
+      await fixture.database
+        .update(locationMutationIdempotency)
+        .set({ responseReference })
+        .where(eq(locationMutationIdempotency.id, claim.id));
+      await expect(service.deferSuggestion(input)).rejects.toMatchObject({
+        extensions: { code: "PRECONDITION_FAILED" },
+      });
+    }
+  });
+  it("expires claims without repeating a committed decision and allows one concurrent fresh takeover", async () => {
+    const row = await draft();
+    const service = createAiReviewService(reviewerContext);
+    const input = {
+      id: row.id,
+      expectedVersion: row.version,
+      idempotencyKey: "expiry-key",
+    };
+    await service.deferSuggestion(input);
+    const claim = await reviewClaim();
+    await fixture.database
+      .update(locationMutationIdempotency)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(locationMutationIdempotency.id, claim.id));
+    await expect(service.deferSuggestion(input)).rejects.toMatchObject({
+      extensions: { code: "CONFLICT" },
+    });
+    const next = await draft({
+      personId: row.personId,
+      field: "preferredName",
+    });
+    const fresh = { ...input, id: next.id };
+    const results = await Promise.all([
+      service.deferSuggestion(fresh),
+      service.deferSuggestion(fresh),
+    ]);
+    expect(results[0]).toMatchObject({ id: next.id, version: 2 });
+    expect(results[1]).toEqual(results[0]);
+  });
+  it("does not replay across principals or workspaces and rechecks revoked sessions", async () => {
+    const row = await draft();
+    const input = {
+      id: row.id,
+      expectedVersion: row.version,
+      idempotencyKey: newId(),
+    };
+    await createAiReviewService(reviewerContext).deferSuggestion(input);
+    await expect(
+      createAiReviewService(context).deferSuggestion(input),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+    const foreign = await caseContext(fixture, await fixture.createActor());
+    await expect(
+      createAiReviewService(foreign).deferSuggestion(input),
+    ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+    await fixture.database
+      .delete(sessions)
+      .where(eq(sessions.userId, reviewerContext.actor.id));
+    await expect(
+      createAiReviewService(reviewerContext).deferSuggestion(input),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+  });
+  it("does not replay a deferred decision after another current decision", async () => {
+    const row = await draft();
+    const service = createAiReviewService(reviewerContext);
+    const input = {
+      id: row.id,
+      expectedVersion: row.version,
+      idempotencyKey: newId(),
+    };
+    await service.deferSuggestion(input);
+    await service.rejectSuggestion({
+      id: row.id,
+      expectedVersion: 2,
+      reason: "Further review",
+    });
+    await expect(service.deferSuggestion(input)).rejects.toMatchObject({
+      extensions: { code: "CONFLICT" },
+    });
+  });
+  it.each(["person", "provenance", "purpose", "acceptedEvidence"] as const)(
+    "replay reauthorizes current %s visibility",
+    async (kind) => {
+      const row = await draft();
+      const service = createAiReviewService(reviewerContext);
+      const input = {
+        id: row.id,
+        expectedVersion: row.version,
+        explicitConfirmed: true,
+        idempotencyKey: newId(),
+      };
+      await service.acceptSuggestion(input);
+      if (kind === "person")
+        await fixture.database
+          .update(people)
+          .set({ deletedAt: new Date() })
+          .where(eq(people.id, row.personId));
+      if (kind === "provenance")
+        await fixture.database
+          .update(personWebResearchRuns)
+          .set({ model: "changed-provider-provenance" })
+          .where(eq(personWebResearchRuns.id, row.researchRunId));
+      if (kind === "purpose")
+        await fixture.database
+          .update(purposePolicies)
+          .set({ state: "disabled" })
+          .where(eq(purposePolicies.workspaceId, context.workspaceId));
+      if (kind === "acceptedEvidence")
+        await fixture.database
+          .update(evidenceItems)
+          .set({ deletedAt: new Date() })
+          .where(eq(evidenceItems.workspaceId, context.workspaceId));
+      await expect(service.acceptSuggestion(input)).rejects.toThrow();
+      const audits = await fixture.database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.resourceId, row.id),
+            eq(auditEvents.action, "ai.suggestion.accepted"),
+          ),
+        );
+      expect(audits).toHaveLength(1);
+    },
+  );
+  it("converges one complete batch and binds its ordered membership", async () => {
+    const first = await draft();
+    const second = await draft({
+      personId: first.personId,
+      field: "preferredName",
+    });
+    const service = createAiReviewService(reviewerContext);
+    const input = {
+      approved: true,
+      suggestions: [first, second].map((r) => ({
+        id: r.id,
+        expectedVersion: r.version,
+      })),
+      idempotencyKey: newId(),
+    };
+    const results = await Promise.all([
+      service.reviewBatch(input),
+      service.reviewBatch(input),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    expect(results[0]).toHaveLength(2);
+    expect(
+      results[0].every((r) => r.status === "accepted" && r.version === 2),
+    ).toBe(true);
+    await reviewClaim("ai.review.batch");
+    const audits = await fixture.database
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "ai.suggestion.accepted"));
+    expect(audits).toHaveLength(2);
+    expect(await fixture.database.select().from(evidenceItems)).toHaveLength(2);
+    await expect(
+      service.reviewBatch({
+        ...input,
+        suggestions: [...input.suggestions].reverse(),
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+    await expect(
+      service.reviewBatch({
+        ...input,
+        suggestions: input.suggestions.slice(0, 1),
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+  });
+  it("rolls back the complete keyed batch, evidence and ledger when any item is stale", async () => {
+    const first = await draft();
+    const second = await draft({
+      personId: first.personId,
+      field: "preferredName",
+    });
+    await expect(
+      createAiReviewService(reviewerContext).reviewBatch({
+        approved: true,
+        idempotencyKey: newId(),
+        suggestions: [
+          { id: first.id, expectedVersion: 1 },
+          { id: second.id, expectedVersion: 9 },
+        ],
+      }),
+    ).rejects.toMatchObject({ extensions: { code: "CONFLICT" } });
+    await expectPromotionArtifactsAbsent();
+    const rows = await fixture.database.select().from(aiReviewSuggestions);
+    expect(
+      rows.every((row) => row.status === "pending" && row.version === 1),
+    ).toBe(true);
+    expect(
+      await fixture.database
+        .select()
+        .from(locationMutationIdempotency)
+        .where(eq(locationMutationIdempotency.operation, "ai.review.batch")),
+    ).toHaveLength(0);
+  });
   async function expectPromotionArtifactsAbsent() {
     const [
       promotedSources,

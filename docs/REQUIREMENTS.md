@@ -1595,3 +1595,14 @@ production build, generated-artifact drift, quality, Compose lifecycle, image
 security, dependency policy, and secret scanning. This is release evidence for
 the bounded tranche, not hosted authenticated/provider acceptance or closure
 of the broader incomplete requirement rows.
+
+Bounded AI-review retry evidence (2026-09-14): individual accept/reject/defer
+and complete approved batches support optional durable principal-scoped keys.
+One outer ledger transaction commits review mutations, evidence effects and
+audits; replay validates opaque suggestion/version/status references before
+reauthorizing current reviewer, purpose, case, person and provenance access.
+Live PostgreSQL coverage includes concurrent convergence, material conflicts,
+malformed references, expiry takeover, authorization changes and atomic batch
+rollback. Component tests cover transport-uncertain retry keys and replacement
+when material changes. Unkeyed callers remain supported. HUM-NFR-008 and the
+broader AI/hosted/provider acceptance requirements remain Incomplete.

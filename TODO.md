@@ -952,3 +952,14 @@ Compose lifecycle, image security, dependency policy, and secret scanning.
 This validates the merged tranche only; hosted authenticated/provider,
 external storage/email/AI, performance, and the remaining incomplete
 requirements are still open.
+
+Bounded AI-review retry evidence (2026-09-14): optional principal-bound keys
+now cover individual accept/reject/defer decisions and whole approved batches.
+Live PostgreSQL tests cover concurrent convergence, changed/normalized material,
+opaque-reference rejection, expiry takeover, principal/workspace/session fences,
+current purpose/person/provenance/evidence reauthorization, and atomic batch
+rollback. Browser-component tests preserve keys after uncertain transport and
+replace them when decision material or batch membership changes. The ledger
+stores only suggestion identifiers, versions and statuses. This is bounded
+evidence for HUM-NFR-008; other mutation families and hosted/provider acceptance
+remain open.

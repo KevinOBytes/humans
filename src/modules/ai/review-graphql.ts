@@ -159,6 +159,7 @@ const AcceptedHistoryConnection = builder
   });
 const AcceptInput = builder.inputType("AcceptAiSuggestionInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
     explicitConfirmed: t.boolean({ required: true }),
@@ -166,6 +167,7 @@ const AcceptInput = builder.inputType("AcceptAiSuggestionInput", {
 });
 const RejectInput = builder.inputType("RejectAiSuggestionInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
     reason: t.string({ required: true }),
@@ -173,6 +175,7 @@ const RejectInput = builder.inputType("RejectAiSuggestionInput", {
 });
 const DeferInput = builder.inputType("DeferAiSuggestionInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     id: t.field({ type: "UUID", required: true }),
     expectedVersion: t.int({ required: true }),
   }),
@@ -185,6 +188,7 @@ const BatchItem = builder.inputType("AiReviewBatchItem", {
 });
 const BatchInput = builder.inputType("AiReviewBatchInput", {
   fields: (t) => ({
+    idempotencyKey: t.string(),
     suggestions: t.field({ type: [BatchItem], required: true }),
     approved: t.boolean({ required: true }),
   }),
