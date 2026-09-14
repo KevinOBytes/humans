@@ -113,6 +113,11 @@ describe("PersonResearchPanel governed review", () => {
     });
     expect(screen.getByRole("status")).toHaveTextContent(runId);
     expect(screen.getByText("Original biography")).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Select biography for batch review",
+      }),
+    ).not.toBeChecked();
     expect(execute).toHaveBeenCalledTimes(2);
   });
   it("applies a single immutable proposal through its versioned review operation", async () => {
@@ -465,6 +470,10 @@ describe("PersonResearchPanel governed review", () => {
     );
     expect(await screen.findByText("biography")).toBeVisible();
     expect(screen.getByText("COMPATIBLE / research-model")).toBeVisible();
+    expect(screen.getByText(runId)).toBeVisible();
+    expect(
+      screen.getByText("019fe224-a0cd-76e4-92ac-9d27a5c62cf6"),
+    ).toBeVisible();
     expect(
       screen.getByText("Evidence details are redacted for your access."),
     ).toBeVisible();

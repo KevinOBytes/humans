@@ -246,6 +246,21 @@ provides generated GraphQL/PostgreSQL acceptance when the live database seam
 is configured. A controlled backfill for workspaces created before this
 checkpoint remains open, as does the broader hosted and whole-profile matrix.
 
+Rich-profile catalog backfill checkpoint (2026-09-14): catalog version 1 now
+also provisions an internal, many-valued `profile.person_reference` definition
+so the existing workspace-scoped person picker is available without custom
+setup. `backfillWorkspaceProfileDefinitions` serializes one workspace with an
+advisory transaction lock, validates the supplied workspace principal, inserts
+only absent namespace/key rows with conflict-safe writes, and records one
+redacted audit only when rows change. User-edited catalog rows and custom
+definitions retain their IDs, versions, labels, and metadata. New-workspace
+provisioning uses the same transaction-local path; historical workspaces use
+the attended, single-workspace
+`operator:backfill-profile-definitions -- --workspace-id <UUID> --actor-id
+<UUID>` command. Focused PostgreSQL/GraphQL and unit tests pass. No hosted
+backfill was run, and the whole-profile hosted/browser/accessibility matrix
+remains open.
+
 Rich-profile entry guidance checkpoint (2026-09-13): the generated fact catalog
 description and category now flow into the profile fact editor. The selected
 field presents an accessible, human-readable guide such as “Work · Employment”

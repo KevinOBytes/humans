@@ -16,6 +16,7 @@ describe("default profile fact definition catalog", () => {
       "language",
       "organization",
       "birth_date",
+      "person_reference",
       "custom_note",
     ]);
 
@@ -29,6 +30,7 @@ describe("default profile fact definition catalog", () => {
       "education",
       "language",
       "organization",
+      "person_reference",
       "custom_note",
     ]);
 
@@ -42,6 +44,16 @@ describe("default profile fact definition catalog", () => {
         ({ fieldKey }) => fieldKey === "birth_date",
       )?.defaultSensitivity,
     ).toBe("confidential");
+    expect(
+      DEFAULT_PROFILE_FACT_DEFINITIONS.find(
+        ({ fieldKey }) => fieldKey === "person_reference",
+      ),
+    ).toMatchObject({
+      allowedValueType: "person_reference",
+      cardinality: "many",
+      defaultSensitivity: "internal",
+      graphable: true,
+    });
   });
 
   it("binds every catalog row to the new workspace and owner principal", () => {
@@ -63,6 +75,7 @@ describe("default profile fact definition catalog", () => {
           workspaceId: "018f0000-0000-7000-8000-000000000001",
           fieldKey: "employment",
           state: "active",
+          version: 1,
           createdBy: "018f0000-0000-7000-8000-000000000002",
           updatedBy: "018f0000-0000-7000-8000-000000000002",
         }),

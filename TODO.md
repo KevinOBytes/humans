@@ -170,6 +170,21 @@ workspaces still require a controlled operator backfill before this is a
 complete historical migration; aliases, biography, contacts, addresses,
 identifiers, notes, and files remain on their existing dedicated boundaries.
 
+Rich-profile catalog backfill checkpoint (2026-09-14): catalog version 1 now
+also provisions an internal, many-valued `profile.person_reference` definition
+so the existing workspace-scoped person picker is available without custom
+setup. `backfillWorkspaceProfileDefinitions` serializes one workspace with an
+advisory transaction lock, validates the supplied workspace principal, inserts
+only absent namespace/key rows with conflict-safe writes, and records one
+redacted audit only when rows change. User-edited catalog rows and custom
+definitions retain their IDs, versions, labels, and metadata. New-workspace
+provisioning uses the same transaction-local path; historical workspaces use
+the attended, single-workspace
+`operator:backfill-profile-definitions -- --workspace-id <UUID> --actor-id
+<UUID>` command. Focused PostgreSQL/GraphQL and unit tests pass. No hosted
+backfill was run, and the whole-profile hosted/browser/accessibility matrix
+remains open.
+
 Rich-profile entry guidance checkpoint (2026-09-13): the profile fact editor
 now preserves and presents each catalog definition's category and description
 (for example, “Work · Employment — An employment role, employer, or employment
