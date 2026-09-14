@@ -595,37 +595,39 @@ export function DashboardOverview({
           <p className="text-muted-foreground mt-4 text-sm">
             Activity is managed by workspace administrators.
           </p>
-        ) : activity?.length ? (
-          <ul aria-label="Workspace activity" className="mt-4 divide-y">
-            {activity.map((event, index) => (
-              <li
-                key={`${event.occurredAt}-${event.action}-${index}`}
-                className="py-4 first:pt-0 last:pb-0"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">{humanize(event.action)}</p>
-                    <p className="text-muted-foreground mt-1 text-xs [overflow-wrap:anywhere] break-words">
-                      {event.actorLabel} ({humanize(event.actorKind)}) ·{" "}
-                      {humanize(event.resourceKind)}
-                    </p>
-                  </div>
-                  <Badge variant="neutral">{humanize(event.outcome)}</Badge>
-                </div>
-                <p className="text-muted-foreground mt-2 text-xs">
-                  <time dateTime={event.occurredAt}>
-                    {displayDate(event.occurredAt)}
-                  </time>
-                </p>
-              </li>
-            ))}
-          </ul>
         ) : (
-          <div className="mt-4">
-            <EmptyState>
-              No workspace activity has been recorded yet.
-            </EmptyState>
-          </div>
+          <ul aria-label="Workspace activity" className="mt-4 divide-y">
+            {activity?.length ? (
+              activity.map((event, index) => (
+                <li
+                  key={`${event.occurredAt}-${event.action}-${index}`}
+                  className="py-4 first:pt-0 last:pb-0"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">{humanize(event.action)}</p>
+                      <p className="text-muted-foreground mt-1 text-xs [overflow-wrap:anywhere] break-words">
+                        {event.actorLabel} ({humanize(event.actorKind)}) ·{" "}
+                        {humanize(event.resourceKind)}
+                      </p>
+                    </div>
+                    <Badge variant="neutral">{humanize(event.outcome)}</Badge>
+                  </div>
+                  <p className="text-muted-foreground mt-2 text-xs">
+                    <time dateTime={event.occurredAt}>
+                      {displayDate(event.occurredAt)}
+                    </time>
+                  </p>
+                </li>
+              ))
+            ) : (
+              <li className="py-4 first:pt-0 last:pb-0">
+                <EmptyState>
+                  No workspace activity has been recorded yet.
+                </EmptyState>
+              </li>
+            )}
+          </ul>
         )}
       </section>
     </div>

@@ -137,6 +137,7 @@ describe("FactsSection", () => {
     );
     expect(executeServer).toHaveBeenCalledTimes(4);
     expect(String(executeServer.mock.calls[3]?.[0])).toContain("PeopleOptions");
+    expect(executeServer.mock.calls[3]?.[1]).toEqual({ first: 25 });
   });
 
   it("carries authorized citation strength from generated fact detail into the profile", async () => {

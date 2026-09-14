@@ -76,17 +76,23 @@ export default async function DashboardPage() {
   let activity: DashboardActivity[] | null = null;
   if (includeActivity) {
     if (!data.auditEvents?.nodes) incompleteDashboardData();
-    activity = data.auditEvents.nodes.map((event) => {
-      if (!event.actor) incompleteDashboardData();
-      return {
-        action: requiredText(event.action),
-        resourceKind: requiredText(event.resourceKind),
-        outcome: requiredText(event.outcome),
-        occurredAt: requiredText(event.occurredAt),
-        actorKind: requiredText(event.actor.kind),
-        actorLabel: requiredText(event.actor.label),
-      };
-    });
+    // Catalog provisioning is an auditable system mutation, but it is not
+    // workspace activity from an operator's perspective. Keep it in the
+    // settings audit log while allowing a newly provisioned workspace to
+    // present a truthful empty activity state on the dashboard.
+    activity = data.auditEvents.nodes
+      .filter((event) => event.action !== "factDefinition.catalogBackfill")
+      .map((event) => {
+        if (!event.actor) incompleteDashboardData();
+        return {
+          action: requiredText(event.action),
+          resourceKind: requiredText(event.resourceKind),
+          outcome: requiredText(event.outcome),
+          occurredAt: requiredText(event.occurredAt),
+          actorKind: requiredText(event.actor.kind),
+          actorLabel: requiredText(event.actor.label),
+        };
+      });
   }
 
   const canStartImport = [

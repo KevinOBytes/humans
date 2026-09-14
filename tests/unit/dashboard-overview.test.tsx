@@ -232,8 +232,43 @@ describe("DashboardOverview", () => {
       screen.getByText("No workspace activity has been recorded yet."),
     ).toBeInTheDocument();
     expect(
+      screen.getByRole("list", { name: "Workspace activity" }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("link", { name: "Start an import" }),
     ).toHaveAttribute("href", "/imports");
+  });
+
+  it("does not surface system catalog provisioning as dashboard activity", async () => {
+    pageMocks.getAppContext.mockResolvedValue({
+      viewer: {
+        role: "owner",
+        permissions: ["audit:read"],
+        workspace: { name: "Field Research" },
+      },
+    });
+    pageMocks.executeServerGraphQL.mockResolvedValue({
+      ...emptyDashboardResponse(true),
+      auditEvents: {
+        nodes: [
+          {
+            action: "factDefinition.catalogBackfill",
+            resourceKind: "factDefinitionCatalog",
+            outcome: "SUCCESS",
+            occurredAt: "2026-08-04T10:00:00.000Z",
+            actor: {
+              kind: "SYSTEM",
+              label: "System",
+            },
+          },
+        ],
+      },
+    });
+
+    const result =
+      (await DashboardPage()) as ReactElement<DashboardOverviewProps>;
+
+    expect(result.props.activity).toEqual([]);
   });
 
   it("wraps long workspace, analysis, and activity actor values inside cards", () => {
