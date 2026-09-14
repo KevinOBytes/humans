@@ -86,11 +86,11 @@ both point reads and paginated lists, so unrelated readers cannot infer an
 investigation from list membership. API-key principals remain non-manager
 principals and therefore need an explicit linked scope. A disposable PostgreSQL
 18.3 run of `tests/integration/research-assignment-lifecycle.test.ts` passed
-nine tests, including manager, lead, linked-case-member, linked-team-member,
-explicitly shared API-key, foreign-workspace, archived-team, and unrelated
-reader point-read/list boundaries across two linked cases. Hosted and broader
-role/resource acceptance remain open, so the governing requirements stay
-incomplete.
+nine tests, including owner/admin manager point-read/list, lead,
+linked-case-member, linked-team-member, explicitly shared API-key,
+foreign-workspace, archived-team, and unrelated reader point-read/list
+boundaries across two linked cases. Hosted and broader role/resource acceptance
+remain open, so the governing requirements stay incomplete.
 
 Identifier citation boundary checkpoint (2026-09-13): public person identifier
 citations reuse `linkEvidenceAssertion` with the canonical field path

@@ -425,6 +425,7 @@ liveDescribe("research assignment queue lifecycle", () => {
     const lead = await fixture.createWorkspaceMember(owner, "analyst");
     const caseMember = await fixture.createWorkspaceMember(owner, "analyst");
     const teamMember = await fixture.createWorkspaceMember(owner, "analyst");
+    const admin = await fixture.createWorkspaceMember(owner, "admin");
     const archivedTeamMember = await fixture.createWorkspaceMember(
       owner,
       "analyst",
@@ -500,6 +501,9 @@ liveDescribe("research assignment queue lifecycle", () => {
       reader.permissions = new Set(rolePermissionKeys("analyst"));
       return reader;
     };
+    const adminContext = await caseContext(fixture, admin);
+    adminContext.actor.role = "admin";
+    adminContext.permissions = new Set(rolePermissionKeys("admin"));
     const apiKeyContext: ResearchServiceContext = {
       ...context,
       actor: {
@@ -529,11 +533,22 @@ liveDescribe("research assignment queue lifecycle", () => {
       );
     };
 
-    expect(
-      (await investigations.listInvestigations({ first: 10 })).nodes.map(
-        (row) => row.id,
-      ),
-    ).toEqual(expect.arrayContaining([visible.id, unrelatedInvestigation.id]));
+    const assertManagerVisible = async (reader: ResearchServiceContext) => {
+      const service = createInvestigationsService(reader);
+      expect((await service.getInvestigation(visible.id)).id).toBe(visible.id);
+      expect(
+        (await service.getInvestigation(unrelatedInvestigation.id)).id,
+      ).toBe(unrelatedInvestigation.id);
+      expect(
+        (await service.listInvestigations({ first: 10 })).nodes.map(
+          (row) => row.id,
+        ),
+      ).toEqual(
+        expect.arrayContaining([visible.id, unrelatedInvestigation.id]),
+      );
+    };
+    await assertManagerVisible(context);
+    await assertManagerVisible(adminContext);
     await assertVisible(await readerContext(lead));
     await assertVisible(await readerContext(caseMember));
     await assertVisible(await readerContext(teamMember));
