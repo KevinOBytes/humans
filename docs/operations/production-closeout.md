@@ -137,9 +137,11 @@ Provider lifecycle contracts are separately opt-in. Add
 `--provider-contracts` to the same `op run` command only when
 `RUN_EXTERNAL_PROVIDER_CONTRACTS=true` and at least one complete Upstash REST or
 S3-compatible test credential group is injected. Partial credential groups fail
-closed before any provider request. If opt-in is absent or no complete group is
-available, the requested acceptance exits nonzero with a redacted diagnostic
-and makes no request. When enabled, the child provider suite
+closed before any external-provider request. If opt-in is absent or no complete
+group is available, the requested acceptance exits nonzero with a redacted
+diagnostic after the base homepage, health, unauthenticated GraphQL, and
+protected-jobs probes; it makes no request to Upstash or object storage. When
+enabled, the child provider suite
 round-trips disposable, namespaced Redis and private object-storage fixtures,
 deletes them in a failure-safe cleanup boundary, suppresses all child output,
 and reports provider labels only. R2 and generic S3 buckets must be

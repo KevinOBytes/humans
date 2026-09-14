@@ -79,7 +79,11 @@
 
 **Interfaces:**
 - `pnpm production:smoke -- --base-url <url>` checks homepage, liveness, readiness, unauthenticated GraphQL, protected jobs, and (when `PRODUCTION_SMOKE_AUTH=1`) signs in separately through the configured email and username endpoints using process-injected `ADMIN_EMAIL`/`ADMIN_USERNAME`/`ADMIN_PASSWORD`, creates/selects the first workspace, and creates/reads a synthetic person. It prints status codes and correlation IDs only, never response bodies containing secrets.
-- `pnpm production:smoke -- --provider-contracts` runs only when explicit `RUN_EXTERNAL_PROVIDER_CONTRACTS=true`; missing credentials result in a clear skipped result, never a production request.
+- `pnpm production:smoke -- --provider-contracts` is an explicit acceptance
+  assertion: it requires `RUN_EXTERNAL_PROVIDER_CONTRACTS=true` and at least
+  one complete approved provider credential group. Missing opt-in or
+  credentials exits nonzero with a redacted diagnostic and makes no external
+  provider request.
 
 - [ ] **Step 1: Write failing contract tests** for URL validation, redacted output, secret-free errors, auth opt-in, and provider opt-in.
 - [ ] **Step 2: Implement the smoke harness using native `fetch`, stable GraphQL operations, and explicit timeouts.**
