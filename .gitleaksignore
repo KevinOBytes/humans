@@ -42,3 +42,8 @@ cd76ecda459100fef612d50858818f6ca02341fb:tests/unit/env.test.ts:generic-api-key:
 cd76ecda459100fef612d50858818f6ca02341fb:tests/unit/env.test.ts:generic-api-key:185
 cd76ecda459100fef612d50858818f6ca02341fb:tests/integration/import-worker.test.ts:generic-api-key:40
 cd76ecda459100fef612d50858818f6ca02341fb:tests/integration/import-worker.test.ts:generic-api-key:696
+
+# Reviewed deterministic idempotency fixtures; historical fingerprints are retained
+# because the commit is already public and contains no credential material.
+4d5fff9f7d604f8db5e057550db25d1792f1b8f2:tests/integration/graphql-person-presentation-idempotency.test.ts:generic-api-key:223
+4d5fff9f7d604f8db5e057550db25d1792f1b8f2:tests/integration/graphql-person-presentation-idempotency.test.ts:generic-api-key:285
