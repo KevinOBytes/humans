@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, exists, isNull, lt, or, sql } from "drizzle-orm";
 
 import { newId } from "@/db/id";
 import { caseMembers, cases } from "@/db/schema/cases";
@@ -7,6 +7,7 @@ import {
   investigationSequences,
   investigations,
 } from "@/db/schema/investigations";
+import { caseTeamLinks, teamMembers, teams } from "@/db/schema/teams";
 import { workspacePrincipals } from "@/db/schema/principals";
 import { createGraphQLError } from "@/graphql/errors";
 import { normalizePagination } from "@/graphql/limits";
@@ -22,6 +23,7 @@ import {
   type ResearchResponseReference,
 } from "@/modules/audit/transactions";
 import type { InvestigationCaseLinkRow, InvestigationRow } from "./types";
+import { isWorkspaceManager as isWorkspaceManagerRole } from "./visibility";
 
 const STATES = ["draft", "active", "paused", "closed", "archived"] as const;
 const SENSITIVITIES = [
@@ -168,6 +170,91 @@ export function createInvestigationsService(context: ResearchServiceContext) {
   const audit = createAuditService(context);
   const principalId = context.actor.principalId;
 
+  /**
+   * Keep investigation listing and point reads on the same server-side
+   * relationship boundary. A workspace reader can see an investigation only
+   * when they lead it, belong to one of its linked cases, or belong to a team
+   * that the linked case is shared with. Managers retain workspace visibility.
+   */
+  function visibilityPredicate() {
+    if (
+      isWorkspaceManagerRole({
+        actorRole: context.actor.role,
+        actorType: context.actor.type,
+      })
+    ) {
+      return undefined;
+    }
+    return or(
+      eq(investigations.leadPrincipalId, principalId),
+      exists(
+        context.database
+          .select({ id: investigationCaseLinks.id })
+          .from(investigationCaseLinks)
+          .innerJoin(
+            caseMembers,
+            and(
+              eq(caseMembers.workspaceId, investigationCaseLinks.workspaceId),
+              eq(caseMembers.caseId, investigationCaseLinks.caseId),
+              eq(caseMembers.principalId, principalId),
+              isNull(caseMembers.deletedAt),
+            ),
+          )
+          .where(
+            and(
+              eq(
+                investigationCaseLinks.workspaceId,
+                investigations.workspaceId,
+              ),
+              eq(investigationCaseLinks.investigationId, investigations.id),
+              isNull(investigationCaseLinks.deletedAt),
+            ),
+          ),
+      ),
+      exists(
+        context.database
+          .select({ id: investigationCaseLinks.id })
+          .from(investigationCaseLinks)
+          .innerJoin(
+            caseTeamLinks,
+            and(
+              eq(caseTeamLinks.workspaceId, investigationCaseLinks.workspaceId),
+              eq(caseTeamLinks.caseId, investigationCaseLinks.caseId),
+              isNull(caseTeamLinks.deletedAt),
+            ),
+          )
+          .innerJoin(
+            teamMembers,
+            and(
+              eq(teamMembers.workspaceId, caseTeamLinks.workspaceId),
+              eq(teamMembers.teamId, caseTeamLinks.teamId),
+              eq(teamMembers.principalId, principalId),
+              isNull(teamMembers.deletedAt),
+            ),
+          )
+          .innerJoin(
+            teams,
+            and(
+              eq(teams.workspaceId, teamMembers.workspaceId),
+              eq(teams.id, teamMembers.teamId),
+              eq(teams.state, "active"),
+              isNull(teams.deletedAt),
+            ),
+          )
+          .where(
+            and(
+              eq(
+                investigationCaseLinks.workspaceId,
+                investigations.workspaceId,
+              ),
+              eq(investigationCaseLinks.investigationId, investigations.id),
+              isNull(investigationCaseLinks.deletedAt),
+            ),
+          ),
+      ),
+    );
+  }
+
   async function get(id: string): Promise<InvestigationRow> {
     permission(context, "investigation:read");
     if (!UUID.test(id))
@@ -183,6 +270,7 @@ export function createInvestigationsService(context: ResearchServiceContext) {
           eq(investigations.workspaceId, context.workspaceId),
           eq(investigations.id, id),
           isNull(investigations.deletedAt),
+          visibilityPredicate(),
         ),
       )
       .limit(1);
@@ -242,6 +330,7 @@ export function createInvestigationsService(context: ResearchServiceContext) {
           and(
             eq(investigations.workspaceId, context.workspaceId),
             isNull(investigations.deletedAt),
+            visibilityPredicate(),
             after
               ? or(
                   lt(investigations.createdAt, after.at),
