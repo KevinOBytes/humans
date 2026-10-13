@@ -32,7 +32,7 @@ jobs:
           version: 11.11.0
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 24
@@ -70,7 +70,7 @@ jobs:
           version: 11.11.0
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 24
@@ -140,7 +140,7 @@ jobs:
           version: 11.11.0
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 24
@@ -224,7 +224,7 @@ jobs:
           version: 11.11.0
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 24
@@ -259,7 +259,7 @@ jobs:
         run: corepack pnpm test:e2e
       - name: Upload Playwright artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 5
         with:
           name: humans-playwright-${{ github.sha }}
@@ -289,7 +289,7 @@ jobs:
           version: 11.11.0
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 24
@@ -330,7 +330,7 @@ jobs:
           version: 11.11.0
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 24
@@ -368,7 +368,7 @@ jobs:
           version: 11.11.0
           run_install: false
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 24
@@ -419,15 +419,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         timeout-minutes: 5
       - name: Install Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 24
       - name: Build the exact local image once
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         timeout-minutes: 20
         with:
           context: .
@@ -445,7 +445,7 @@ jobs:
         timeout-minutes: 5
         run: node scripts/verify-runtime-image-optimizer.mjs humans-ci:${{ github.sha }}
       - name: Generate the exact-image SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         timeout-minutes: 10
         with:
           image: humans-ci:${{ github.sha }}
@@ -459,7 +459,7 @@ jobs:
         timeout-minutes: 2
         run: node scripts/verify-runtime-sbom.mjs .tmp/runtime-manifest.json sbom.spdx.json
       - name: Upload bounded SBOM artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 5
         with:
           name: humans-image-sbom-${{ github.sha }}
