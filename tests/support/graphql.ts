@@ -56,14 +56,9 @@ import {
   testAdminEnv,
   type TestDatabase,
 } from "./auth";
+import { e2eSecrets } from "./e2e-secrets";
 
-const fixturePassword = [
-  "Task7",
-  "GraphQL",
-  "Fixture",
-  "Password!",
-  "2026",
-].join("");
+const fixturePassword = e2eSecrets.fixtureUserPassword;
 
 export const VIEWER_QUERY = /* GraphQL */ `
   query Viewer {

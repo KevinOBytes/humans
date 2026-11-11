@@ -1,17 +1,12 @@
 import { expect, test } from "@playwright/test";
 
+import { e2eSecrets } from "../support/e2e-secrets";
 import { ResearchFixture } from "../support/research-fixture";
 
 const fixture = new ResearchFixture();
 const adminEmail = "admin@example.test";
 const adminUsername = "humans-admin";
-const adminPassword = [
-  "Task6",
-  "Initial",
-  "Administrator",
-  "Password!",
-  "2026",
-].join("");
+const adminPassword = e2eSecrets.adminPassword;
 
 async function signIn(
   page: import("@playwright/test").Page,

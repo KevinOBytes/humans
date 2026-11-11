@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 import { parseServerEnv } from "./src/lib/env/server-schema";
+import { e2eSecrets } from "./tests/support/e2e-secrets";
 
 const baseURL = "http://127.0.0.1:3106";
 const disabledBaseURL = "http://127.0.0.1:3108";
@@ -28,26 +29,26 @@ const webServerEnv: Record<string, string> & NodeJS.ProcessEnv = {
   STORAGE_REGION: process.env.TEST_STORAGE_REGION ?? "us-east-1",
   STORAGE_BUCKET: process.env.TEST_STORAGE_BUCKET ?? "humans-private",
   STORAGE_ACCESS_KEY_ID:
-    process.env.TEST_STORAGE_ACCESS_KEY_ID ?? "local-playwright",
+    process.env.TEST_STORAGE_ACCESS_KEY_ID ?? e2eSecrets.storageAccessKeyId,
   STORAGE_SECRET_ACCESS_KEY:
     process.env.TEST_STORAGE_SECRET_ACCESS_KEY ??
-    "local-playwright-storage-secret",
+    e2eSecrets.storageSecretAccessKey,
   STORAGE_FORCE_PATH_STYLE: "true",
   STORAGE_BUCKET_PUBLIC: "false",
-  AUTH_SECRET: "auth-fixture-signing-secret-0123456789abcdef0123456789abcdef",
+  AUTH_SECRET: e2eSecrets.authSecret,
   AUTH_SECURE_COOKIES: "false",
   AUTH_TRUSTED_ORIGINS: baseURL,
   AUTH_REGISTRATION_MODE: "public",
-  AUTH_ENCRYPTION_KEY: "31".repeat(32),
-  DATA_ENCRYPTION_KEY: "42".repeat(32),
-  PROTECTED_LOOKUP_HMAC_KEY: "53".repeat(32),
-  OPERATION_LIMIT_HMAC_KEY: "64".repeat(32),
+  AUTH_ENCRYPTION_KEY: e2eSecrets.authEncryptionKey,
+  DATA_ENCRYPTION_KEY: e2eSecrets.dataEncryptionKey,
+  PROTECTED_LOOKUP_HMAC_KEY: e2eSecrets.protectedLookupHmacKey,
+  OPERATION_LIMIT_HMAC_KEY: e2eSecrets.operationLimitHmacKey,
   TRUSTED_PROXY_MODE: "none",
   ADMIN_EMAIL: "admin@example.test",
   ADMIN_USERNAME: "humans-admin",
   ADMIN_DISPLAY_NAME: "Humans Administrator",
-  ADMIN_PASSWORD: "Task6InitialAdministratorPassword!2026",
-  RESEND_API_KEY: "resend-fixture-key",
+  ADMIN_PASSWORD: e2eSecrets.adminPassword,
+  RESEND_API_KEY: e2eSecrets.resendApiKey,
   RESEND_BASE_URL: "http://127.0.0.1:3107",
   EMAIL_FROM: "Humans <humans@example.test>",
   AI_PROVIDER: "ollama",
@@ -57,7 +58,7 @@ const webServerEnv: Record<string, string> & NodeJS.ProcessEnv = {
   NEXT_PUBLIC_GRAPH_PERFORMANCE_INSTRUMENTATION: graphPerformance ? "1" : "0",
   GRAPH_PERFORMANCE_TEST_RUNTIME: graphPerformance ? "1" : "0",
   GRAPH_PERFORMANCE_DIAGNOSTIC_SECRET:
-    "graph-reference-diagnostic-secret-2026-isolated-runtime",
+    e2eSecrets.graphPerformanceDiagnosticSecret,
 };
 
 function policyServerEnv(

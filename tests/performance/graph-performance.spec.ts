@@ -16,6 +16,7 @@ import { GraphPageDocument } from "@/graphql/generated/graphql";
 import { createPerformanceDiagnosticSignature } from "@/graphql/query-instrumentation";
 
 import type { CookieJar } from "../support/auth";
+import { e2eSecrets } from "../support/e2e-secrets";
 import { ResearchFixture } from "../support/research-fixture";
 
 test.skip(
@@ -29,7 +30,7 @@ const BASE_URL = "http://127.0.0.1:3106";
 const INITIAL_ROUTE_JS_BUDGET = 250 * 1024;
 const COLD_AUTHENTICATED_SQL_QUERY_BUDGET = 24;
 const PERFORMANCE_DIAGNOSTIC_SECRET =
-  "graph-reference-diagnostic-secret-2026-isolated-runtime";
+  e2eSecrets.graphPerformanceDiagnosticSecret;
 const fixture = new ResearchFixture();
 let actor: Awaited<ReturnType<ResearchFixture["createActor"]>>;
 let concurrentActors: Array<

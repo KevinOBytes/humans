@@ -13,6 +13,7 @@ import {
 } from "@/lib/env/server-schema";
 
 import { assertTestDatabaseResetAllowed } from "./database-reset-guard";
+import { e2eSecrets } from "./e2e-secrets";
 
 export const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -79,13 +80,7 @@ export async function resetTestDatabase(connection: Sql): Promise<void> {
   await migrate(drizzle(connection), { migrationsFolder: "drizzle" });
 }
 
-const fixturePassword = [
-  "Task6",
-  "Initial",
-  "Administrator",
-  "Password!",
-  "2026",
-].join("");
+const fixturePassword = e2eSecrets.adminPassword;
 
 const testEnvironment = {
   NODE_ENV: "test",
@@ -103,20 +98,20 @@ const testEnvironment = {
   STORAGE_SECRET_ACCESS_KEY: "local-fixture-storage-secret",
   STORAGE_FORCE_PATH_STYLE: "true",
   STORAGE_BUCKET_PUBLIC: "false",
-  AUTH_SECRET: "auth-fixture-signing-secret-0123456789abcdef0123456789abcdef",
+  AUTH_SECRET: e2eSecrets.authSecret,
   AUTH_SECURE_COOKIES: "false",
   AUTH_TRUSTED_ORIGINS: "http://127.0.0.1:3106",
   AUTH_REGISTRATION_MODE: "public",
-  AUTH_ENCRYPTION_KEY: "31".repeat(32),
-  DATA_ENCRYPTION_KEY: "42".repeat(32),
-  PROTECTED_LOOKUP_HMAC_KEY: "43".repeat(32),
-  OPERATION_LIMIT_HMAC_KEY: "44".repeat(32),
+  AUTH_ENCRYPTION_KEY: e2eSecrets.authEncryptionKey,
+  DATA_ENCRYPTION_KEY: e2eSecrets.dataEncryptionKey,
+  PROTECTED_LOOKUP_HMAC_KEY: e2eSecrets.protectedLookupHmacKey,
+  OPERATION_LIMIT_HMAC_KEY: e2eSecrets.operationLimitHmacKey,
   TRUSTED_PROXY_MODE: "none",
   ADMIN_EMAIL: "admin@example.test",
   ADMIN_USERNAME: "humans-admin",
   ADMIN_DISPLAY_NAME: "Humans Administrator",
   ADMIN_PASSWORD: fixturePassword,
-  RESEND_API_KEY: "resend-fixture-key",
+  RESEND_API_KEY: e2eSecrets.resendApiKey,
   EMAIL_FROM: "Humans <humans@example.test>",
   AI_PROVIDER: "ollama",
   AI_BASE_URL: "http://127.0.0.1:11434/v1",

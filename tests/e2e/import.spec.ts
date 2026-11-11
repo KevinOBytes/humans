@@ -5,6 +5,7 @@ import IORedis from "ioredis";
 import { createObjectStore } from "@/lib/storage/s3";
 import { parseServerEnv } from "@/lib/env/server-schema";
 import { LocalRedisStore } from "@/lib/redis";
+import { e2eSecrets } from "../support/e2e-secrets";
 import { people } from "@/db/schema/people";
 import { disabledSearchIndexMaintenance } from "@/modules/search/index-maintenance";
 import { createRuntimeJobRegistry } from "@/worker/runtime";
@@ -86,19 +87,19 @@ function workerEnvironment() {
     STORAGE_SECRET_ACCESS_KEY: process.env.TEST_STORAGE_SECRET_ACCESS_KEY!,
     STORAGE_FORCE_PATH_STYLE: "true",
     STORAGE_BUCKET_PUBLIC: "false",
-    AUTH_SECRET: "auth-fixture-signing-secret-0123456789abcdef0123456789abcdef",
+    AUTH_SECRET: e2eSecrets.authSecret,
     AUTH_SECURE_COOKIES: "false",
     AUTH_TRUSTED_ORIGINS: "http://127.0.0.1:3106",
-    AUTH_ENCRYPTION_KEY: "31".repeat(32),
-    DATA_ENCRYPTION_KEY: "42".repeat(32),
-    PROTECTED_LOOKUP_HMAC_KEY: "53".repeat(32),
-    OPERATION_LIMIT_HMAC_KEY: "64".repeat(32),
+    AUTH_ENCRYPTION_KEY: e2eSecrets.authEncryptionKey,
+    DATA_ENCRYPTION_KEY: e2eSecrets.dataEncryptionKey,
+    PROTECTED_LOOKUP_HMAC_KEY: e2eSecrets.protectedLookupHmacKey,
+    OPERATION_LIMIT_HMAC_KEY: e2eSecrets.operationLimitHmacKey,
     TRUSTED_PROXY_MODE: "none",
     ADMIN_EMAIL: "admin@example.test",
     ADMIN_USERNAME: "humans-admin",
     ADMIN_DISPLAY_NAME: "Humans Administrator",
-    ADMIN_PASSWORD: "Task11ImportAdministratorPassword!2026",
-    RESEND_API_KEY: "resend-fixture-key",
+    ADMIN_PASSWORD: e2eSecrets.adminPassword,
+    RESEND_API_KEY: e2eSecrets.resendApiKey,
     EMAIL_FROM: "Humans <humans@example.test>",
     AI_PROVIDER: "ollama",
     AI_BASE_URL: "http://127.0.0.1:11434/v1",
